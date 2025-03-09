@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json.schemastore.org/nest-cli",
+  "sourceRoot": "app/main/src",
+  "root": "app/main",
+  "monorepo": true,
+  "compilerOptions": {
+    "deleteOutDir": true,
+    "builder": {
+      "type": "tsc"
+    },
+    "webpack": false
+  },
+  "projects": {
+    "core": {
+      "type": "application",
+      "root": "app/main",
+      "entryFile": "app/main",
+      "sourceRoot": "app/main/src",
+      "compilerOptions": {
+        "tsConfigPath": "app/main/tsconfig.json"
+      }
+    },
+    "controllers": {
+      "type": "library",
+      "root": "app/controllers",
+      "entryFile": "index",
+      "sourceRoot": "app/controllers/src",
+      "compilerOptions": {
+        "tsConfigPath": "app/controllers/tsconfig.json"
+      }
+    },
+    "service": {
+      "type": "library",
+      "root": "app/services",
+      "entryFile": "index",
+      "sourceRoot": "app/services/src",
+      "compilerOptions": {
+        "tsConfigPath": "app/services/tsconfig.json"
+      }
+    },
+    "domain": {
+      "type": "library",
+      "root": "app/domain",
+      "entryFile": "index",
+      "sourceRoot": "app/domain/src",
+      "compilerOptions": {
+        "tsConfigPath": "app/domain/tsconfig.json"
+      }
+    },
+    "external": {
+      "type": "library",
+      "root": "app/external",
+      "entryFile": "app/external",
+      "sourceRoot": "app/external/src",
+      "compilerOptions": {
+        "tsConfigPath": "app/external/tsconfig.json"
+      }
+    }
+  }
+}

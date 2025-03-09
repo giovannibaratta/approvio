@@ -1,3 +1,18 @@
+# IntelliJ IDEA artifacts
+.idea/
+*.iml
+*.iws
+
+# Build artifacts
+/out/
+/dist/
+build
+!build/openapi/.openapi-generator-ignore
+
+# Yarn artifacts
+node_modules/
+yarn-error.log
+.pnp*
 .yarn/*
 !.yarn/patches
 !.yarn/plugins
@@ -5,13 +20,19 @@
 !.yarn/sdks
 !.yarn/versions
 
-# Whether you use PnP or not, the node_modules folder is often used to store
-# build artifacts that should be gitignored
-node_modules
+# TypeScript artifacts
+*.tsbuildinfo
 
-# Swap the comments on the following lines if you wish to use zero-installs
-# In that case, don't forget to run `yarn config set enableGlobalCache false`!
-# Documentation here: https://yarnpkg.com/features/caching#zero-installs
+# Unnecessary files (adjust as needed)
+*.log
+*.bak
+*.swp
+*~
+.DS_Store # macOS
+Thumbs.db # Windows
 
-#!.yarn/cache
-.pnp.*
+openapitools.json
+
+.eslintcache
+
+generated

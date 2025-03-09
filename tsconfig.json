@@ -1,0 +1,26 @@
+{
+  "extends": "./tsconfig-google.json",
+  "compilerOptions": {
+    "outDir": "./build",
+    "baseUrl": "./",
+    "types": ["jest", "node"],
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowJs": true,
+    "noUncheckedIndexedAccess": true,
+    "paths": {
+      "@api": ["generated/openapi/model/models"],
+      "@app": ["app/main/src"],
+      "@app/*": ["app/main/src/*"],
+      "@services": ["app/services/src"],
+      "@services/*": ["app/services/src/*"],
+      "@domain": ["app/domain/src"],
+      "@domain/*": ["app/domain/src/*"],
+      "@external": ["app/external/src"],
+      "@external/*": ["app/external/src/*"],
+      "@controllers": ["app/controllers/src"],
+      "@controllers/*": ["app/controllers/src/*"]
+    }
+  },
+  "exclude": ["node_modules", "build"]
+}
