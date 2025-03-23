@@ -1,0 +1,702 @@
+openapi: 3.0.0
+info:
+  title: Workflow Approval System API
+  description: API for a SaaS platform that allows customers to manage approvals for generic workflows
+  version: 1.0.0
+servers:
+  - url: https://api.workflowapproval.com/v1
+    description: Production server
+paths:
+  /workflows:
+    post:
+      summary: Create a new workflow
+      description: Creates a new workflow with approvers and rules
+      operationId: createWorkflow
+      tags:
+        - Workflows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WorkflowCreate"
+      responses:
+        "201":
+          description: Workflow created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workflow"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    get:
+      summary: List workflows
+      description: Returns a list of workflows with optional filtering
+      operationId: listWorkflows
+      tags:
+        - Workflows
+      parameters:
+        - name: status
+          in: query
+          description: Filter workflows by status
+          schema:
+            type: string
+            enum: [PENDING, APPROVED, DECLINED, CANCELED]
+        - name: approvableBy
+          in: query
+          description: Filter workflows that can be approved by this entity ID
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Number of results per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of workflows
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Workflow"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /workflows/{workflowId}:
+    get:
+      summary: Get workflow details
+      description: Returns the details of a specific workflow
+      operationId: getWorkflow
+      tags:
+        - Workflows
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          description: The unique identifier of the workflow
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Workflow details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workflow"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /workflows/{workflowId}/approve:
+    post:
+      summary: Approve a workflow
+      description: Approve a workflow as the authenticated approver
+      operationId: approveWorkflow
+      tags:
+        - Workflow Actions
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          description: The unique identifier of the workflow
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              title: ApproveWorkflowRequest
+              properties:
+                groupId:
+                  type: string
+                  description: Optional group ID if the approver wants to approve as a member of a specific group
+                comments:
+                  type: string
+                  description: Optional comments for the approval
+      responses:
+        "200":
+          description: Workflow approved successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workflow"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Entity is not an approver for this workflow
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /workflows/{workflowId}/decline:
+    post:
+      summary: Decline a workflow
+      description: Decline a workflow as the authenticated approver
+      operationId: declineWorkflow
+      tags:
+        - Workflow Actions
+      parameters:
+        - name: workflowId
+          in: path
+          required: true
+          description: The unique identifier of the workflow
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              title: DeclineWorkflowRequest
+              properties:
+                groupId:
+                  type: string
+                  description: Optional group ID if the approver wants to decline as a member of a specific group
+                reason:
+                  type: string
+                  description: Reason for declining the workflow
+              required:
+                - reason
+      responses:
+        "200":
+          description: Workflow declined successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Workflow"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Entity is not an approver for this workflow
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /approvers:
+    post:
+      summary: Register a new approver
+      description: Create a new approver entity in the system
+      operationId: createApprover
+      tags:
+        - Approvers
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproverCreate"
+      responses:
+        "201":
+          description: Approver created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Approver"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    get:
+      summary: List approvers
+      description: Returns a list of approvers
+      operationId: listApprovers
+      tags:
+        - Approvers
+      parameters:
+        - name: type
+          in: query
+          description: Filter approvers by type
+          schema:
+            type: string
+            enum: [PERSON, SYSTEM, OTHER]
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Number of results per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of approvers
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Approver"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /groups:
+    post:
+      summary: Create a new approver group
+      description: Create a new group for organizing approvers
+      operationId: createGroup
+      tags:
+        - Groups
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupCreate"
+      responses:
+        "201":
+          description: Group created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    get:
+      summary: List approver groups
+      description: Returns a list of approver groups
+      operationId: listGroups
+      tags:
+        - Groups
+      parameters:
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Number of results per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of groups
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Group"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /groups/{groupId}/approvers:
+    post:
+      summary: Add approvers to a group
+      description: Add one or more approvers to an existing group
+      operationId: addGroupApprovers
+      tags:
+        - Groups
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          description: The unique identifier of the group
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              title: AddApproversRequest
+              properties:
+                approverIds:
+                  type: array
+                  items:
+                    type: string
+                  description: List of approver IDs to add to the group
+      responses:
+        "200":
+          description: Approvers added to group successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    get:
+      summary: List approvers in a group
+      description: Returns a list of approvers that belong to a specific group
+      operationId: listGroupApprovers
+      tags:
+        - Groups
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          description: The unique identifier of the group
+          schema:
+            type: string
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Number of results per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of approvers in the group
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Approver"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  schemas:
+    WorkflowCreate:
+      type: object
+      required:
+        - name
+        - approvalRules
+      properties:
+        name:
+          type: string
+          description: User-friendly name for the workflow
+        description:
+          type: string
+          description: Detailed description of the workflow
+        metadata:
+          type: object
+          description: Additional custom metadata for the workflow
+        approvalRules:
+          $ref: "#/components/schemas/ApprovalRules"
+
+    Workflow:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the workflow
+        name:
+          type: string
+          description: User-friendly name for the workflow
+        description:
+          type: string
+          description: Detailed description of the workflow
+        status:
+          type: string
+          enum: [PENDING, APPROVED, DECLINED, CANCELED]
+          description: Current status of the workflow
+        approvalRules:
+          $ref: "#/components/schemas/ApprovalRules"
+        approvalStatus:
+          $ref: "#/components/schemas/ApprovalStatus"
+        metadata:
+          type: object
+          description: Additional custom metadata for the workflow
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last update timestamp
+
+    ApprovalRules:
+      type: object
+      description: Configuration of approval rules
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [AND, OR, MIN_COUNT]
+          description: Type of rule to apply to the approvers or groups
+        minCount:
+          type: integer
+          description: Minimum number of approvals required (when type is MIN_COUNT)
+        approvers:
+          type: array
+          description: List of individual approvers
+          items:
+            type: string
+            description: Approver ID
+        groups:
+          type: array
+          description: List of approver groups
+          items:
+            type: string
+            description: Group ID
+        rules:
+          type: array
+          description: Nested rules for complex approval flows
+          items:
+            $ref: "#/components/schemas/ApprovalRules"
+
+    ApprovalStatus:
+      type: object
+      description: Current status of the approval process
+      properties:
+        completedApprovals:
+          type: array
+          items:
+            type: object
+            properties:
+              approverId:
+                type: string
+              groupId:
+                type: string
+                description: Group ID if approval was made as part of a group
+              timestamp:
+                type: string
+                format: date-time
+              comments:
+                type: string
+        declinations:
+          type: array
+          items:
+            type: object
+            properties:
+              approverId:
+                type: string
+              groupId:
+                type: string
+                description: Group ID if declination was made as part of a group
+              timestamp:
+                type: string
+                format: date-time
+              reason:
+                type: string
+        pendingApprovers:
+          type: array
+          items:
+            type: string
+            description: IDs of approvers that still need to approve
+        pendingGroups:
+          type: array
+          items:
+            type: string
+            description: IDs of groups that still need to approve
+        isComplete:
+          type: boolean
+          description: Whether the approval process is complete
+        completedAt:
+          type: string
+          format: date-time
+          description: When the approval process completed
+
+    ApproverCreate:
+      type: object
+      required:
+        - name
+        - type
+      properties:
+        name:
+          type: string
+          description: Name of the approver
+        type:
+          type: string
+          enum: [PERSON, SYSTEM, OTHER]
+          description: Type of approver
+        email:
+          type: string
+          format: email
+          description: Email for person approvers
+        systemId:
+          type: string
+          description: System identifier for system approvers
+        metadata:
+          type: object
+          description: Additional custom metadata for the approver
+
+    Approver:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the approver
+        name:
+          type: string
+          description: Name of the approver
+        type:
+          type: string
+          enum: [PERSON, SYSTEM, OTHER]
+          description: Type of approver
+        email:
+          type: string
+          format: email
+          description: Email for person approvers
+        systemId:
+          type: string
+          description: System identifier for system approvers
+        metadata:
+          type: object
+          description: Additional custom metadata for the approver
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last update timestamp
+
+    GroupCreate:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Name of the group
+        description:
+          type: string
+          description: Description of the group
+        approverIds:
+          type: array
+          items:
+            type: string
+          description: Initial list of approver IDs to add to the group
+
+    Group:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique identifier for the group
+        name:
+          type: string
+          description: Name of the group
+        description:
+          type: string
+          description: Description of the group
+        approverCount:
+          type: integer
+          description: Number of approvers in the group
+        createdAt:
+          type: string
+          format: date-time
+          description: Creation timestamp
+        updatedAt:
+          type: string
+          format: date-time
+          description: Last update timestamp
+
+    Pagination:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Total number of items
+        pages:
+          type: integer
+          description: Total number of pages
+        currentPage:
+          type: integer
+          description: Current page number
+        limit:
+          type: integer
+          description: Items per page
+
+    APIError:
+      type: object
+      properties:
+        code:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Error message
+        details:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/APIError"
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []

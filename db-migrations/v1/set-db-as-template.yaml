@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 6db0ccdc-c96c-474a-a549-d4df7c848207
+      author: Giovanni Baratta
+      comment: Set database as tempalte
+      changes:
+        - sql:
+            dbms: "postgresql"
+            sql: ALTER DATABASE approvio WITH is_template TRUE

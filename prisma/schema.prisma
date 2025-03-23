@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = "postgresql://developer:Safe1!@localhost:5432/approvio?schema=public"
+}
+
+model Databasechangelog {
+  id            String   @db.VarChar(255)
+  author        String   @db.VarChar(255)
+  filename      String   @db.VarChar(255)
+  dateexecuted  DateTime @db.Timestamp(6)
+  orderexecuted Int
+  exectype      String   @db.VarChar(10)
+  md5sum        String?  @db.VarChar(35)
+  description   String?  @db.VarChar(255)
+  comments      String?  @db.VarChar(255)
+  tag           String?  @db.VarChar(255)
+  liquibase     String?  @db.VarChar(20)
+  contexts      String?  @db.VarChar(255)
+  labels        String?  @db.VarChar(255)
+  deploymentId  String?  @map("deployment_id") @db.VarChar(10)
+
+  @@map("databasechangelog")
+  @@ignore
+}
+
+model Databasechangeloglock {
+  id          Int       @id
+  locked      Boolean
+  lockgranted DateTime? @db.Timestamp(6)
+  lockedby    String?   @db.VarChar(255)
+
+  @@map("databasechangeloglock")
+  @@ignore
+}
+
+model Group {
+  id          String   @id @db.Uuid
+  name        String   @db.VarChar
+  description String?  @db.VarChar
+  createdAt   DateTime @map("created_at") @db.Timestamp(6)
+  updatedAt   DateTime @map("updated_at") @db.Timestamp(6)
+
+  @@map("groups")
+}

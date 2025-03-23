@@ -1,0 +1,37 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-groups-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: groups
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: description
+                  type: varchar
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: groups
+            columnNames: name
+            constraintName: groups_name_unique

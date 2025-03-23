@@ -36,7 +36,8 @@ const testSettings = {
     "!**/*.mock.ts",
     "!build/**"
   ],
-  modulePathIgnorePatterns: ["<rootDir>/build/"]
+  modulePathIgnorePatterns: ["<rootDir>/build/"],
+  setupFilesAfterEnv: ["<rootDir>/app/main/test/matchers.ts"]
 }
 
 module.exports = {
