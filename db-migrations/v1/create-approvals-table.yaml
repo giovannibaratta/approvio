@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-approvals-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: approvals
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false

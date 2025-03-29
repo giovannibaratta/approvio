@@ -1,0 +1,10 @@
+POST http://localhost:3000/groups
+Content-Type: application/json
+
+{
+  "name": "Group 1",
+  "description": "Group 1 description"
+
+}
+
+###

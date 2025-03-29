@@ -126,7 +126,7 @@ paths:
               type: object
               title: ApproveWorkflowRequest
               properties:
-                groupId:
+                groupIdentifier:
                   type: string
                   description: Optional group ID if the approver wants to approve as a member of a specific group
                 comments:
@@ -170,7 +170,7 @@ paths:
               type: object
               title: DeclineWorkflowRequest
               properties:
-                groupId:
+                groupIdentifier:
                   type: string
                   description: Optional group ID if the approver wants to decline as a member of a specific group
                 reason:
@@ -285,8 +285,8 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
     get:
-      summary: List approver groups
-      description: Returns a list of approver groups
+      summary: List groups
+      description: Returns a list of groups
       operationId: listGroups
       tags:
         - Groups
@@ -311,16 +311,45 @@ paths:
               schema:
                 type: object
                 properties:
-                  data:
+                  groups:
                     type: array
                     items:
                       $ref: "#/components/schemas/Group"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
+                required:
+                  - groups
+                  - pagination
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /groups/{groupId}/approvers:
+  /groups/{groupIdentifier}:
+    get:
+      summary: Get group details
+      description: Returns the details of a specific group
+      operationId: getGroup
+      tags:
+        - Groups
+      parameters:
+        - name: groupIdentifier
+          in: path
+          required: true
+          description: The unique identifier of the group
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Group details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"  
+
+  /groups/{groupIdentifier}/approvers:
     post:
       summary: Add approvers to a group
       description: Add one or more approvers to an existing group
@@ -328,7 +357,7 @@ paths:
       tags:
         - Groups
       parameters:
-        - name: groupId
+        - name: groupIdentifier
           in: path
           required: true
           description: The unique identifier of the group
@@ -368,7 +397,7 @@ paths:
       tags:
         - Groups
       parameters:
-        - name: groupId
+        - name: groupIdentifier
           in: path
           required: true
           description: The unique identifier of the group
@@ -615,6 +644,12 @@ components:
 
     Group:
       type: object
+      required:
+        - id
+        - name
+        - entitiesCount
+        - createdAt
+        - updatedAt
       properties:
         id:
           type: string
@@ -625,9 +660,9 @@ components:
         description:
           type: string
           description: Description of the group
-        approverCount:
+        entitiesCount:
           type: integer
-          description: Number of approvers in the group
+          description: Number of entities in the group
         createdAt:
           type: string
           format: date-time
@@ -639,14 +674,15 @@ components:
 
     Pagination:
       type: object
+      required:
+        - total
+        - page
+        - limit
       properties:
         total:
           type: integer
           description: Total number of items
-        pages:
-          type: integer
-          description: Total number of pages
-        currentPage:
+        page:
           type: integer
           description: Current page number
         limit:

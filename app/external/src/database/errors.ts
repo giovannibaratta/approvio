@@ -15,8 +15,5 @@ export function isPrismaUniqueConstraintError(error: unknown, fields: string[]):
   }
 
   const violatedFields = error.meta.target as string[]
-  return (
-    fields.length === violatedFields.length &&
-    fields.every(field => violatedFields.includes(field))
-  )
+  return fields.length === violatedFields.length && fields.every(field => violatedFields.includes(field))
 }

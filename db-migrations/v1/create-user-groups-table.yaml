@@ -1,0 +1,35 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-user-groups-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: user_groups
+            columns:
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: group_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            tableName: user_groups
+            columnNames: user_id, group_id
+        - addForeignKeyConstraint:
+            baseTableName: user_groups
+            baseColumnNames: user_id
+            referencedTableName: users
+            referencedColumnNames: id
+            constraintName: fk_user_groups_user
+            onDelete: CASCADE
+        - addForeignKeyConstraint:
+            baseTableName: user_groups
+            baseColumnNames: group_id
+            referencedTableName: groups
+            referencedColumnNames: id
+            constraintName: fk_user_groups_group
+            onDelete: CASCADE
