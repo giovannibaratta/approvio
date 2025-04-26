@@ -1,14 +1,18 @@
-import {Group, GroupFactory, GroupValidationError} from "@domain"
+import {Group, GroupWithEntititesCount} from "@domain"
 import {isPrismaUniqueConstraintError} from "@external/database/errors"
 import {Injectable, Logger} from "@nestjs/common"
 import {Prisma, Group as PrismaGroup} from "@prisma/client"
 import {GroupCreateError, GroupGetError, GroupListError, GroupRepository, ListGroupsResult} from "@services"
+import {Versioned} from "@services/shared/utils"
 import * as E from "fp-ts/lib/Either"
-import {Either, isLeft} from "fp-ts/lib/Either"
+import {isLeft} from "fp-ts/lib/Either"
 import * as TE from "fp-ts/lib/TaskEither"
 import {TaskEither} from "fp-ts/lib/TaskEither"
 import {pipe} from "fp-ts/lib/function"
+import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 import {DatabaseClient} from "./database-client"
+import {mapToDomainVersionedGroupWithEntities} from "./shared"
+import {areAllRights, chainNullableToLeft} from "./utils"
 
 interface Identifier {
   identifier: string
@@ -20,31 +24,42 @@ interface ListOptions {
   skip: number
 }
 
+export type PrismaGroupWithCount = PrismaGroup & {
+  _count: {
+    groupMemberships: number
+  }
+}
+
 @Injectable()
 export class GroupDbRepository implements GroupRepository {
   constructor(private readonly dbClient: DatabaseClient) {}
 
   createGroup(group: Group): TaskEither<GroupCreateError, Group> {
-    return pipe(group, TE.right, TE.chainW(this.persistObjectTask()), TE.chainEitherKW(mapToDomain))
+    return pipe(
+      group,
+      TE.right,
+      TE.chainW(this.persistNewObjectTask()),
+      TE.chainEitherKW(mapToDomainVersionedGroupWithEntities)
+    )
   }
 
-  getGroupById(groupId: string): TaskEither<GroupGetError, Group> {
+  getGroupById(groupId: string): TaskEither<GroupGetError, Versioned<GroupWithEntititesCount>> {
     const identifier: Identifier = {type: "id", identifier: groupId}
     return this.getGroup(identifier)
   }
 
-  getGroupByName(groupName: string): TaskEither<GroupGetError, Group> {
+  getGroupByName(groupName: string): TaskEither<GroupGetError, Versioned<GroupWithEntititesCount>> {
     const identifier: Identifier = {type: "name", identifier: groupName}
     return this.getGroup(identifier)
   }
 
-  private getGroup(identifier: Identifier): TaskEither<GroupGetError, Group> {
+  private getGroup(identifier: Identifier): TaskEither<GroupGetError, Versioned<GroupWithEntititesCount>> {
     return pipe(
       identifier,
       TE.right,
       TE.chainW(this.getObjectTask()),
       chainNullableToLeft("group_not_found" as const),
-      TE.chainEitherKW(mapToDomain)
+      TE.chainEitherKW(mapToDomainVersionedGroupWithEntities)
     )
   }
 
@@ -62,7 +77,7 @@ export class GroupDbRepository implements GroupRepository {
       TE.right,
       TE.chainW(this.getObjectsTask()),
       TE.chainEitherKW(([groups, total]) => {
-        const domainGroups = groups.map(group => mapToDomain(group))
+        const domainGroups = groups.map(group => mapToDomainVersionedGroupWithEntities(group))
 
         if (areAllRights(domainGroups)) {
           const mappedToDomain = {
@@ -82,7 +97,7 @@ export class GroupDbRepository implements GroupRepository {
     )
   }
 
-  private persistObjectTask(): (group: Group) => TaskEither<GroupCreateError, PrismaGroup> {
+  private persistNewObjectTask(): (group: Group) => TaskEither<GroupCreateError, PrismaGroupWithCount> {
     // Wrap in a lambda to preserve the "this" context
     return group =>
       TE.tryCatchK(
@@ -93,7 +108,15 @@ export class GroupDbRepository implements GroupRepository {
               id: group.id,
               name: group.name,
               description: group.description,
-              updatedAt: group.updatedAt
+              updatedAt: group.updatedAt,
+              occ: POSTGRES_BIGINT_LOWER_BOUND
+            },
+            include: {
+              _count: {
+                select: {
+                  groupMemberships: true
+                }
+              }
             }
           }),
         error => {
@@ -105,7 +128,7 @@ export class GroupDbRepository implements GroupRepository {
       )()
   }
 
-  private getObjectTask(): (identifier: Identifier) => TaskEither<GroupGetError, PrismaGroup | null> {
+  private getObjectTask(): (identifier: Identifier) => TaskEither<GroupGetError, PrismaGroupWithCount | null> {
     // Wrap in a lambda to preserve the "this" context
     return identifier =>
       TE.tryCatchK(
@@ -114,6 +137,13 @@ export class GroupDbRepository implements GroupRepository {
             where: {
               id: identifier.type === "id" ? identifier.identifier : undefined,
               name: identifier.type === "name" ? identifier.identifier : undefined
+            },
+            include: {
+              _count: {
+                select: {
+                  groupMemberships: true
+                }
+              }
             }
           }),
         error => {
@@ -123,14 +153,24 @@ export class GroupDbRepository implements GroupRepository {
       )()
   }
 
-  private getObjectsTask(): (options: ListOptions) => TaskEither<GroupListError, [PrismaGroup[], number]> {
+  private getObjectsTask(): (options: ListOptions) => TaskEither<GroupListError, [PrismaGroupWithCount[], number]> {
     // Wrap in a lambda to preserve the "this" context
     return options =>
       TE.tryCatchK(
         () => {
           const data = this.dbClient.group.findMany({
             take: options.take,
-            skip: options.skip
+            skip: options.skip,
+            orderBy: {
+              createdAt: "asc"
+            },
+            include: {
+              _count: {
+                select: {
+                  groupMemberships: true
+                }
+              }
+            }
           })
           const stats = this.dbClient.group.count()
 
@@ -144,44 +184,4 @@ export class GroupDbRepository implements GroupRepository {
         }
       )()
   }
-}
-
-function mapToDomain(dbObject: PrismaGroup): Either<GroupValidationError, Group> {
-  const object: Group = {
-    createdAt: dbObject.createdAt,
-    description: dbObject.description,
-    id: dbObject.id,
-    name: dbObject.name,
-    updatedAt: dbObject.updatedAt
-  }
-
-  return pipe(object, GroupFactory.validate)
-}
-
-/**
- * Chainable that can be used to convert a non-defined value to a Left value.
- * @param onNullable Left value to return if the value is null or undefined.
- */
-const chainNullableToLeft =
-  <L>(onNullable: L) =>
-  <A, B>(taskEither: TE.TaskEither<A, B | null | undefined>): TE.TaskEither<A | L, NonNullable<B>> => {
-    return pipe(
-      taskEither,
-      // chainEitherKW applies an Either-returning function to the Right value
-      // and automatically widens the Error channel (A | L)
-      TE.chainEitherKW(
-        // E.fromNullable creates an Either from a potentially nullable value.
-        // It takes the error value (or a function returning it) as the first argument.
-        // If the value passed to the resulting function is null/undefined, it returns Left(onNullable()).
-        // Otherwise, it returns Right(value).
-        E.fromNullable(onNullable)
-      )
-    )
-  }
-
-/**
- * Type guard to check if all elements are of type Right
- */
-function areAllRights<A, B>(arr: Array<Either<A, B>>): arr is Array<E.Right<B>> {
-  return arr.every(E.isRight)
 }

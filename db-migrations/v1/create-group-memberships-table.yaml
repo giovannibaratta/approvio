@@ -1,0 +1,55 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-group-memberships-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: group_memberships
+            columns:
+              - column:
+                  name: group_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_group_memberships_group
+                    references: groups(id)
+                    deleteCascade: true
+              - column:
+                  name: user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_group_memberships_user
+                    references: users(id)
+                    deleteCascade: true
+              - column:
+                  name: role
+                  type: varchar
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            tableName: group_memberships
+            columnNames: group_id, user_id
+            constraintName: pk_group_memberships
+        - createIndex:
+            tableName: group_memberships
+            indexName: idx_group_memberships_group_id
+            columns:
+              - column:
+                  name: group_id
+        - createIndex:
+            tableName: group_memberships
+            indexName: idx_group_memberships_user_id
+            columns:
+              - column:
+                  name: user_id

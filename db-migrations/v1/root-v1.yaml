@@ -3,3 +3,7 @@ databaseChangeLog:
       file: v1/set-db-as-template.yaml
   - include:
       file: v1/create-groups-table.yaml
+  - include:
+      file: v1/create-users-table.yaml
+  - include:
+      file: v1/create-group-memberships-table.yaml

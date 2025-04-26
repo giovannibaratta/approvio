@@ -1,3 +1,5 @@
 export * from "./database-client"
 export * from "./group.repository"
 export * from "./errors"
+export * from "./user.repository"
+export * from "./group-membership.repository"

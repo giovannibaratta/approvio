@@ -1,10 +1,10 @@
 openapi: 3.0.0
 info:
   title: Workflow Approval System API
-  description: API for a SaaS platform that allows customers to manage approvals for generic workflows
+  description: API for a SaaS platform that allows customers to manage approvals for generic workflows, users, and groups.
   version: 1.0.0
 servers:
-  - url: https://api.workflowapproval.com/v1
+  - url: https://approvio.com/api/v1
     description: Production server
 paths:
   /workflows:
@@ -194,6 +194,106 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /users:
+    post:
+      summary: Create a new user
+      description: Creates a new user in the system.
+      operationId: createUser
+      tags:
+        - Users
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserCreate"
+      responses:
+        "201":
+          description: User created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          description: User with this email already exists
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+    get:
+      summary: List users
+      description: Returns a list of users, optionally filtered by group ID.
+      operationId: listUsers
+      tags:
+        - Users
+      parameters:
+        - name: groupId
+          in: query
+          description: Filter users by the group they belong to.
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Number of results per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/User"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /users/{userId}:
+    get:
+      summary: Get user details
+      description: Returns the details of a specific user by their ID.
+      operationId: getUser
+      tags:
+        - Users
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          description: The unique identifier (UUID) of the user.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: User details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /approvers:
     post:
       summary: Register a new approver
@@ -334,7 +434,7 @@ paths:
         - name: groupIdentifier
           in: path
           required: true
-          description: The unique identifier of the group
+          description: The unique identifier of the group or the name of the group
           schema:
             type: string
       responses:
@@ -347,7 +447,7 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
         "404":
-          $ref: "#/components/responses/NotFound"  
+          $ref: "#/components/responses/NotFound"
 
   /groups/{groupIdentifier}/approvers:
     post:
@@ -360,7 +460,7 @@ paths:
         - name: groupIdentifier
           in: path
           required: true
-          description: The unique identifier of the group
+          description: The unique identifier of the group or the name of the group
           schema:
             type: string
       requestBody:
@@ -389,7 +489,6 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
-
     get:
       summary: List approvers in a group
       description: Returns a list of approvers that belong to a specific group
@@ -403,6 +502,7 @@ paths:
           description: The unique identifier of the group
           schema:
             type: string
+            format: uuid
         - name: page
           in: query
           description: Page number for pagination
@@ -434,8 +534,305 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /groups/{groupId}/entities:
+    get:
+      summary: List entities in a group
+      description: Returns a list of all entities (users, systems, etc.) that belong to a specific group, including their roles.
+      operationId: listGroupEntities
+      tags:
+        - Groups
+        - Users
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          description: The unique identifier (UUID) of the group.
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          description: Page number for pagination
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          description: Number of results per page
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: List of entities in the group
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - entities
+                  - pagination
+                properties:
+                  entities:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/GroupMembership"
+                  pagination:
+                    $ref: "#/components/schemas/Pagination"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    post:
+      summary: Add group entities
+      description: Add entities (like users) within a specific group.
+      operationId: addGroupEntities
+      tags:
+        - Groups
+        - Users
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          description: The unique identifier (UUID) of the group.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddGroupEntitiesRequest"
+      responses:
+        "200":
+          description: Entities managed successfully. Returns updated group details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "409":
+          description: Conflict detected (e.g., adding an existing member).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+    delete:
+      summary: Remove group entities
+      description: Remove entities (like users) from a specific group.
+      operationId: removeGroupEntities
+      tags:
+        - Groups
+        - Users
+      parameters:
+        - name: groupId
+          in: path
+          required: true
+          description: The unique identifier (UUID) of the group.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RemoveGroupEntitiesRequest"
+      responses:
+        "200":
+          description: Entities removed successfully. Returns updated group details.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Group"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+        "409":
+          description: Conflict detected (e.g. removing a non-member).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
+
 components:
   schemas:
+    UserCreate:
+      type: object
+      required:
+        - displayName
+        - email
+      properties:
+        displayName:
+          type: string
+          description: User's display name.
+          example: "Alex Chen"
+        email:
+          type: string
+          format: email
+          description: User's email address (must be unique).
+          example: "alex.chen@example.com"
+
+    User:
+      type: object
+      required:
+        - id
+        - displayName
+        - email
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Internal unique identifier for the user.
+          readOnly: true
+          example: "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+        displayName:
+          type: string
+          description: User's display name.
+          example: "Alex Chen"
+        email:
+          type: string
+          format: email
+          description: User's email address.
+          example: "alex.chen@example.com"
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the user was created.
+          readOnly: true
+          example: "2025-04-15T12:05:00Z"
+
+    EntityReference:
+      type: object
+      required:
+        - entityType
+        - entityId
+      properties:
+        entityType:
+          type: string
+          x-extensible-enum:
+            - human
+            - system
+          description: The type of the entity being referenced.
+          example: human
+        entityId:
+          type: string
+          format: uuid
+          description: The unique identifier (UUID) of the entity.
+          example: "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+
+    EntityMembershipAdd:
+      type: object
+      required:
+        - entity
+        - role
+      properties:
+        entity:
+          $ref: "#/components/schemas/EntityReference"
+        role:
+          type: string
+          x-extensible-enum:
+            - approver
+            - admin
+            - owner
+            - auditor
+          description: Role assigned to the entity within the group.
+          example: "approver"
+
+    EntityMembershipRemove:
+      type: object
+      required:
+        - entity
+      properties:
+        entity:
+          $ref: "#/components/schemas/EntityReference"
+
+    EntityMembershipUpdate:
+      type: object
+      required:
+        - entity
+        - role
+      properties:
+        entity:
+          $ref: "#/components/schemas/EntityReference"
+        role:
+          type: string
+          x-extensible-enum:
+            - approver
+            - admin
+            - owner
+            - auditor
+          description: New role to assign to the entity within the group.
+          example: "admin"
+
+    AddGroupEntitiesRequest:
+      type: object
+      description: Defines operations to add entities within a group
+      required:
+        - entities
+      properties:
+        entities:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntityMembershipAdd"
+          description: List of entities to add to the group.
+
+    RemoveGroupEntitiesRequest:
+      type: object
+      description: Defines operations to remove entities within a group
+      required:
+        - entities
+      properties:
+        entities:
+          type: array
+          items:
+            $ref: "#/components/schemas/EntityMembershipRemove"
+          description: List of entities to remove from the group.
+
+    GroupMembership:
+      type: object
+      required:
+        - entity
+        - role
+        - addedAt
+      properties:
+        entity:
+          $ref: "#/components/schemas/EntityReference"
+        role:
+          type: string
+          x-extensible-enum:
+            - approver
+            - admin
+            - owner
+            - auditor
+          description: The role of the entity within the group.
+          example: "approver"
+        addedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the entity was added to the group.
+          readOnly: true
+          example: "2025-04-16T10:30:00Z"
+
     WorkflowCreate:
       type: object
       required:
@@ -636,11 +1033,6 @@ components:
         description:
           type: string
           description: Description of the group
-        approverIds:
-          type: array
-          items:
-            type: string
-          description: Initial list of approver IDs to add to the group
 
     Group:
       type: object
@@ -653,6 +1045,7 @@ components:
       properties:
         id:
           type: string
+          format: uuid
           description: Unique identifier for the group
         name:
           type: string

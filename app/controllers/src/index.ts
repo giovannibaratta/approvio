@@ -1,2 +1,4 @@
 export * from "./groups/"
+export * from "./users/"
 export * from "./controllers.module"
+export * from "./shared/types"

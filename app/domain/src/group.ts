@@ -1,10 +1,13 @@
 import {Either, left, right, isLeft} from "fp-ts/Either"
 import {randomUUID} from "crypto"
+import {hasOwnProperty} from "./utils"
 
 export const NAME_MAX_LENGTH = 512
 export const DESCRIPTION_MAX_LENGTH = 2048
 
-export interface Group {
+export type Group = Readonly<PrivateGroup>
+
+interface PrivateGroup {
   id: string
   name: string
   description: string | null
@@ -12,14 +15,24 @@ export interface Group {
   updatedAt: Date
 }
 
+export interface GroupWithEntititesCount extends Group {
+  readonly entitiesCount: number
+}
+
+export type GroupProps = keyof Group | keyof GroupWithEntititesCount
+
 export type CreateGroupRequest = Omit<Group, "id" | "createdAt" | "updatedAt">
-export type GroupValidationError = NameValidationError | TimestampValidationError | DescriptionValidationError
+export type GroupValidationError =
+  | NameValidationError
+  | TimestampValidationError
+  | DescriptionValidationError
+  | "entities_count_invalid"
 export type TimestampValidationError = "update_before_create"
 export type NameValidationError = "name_empty" | "name_too_long" | "name_invalid_characters"
 export type DescriptionValidationError = "description_too_long"
 
 export class GroupFactory {
-  static validate(data: Group): Either<GroupValidationError, Group> {
+  static validate<T extends Group>(data: T): Either<GroupValidationError, T> {
     return GroupFactory.createGroup(data)
   }
 
@@ -36,24 +49,26 @@ export class GroupFactory {
     return GroupFactory.validate(group)
   }
 
-  private static createGroup(data: Group): Either<GroupValidationError, Group> {
+  private static createGroup<T extends Group>(data: T): Either<GroupValidationError, T> {
     const nameValidation = validateGroupName(data.name)
     const descriptionValidation = data.description ? validateGroupDescription(data.description) : right(null)
+    const additionalProps: Partial<Record<GroupProps, unknown>> = {}
 
-    if (isLeft(nameValidation)) {
-      return nameValidation
+    if (isLeft(nameValidation)) return nameValidation
+    if (isLeft(descriptionValidation)) return descriptionValidation
+    if (data.createdAt > data.updatedAt) return left("update_before_create")
+
+    if (isGroupWithEntititesCount(data)) {
+      if (data.entitiesCount < 0) return left("entities_count_invalid")
+      additionalProps.entitiesCount = data.entitiesCount
     }
 
-    if (isLeft(descriptionValidation)) {
-      return descriptionValidation
-    }
-
-    if (data.createdAt > data.updatedAt) {
-      return left("update_before_create")
-    }
-
-    return right({...data, name: nameValidation.right, description: descriptionValidation.right})
+    return right({...data, name: nameValidation.right, description: descriptionValidation.right, ...additionalProps})
   }
+}
+
+function isGroupWithEntititesCount(group: Group): group is GroupWithEntititesCount {
+  return hasOwnProperty(group, "entitiesCount") && typeof group.entitiesCount === "number"
 }
 
 function validateGroupDescription(description: string): Either<DescriptionValidationError, string> {

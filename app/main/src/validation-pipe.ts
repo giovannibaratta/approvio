@@ -1,4 +1,5 @@
 import {BadRequestException, ValidationPipe} from "@nestjs/common"
+import {generateErrorPayload} from "@controllers/error"
 
 export const globalValidationPipe = new ValidationPipe({
   stopAtFirstError: false,
@@ -7,15 +8,10 @@ export const globalValidationPipe = new ValidationPipe({
 
     for (const error of errors) {
       for (const key in error.constraints) {
-        mappedErrors.push({
-          code: "VALIDATION_ERROR",
-          message: error.constraints[key]
-        })
+        mappedErrors.push(error.constraints[key])
       }
     }
 
-    return new BadRequestException({
-      errors: mappedErrors
-    })
+    return new BadRequestException(generateErrorPayload("VALIDATION_ERROR", mappedErrors.join(",")))
   }
 })

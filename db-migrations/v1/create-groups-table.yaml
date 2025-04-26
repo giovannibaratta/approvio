@@ -31,6 +31,11 @@ databaseChangeLog:
                   type: timestamp
                   constraints:
                     nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
         - addUniqueConstraint:
             tableName: groups
             columnNames: name

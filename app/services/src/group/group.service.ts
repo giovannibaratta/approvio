@@ -1,4 +1,4 @@
-import {CreateGroupRequest, Group, GroupFactory, GroupValidationError} from "@domain"
+import {CreateGroupRequest, Group, GroupFactory, GroupValidationError, GroupWithEntititesCount} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
@@ -11,6 +11,8 @@ import {
   GroupGetError as RepoGetError,
   GroupListError as RepoListError
 } from "./interfaces"
+import {Versioned} from "@services/shared/utils"
+import {isUUID} from "@services/shared/validation"
 
 export type CreateGroupError = GroupValidationError | RepoCreateError
 export type GetGroupError = RepoGetError
@@ -32,12 +34,12 @@ export class GroupService {
     return pipe(request, GroupFactory.newGroup, TE.fromEither, TE.chainW(persistGroup))
   }
 
-  getGroupByIdentifier(groupIdentifier: string): TaskEither<GetGroupError, Group> {
-    const isUuid = groupIdentifier.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)
+  getGroupByIdentifier(groupIdentifier: string): TaskEither<GetGroupError, Versioned<GroupWithEntititesCount>> {
+    const isUuid = isUUID(groupIdentifier)
 
     // Wrap in a lambda to preserve the "this" context
     const repoGetGroup = (value: string) =>
-      isUuid !== null ? this.groupRepo.getGroupById(value) : this.groupRepo.getGroupByName(value)
+      isUuid ? this.groupRepo.getGroupById(value) : this.groupRepo.getGroupByName(value)
 
     return pipe(groupIdentifier, TE.right, TE.chainW(repoGetGroup))
   }
