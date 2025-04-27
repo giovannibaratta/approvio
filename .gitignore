@@ -40,3 +40,6 @@ generated
 prompts
 scripts/combine-files.sh
 combined_output.txt
+
+.vscode/*
+!.vscode/extensions.json
