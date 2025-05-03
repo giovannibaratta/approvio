@@ -1,4 +1,4 @@
-import {HumandGroupMembershipRole, MembershipFactory, MembershipValidationError} from "@domain"
+import {HumanGroupMembershipRole, MembershipFactory, MembershipValidationError} from "@domain"
 import {randomUUID} from "crypto"
 
 import {Either, isLeft, isRight} from "fp-ts/lib/Either"
@@ -18,7 +18,7 @@ describe("MembershipFactory", () => {
   describe("good cases", () => {
     it("should return right with a Membership object for valid user and role", () => {
       // Given
-      const data = {user: randomUUID(), role: HumandGroupMembershipRole.ADMIN.toString()}
+      const data = {user: randomUUID(), role: HumanGroupMembershipRole.ADMIN.toString()}
 
       // When
       const result = MembershipFactory.newMembership(data)
@@ -27,7 +27,7 @@ describe("MembershipFactory", () => {
       expect(isRight(result)).toBe(true)
       const membership = unwrapRight(result)
       expect(membership.entity).toBe(data.user)
-      expect(membership.role).toBe(HumandGroupMembershipRole.ADMIN)
+      expect(membership.role).toBe(HumanGroupMembershipRole.ADMIN)
       expect(membership.createdAt).toBeInstanceOf(Date)
       expect(membership.updatedAt).toBeInstanceOf(Date)
       expect(membership.getEntityId()).toBe(data.user)
@@ -37,7 +37,7 @@ describe("MembershipFactory", () => {
   describe("bad cases", () => {
     it("should return left with 'invalid_uuid' for an invalid user string", () => {
       // Given
-      const data = {user: "invalid-user-id", role: HumandGroupMembershipRole.ADMIN.toString()}
+      const data = {user: "invalid-user-id", role: HumanGroupMembershipRole.ADMIN.toString()}
 
       // When
       const result = MembershipFactory.newMembership(data)

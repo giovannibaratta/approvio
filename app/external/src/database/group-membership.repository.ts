@@ -10,7 +10,8 @@ import {
   AddMembershipRepoRequest,
   AddMembershipResult,
   GetGroupMembershipResult,
-  GroupGetError,
+  GetGroupRepoError,
+  GetGroupWithMembershipRepo,
   GroupMembershipRepository,
   MembershipAddError,
   MembershipRemoveError,
@@ -35,10 +36,10 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
   constructor(private readonly dbClient: DatabaseClient) {}
 
   getGroupWithMembershipById(
-    groupId: string
-  ): TaskEither<GroupGetError | MembershipValidationError, GetGroupMembershipResult> {
+    data: GetGroupWithMembershipRepo
+  ): TaskEither<GetGroupRepoError | MembershipValidationError, GetGroupMembershipResult> {
     return pipe(
-      groupId,
+      data,
       TE.right,
       TE.chainW(this.getObjectTask()),
       chainNullableToLeft("group_not_found" as const),
@@ -66,15 +67,15 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
     )
   }
 
-  private getObjectTask(): (groupId: string) => TaskEither<GroupGetError, GroupWithMemberships | null> {
+  private getObjectTask(): (
+    data: GetGroupWithMembershipRepo
+  ) => TaskEither<GetGroupRepoError, GroupWithMemberships | null> {
     // Wrap in a lambda to preserve the "this" context
-    return id =>
+    return data =>
       TE.tryCatchK(
         () =>
           this.dbClient.group.findUnique({
-            where: {
-              id
-            },
+            where: this.buildWhereClauseGetObjectTask(data),
             include: {
               groupMemberships: true
             }
@@ -84,6 +85,23 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
           return "unknown_error" as const
         }
       )()
+  }
+
+  private buildWhereClauseGetObjectTask(data: GetGroupWithMembershipRepo): Prisma.GroupWhereUniqueInput {
+    let groupMembershipClause: Prisma.GroupWhereUniqueInput["groupMemberships"] = undefined
+
+    if (data.onlyIfMember) {
+      groupMembershipClause = {
+        some: {
+          userId: data.onlyIfMember.userId
+        }
+      }
+    }
+
+    return {
+      id: data.groupId,
+      groupMemberships: groupMembershipClause
+    }
   }
 
   private createMembershipTask(): (

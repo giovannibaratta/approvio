@@ -1,4 +1,6 @@
-import {User as UserApi, UserCreate} from "@api" // Assuming these API models exist
+import {User as UserApi, UserCreate} from "@api"
+import {GetAuthenticatedUser} from "@app/auth"
+import {User} from "@domain"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Res} from "@nestjs/common"
 import {UserService} from "@services"
 import {Response} from "express"
@@ -20,12 +22,16 @@ export class UsersController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async createUser(@Body() request: UserCreate, @Res({passthrough: true}) response: Response): Promise<void> {
+  async createUser(
+    @Body() request: UserCreate,
+    @Res({passthrough: true}) response: Response,
+    @GetAuthenticatedUser() requestor: User
+  ): Promise<void> {
     // Wrap service call in lambda
     const serviceCreateUser = (req: Parameters<UserService["createUser"]>[0]) => this.userService.createUser(req)
 
     const eitherUserId = await pipe(
-      request,
+      {requestor, userData: request},
       createUserApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceCreateUser),

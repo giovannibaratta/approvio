@@ -69,6 +69,7 @@ model User {
   displayName      String            @map("display_name") @db.VarChar
   email            String            @unique(map: "users_email_unique") @db.VarChar
   createdAt        DateTime          @map("created_at") @db.Timestamp(6)
+  orgRole          String            @map("org_role") @db.VarChar
   occ              BigInt
   groupMemberships GroupMembership[]
 

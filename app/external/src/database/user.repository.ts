@@ -1,17 +1,16 @@
-import {User, UserFactory, UserValidationError} from "@domain"
+import {User} from "@domain"
 import {isPrismaUniqueConstraintError} from "@external/database/errors"
 import {Injectable, Logger} from "@nestjs/common"
 import {User as PrismaUser} from "@prisma/client"
 import {UserCreateError, UserGetError, UserRepository} from "@services"
-import {Either} from "fp-ts/lib/Either"
+import {Versioned} from "@services/shared/utils"
 import * as TE from "fp-ts/lib/TaskEither"
 import {TaskEither} from "fp-ts/lib/TaskEither"
 import {pipe} from "fp-ts/lib/function"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 import {DatabaseClient} from "./database-client"
-import {Versioned} from "@services/shared/utils"
+import {mapToDomainVersionedUser, mapUserToDomain} from "./shared"
 import {chainNullableToLeft} from "./utils"
-import {mapToDomainVersionedUser} from "./shared"
 
 interface Identifier {
   identifier: string
@@ -56,7 +55,8 @@ export class UserDbRepository implements UserRepository {
               displayName: user.displayName,
               email: user.email,
               createdAt: user.createdAt,
-              occ: POSTGRES_BIGINT_LOWER_BOUND
+              occ: POSTGRES_BIGINT_LOWER_BOUND,
+              orgRole: user.orgRole
             }
           }),
         error => {
@@ -85,15 +85,4 @@ export class UserDbRepository implements UserRepository {
         }
       )()
   }
-}
-
-export function mapUserToDomain(dbObject: PrismaUser): Either<UserValidationError, User> {
-  const object: User = {
-    id: dbObject.id,
-    displayName: dbObject.displayName,
-    email: dbObject.email,
-    createdAt: dbObject.createdAt
-  }
-
-  return pipe(object, UserFactory.validate)
 }

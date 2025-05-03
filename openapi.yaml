@@ -680,6 +680,7 @@ components:
       required:
         - displayName
         - email
+        - orgRole
       properties:
         displayName:
           type: string
@@ -690,7 +691,13 @@ components:
           format: email
           description: User's email address (must be unique).
           example: "alex.chen@example.com"
-
+        orgRole:
+          type: string
+          x-extensible-enum:
+            - admin
+            - member
+          description: Role assigned to the user within the group.
+          example: "member"
     User:
       type: object
       required:

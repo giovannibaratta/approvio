@@ -1,10 +1,10 @@
-import {Group, User} from "@domain"
+import {getStringAsEnumMember, Group, User} from "@domain"
 import {isUUID} from "class-validator"
 import * as A from "fp-ts/Array"
 import {Applicative, Either, isLeft, left, right} from "fp-ts/lib/Either"
 import {pipe} from "fp-ts/lib/function"
 
-export enum HumandGroupMembershipRole {
+export enum HumanGroupMembershipRole {
   ADMIN = "admin",
   APPROVER = "approver",
   AUDITOR = "auditor",
@@ -20,15 +20,15 @@ type UserValidationReferenceError = "invalid_uuid"
 
 interface PrivateMembership {
   entity: User | UserReference
-  role: HumandGroupMembershipRole
+  role: HumanGroupMembershipRole
   createdAt: Date
   updatedAt: Date
 
   getEntityId(): string
 }
 
-function validateRole(role: string): Either<RoleValidationError, HumandGroupMembershipRole> {
-  const enumRole = getStringAsEnumMember(role, HumandGroupMembershipRole)
+function validateRole(role: string): Either<RoleValidationError, HumanGroupMembershipRole> {
+  const enumRole = getStringAsEnumMember(role, HumanGroupMembershipRole)
   if (enumRole === undefined) return left("invalid_role")
   return right(enumRole)
 }
@@ -69,8 +69,8 @@ function getEntityId(entity: PrivateMembership["entity"]): string {
 }
 
 export type GroupManagerValidationError = "duplicated_membership"
-export type RemoveMemebershipError = "membership_not_found"
-export type UpdateMembershipError = RemoveMemebershipError
+export type RemoveMembershipError = "membership_not_found"
+export type UpdateMembershipError = RemoveMembershipError
 
 export class GroupManager {
   private readonly memberships: Map<string, Membership> = new Map()
@@ -104,7 +104,13 @@ export class GroupManager {
     return this.memberships.has(entityId)
   }
 
-  removeMembership(entityId: string): Either<RemoveMemebershipError, GroupManager> {
+  isEntityInMembershipWithRole(entityId: string, role: HumanGroupMembershipRole | HumanGroupMembershipRole[]): boolean {
+    const membership = this.memberships.get(entityId)
+    const admissibleRoles = Array.isArray(role) ? role : [role]
+    return membership !== undefined && admissibleRoles.includes(membership.role)
+  }
+
+  removeMembership(entityId: string): Either<RemoveMembershipError, GroupManager> {
     if (!this.isEntityInMembership(entityId)) return left("membership_not_found")
 
     this.memberships.delete(entityId)
@@ -117,6 +123,21 @@ export class GroupManager {
     const eitherAdd = this.addMembership(membership)
     if (isLeft(eitherAdd)) throw new Error("Unexpected error: membership should have been added successfully")
     return right(this)
+  }
+
+  canUpdateMembership(requestor: User): boolean {
+    return this.canAdministerGroup(requestor)
+  }
+
+  canRemoveMembership(requestor: User): boolean {
+    return this.canAdministerGroup(requestor)
+  }
+
+  private canAdministerGroup(requestor: User): boolean {
+    return (
+      requestor.orgRole === "admin" ||
+      this.isEntityInMembershipWithRole(requestor.id, [HumanGroupMembershipRole.OWNER, HumanGroupMembershipRole.ADMIN])
+    )
   }
 
   static createGroupManager(
@@ -132,16 +153,4 @@ export class GroupManager {
 
     return right(new GroupManager(group, memberships))
   }
-}
-
-function getStringAsEnumMember<T extends Record<string, string>>(str: string, enumType: T): T[keyof T] | undefined {
-  const enumValues = Object.values(enumType)
-
-  if (enumValues.includes(str)) {
-    // If it does, we can safely cast the string back to the enum type.
-    // This cast is safe because we've just verified the string is one of the enum's values.
-    return str as T[keyof T]
-  }
-
-  return undefined
 }

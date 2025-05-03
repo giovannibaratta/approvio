@@ -1,11 +1,13 @@
-import {CreateUserRequest, User, UserFactory, isEmail} from "@domain"
+import {User, UserFactory, isEmail} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
+import * as E from "fp-ts/Either"
 import {TaskEither} from "fp-ts/TaskEither"
 import {USER_REPOSITORY_TOKEN, UserCreateError, UserGetError, UserRepository} from "./interfaces"
 import {Versioned} from "@services/shared/utils"
 import {isUUID} from "@services/shared/validation"
+import {RequestorAwareRequest} from "@services/shared/types"
 
 @Injectable()
 export class UserService {
@@ -18,7 +20,12 @@ export class UserService {
     // Wrap repository call in a lambda to preserve "this" context
     const persistUser = (user: User) => this.userRepo.createUser(user)
 
-    return pipe(request, UserFactory.newUser, TE.fromEither, TE.chainW(persistUser))
+    const validateRequest = (req: CreateUserRequest) => {
+      if (req.requestor.orgRole !== "admin") return E.left("requestor_not_authorized" as const)
+      return UserFactory.newUser(req.userData)
+    }
+
+    return pipe(request, validateRequest, TE.fromEither, TE.chainW(persistUser))
   }
 
   getUserByIdentifier(userIdentifier: string): TaskEither<UserGetError, Versioned<User>> {
@@ -33,4 +40,8 @@ export class UserService {
 
     return pipe(userIdentifier, TE.right, TE.chainW(repoGetUser))
   }
+}
+
+export interface CreateUserRequest extends RequestorAwareRequest {
+  userData: Parameters<typeof UserFactory.newUser>[0]
 }

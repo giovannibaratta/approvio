@@ -1,14 +1,21 @@
-import {Group, GroupValidationError, GroupWithEntititesCount} from "@domain"
+import {Group, GroupValidationError, GroupWithEntitiesCount, ListGroupsFilter, User} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 import {PaginationError, UnknownError} from "@services/error"
 import {Versioned} from "@services/shared/utils"
 
-export type GroupCreateError = "group_already_exists" | GroupValidationError | UnknownError
-export type GroupGetError = "group_not_found" | GroupValidationError | UnknownError
-export type GroupListError = PaginationError | GroupValidationError | UnknownError
+export type CreateGroupRepoError =
+  | "group_already_exists"
+  | GroupValidationError
+  | UnknownError
+  | "user_not_found"
+  | "invalid_uuid"
+  | "entity_already_in_group"
+
+export type GetGroupRepoError = "group_not_found" | "not_a_member" | GroupValidationError | UnknownError
+export type ListGroupsRepoError = PaginationError | GroupValidationError | UnknownError
 
 export interface ListGroupsResult {
-  groups: GroupWithEntititesCount[]
+  groups: GroupWithEntitiesCount[]
   total: number
   page: number
   limit: number
@@ -17,8 +24,31 @@ export interface ListGroupsResult {
 export const GROUP_REPOSITORY_TOKEN = "GROUP_REPOSITORY_TOKEN"
 
 export interface GroupRepository {
-  createGroup(group: Group): TaskEither<GroupCreateError, Group>
-  getGroupById(groupId: string): TaskEither<GroupGetError, Versioned<GroupWithEntititesCount>>
-  getGroupByName(groupName: string): TaskEither<GroupGetError, Versioned<GroupWithEntititesCount>>
-  listGroups(page: number, limit: number): TaskEither<GroupListError, ListGroupsResult>
+  createGroupWithOwner(data: CreateGroupWithOwnerRepo): TaskEither<CreateGroupRepoError, Group>
+  getGroupById(data: GetGroupByIdRepo): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>>
+  getGroupByName(data: GetGroupByNameRepo): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>>
+  listGroups(data: ListGroupsRepo): TaskEither<ListGroupsRepoError, ListGroupsResult>
+}
+
+export interface CreateGroupWithOwnerRepo {
+  group: Group
+  requestor: User
+}
+
+export interface ListGroupsRepo {
+  filter: ListGroupsFilter
+  page: number
+  limit: number
+}
+
+interface GetGroupRepo {
+  onlyIfMember: false | {userId: string}
+}
+
+export interface GetGroupByIdRepo extends GetGroupRepo {
+  groupId: string
+}
+
+export interface GetGroupByNameRepo extends GetGroupRepo {
+  groupName: string
 }

@@ -6,6 +6,7 @@ import {
   ListGroups200Response,
   RemoveGroupEntitiesRequest
 } from "@api"
+import {GetAuthenticatedUser} from "@app/auth"
 import {
   createGroupApiToServiceModel,
   generateErrorResponseForAddUserToGroup,
@@ -19,7 +20,7 @@ import {
   mapListGroupMembersResultToApi,
   mapListGroupsResultToApi
 } from "@controllers/groups/groups.mappers"
-import {CreateGroupRequest} from "@domain"
+import {User} from "@domain"
 import {
   Body,
   Controller,
@@ -34,13 +35,23 @@ import {
   Query,
   Res
 } from "@nestjs/common"
-import {AddMembersToGroupRequest, GroupMembershipService, GroupService, RemoveMembersFromGroupRequest} from "@services"
+import {
+  AddMembersToGroupRequest,
+  CreateGroupRequest,
+  GetGroupByIdentifierRequest,
+  GetGroupWithMembershipRequest,
+  GroupMembershipService,
+  GroupService,
+  ListGroupsRequest,
+  RemoveMembersFromGroupRequest
+} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
 import * as TE from "fp-ts/lib/TaskEither"
 
 export const GROUPS_ENDPOINT_ROOT = "groups"
+const MAX_LIMIT = 100
 
 @Controller(GROUPS_ENDPOINT_ROOT)
 export class GroupsController {
@@ -51,14 +62,21 @@ export class GroupsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async createGroup(@Body() request: GroupCreate, @Res({passthrough: true}) response: Response): Promise<void> {
+  async createGroup(
+    @Body() request: GroupCreate,
+    @Res({passthrough: true}) response: Response,
+    @GetAuthenticatedUser() requestor: User
+  ): Promise<void> {
+    // Wrap service call in lambda, passing the creatorId
     const serviceCreateGroup = (req: CreateGroupRequest) => this.groupService.createGroup(req)
+
     const eitherGroup = await pipe(
-      request,
+      {request, requestor},
       createGroupApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceCreateGroup)
     )()
+
     if (isLeft(eitherGroup)) throw generateErrorResponseForCreateGroup(eitherGroup.left, "Failed to create group")
     const group = eitherGroup.right
     const location = `${response.req.protocol}://${response.req.headers.host}${response.req.url}/${group.id}`
@@ -69,24 +87,24 @@ export class GroupsController {
   @HttpCode(HttpStatus.OK)
   async listGroups(
     @Query("page", new DefaultValuePipe(1), ParseIntPipe) page: number,
-    @Query("limit", new DefaultValuePipe(20), ParseIntPipe) limit: number
+    @Query("limit", new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @GetAuthenticatedUser() requestor: User
   ): Promise<ListGroups200Response> {
     // Wrap in a lambda to preserve the "this" context
-    const serviceListGroups = (p: number, l: number) => this.groupService.listGroups(p, l)
-    const eitherGroups = await pipe(
-      {page, limit},
-      TE.right,
-      TE.chainW(query => serviceListGroups(query.page, query.limit))
-    )()
+    const serviceListGroups = (request: ListGroupsRequest) => this.groupService.listGroups(request)
+    const eitherGroups = await pipe({page, limit, requestor}, TE.right, TE.chainW(serviceListGroups))()
     if (isLeft(eitherGroups)) throw generateErrorResponseForListGroups(eitherGroups.left, "Failed to list groups")
     return mapListGroupsResultToApi(eitherGroups.right)
   }
 
   @Get(":groupIdentifier")
   @HttpCode(HttpStatus.OK)
-  async getGroup(@Param("groupIdentifier") groupIdentifier: string): Promise<GroupApi> {
-    const serviceGetGroup = (id: string) => this.groupService.getGroupByIdentifier(id)
-    const eitherGroup = await pipe(groupIdentifier, TE.right, TE.chainW(serviceGetGroup))()
+  async getGroup(
+    @Param("groupIdentifier") groupIdentifier: string,
+    @GetAuthenticatedUser() requestor: User
+  ): Promise<GroupApi> {
+    const serviceGetGroup = (request: GetGroupByIdentifierRequest) => this.groupService.getGroupByIdentifier(request)
+    const eitherGroup = await pipe({groupIdentifier, requestor}, TE.right, TE.chainW(serviceGetGroup))()
     if (isLeft(eitherGroup))
       throw generateErrorResponseForGetGroup(eitherGroup.left, `Failed to get group ${groupIdentifier}`)
     return mapGroupWithEntitiesCountToApi(eitherGroup.right)
@@ -97,12 +115,21 @@ export class GroupsController {
   async listUsersInGroup(
     @Param("groupId") groupId: string,
     @Query("page", new DefaultValuePipe(1), ParseIntPipe) page: number,
-    @Query("limit", new DefaultValuePipe(20), ParseIntPipe) limit: number
+    @Query("limit", new DefaultValuePipe(20), ParseIntPipe) limit: number,
+    @GetAuthenticatedUser() requestor: User
   ): Promise<ListGroupEntities200Response> {
-    const serviceListUsers = (gId: string) => this.groupMembershipService.getGroupByIdentifierWithMembership(gId)
+    // This should be moved to the service layer once the pagination will be implemented
+    if (page <= 0)
+      throw generateErrorResponseForListUsersInGroup("invalid_page", `Failed to list members for group ${groupId}`)
+    if (limit <= 0)
+      throw generateErrorResponseForListUsersInGroup("invalid_limit", `Failed to list members for group ${groupId}`)
+    if (limit > 100) limit = MAX_LIMIT
+
+    const serviceListUsers = (request: GetGroupWithMembershipRequest) =>
+      this.groupMembershipService.getGroupByIdentifierWithMembership(request)
 
     const eitherResult = await pipe(
-      groupId,
+      {groupId, requestor},
       TE.right,
       TE.chainW(serviceListUsers),
       TE.map(data => mapListGroupMembersResultToApi(page, limit, data))
@@ -118,18 +145,19 @@ export class GroupsController {
   @HttpCode(HttpStatus.OK)
   async addGroupEntities(
     @Param("groupId") groupId: string,
-    @Body() request: AddGroupEntitiesRequest
+    @Body() request: AddGroupEntitiesRequest,
+    @GetAuthenticatedUser() requestor: User
   ): Promise<GroupApi> {
     const addUserRequests: AddMembersToGroupRequest = {
       groupId,
       members: request.entities.map(entity => ({
         userId: entity.entity.entityId,
         role: entity.role
-      }))
+      })),
+      requestor
     }
 
-    const serviceAddMembers = (request: AddMembersToGroupRequest) =>
-      this.groupMembershipService.addMembersToGroup(request)
+    const serviceAddMembers = (req: AddMembersToGroupRequest) => this.groupMembershipService.addMembersToGroup(req)
 
     const eitherResult = await pipe(
       addUserRequests,
@@ -149,17 +177,19 @@ export class GroupsController {
   @HttpCode(HttpStatus.OK)
   async removeEntitiesFromGroup(
     @Param("groupId") groupId: string,
-    @Body() request: RemoveGroupEntitiesRequest
+    @Body() request: RemoveGroupEntitiesRequest,
+    @GetAuthenticatedUser() requestor: User
   ): Promise<GroupApi> {
     const removeUserRequests: RemoveMembersFromGroupRequest = {
       groupId,
       members: request.entities.map(entity => ({
         userId: entity.entity.entityId
-      }))
+      })),
+      requestor
     }
 
-    const serviceRemoveUser = (request: RemoveMembersFromGroupRequest) =>
-      this.groupMembershipService.removeEntitiesFromGroup(request)
+    const serviceRemoveUser = (req: RemoveMembersFromGroupRequest) =>
+      this.groupMembershipService.removeEntitiesFromGroup(req)
 
     const eitherResult = await pipe(
       removeUserRequests,

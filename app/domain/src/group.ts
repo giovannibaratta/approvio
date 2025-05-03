@@ -1,6 +1,7 @@
 import {Either, left, right, isLeft} from "fp-ts/Either"
 import {randomUUID} from "crypto"
 import {hasOwnProperty} from "./utils"
+import {OrgRole, User} from "@domain"
 
 export const NAME_MAX_LENGTH = 512
 export const DESCRIPTION_MAX_LENGTH = 2048
@@ -15,13 +16,12 @@ interface PrivateGroup {
   updatedAt: Date
 }
 
-export interface GroupWithEntititesCount extends Group {
+export interface GroupWithEntitiesCount extends Group {
   readonly entitiesCount: number
 }
 
-export type GroupProps = keyof Group | keyof GroupWithEntititesCount
+export type GroupProps = keyof Group | keyof GroupWithEntitiesCount
 
-export type CreateGroupRequest = Omit<Group, "id" | "createdAt" | "updatedAt">
 export type GroupValidationError =
   | NameValidationError
   | TimestampValidationError
@@ -36,7 +36,7 @@ export class GroupFactory {
     return GroupFactory.createGroup(data)
   }
 
-  static newGroup(data: CreateGroupRequest): Either<GroupValidationError, Group> {
+  static newGroup(data: Omit<Group, "id" | "createdAt" | "updatedAt">): Either<GroupValidationError, Group> {
     const uuid = randomUUID()
     const now = new Date()
     const group: Group = {
@@ -58,7 +58,7 @@ export class GroupFactory {
     if (isLeft(descriptionValidation)) return descriptionValidation
     if (data.createdAt > data.updatedAt) return left("update_before_create")
 
-    if (isGroupWithEntititesCount(data)) {
+    if (isGroupWithEntitiesCount(data)) {
       if (data.entitiesCount < 0) return left("entities_count_invalid")
       additionalProps.entitiesCount = data.entitiesCount
     }
@@ -67,7 +67,7 @@ export class GroupFactory {
   }
 }
 
-function isGroupWithEntititesCount(group: Group): group is GroupWithEntititesCount {
+function isGroupWithEntitiesCount(group: Group): group is GroupWithEntitiesCount {
   return hasOwnProperty(group, "entitiesCount") && typeof group.entitiesCount === "number"
 }
 
@@ -89,4 +89,25 @@ function validateGroupName(name: string): Either<NameValidationError, string> {
   }
 
   return right(name)
+}
+
+export type ListGroupsFilter = ListAllGroupsFilter | ListGroupsWhereRequestorIsMemberFilter
+
+interface ListAllGroupsFilter {
+  type: "all"
+}
+interface ListGroupsWhereRequestorIsMemberFilter {
+  type: "direct_member"
+  requestor: User
+}
+
+export class ListFilterFactory {
+  static generateListFiltersForRequestor(requestor: User): ListGroupsFilter {
+    switch (requestor.orgRole) {
+      case OrgRole.ADMIN:
+        return {type: "all"} as ListAllGroupsFilter
+      case OrgRole.MEMBER:
+        return {type: "direct_member", requestor} as ListGroupsWhereRequestorIsMemberFilter
+    }
+  }
 }

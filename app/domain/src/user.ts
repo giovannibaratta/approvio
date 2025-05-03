@@ -1,9 +1,14 @@
 import {Either, left, right, isLeft} from "fp-ts/Either"
 import {randomUUID} from "crypto"
-import {isEmail} from "./utils"
+import {getStringAsEnumMember, isEmail} from "./utils"
 
 export const DISPLAY_NAME_MAX_LENGTH = 255
 export const EMAIL_MAX_LENGTH = 255
+
+export enum OrgRole {
+  ADMIN = "admin",
+  MEMBER = "member"
+}
 
 export type User = Readonly<PrivateUser>
 
@@ -12,9 +17,8 @@ interface PrivateUser {
   displayName: string
   email: string
   createdAt: Date
+  orgRole: OrgRole
 }
-
-export type CreateUserRequest = Omit<User, "id" | "createdAt">
 
 export type UserValidationError =
   | "display_name_empty"
@@ -22,6 +26,7 @@ export type UserValidationError =
   | "email_empty"
   | "email_too_long"
   | "email_invalid"
+  | "org_role_invalid"
 
 export class UserFactory {
   /**
@@ -29,7 +34,7 @@ export class UserFactory {
    * @param data The User object to validate.
    * @returns Either a validation error or the valid User object.
    */
-  static validate(data: User): Either<UserValidationError, User> {
+  static validate(data: Parameters<typeof UserFactory.createUser>[0]): Either<UserValidationError, User> {
     return UserFactory.createUser(data)
   }
 
@@ -39,13 +44,20 @@ export class UserFactory {
    * @param data Request data for creating a user.
    * @returns Either a validation error or the newly created User object.
    */
-  static newUser(data: CreateUserRequest): Either<UserValidationError, User> {
+  static newUser(
+    data: Omit<User, "id" | "createdAt" | "orgRole"> & {orgRole: string}
+  ): Either<UserValidationError, User> {
     const uuid = randomUUID()
     const now = new Date()
+
+    const validatedOrgRole = validateOrgRole(data.orgRole)
+    if (isLeft(validatedOrgRole)) return validatedOrgRole
+
     const user: User = {
       ...data,
       id: uuid,
-      createdAt: now
+      createdAt: now,
+      orgRole: validatedOrgRole.right
     }
 
     return UserFactory.validate(user)
@@ -56,17 +68,22 @@ export class UserFactory {
    * @param data The User object data.
    * @returns Either a validation error or the validated User object.
    */
-  private static createUser(data: User): Either<UserValidationError, User> {
+  private static createUser(
+    data: Omit<User, "orgRole"> & {readonly orgRole: OrgRole | string}
+  ): Either<UserValidationError, User> {
     const displayNameValidation = validateDisplayName(data.displayName)
     const emailValidation = validateEmail(data.email)
+    const orgRoleValidation = typeof data.orgRole === "string" ? validateOrgRole(data.orgRole) : right(data.orgRole)
 
     if (isLeft(displayNameValidation)) return displayNameValidation
     if (isLeft(emailValidation)) return emailValidation
+    if (isLeft(orgRoleValidation)) return orgRoleValidation
 
     return right({
       ...data,
       displayName: displayNameValidation.right,
-      email: emailValidation.right
+      email: emailValidation.right,
+      orgRole: orgRoleValidation.right
     })
   }
 }
@@ -84,4 +101,10 @@ function validateEmail(email: string): Either<UserValidationError, string> {
   if (!isEmail(email)) return left("email_invalid")
 
   return right(email)
+}
+
+function validateOrgRole(orgRole: string): Either<UserValidationError, OrgRole> {
+  const enumOrgRole = getStringAsEnumMember(orgRole, OrgRole)
+  if (enumOrgRole === undefined) return left("org_role_invalid")
+  return right(enumOrgRole)
 }
