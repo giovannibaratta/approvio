@@ -740,35 +740,76 @@ components:
           description: Last update timestamp
 
     ApprovalRules:
+      description: >
+        Configuration of approval rules. Can be a boolean operator (AND/OR)
+        combining nested rules, or a specific requirement (minimum count from
+        a group).
+      oneOf:
+        - $ref: '#/components/schemas/AndRule'
+        - $ref: '#/components/schemas/OrRule'
+        - $ref: '#/components/schemas/GroupRequirementRule'
+      discriminator:
+        propertyName: type
+        mapping:
+          AND: '#/components/schemas/AndRule'
+          OR: '#/components/schemas/OrRule'
+          GROUP_REQUIREMENT: '#/components/schemas/GroupRequirementRule'
+
+    AndRule:
       type: object
-      description: Configuration of approval rules
+      description: An AND rule requiring all nested rules to be satisfied.
       required:
         - type
+        - rules
       properties:
         type:
           type: string
-          enum: [AND, OR, MIN_COUNT]
-          description: Type of rule to apply to the approvers or groups
-        minCount:
-          type: integer
-          description: Minimum number of approvals required (when type is MIN_COUNT)
-        approvers:
-          type: array
-          description: List of individual approvers
-          items:
-            type: string
-            description: Approver ID
-        groups:
-          type: array
-          description: List of approver groups
-          items:
-            type: string
-            description: Group ID
+          enum: [AND]
+          description: Rule type (AND)
         rules:
           type: array
-          description: Nested rules for complex approval flows
+          description: List of rules that must all be satisfied. Cannot be empty.
+          minItems: 1
           items:
             $ref: "#/components/schemas/ApprovalRules"
+
+    OrRule:
+      type: object
+      description: An OR rule requiring at least one of the nested rules to be satisfied.
+      required:
+        - type
+        - rules
+      properties:
+        type:
+          type: string
+          enum: [OR]
+          description: Rule type (OR)
+        rules:
+          type: array
+          description: List of rules where at least one must be satisfied. Cannot be empty.
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ApprovalRules"
+
+    GroupRequirementRule:
+      type: object
+      description: Requires a minimum number of approvals from a specific group.
+      required:
+        - type
+        - groupId
+        - minCount
+      properties:
+        type:
+          type: string
+          enum: [GROUP_REQUIREMENT]
+          description: Rule type (GROUP_REQUIREMENT)
+        groupId:
+          type: string
+          description: ID of the approver group.
+        minCount:
+          type: integer
+          description: Minimum number of approvals required from the group. Must be at least 1.
+          minimum: 1
 
     ApprovalStatus:
       type: object
