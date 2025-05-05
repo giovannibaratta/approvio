@@ -1,0 +1,8 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+When writing tests:
+- use the Given:[context], When, Expect pattern
+- group tests in bad cases, good cases 
