@@ -30,9 +30,7 @@ describe("Users API", () => {
       imports: [AppModule]
     })
       .overrideProvider(Config)
-      .useValue({
-        getDbConnectionUrl: () => isolatedDb
-      })
+      .useValue({getDbConnectionUrl: () => isolatedDb})
       .compile()
 
     app = module.createNestApplication()

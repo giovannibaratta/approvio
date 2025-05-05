@@ -19,7 +19,9 @@
       "@external": ["app/external/src"],
       "@external/*": ["app/external/src/*"],
       "@controllers": ["app/controllers/src"],
-      "@controllers/*": ["app/controllers/src/*"]
+      "@controllers/*": ["app/controllers/src/*"],
+      "@utils": ["app/utils/src"],
+      "@utils/*": ["app/utils/src/*"]
     }
   },
   "exclude": ["node_modules", "build"]

@@ -3,7 +3,7 @@ import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError, GetGroupError} from "@services"
 import {RequestorAwareRequest} from "@services/shared/types"
 import {Versioned} from "@services/shared/utils"
-import {isUUID} from "@services/shared/validation"
+import {isUUIDv4} from "@utils"
 import * as A from "fp-ts/Array"
 import * as E from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
@@ -39,10 +39,7 @@ export class GroupMembershipService {
 
   getGroupByIdentifierWithMembership(
     request: GetGroupWithMembershipRequest
-  ): TaskEither<
-    "invalid_page" | "invalid_limit" | GetGroupError | MembershipValidationError,
-    GetGroupMembershipResult
-  > {
+  ): TaskEither<GetGroupError | MembershipValidationError, GetGroupMembershipResult> {
     const {requestor} = request
     const onlyIfMember = requestor.orgRole === "admin" ? false : {userId: requestor.id}
 
@@ -52,7 +49,7 @@ export class GroupMembershipService {
     const validateRequest = (
       req: GetGroupWithMembershipRequest
     ): TE.TaskEither<"invalid_uuid", GetGroupWithMembershipRequest> => {
-      if (!isUUID(req.groupId)) return TE.left("invalid_uuid" as const)
+      if (!isUUIDv4(req.groupId)) return TE.left("invalid_uuid" as const)
       return TE.right(req)
     }
 
@@ -82,7 +79,7 @@ export class GroupMembershipService {
     if (isLeft(membershipsToAdd)) return TE.left(membershipsToAdd.left)
 
     const validateRequest = (req: AddMembersToGroupRequest): TE.TaskEither<"invalid_uuid", AddMembersToGroupRequest> =>
-      isUUID(req.groupId) ? TE.right(req) : TE.left("invalid_uuid" as const)
+      isUUIDv4(req.groupId) ? TE.right(req) : TE.left("invalid_uuid" as const)
 
     const fetchGroupMembershipData = pipe(
       request,
@@ -125,7 +122,9 @@ export class GroupMembershipService {
     const validateRequest = (
       req: RemoveMembersFromGroupRequest
     ): TE.TaskEither<"invalid_uuid", RemoveMembersFromGroupRequest> =>
-      isUUID(req.groupId) && req.members.every(m => isUUID(m.userId)) ? TE.right(req) : TE.left("invalid_uuid" as const)
+      isUUIDv4(req.groupId) && req.members.every(m => isUUIDv4(m.userId))
+        ? TE.right(req)
+        : TE.left("invalid_uuid" as const)
 
     const fetchGroupMembershipData = pipe(
       request,

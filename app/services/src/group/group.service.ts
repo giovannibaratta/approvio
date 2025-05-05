@@ -4,7 +4,7 @@ import {AuthorizationError} from "@services/error"
 import {MembershipAddError} from "@services/group-membership"
 import {RequestorAwareRequest} from "@services/shared/types"
 import {Versioned} from "@services/shared/utils"
-import {isUUID} from "@services/shared/validation"
+import {isUUIDv4} from "@utils"
 import * as E from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
@@ -52,7 +52,7 @@ export class GroupService {
     request: GetGroupByIdentifierRequest
   ): TaskEither<GetGroupError, Versioned<GroupWithEntitiesCount>> {
     const {groupIdentifier, requestor} = request
-    const isUuid = isUUID(groupIdentifier)
+    const isUuid = isUUIDv4(groupIdentifier)
 
     const onlyIfMember = requestor.orgRole === "admin" ? false : {userId: requestor.id}
 

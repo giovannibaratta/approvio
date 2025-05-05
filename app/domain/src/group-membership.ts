@@ -1,5 +1,5 @@
-import {getStringAsEnumMember, Group, User} from "@domain"
-import {isUUID} from "class-validator"
+import {Group, User} from "@domain"
+import {getStringAsEnum, isUUIDv4} from "@utils"
 import * as A from "fp-ts/Array"
 import {Applicative, Either, isLeft, left, right} from "fp-ts/lib/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -28,13 +28,13 @@ interface PrivateMembership {
 }
 
 function validateRole(role: string): Either<RoleValidationError, HumanGroupMembershipRole> {
-  const enumRole = getStringAsEnumMember(role, HumanGroupMembershipRole)
+  const enumRole = getStringAsEnum(role, HumanGroupMembershipRole)
   if (enumRole === undefined) return left("invalid_role")
   return right(enumRole)
 }
 
 function validateUserReference(userReference: string): Either<UserValidationReferenceError, UserReference> {
-  if (!isUUID(userReference, 4)) return left("invalid_uuid")
+  if (!isUUIDv4(userReference)) return left("invalid_uuid")
   return right(userReference)
 }
 

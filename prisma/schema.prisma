@@ -75,3 +75,16 @@ model User {
 
   @@map("users")
 }
+
+model Workflow {
+  id          String   @id @db.Uuid
+  name        String   @unique(map: "workflows_name_unique") @db.VarChar
+  description String?  @db.VarChar
+  rule        Json
+  createdAt   DateTime @map("created_at") @db.Timestamp(6)
+  updatedAt   DateTime @map("updated_at") @db.Timestamp(6)
+  status      String   @db.VarChar
+  occ         BigInt
+
+  @@map("workflows")
+}

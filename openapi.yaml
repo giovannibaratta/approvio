@@ -26,7 +26,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Workflow"
+                type: object
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -44,11 +44,6 @@ paths:
           schema:
             type: string
             enum: [PENDING, APPROVED, DECLINED, CANCELED]
-        - name: approvableBy
-          in: query
-          description: Filter workflows that can be approved by this entity ID
-          schema:
-            type: string
         - name: page
           in: query
           description: Page number for pagination
@@ -206,7 +201,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UserCreate"
+              type: object
       responses:
         "201":
           description: User created successfully
@@ -306,7 +301,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/GroupCreate"
+              type: object
       responses:
         "201":
           description: Group created successfully
@@ -693,7 +688,7 @@ components:
       type: object
       required:
         - name
-        - approvalRules
+        - approvalRule
       properties:
         name:
           type: string
@@ -704,8 +699,8 @@ components:
         metadata:
           type: object
           description: Additional custom metadata for the workflow
-        approvalRules:
-          $ref: "#/components/schemas/ApprovalRules"
+        approvalRule:
+          $ref: "#/components/schemas/ApprovalRule"
 
     Workflow:
       type: object
@@ -723,10 +718,8 @@ components:
           type: string
           enum: [PENDING, APPROVED, DECLINED, CANCELED]
           description: Current status of the workflow
-        approvalRules:
-          $ref: "#/components/schemas/ApprovalRules"
-        approvalStatus:
-          $ref: "#/components/schemas/ApprovalStatus"
+        approvalRule:
+          $ref: "#/components/schemas/ApprovalRule"
         metadata:
           type: object
           description: Additional custom metadata for the workflow
@@ -739,21 +732,21 @@ components:
           format: date-time
           description: Last update timestamp
 
-    ApprovalRules:
+    ApprovalRule:
       description: >
         Configuration of approval rules. Can be a boolean operator (AND/OR)
         combining nested rules, or a specific requirement (minimum count from
         a group).
       oneOf:
-        - $ref: '#/components/schemas/AndRule'
-        - $ref: '#/components/schemas/OrRule'
-        - $ref: '#/components/schemas/GroupRequirementRule'
+        - $ref: "#/components/schemas/AndRule"
+        - $ref: "#/components/schemas/OrRule"
+        - $ref: "#/components/schemas/GroupRequirementRule"
       discriminator:
         propertyName: type
         mapping:
-          AND: '#/components/schemas/AndRule'
-          OR: '#/components/schemas/OrRule'
-          GROUP_REQUIREMENT: '#/components/schemas/GroupRequirementRule'
+          AND: "#/components/schemas/AndRule"
+          OR: "#/components/schemas/OrRule"
+          GROUP_REQUIREMENT: "#/components/schemas/GroupRequirementRule"
 
     AndRule:
       type: object
@@ -771,7 +764,7 @@ components:
           description: List of rules that must all be satisfied. Cannot be empty.
           minItems: 1
           items:
-            $ref: "#/components/schemas/ApprovalRules"
+            $ref: "#/components/schemas/ApprovalRule"
 
     OrRule:
       type: object
@@ -789,7 +782,7 @@ components:
           description: List of rules where at least one must be satisfied. Cannot be empty.
           minItems: 1
           items:
-            $ref: "#/components/schemas/ApprovalRules"
+            $ref: "#/components/schemas/ApprovalRule"
 
     GroupRequirementRule:
       type: object
@@ -810,58 +803,6 @@ components:
           type: integer
           description: Minimum number of approvals required from the group. Must be at least 1.
           minimum: 1
-
-    ApprovalStatus:
-      type: object
-      description: Current status of the approval process
-      properties:
-        completedApprovals:
-          type: array
-          items:
-            type: object
-            properties:
-              approverId:
-                type: string
-              groupId:
-                type: string
-                description: Group ID if approval was made as part of a group
-              timestamp:
-                type: string
-                format: date-time
-              comments:
-                type: string
-        declinations:
-          type: array
-          items:
-            type: object
-            properties:
-              approverId:
-                type: string
-              groupId:
-                type: string
-                description: Group ID if declination was made as part of a group
-              timestamp:
-                type: string
-                format: date-time
-              reason:
-                type: string
-        pendingApprovers:
-          type: array
-          items:
-            type: string
-            description: IDs of approvers that still need to approve
-        pendingGroups:
-          type: array
-          items:
-            type: string
-            description: IDs of groups that still need to approve
-        isComplete:
-          type: boolean
-          description: Whether the approval process is complete
-        completedAt:
-          type: string
-          format: date-time
-          description: When the approval process completed
 
     GroupCreate:
       type: object

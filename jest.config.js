@@ -20,7 +20,9 @@ const mainSettings = {
     "@services": "<rootDir>/app/services/src",
     "@external/(.*)": "<rootDir>/app/external/src/$1",
     "@external": "<rootDir>/app/external/src",
-    "@api": "<rootDir>/generated/openapi/model/models"
+    "@api": "<rootDir>/generated/openapi/model/models",
+    "@utils/(.*)": "<rootDir>/app/utils/src/$1",
+    "@utils": "<rootDir>/app/utils/src"
   }
 }
 

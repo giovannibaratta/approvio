@@ -1,7 +1,7 @@
 import {PrismaClient} from "@prisma/client"
 import {randomUUID} from "crypto"
 
-/** Create a duplicated database using the reference database as teamplte
+/** Create a duplicated database using the reference database as template
  * @returns the connection string to the new database
  */
 export async function prepareDatabase(): Promise<string> {
@@ -25,6 +25,7 @@ export async function prepareDatabase(): Promise<string> {
 }
 
 export async function cleanDatabase(client: PrismaClient): Promise<void> {
+  await client.workflow.deleteMany()
   await client.groupMembership.deleteMany()
   await client.group.deleteMany()
   await client.user.deleteMany()

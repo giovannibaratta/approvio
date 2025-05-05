@@ -1,4 +1,4 @@
-import {User, UserFactory, isEmail} from "@domain"
+import {User, UserFactory} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
@@ -6,7 +6,7 @@ import * as E from "fp-ts/Either"
 import {TaskEither} from "fp-ts/TaskEither"
 import {USER_REPOSITORY_TOKEN, UserCreateError, UserGetError, UserRepository} from "./interfaces"
 import {Versioned} from "@services/shared/utils"
-import {isUUID} from "@services/shared/validation"
+import {isEmail, isUUIDv4} from "@utils"
 import {RequestorAwareRequest} from "@services/shared/types"
 
 @Injectable()
@@ -29,7 +29,7 @@ export class UserService {
   }
 
   getUserByIdentifier(userIdentifier: string): TaskEither<UserGetError, Versioned<User>> {
-    const isUuid = isUUID(userIdentifier)
+    const isUuid = isUUIDv4(userIdentifier)
     const isValidEmail = isEmail(userIdentifier)
 
     if (!isUuid && !isValidEmail) return TE.left("invalid_identifier")

@@ -1,0 +1,51 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-approval-workflows-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: workflows
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: varchar
+              - column:
+                  name: rule
+                  type: jsonb
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: varchar
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: workflows
+            columnNames: name
+            constraintName: workflows_name_unique

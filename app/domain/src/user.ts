@@ -1,6 +1,6 @@
 import {Either, left, right, isLeft} from "fp-ts/Either"
 import {randomUUID} from "crypto"
-import {getStringAsEnumMember, isEmail} from "./utils"
+import {getStringAsEnum, isEmail} from "@utils"
 
 export const DISPLAY_NAME_MAX_LENGTH = 255
 export const EMAIL_MAX_LENGTH = 255
@@ -104,7 +104,7 @@ function validateEmail(email: string): Either<UserValidationError, string> {
 }
 
 function validateOrgRole(orgRole: string): Either<UserValidationError, OrgRole> {
-  const enumOrgRole = getStringAsEnumMember(orgRole, OrgRole)
+  const enumOrgRole = getStringAsEnum(orgRole, OrgRole)
   if (enumOrgRole === undefined) return left("org_role_invalid")
   return right(enumOrgRole)
 }

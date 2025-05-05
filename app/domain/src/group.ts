@@ -1,6 +1,6 @@
 import {Either, left, right, isLeft} from "fp-ts/Either"
 import {randomUUID} from "crypto"
-import {hasOwnProperty} from "./utils"
+import {hasOwnProperty} from "@utils/validation"
 import {OrgRole, User} from "@domain"
 
 export const NAME_MAX_LENGTH = 512

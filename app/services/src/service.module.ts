@@ -4,8 +4,9 @@ import {PersistenceModule} from "@external"
 import {GroupMembershipService} from "./group-membership"
 import {UserService} from "./user"
 import {DebugService} from "./debug"
+import {WorkflowService} from "./workflow"
 
-const services = [GroupService, GroupMembershipService, UserService, DebugService]
+const services = [GroupService, GroupMembershipService, UserService, WorkflowService, DebugService]
 
 @Module({
   imports: [PersistenceModule],

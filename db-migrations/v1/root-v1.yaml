@@ -7,3 +7,5 @@ databaseChangeLog:
       file: v1/create-users-table.yaml
   - include:
       file: v1/create-group-memberships-table.yaml
+  - include:
+      file: v1/create-workflows-table.yaml
