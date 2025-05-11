@@ -1,8 +1,11 @@
 ---
-description: 
+description: Describe the coding style that the model should adopt when writing code
 globs: 
 alwaysApply: true
 ---
+When writing code:
+- If a switch statement is used, try to use switch exhaustiveness check instead of adding default case
+
 When writing tests:
 - use the Given:[context], When, Expect pattern
 - group tests in bad cases, good cases 

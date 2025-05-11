@@ -1,0 +1,176 @@
+---
+description: Help the model understand the codebase
+globs:
+alwaysApply: true
+---
+
+// Folders to prioritize for general context.
+// The agent will look here first when trying to understand the project.
+priority {
+  app/main/src // Main application logic, entry points
+  app/services/src // Core business logic
+  app/domain/src // Domain entities and value objects
+  app/controllers/src // API request/response handling
+}
+
+// Rules for specific file types or concerns.
+// "glob" uses standard glob patterns (e.g., *, **, ?, []).
+// "category" helps the agent understand the file's purpose.
+// "associated": Describes files or folders often related to this category.
+// "ignore": Tells the agent to generally avoid these files for this category unless directly asked.
+
+// --- Application Core & Entry Points ---
+rule {
+  glob: app/main/src/**/*.{ts,json}
+  category: core-application
+  description: Main NestJS application setup, entry points, modules, and authentication.
+  associated: [
+    app/main/src/main.ts // Main bootstrap file
+    app/main/src/app.module.ts // Root application module
+    app/main/src/auth/** // Authentication logic (JWT strategy, guards)
+    nest-cli.json // NestJS CLI configuration
+    tsconfig.json // TypeScript configuration
+  ]
+}
+
+// --- API Controllers ---
+rule {
+  glob: app/controllers/src/**/*.ts
+  category: api-layer
+  description: Handles incoming HTTP requests, delegates to services, and maps data for responses. Focus on files ending with .controller.ts and .mappers.ts.
+  associated: [
+    app/controllers/src/**/*controller.ts
+    app/controllers/src/**/*mappers.ts
+    app/controllers/src/controllers.module.ts
+    app/services/src/** // Controllers often use services
+    generated/openapi/model/** // API data structures
+    openapi.yaml // API definition
+  ]
+}
+
+// --- Business Logic Services ---
+rule {
+  glob: app/services/src/**/*.ts
+  category: service-layer
+  description: Contains the core business logic of the application. Focus on files ending with .service.ts and interfaces.ts.
+  associated: [
+    app/services/src/**/*service.ts
+    app/services/src/**/interfaces.ts
+    app/services/src/service.module.ts
+    app/domain/src/** // Services operate on domain objects
+    app/external/src/database/** // Services use repositories
+  ]
+}
+
+// --- Domain Objects & Logic ---
+rule {
+  glob: app/domain/src/**/*.ts
+  category: domain-layer
+  description: Defines core business entities, value objects, and domain-specific logic/validation (e.g., User, Group, Workflow, ApprovalRule).
+  associated: [
+    app/services/src/** // Services implement use cases with domain objects
+  ]
+}
+
+// --- External Interactions (Database, Config) ---
+rule {
+  glob: app/external/src/**/*.ts
+  category: persistence-layer
+  description: Handles communication with external systems, primarily the database (Prisma repositories) and configuration management.
+  associated: [
+    app/external/src/database/**/*repository.ts
+    app/external/src/database/database-client.ts
+    app/external/src/config/config.ts
+    app/external/src/persistence.module.ts
+    prisma/schema.prisma // Prisma schema definition
+  ]
+}
+
+// --- Utility Functions ---
+rule {
+  glob: app/utils/src/**/*.ts
+  category: utilities
+  description: Contains shared utility functions for validation, enums, types, etc.
+}
+
+// --- Database Schema & Migrations ---
+rule {
+  glob: [prisma/schema.prisma, db-migrations/**/*.yaml]
+  category: database-schema
+  description: Defines the database schema (Prisma) and migration scripts (Liquibase).
+  associated: [
+    app/external/src/database/** // Repositories interact with the schema
+  ]
+}
+
+// --- API Definition & Generated Code ---
+rule {
+  glob: [openapi.yaml, generated/openapi/**/*.ts]
+  category: api-definition
+  description: OpenAPI specification and auto-generated client code (models, API interfaces). Files in 'generated/' are auto-generated and should usually not be edited directly.
+  associated: [
+    app/controllers/src/** // Controllers implement the API
+  ]
+  ignore: [
+    generated/openapi/api/** // Generated API client services, less relevant for backend changes
+    generated/openapi/.openapi-generator-ignore
+    generated/openapi/.openapi-generator/**
+  ]
+}
+
+// --- Testing ---
+rule {
+  glob: app/**/test/**/*.ts
+  category: testing
+  description: Unit and integration tests for the application. Focus on files ending with .test.ts or .spec.ts.
+  associated: [
+    jest.config.js
+  ]
+}
+rule {
+  glob: app/main/test/integration/**/*.ts
+  category: integration-testing
+  description: Integration tests focusing on API endpoints and database interactions.
+  associated: [
+    app/main/test/integration/database.ts
+    app/main/test/integration/shared/**
+    app/controllers/src/**
+    app/services/src/**
+  ]
+}
+
+// --- Configuration Files ---
+rule {
+  glob: [*.json, *.js, *.yaml, .env*, Dockerfile, .dockerignore, .prettierrc, .eslintrc.js]
+  category: configuration
+  description: Project-level configuration files (NestJS, TypeScript, ESLint, Prettier, Docker, Jest, environment variables, etc.).
+  ignore: [
+    yarn.lock // Lockfiles are usually not directly relevant for code understanding
+    package-lock.json
+  ]
+}
+
+// --- Scripts & Development Files ---
+rule {
+  glob: [scripts/**, dev-external-deps/**, DEVELOPMENT.MD, README.md, prompts/**]
+  category: development-utility
+  description: Shell scripts, Docker Compose for dev dependencies, development guides, and LLM prompts.
+}
+
+// --- General Exclusions ---
+// Files the agent should generally ignore unless specifically asked about them.
+rule {
+  glob: [
+    .vscode/**
+    .git/**
+    .yarn/**
+    node_modules/**
+    build/**
+    dist/**
+    coverage/**
+    *.log
+    *.lock
+  ]
+  category: excluded
+  description: Commonly ignored files and directories.
+}

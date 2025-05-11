@@ -1,5 +1,5 @@
 ---
-description:
+description: Describe the Persona that the model should adopt when writing code
 globs:
 alwaysApply: true
 ---
