@@ -38,12 +38,6 @@ paths:
       tags:
         - Workflows
       parameters:
-        - name: status
-          in: query
-          description: Filter workflows by status
-          schema:
-            type: string
-            enum: [PENDING, APPROVED, DECLINED, CANCELED]
         - name: page
           in: query
           description: Page number for pagination
@@ -63,6 +57,9 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                  - data
+                  - pagination
                 properties:
                   data:
                     type: array
@@ -704,6 +701,14 @@ components:
 
     Workflow:
       type: object
+      required:
+        - id
+        - name
+        - status
+        - approvalRule
+        - metadata
+        - createdAt
+        - updatedAt
       properties:
         id:
           type: string
@@ -716,7 +721,11 @@ components:
           description: Detailed description of the workflow
         status:
           type: string
-          enum: [PENDING, APPROVED, DECLINED, CANCELED]
+          x-extensible-enum:
+            - PENDING
+            - APPROVED
+            - DECLINED
+            - CANCELED
           description: Current status of the workflow
         approvalRule:
           $ref: "#/components/schemas/ApprovalRule"

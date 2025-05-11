@@ -1,18 +1,24 @@
 import {WorkflowCreate} from "@api"
 import {GetAuthenticatedUser} from "@app/auth"
 import {User} from "@domain"
-import {Body, Controller, HttpCode, HttpStatus, Post, Res} from "@nestjs/common"
+import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Res} from "@nestjs/common"
 import {CreateWorkflowRequest, WorkflowService} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
 import * as TE from "fp-ts/lib/TaskEither"
-import {createWorkflowApiToServiceModel, generateErrorResponseForCreateWorkflow} from "./workflows.mappers"
+import {
+  createWorkflowApiToServiceModel,
+  generateErrorResponseForCreateWorkflow,
+  generateErrorResponseForGetWorkflow,
+  mapWorkflowToApi
+} from "./workflows.mappers"
+import {Workflow as WorkflowApi} from "@api"
 
 export const WORKFLOWS_ENDPOINT_ROOT = "workflows"
 
 @Controller(WORKFLOWS_ENDPOINT_ROOT)
-export class WorkflowController {
+export class WorkflowsController {
   constructor(private readonly workflowService: WorkflowService) {}
 
   @Post()
@@ -40,5 +46,18 @@ export class WorkflowController {
     // Set Location header
     const location = `${response.req.protocol}://${response.req.headers.host}${response.req.url}/${workflow.id}`
     response.setHeader("Location", location)
+  }
+
+  @Get(":identifier")
+  async getWorkflow(@Param("identifier") identifier: string): Promise<WorkflowApi> {
+    const getWorkflowService = (request: string) => this.workflowService.getWorkflowByIdentifier(request)
+
+    const eitherWorkflow = await pipe(identifier, TE.right, TE.chainW(getWorkflowService), TE.map(mapWorkflowToApi))()
+
+    if (isLeft(eitherWorkflow)) {
+      throw generateErrorResponseForGetWorkflow(eitherWorkflow.left, "Failed to get workflow")
+    }
+
+    return eitherWorkflow.right
   }
 }

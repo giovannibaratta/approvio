@@ -1,22 +1,65 @@
-import {Workflow, WorkflowFactory, WorkflowValidationError} from "@domain"
+import {Workflow, WorkflowValidationError} from "@domain"
+import {DatabaseClient} from "@external/database/database-client"
+import {mapToDomainVersionedWorkflow, mapWorkflowToDomain} from "@external/database/shared"
+import {chainNullableToLeft} from "@external/database/utils"
 import {Injectable, Logger} from "@nestjs/common"
-import {CreateWorkflowRepo, CreateWorkflowRepoError, WorkflowRepository} from "@services"
+import {Workflow as PrismaWorkflow} from "@prisma/client"
+import {CreateWorkflowRepo, CreateWorkflowRepoError, WorkflowGetError, WorkflowRepository} from "@services"
+import {Versioned} from "@services/shared/utils"
+import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
-import {pipe} from "fp-ts/function"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
-import {DatabaseClient} from "./database-client"
-import {Either} from "fp-ts/Either"
-import * as E from "fp-ts/Either"
-import {Prisma, Workflow as PrismaWorkflow} from "@prisma/client"
 import {isPrismaUniqueConstraintError} from "./errors"
+
+interface Identifier {
+  identifier: string
+  type: "id" | "name"
+}
 
 @Injectable()
 export class WorkflowDbRepository implements WorkflowRepository {
   constructor(private readonly dbClient: DatabaseClient) {}
 
   createWorkflow(data: CreateWorkflowRepo): TaskEither<CreateWorkflowRepoError | WorkflowValidationError, Workflow> {
-    return pipe(data, TE.right, TE.chainW(this.persistWorkflow()), TE.chainEitherKW(mapToDomainWorkflow))
+    return pipe(data, TE.right, TE.chainW(this.persistWorkflow()), TE.chainEitherKW(mapWorkflowToDomain))
+  }
+
+  getWorkflowById(workflowId: string): TaskEither<WorkflowGetError, Versioned<Workflow>> {
+    const identifier: Identifier = {type: "id", identifier: workflowId}
+    return this.getWorkflow(identifier)
+  }
+
+  getWorkflowByName(name: string): TaskEither<WorkflowGetError, Versioned<Workflow>> {
+    const identifier: Identifier = {type: "name", identifier: name}
+    return this.getWorkflow(identifier)
+  }
+
+  private getWorkflow(identifier: Identifier): TaskEither<WorkflowGetError, Versioned<Workflow>> {
+    return pipe(
+      identifier,
+      TE.right,
+      TE.chainW(this.getObjectTask()),
+      chainNullableToLeft("workflow_not_found" as const),
+      TE.chainEitherKW(mapToDomainVersionedWorkflow)
+    )
+  }
+
+  private getObjectTask(): (identifier: Identifier) => TaskEither<WorkflowGetError, PrismaWorkflow | null> {
+    return identifier =>
+      TE.tryCatchK(
+        () =>
+          this.dbClient.workflow.findUnique({
+            where: {
+              id: identifier.type === "id" ? identifier.identifier : undefined,
+              name: identifier.type === "name" ? identifier.identifier : undefined
+            }
+          }),
+        error => {
+          Logger.error(`Error while retrieving workflow by ${identifier.type}. Unknown error`, error)
+          return "unknown_error" as const
+        }
+      )()
   }
 
   private persistWorkflow(): (data: CreateWorkflowRepo) => TaskEither<CreateWorkflowRepoError, PrismaWorkflow> {
@@ -42,28 +85,4 @@ export class WorkflowDbRepository implements WorkflowRepository {
         }
       )()
   }
-}
-
-export function mapToDomainWorkflow(dbObject: PrismaWorkflow): Either<WorkflowValidationError, Workflow> {
-  const eitherRule = prismaJsonToJson(dbObject.rule)
-
-  if (E.isLeft(eitherRule)) return eitherRule
-
-  const object = {
-    createdAt: dbObject.createdAt,
-    description: dbObject.description ?? undefined,
-    id: dbObject.id,
-    name: dbObject.name,
-    updatedAt: dbObject.updatedAt,
-    rule: eitherRule.right,
-    status: dbObject.status,
-    occ: dbObject.occ
-  }
-
-  return pipe(object, WorkflowFactory.validate)
-}
-
-function prismaJsonToJson(prismaJson: Prisma.JsonValue): Either<"rule_invalid", JSON> {
-  if (prismaJson === null) return E.left("rule_invalid")
-  return E.right(JSON.parse(JSON.stringify(prismaJson)))
 }

@@ -1,15 +1,12 @@
 import {Workflow, WorkflowFactory, WorkflowValidationError} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
-import {pipe} from "fp-ts/function"
-import * as TE from "fp-ts/TaskEither"
+import {WORKFLOW_REPOSITORY_TOKEN, WorkflowGetError, WorkflowRepository} from "./interfaces"
 import {TaskEither} from "fp-ts/TaskEither"
-import {
-  CreateWorkflowError,
-  CreateWorkflowRepo,
-  CreateWorkflowRequest,
-  WORKFLOW_REPOSITORY_TOKEN,
-  WorkflowRepository
-} from "./interfaces"
+import * as TE from "fp-ts/TaskEither"
+import {pipe} from "fp-ts/function"
+import {Versioned} from "@services/shared/utils"
+import {isUUIDv4} from "@utils"
+import {CreateWorkflowError, CreateWorkflowRepo, CreateWorkflowRequest} from "./interfaces"
 
 @Injectable()
 export class WorkflowService {
@@ -34,5 +31,15 @@ export class WorkflowService {
       TE.map(workflow => ({workflow, requestor: request.requestor})),
       TE.chainW(persistWorkflow)
     )
+  }
+
+  getWorkflowByIdentifier(identifier: string): TaskEither<WorkflowGetError, Versioned<Workflow>> {
+    const isUuid = isUUIDv4(identifier)
+
+    // Wrap repository calls in lambdas to preserve 'this'
+    const repoGetWorkflow = (value: string) =>
+      isUuid ? this.workflowRepo.getWorkflowById(value) : this.workflowRepo.getWorkflowByName(value)
+
+    return pipe(identifier, TE.right, TE.chainW(repoGetWorkflow))
   }
 }

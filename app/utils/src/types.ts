@@ -1,0 +1,23 @@
+import {TaskEither} from "fp-ts/TaskEither"
+
+/**
+ * Extracts the Left type from the TaskEither return type of a specific class method.
+ * @template ClassType The class constructor type.
+ * @template MethodName The name of the method on the class instance.
+ */
+export type ExtractLeftFromMethod<
+  ClassType extends new (...args: any[]) => any, // Constraint: ensure it's a constructor
+  MethodName extends keyof InstanceType<ClassType> // Constraint: ensure MethodName is a key of the instance
+> = ExtractReturnType<ClassType, MethodName> extends TaskEither<infer E, any> ? E : never
+
+/**
+ * Extracts the return type of a method on a class instance.
+ * @template ClassType The class constructor type.
+ * @template MethodName The name of the method on the class instance.
+ */
+type ExtractReturnType<
+  ClassType extends new (...args: any[]) => any, // Constraint: ensure it's a constructor
+  MethodName extends keyof InstanceType<ClassType> // Constraint: ensure MethodName is a key of the instance
+> =
+  // Get the return type of the specified method
+  ReturnType<InstanceType<ClassType>[MethodName]>

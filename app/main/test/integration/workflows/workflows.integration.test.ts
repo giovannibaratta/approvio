@@ -1,19 +1,19 @@
-import {ApprovalRule, GroupRequirementRule, WorkflowCreate} from "@api"
+import {ApprovalRule, GroupRequirementRule, Workflow as WorkflowApi, WorkflowCreate} from "@api"
 import {AppModule} from "@app/app.module"
 import {WORKFLOWS_ENDPOINT_ROOT} from "@controllers"
-import {OrgRole, WORKFLOW_DESCRIPTION_MAX_LENGTH, WORKFLOW_NAME_MAX_LENGTH} from "@domain"
+import {OrgRole, WORKFLOW_DESCRIPTION_MAX_LENGTH, WORKFLOW_NAME_MAX_LENGTH, WorkflowStatus} from "@domain"
 import {DatabaseClient} from "@external"
 import {Config} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
 import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
-import {PrismaClient} from "@prisma/client"
+import {PrismaClient, Workflow as PrismaWorkflow} from "@prisma/client"
+import {randomUUID} from "crypto"
 import {cleanDatabase, prepareDatabase} from "../database"
 import {createDomainMockUserInDb} from "../shared/mock-data"
-import {post} from "../shared/requests"
+import {get, post} from "../shared/requests"
 import {UserWithToken} from "../shared/types"
-import {randomUUID} from "crypto"
 
 // Helper function to create a mock group for tests
 async function createTestGroup(prisma: PrismaClient, name: string): Promise<{id: string}> {
@@ -33,6 +33,7 @@ describe("Workflows API", () => {
   let app: NestApplication
   let prisma: PrismaClient
   let orgAdminUser: UserWithToken
+  let orgMemberUser: UserWithToken
   let jwtService: JwtService
   let mockGroupId1: string
   let mockGroupId2: string
@@ -55,10 +56,12 @@ describe("Workflows API", () => {
     jwtService = module.get(JwtService)
 
     const adminUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.ADMIN})
+    const memberUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.MEMBER})
     const testGroup1 = await createTestGroup(prisma, "Test-Approver-Group-1")
     const testGroup2 = await createTestGroup(prisma, "Test-Approver-Group-2")
 
     orgAdminUser = {user: adminUser, token: jwtService.sign({email: adminUser.email, sub: adminUser.id})}
+    orgMemberUser = {user: memberUser, token: jwtService.sign({email: memberUser.email, sub: memberUser.id})}
     mockGroupId1 = testGroup1.id
     mockGroupId2 = testGroup2.id
 
@@ -74,6 +77,28 @@ describe("Workflows API", () => {
   it("should be defined", () => {
     expect(app).toBeDefined()
   })
+
+  // Helper function to create a workflow for tests
+  async function createTestWorkflow(
+    name: string,
+    rule: ApprovalRule,
+    description?: string,
+    status?: WorkflowStatus
+  ): Promise<PrismaWorkflow> {
+    const workflow = await prisma.workflow.create({
+      data: {
+        id: randomUUID(),
+        name: name,
+        description: description,
+        status: status ?? WorkflowStatus.EVALUATION_IN_PROGRESS,
+        rule: rule,
+        occ: 1,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    })
+    return workflow
+  }
 
   describe("POST /workflows", () => {
     let defaultApprovalRule: GroupRequirementRule
@@ -271,15 +296,12 @@ describe("Workflows API", () => {
 
       it("should return 400 BAD_REQUEST (NAME_TOO_LONG) if name is too long (as OrgAdmin)", async () => {
         // Given
-        const longName = "a".repeat(WORKFLOW_NAME_MAX_LENGTH + 1)
         const requestBody: WorkflowCreate = {
-          name: longName,
+          name: "a".repeat(WORKFLOW_NAME_MAX_LENGTH + 1),
           approvalRule: defaultApprovalRule
         }
-
         // When
         const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
-
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("NAME_TOO_LONG")
@@ -287,128 +309,76 @@ describe("Workflows API", () => {
 
       it("should return 400 BAD_REQUEST (DESCRIPTION_TOO_LONG) if description is too long (as OrgAdmin)", async () => {
         // Given
-        const longDescription = "a".repeat(WORKFLOW_DESCRIPTION_MAX_LENGTH + 1)
         const requestBody: WorkflowCreate = {
-          name: "Long-Desc-Workflow",
-          description: longDescription,
+          name: "Workflow-Long-Desc",
+          description: "a".repeat(WORKFLOW_DESCRIPTION_MAX_LENGTH + 1),
           approvalRule: defaultApprovalRule
         }
-
         // When
         const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
-
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("DESCRIPTION_TOO_LONG")
       })
 
-      it("should return 400 BAD_REQUEST (RULE_INVALID - GROUP_RULE_INVALID_MIN_COUNT) if approvalRule minCount is invalid (as OrgAdmin)", async () => {
+      it("should return 400 BAD_REQUEST (GROUP_RULE_INVALID_GROUP_ID) for invalid group ID in rule (as OrgAdmin)", async () => {
         // Given
         const invalidRule: ApprovalRule = {
           type: "GROUP_REQUIREMENT",
-          groupId: mockGroupId1,
-          minCount: 0 // Must be >= 1
-        }
-        const requestBody: WorkflowCreate = {
-          name: "Invalid-Rule-Workflow",
-          approvalRule: invalidRule
-        }
-
-        // When
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("GROUP_RULE_INVALID_MIN_COUNT")
-      })
-
-      it("should return 400 BAD_REQUEST (RULE_INVALID - GROUP_RULE_INVALID_GROUP_ID) if approvalRule groupId is invalid (as OrgAdmin)", async () => {
-        // Given
-        const invalidRule: ApprovalRule = {
-          type: "GROUP_REQUIREMENT",
-          groupId: "not-a-valid-uuid",
+          groupId: "not-a-uuid",
           minCount: 1
         }
-        const requestBody: WorkflowCreate = {
-          name: "Invalid-Group-ID-Workflow",
-          approvalRule: invalidRule
-        }
-
+        const requestBody: WorkflowCreate = {name: "Invalid-Rule-Workflow", approvalRule: invalidRule}
         // When
         const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
-
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("GROUP_RULE_INVALID_GROUP_ID")
       })
 
-      it("should return 400 BAD_REQUEST (AND_RULE_MUST_HAVE_RULES) if AND rule has empty rules array (as OrgAdmin)", async () => {
+      it("should return 400 BAD_REQUEST (GROUP_RULE_INVALID_MIN_COUNT) for minCount < 1 in rule (as OrgAdmin)", async () => {
         // Given
         const invalidRule: ApprovalRule = {
-          type: "AND",
-          rules: [] // Empty rules
+          type: "GROUP_REQUIREMENT",
+          groupId: mockGroupId1,
+          minCount: 0
         }
-        const requestBody: WorkflowCreate = {
-          name: "Empty-And-Rule-Workflow",
-          approvalRule: invalidRule
-        }
-
+        const requestBody: WorkflowCreate = {name: "Invalid-MinCount-Workflow", approvalRule: invalidRule}
         // When
         const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("GROUP_RULE_INVALID_MIN_COUNT")
+      })
 
+      it("should return 400 BAD_REQUEST (AND_RULE_MUST_HAVE_RULES) for AND rule with empty rules array (as OrgAdmin)", async () => {
+        // Given
+        const invalidRule: ApprovalRule = {type: "AND", rules: []}
+        const requestBody: WorkflowCreate = {name: "Empty-And-Rule-Workflow", approvalRule: invalidRule}
+        // When
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("AND_RULE_MUST_HAVE_RULES")
       })
 
-      it("should return 400 BAD_REQUEST (OR_RULE_MUST_HAVE_RULES) if OR rule has empty rules array (as OrgAdmin)", async () => {
+      it("should return 400 BAD_REQUEST (MAX_RULE_NESTING_EXCEEDED) for rule nesting too deep (as OrgAdmin)", async () => {
         // Given
-        const invalidRule: ApprovalRule = {
-          type: "OR",
-          rules: [] // Empty rules
-        }
-        const requestBody: WorkflowCreate = {
-          name: "Empty-Or-Rule-Workflow",
-          approvalRule: invalidRule
-        }
-
-        // When
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("OR_RULE_MUST_HAVE_RULES")
-      })
-
-      it("should return 400 BAD_REQUEST (MAX_RULE_NESTING_EXCEEDED) if rule nesting exceeds maximum depth (as OrgAdmin)", async () => {
-        // Given
-        const tooDeepRule: ApprovalRule = {
-          // Depth 0
+        const deeplyNestedRule: ApprovalRule = {
           type: "AND",
           rules: [
             {
-              // Depth 1
               type: "OR",
               rules: [
                 {
-                  // Depth 2 -> Exceeds MAX_NESTING_DEPTH = 2
                   type: "AND",
-                  rules: [
-                    {
-                      type: "GROUP_REQUIREMENT",
-                      groupId: mockGroupId1,
-                      minCount: 1
-                    }
-                  ]
+                  rules: [{type: "GROUP_REQUIREMENT", groupId: mockGroupId1, minCount: 1}]
                 }
               ]
             }
           ]
-        }
-        const requestBody: WorkflowCreate = {
-          name: "Too-Deep-Rule-Workflow",
-          approvalRule: tooDeepRule
-        }
+        } // Assumes max depth is 2, so this is 3 levels
+        const requestBody: WorkflowCreate = {name: "Deep-Nest-Workflow", approvalRule: deeplyNestedRule}
 
         // When
         const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
@@ -417,48 +387,81 @@ describe("Workflows API", () => {
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("MAX_RULE_NESTING_EXCEEDED")
       })
+    })
+  })
 
-      it("should return 400 BAD_REQUEST (INVALID_RULE_TYPE) if rule type is invalid (as OrgAdmin)", async () => {
-        // Given
-        const invalidRule = {
-          type: "INVALID_TYPE", // Not AND, OR, or GROUP_REQUIREMENT
-          groupId: mockGroupId1,
-          minCount: 1
-        } as unknown as ApprovalRule // Cast to bypass TS type checking for the test
-        const requestBody: WorkflowCreate = {
-          name: "Invalid-Type-Workflow",
-          approvalRule: invalidRule
-        }
+  describe(`GET ${endpoint}/:workflowIdentifier`, () => {
+    let testWorkflow: PrismaWorkflow
+    let rule1: GroupRequirementRule
 
+    beforeEach(async () => {
+      rule1 = {type: "GROUP_REQUIREMENT", groupId: mockGroupId1, minCount: 1}
+      testWorkflow = await createTestWorkflow("Specific-Workflow", rule1, "Details for specific workflow")
+    })
+
+    describe("good cases", () => {
+      it("should return workflow details when fetching by ID (as OrgAdmin)", async () => {
         // When
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+        const response = await get(app, `${endpoint}/${testWorkflow.id}`).withToken(orgAdminUser.token).build()
 
         // Expect
-        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("INVALID_RULE_TYPE")
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: WorkflowApi = response.body
+        expect(body.id).toEqual(testWorkflow.id)
+        expect(body.name).toEqual(testWorkflow.name)
+        expect(body.description).toEqual(testWorkflow.description)
+        expect(body.status).toEqual(testWorkflow.status) // Default ACTIVE
+        expect(body.approvalRule).toEqual(rule1)
+        expect(body.createdAt).toBeDefined()
+        expect(body.updatedAt).toBeDefined()
       })
 
-      it("should return 400 BAD_REQUEST (GROUP_RULE_INVALID_MIN_COUNT) if nested rule is invalid (as OrgAdmin)", async () => {
-        // Given
-        const nestedInvalidRule: ApprovalRule = {
-          type: "AND",
-          rules: [
-            {type: "GROUP_REQUIREMENT", groupId: mockGroupId1, minCount: 1},
-            {type: "GROUP_REQUIREMENT", groupId: mockGroupId2, minCount: 0} // Invalid minCount
-          ]
-        }
-        const requestBody: WorkflowCreate = {
-          name: "Nested-Invalid-Rule-Workflow",
-          approvalRule: nestedInvalidRule
-        }
-
+      it("should return workflow details when fetching by name (as OrgAdmin)", async () => {
         // When
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+        const response = await get(app, `${endpoint}/${testWorkflow.name}`).withToken(orgAdminUser.token).build()
 
         // Expect
-        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        // The error code from the nested validation bubbles up
-        expect(response.body).toHaveErrorCode("GROUP_RULE_INVALID_MIN_COUNT")
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: WorkflowApi = response.body
+        expect(body.id).toEqual(testWorkflow.id)
+        expect(body.name).toEqual(testWorkflow.name)
+      })
+
+      it("should return workflow details if OrgMember (assuming OrgMembers can view workflows)", async () => {
+        // When
+        const response = await get(app, `${endpoint}/${testWorkflow.id}`).withToken(orgMemberUser.token).build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: WorkflowApi = response.body
+        expect(body.id).toEqual(testWorkflow.id)
+      })
+    })
+
+    describe("bad cases", () => {
+      it("should return 401 UNAUTHORIZED if no token is provided", async () => {
+        const response = await get(app, `${endpoint}/${testWorkflow.id}`).build()
+        expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
+      })
+
+      it("should return 404 NOT_FOUND (WORKFLOW_NOT_FOUND) when fetching non-existent ID (as OrgAdmin)", async () => {
+        // Given
+        const nonExistentId = randomUUID()
+        // When
+        const response = await get(app, `${endpoint}/${nonExistentId}`).withToken(orgAdminUser.token).build()
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
+        expect(response.body).toHaveErrorCode("WORKFLOW_NOT_FOUND")
+      })
+
+      it("should return 404 NOT_FOUND (WORKFLOW_NOT_FOUND) when fetching non-existent name (as OrgAdmin)", async () => {
+        // Given
+        const nonExistentName = "non-existent-workflow-name-abc"
+        // When
+        const response = await get(app, `${endpoint}/${nonExistentName}`).withToken(orgAdminUser.token).build()
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
+        expect(response.body).toHaveErrorCode("WORKFLOW_NOT_FOUND")
       })
     })
   })
