@@ -5,6 +5,7 @@ alwaysApply: true
 ---
 When writing code:
 - If a switch statement is used, try to use switch exhaustiveness check instead of adding default case
+- If a file contains both interfaces and classes with implementations logic, place the interfaces at the end of the file.
 
 When writing tests:
 - use the Given:[context], When, Expect pattern
