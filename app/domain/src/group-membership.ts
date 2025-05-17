@@ -15,7 +15,7 @@ export type Membership = Readonly<PrivateMembership>
 
 type UserReference = string
 type RoleValidationError = "invalid_role"
-export type MembershipValidationError = RoleValidationError | UserValidationReferenceError
+export type MembershipValidationError = RoleValidationError | UserValidationReferenceError | "inconsistent_dates"
 type UserValidationReferenceError = "invalid_uuid"
 
 interface PrivateMembership {
@@ -33,31 +33,44 @@ function validateRole(role: string): Either<RoleValidationError, HumanGroupMembe
   return right(enumRole)
 }
 
-function validateUserReference(userReference: string): Either<UserValidationReferenceError, UserReference> {
-  if (!isUUIDv4(userReference)) return left("invalid_uuid")
+function validateUserReference(
+  userReference: string | User
+): Either<UserValidationReferenceError, UserReference | User> {
+  if (typeof userReference === "string" && !isUUIDv4(userReference)) return left("invalid_uuid")
   return right(userReference)
 }
 
 export class MembershipFactory {
-  static validate(data: {user: string; role: string}): Either<MembershipValidationError, Membership> {
-    return MembershipFactory.createMembership(data)
+  static validate(
+    data: Parameters<typeof MembershipFactory.semanticValidation>[0]
+  ): Either<MembershipValidationError, Membership> {
+    return MembershipFactory.semanticValidation(data)
   }
 
   static newMembership(data: {user: string; role: string}): Either<MembershipValidationError, Membership> {
-    return MembershipFactory.validate(data)
+    const now = new Date()
+    return MembershipFactory.semanticValidation({
+      role: data.role,
+      entity: data.user,
+      createdAt: now,
+      updatedAt: now
+    })
   }
 
-  private static createMembership(data: {user: string; role: string}): Either<MembershipValidationError, Membership> {
+  private static semanticValidation(
+    data: Omit<Membership, "getEntityId" | "role"> & {role: string}
+  ): Either<MembershipValidationError, Membership> {
     const roleValidation = validateRole(data.role)
-    const userValidation = validateUserReference(data.user)
+    const userValidation = validateUserReference(data.entity)
 
     if (isLeft(roleValidation)) return left(roleValidation.left)
     if (isLeft(userValidation)) return left(userValidation.left)
+    if (data.createdAt > data.updatedAt) return left("inconsistent_dates")
 
     return right({
       entity: userValidation.right,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
       role: roleValidation.right,
       getEntityId: () => getEntityId(userValidation.right)
     })

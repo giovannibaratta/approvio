@@ -146,6 +146,7 @@ export function generateErrorResponseForCreateGroup(error: CreateGroupError, con
     case "email_empty":
     case "email_too_long":
     case "email_invalid":
+    case "inconsistent_dates":
     case "invalid_role":
     case "concurrent_modification_error":
       return new InternalServerErrorException(
@@ -247,6 +248,7 @@ export function generateErrorResponseForAddUserToGroup(
     case "email_empty":
     case "email_too_long":
     case "org_role_invalid":
+    case "inconsistent_dates":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: Internal data inconsistency`)
       )
@@ -294,6 +296,7 @@ export function generateErrorResponseForRemoveUserFromGroup(
     case "entities_count_invalid":
     case "name_empty":
     case "org_role_invalid":
+    case "inconsistent_dates":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: Internal data inconsistency`)
       )
@@ -331,6 +334,7 @@ export function generateErrorResponseForListUsersInGroup(
     case "description_too_long":
     case "entities_count_invalid":
     case "not_a_member":
+    case "inconsistent_dates":
     case "unknown_error":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: An unexpected error occurred`)

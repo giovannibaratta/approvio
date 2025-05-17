@@ -181,7 +181,11 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
 }
 
 function mapMembershipToDomain(dbObject: PrismaGroupMembership): Either<MembershipValidationError, Membership> {
-  return pipe(dbObject, data => ({user: data.userId, role: data.role}), MembershipFactory.validate)
+  return pipe(
+    dbObject,
+    data => ({entity: data.userId, role: data.role, createdAt: data.createdAt, updatedAt: data.updatedAt}),
+    MembershipFactory.validate
+  )
 }
 
 function mapToVersionedDomainWithMembership(
