@@ -1,7 +1,7 @@
 import {Group, User} from "@domain"
 import {getStringAsEnum, isUUIDv4} from "@utils"
 import * as A from "fp-ts/Array"
-import {Applicative, Either, isLeft, left, right} from "fp-ts/lib/Either"
+import {Applicative, Do, Either, isLeft, left, right, chain, bindW} from "fp-ts/lib/Either"
 import {pipe} from "fp-ts/lib/function"
 
 export enum HumanGroupMembershipRole {
@@ -12,11 +12,18 @@ export enum HumanGroupMembershipRole {
 }
 
 export type Membership = Readonly<PrivateMembership>
+export type MembershipWithGroupRef = Readonly<PrivateMembershipWithGroupRef>
 
 type UserReference = string
 type RoleValidationError = "invalid_role"
 export type MembershipValidationError = RoleValidationError | UserValidationReferenceError | "inconsistent_dates"
+export type MembershipValidationErrorWithGroupRef = MembershipValidationError | GroupValidationReferenceError
 type UserValidationReferenceError = "invalid_uuid"
+type GroupValidationReferenceError = "invalid_group_uuid"
+
+interface PrivateMembershipWithGroupRef extends PrivateMembership {
+  groupId: string
+}
 
 interface PrivateMembership {
   entity: User | UserReference
@@ -33,6 +40,11 @@ function validateRole(role: string): Either<RoleValidationError, HumanGroupMembe
   return right(enumRole)
 }
 
+function validateGroupReference(groupReference: string): Either<GroupValidationReferenceError, string> {
+  if (!isUUIDv4(groupReference)) return left("invalid_group_uuid")
+  return right(groupReference)
+}
+
 function validateUserReference(
   userReference: string | User
 ): Either<UserValidationReferenceError, UserReference | User> {
@@ -45,6 +57,24 @@ export class MembershipFactory {
     data: Parameters<typeof MembershipFactory.semanticValidation>[0]
   ): Either<MembershipValidationError, Membership> {
     return MembershipFactory.semanticValidation(data)
+  }
+
+  static validateWithGroupRef(
+    data: Parameters<typeof MembershipFactory.validate>[0] & {groupId: string}
+  ): Either<MembershipValidationErrorWithGroupRef, MembershipWithGroupRef> {
+    const validatedObject = pipe(
+      Do,
+      bindW("membership", () => MembershipFactory.validate(data)),
+      bindW("groupId", () => validateGroupReference(data.groupId)),
+      chain(({membership, groupId}) => {
+        return right({
+          ...membership,
+          groupId
+        })
+      })
+    )
+
+    return validatedObject
   }
 
   static newMembership(data: {user: string; role: string}): Either<MembershipValidationError, Membership> {

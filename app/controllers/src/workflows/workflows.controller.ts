@@ -2,7 +2,7 @@ import {WorkflowCreate} from "@api"
 import {GetAuthenticatedUser} from "@app/auth"
 import {User} from "@domain"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Res} from "@nestjs/common"
-import {CreateWorkflowRequest, WorkflowService} from "@services"
+import {CreateWorkflowRequest, WorkflowService, VoteService, CanVoteRequest, CastVoteRequest} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -11,15 +11,26 @@ import {
   createWorkflowApiToServiceModel,
   generateErrorResponseForCreateWorkflow,
   generateErrorResponseForGetWorkflow,
-  mapWorkflowToApi
+  mapWorkflowToApi,
+  mapCanVoteResponseToApi,
+  createCastVoteApiToServiceModel,
+  generateErrorResponseForCanVote,
+  generateErrorResponseForCastVote
 } from "./workflows.mappers"
-import {Workflow as WorkflowApi} from "@api"
+import {
+  Workflow as WorkflowApi,
+  CanVoteResponse as CanVoteResponseApi,
+  WorkflowVoteRequest as WorkflowVoteRequestApi
+} from "@api"
 
 export const WORKFLOWS_ENDPOINT_ROOT = "workflows"
 
 @Controller(WORKFLOWS_ENDPOINT_ROOT)
 export class WorkflowsController {
-  constructor(private readonly workflowService: WorkflowService) {}
+  constructor(
+    private readonly workflowService: WorkflowService,
+    private readonly voteService: VoteService
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -59,5 +70,49 @@ export class WorkflowsController {
     }
 
     return eitherWorkflow.right
+  }
+
+  @Get(":workflowId/canVote")
+  @HttpCode(HttpStatus.OK)
+  async canVote(
+    @Param("workflowId") workflowId: string,
+    @GetAuthenticatedUser() requestor: User
+  ): Promise<CanVoteResponseApi> {
+    const serviceCanVote = (request: CanVoteRequest) => this.voteService.canVote(request)
+
+    const eitherCanVoteResponse = await pipe(
+      {workflowId, requestor},
+      TE.right,
+      TE.chainW(serviceCanVote),
+      TE.map(mapCanVoteResponseToApi)
+    )()
+
+    if (isLeft(eitherCanVoteResponse)) {
+      throw generateErrorResponseForCanVote(
+        eitherCanVoteResponse.left,
+        `Failed to process canVote request for workflow ${workflowId}`
+      )
+    }
+    return eitherCanVoteResponse.right
+  }
+
+  @Post(":workflowId/vote")
+  @HttpCode(HttpStatus.ACCEPTED)
+  async castVote(
+    @Param("workflowId") workflowId: string,
+    @Body() request: WorkflowVoteRequestApi,
+    @GetAuthenticatedUser() requestor: User
+  ): Promise<void> {
+    const serviceCastVote = (req: CastVoteRequest) => this.voteService.castVote(req)
+
+    const eitherVote = await pipe(
+      {workflowId, voteData: request, requestor},
+      createCastVoteApiToServiceModel,
+      TE.right,
+      TE.chainW(serviceCastVote)
+    )()
+
+    if (isLeft(eitherVote))
+      throw generateErrorResponseForCastVote(eitherVote.left, `Failed to cast vote for workflow ${workflowId}`)
   }
 }

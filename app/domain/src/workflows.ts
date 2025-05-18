@@ -1,8 +1,9 @@
 import {randomUUID} from "crypto"
 import * as E from "fp-ts/Either"
 import {Either, isLeft, left, right} from "fp-ts/lib/Either"
-import {ApprovalRule, ApprovalRuleFactory, ApprovalRuleValidationError} from "./approval-rules"
+import {ApprovalRule, ApprovalRuleFactory, ApprovalRuleType, ApprovalRuleValidationError} from "./approval-rules"
 import {getStringAsEnum} from "@utils"
+import {MembershipWithGroupRef, HumanGroupMembershipRole} from "@domain"
 
 export const WORKFLOW_NAME_MAX_LENGTH = 512
 export const WORKFLOW_DESCRIPTION_MAX_LENGTH = 2048
@@ -12,9 +13,9 @@ export enum WorkflowStatus {
   EVALUATION_COMPLETED = "EVALUATION_COMPLETED"
 }
 
-export type Workflow = Readonly<PrivateWorkflow>
+export type Workflow = Readonly<WorkflowData & WorkflowLogic>
 
-interface PrivateWorkflow {
+interface WorkflowData {
   id: string
   name: string
   description?: string
@@ -22,6 +23,10 @@ interface PrivateWorkflow {
   status: WorkflowStatus
   createdAt: Date
   updatedAt: Date
+}
+
+interface WorkflowLogic {
+  canVote(memberships: ReadonlyArray<MembershipWithGroupRef>): boolean
 }
 
 export type WorkflowValidationError =
@@ -41,10 +46,7 @@ export class WorkflowFactory {
    * @returns Either a validation error or the valid Workflow object.
    */
   static validate(
-    data: Omit<Workflow, "status" | "rule"> & {
-      status: string
-      rule: unknown
-    }
+    data: Parameters<typeof WorkflowFactory.createWorkflow>[0]
   ): Either<WorkflowValidationError, Workflow> {
     return WorkflowFactory.createWorkflow(data)
   }
@@ -77,7 +79,10 @@ export class WorkflowFactory {
    * @returns Either a validation error or the validated Workflow object.
    */
   private static createWorkflow(
-    data: Parameters<typeof WorkflowFactory.validate>[0]
+    data: Omit<Workflow, "status" | "rule" | "canVote"> & {
+      status: string
+      rule: unknown
+    }
   ): Either<WorkflowValidationError, Workflow> {
     const nameValidation = validateWorkflowName(data.name)
     const descriptionValidation = data.description ? validateWorkflowDescription(data.description) : right(undefined)
@@ -90,13 +95,45 @@ export class WorkflowFactory {
     if (data.createdAt > data.updatedAt) return left("update_before_create")
     if (isLeft(statusValidation)) return statusValidation
 
-    return right({
+    const workflowData = {
       ...data,
       name: nameValidation.right,
       description: descriptionValidation.right,
       rule: ruleValidation.right,
       status: statusValidation.right
+    }
+
+    return right({
+      ...workflowData,
+      canVote: (memberships: ReadonlyArray<MembershipWithGroupRef>) => canVote(workflowData, memberships)
     })
+  }
+}
+
+const ROLES_ALLOWED_TO_VOTE: HumanGroupMembershipRole[] = [
+  HumanGroupMembershipRole.APPROVER,
+  HumanGroupMembershipRole.ADMIN,
+  HumanGroupMembershipRole.OWNER
+]
+
+function canVote(workflow: WorkflowData, memberships: ReadonlyArray<MembershipWithGroupRef>): boolean {
+  const votingGroups = getVotingGroups(workflow.rule)
+
+  // Is it possible to vote if at least one of the membership group is listed in approval rules
+  // and the user has an allowed role in that group
+  return memberships.some(
+    membership => votingGroups.includes(membership.groupId) && ROLES_ALLOWED_TO_VOTE.includes(membership.role)
+  )
+}
+
+function getVotingGroups(rule: ApprovalRule): ReadonlyArray<string> {
+  switch (rule.type) {
+    case ApprovalRuleType.GROUP_REQUIREMENT:
+      return [rule.groupId]
+    case ApprovalRuleType.AND:
+      return rule.rules.flatMap(getVotingGroups)
+    case ApprovalRuleType.OR:
+      return rule.rules.flatMap(getVotingGroups)
   }
 }
 

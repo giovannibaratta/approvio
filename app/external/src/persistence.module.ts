@@ -1,11 +1,18 @@
 import {Module} from "@nestjs/common"
 import {Config} from "./config/config"
-import {DatabaseClient, UserDbRepository, GroupMembershipDbRepository, WorkflowDbRepository} from "./database/"
+import {
+  DatabaseClient,
+  UserDbRepository,
+  GroupMembershipDbRepository,
+  WorkflowDbRepository,
+  VoteDbRepository
+} from "./database/"
 import {GroupDbRepository} from "./database"
 import {
   GROUP_MEMBERSHIP_REPOSITORY_TOKEN,
   GROUP_REPOSITORY_TOKEN,
   USER_REPOSITORY_TOKEN,
+  VOTE_REPOSITORY_TOKEN,
   WORKFLOW_REPOSITORY_TOKEN
 } from "@services"
 
@@ -29,7 +36,12 @@ const workflowRepository = {
   useClass: WorkflowDbRepository
 }
 
-const repositories = [groupRepository, userRepository, groupMembershipRepository, workflowRepository]
+const voteRepository = {
+  provide: VOTE_REPOSITORY_TOKEN,
+  useClass: VoteDbRepository
+}
+
+const repositories = [groupRepository, userRepository, groupMembershipRepository, workflowRepository, voteRepository]
 
 @Module({
   imports: [],

@@ -96,11 +96,11 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /workflows/{workflowId}/approve:
+  /workflows/{workflowId}/vote:
     post:
-      summary: Approve a workflow
-      description: Approve a workflow as the authenticated approver
-      operationId: approveWorkflow
+      summary: Vote on a workflow
+      description: Allows an authenticated entity to cast a vote (approve or decline) on a specific workflow.
+      operationId: voteOnWorkflow
       tags:
         - Workflow Actions
       parameters:
@@ -115,74 +115,49 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              title: ApproveWorkflowRequest
-              properties:
-                groupIdentifier:
-                  type: string
-                  description: Optional group ID if the approver wants to approve as a member of a specific group
-                comments:
-                  type: string
-                  description: Optional comments for the approval
+              $ref: "#/components/schemas/WorkflowVoteRequest"
       responses:
         "200":
-          description: Workflow approved successfully
+          description: Vote cast successfully. Returns updated workflow details.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Workflow"
+                type: object
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Invalid request (e.g., voter not authorized, invalid vote type/mode).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/APIError"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Entity is not an approver for this workflow
+
         "404":
           $ref: "#/components/responses/NotFound"
 
-  /workflows/{workflowId}/decline:
-    post:
-      summary: Decline a workflow
-      description: Decline a workflow as the authenticated approver
-      operationId: declineWorkflow
+  /workflows/{workflowId}/canVote:
+    get:
+      summary: Check if the current entity can vote on a workflow
+      description: Determines if the authenticated entity is eligible to cast a vote on the specified workflow.
+      operationId: canVoteOnWorkflow
       tags:
         - Workflow Actions
       parameters:
         - name: workflowId
           in: path
           required: true
-          description: The unique identifier of the workflow
+          description: The unique identifier of the workflow.
           schema:
             type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              title: DeclineWorkflowRequest
-              properties:
-                groupIdentifier:
-                  type: string
-                  description: Optional group ID if the approver wants to decline as a member of a specific group
-                reason:
-                  type: string
-                  description: Reason for declining the workflow
-              required:
-                - reason
       responses:
         "200":
-          description: Workflow declined successfully
+          description: Eligibility to vote confirmed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Workflow"
-        "400":
-          $ref: "#/components/responses/BadRequest"
+                $ref: "#/components/schemas/CanVoteResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "403":
-          description: Entity is not an approver for this workflow
         "404":
           $ref: "#/components/responses/NotFound"
 
@@ -891,6 +866,65 @@ components:
                 type: string
               message:
                 type: string
+
+    WorkflowVoteRequest:
+      type: object
+      title: WorkflowVoteRequest
+      required:
+        - voteType
+        - voteMode
+      properties:
+        voteType:
+          type: string
+          x-extensible-enum:
+            - APPROVE
+            - DECLINE
+            - WITHDRAW
+          description: The type of vote to cast.
+        voteMode:
+          $ref: "#/components/schemas/VoteMode"
+        reason:
+          type: string
+          description: Optional reason for the vote. Can be used for approval comments or decline reasons.
+          example: "Missing critical information or LGTM!"
+
+    VoteMode:
+      type: object
+      title: VoteMode
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          x-extensible-enum:
+            - VOTE_FOR_ALL
+            - VOTE_FOR_GROUPS
+          default: VOTE_FOR_ALL
+          description: >
+            Specifies the mode of voting. 
+            VOTE_FOR_ALL means the vote applies based on the user's direct eligibility. 
+            VOTE_FOR_GROUPS (future) would imply voting on behalf of specific groups.
+          example: VOTE_FOR_ALL
+
+    CanVoteResponse:
+      type: object
+      title: CanVoteResponse
+      required:
+        - canVote
+        - voteStatus
+      properties:
+        canVote:
+          type: boolean
+          description: True if the authenticated entity can currently vote on the workflow, false otherwise.
+        voteStatus:
+          type: string
+          x-extensible-enum:
+            - ALREADY_VOTED
+            - VOTE_PENDING
+          description: >
+            Indicates the voting status for the user on this workflow. 
+            Relevant only if 'canVote' is true or if the user had voting rights previously.
+          example: VOTE_PENDING
 
   responses:
     BadRequest:

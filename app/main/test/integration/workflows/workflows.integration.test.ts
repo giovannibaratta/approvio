@@ -1,7 +1,21 @@
-import {ApprovalRule, GroupRequirementRule, Workflow as WorkflowApi, WorkflowCreate} from "@api"
+import {
+  ApprovalRule,
+  CanVoteResponse as CanVoteResponseApi,
+  GroupRequirementRule,
+  Workflow as WorkflowApi,
+  WorkflowCreate,
+  WorkflowVoteRequest as WorkflowVoteRequestApi
+} from "@api"
 import {AppModule} from "@app/app.module"
 import {WORKFLOWS_ENDPOINT_ROOT} from "@controllers"
-import {OrgRole, WORKFLOW_DESCRIPTION_MAX_LENGTH, WORKFLOW_NAME_MAX_LENGTH, WorkflowStatus} from "@domain"
+import {
+  ApprovalRuleType,
+  HumanGroupMembershipRole,
+  OrgRole,
+  WORKFLOW_DESCRIPTION_MAX_LENGTH,
+  WORKFLOW_NAME_MAX_LENGTH,
+  WorkflowStatus
+} from "@domain"
 import {DatabaseClient} from "@external"
 import {Config} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
@@ -14,6 +28,7 @@ import {cleanDatabase, prepareDatabase} from "../database"
 import {createDomainMockUserInDb} from "../shared/mock-data"
 import {get, post} from "../shared/requests"
 import {UserWithToken} from "../shared/types"
+import {time} from "console"
 
 // Helper function to create a mock group for tests
 async function createTestGroup(prisma: PrismaClient, name: string): Promise<{id: string}> {
@@ -27,6 +42,23 @@ async function createTestGroup(prisma: PrismaClient, name: string): Promise<{id:
     }
   })
   return group
+}
+
+async function addUserToGroup(
+  prisma: PrismaClient,
+  groupId: string,
+  userId: string,
+  role: HumanGroupMembershipRole
+): Promise<void> {
+  await prisma.groupMembership.create({
+    data: {
+      groupId: groupId,
+      userId: userId,
+      role: role,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
+  })
 }
 
 describe("Workflows API", () => {
@@ -462,6 +494,257 @@ describe("Workflows API", () => {
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
         expect(response.body).toHaveErrorCode("WORKFLOW_NOT_FOUND")
+      })
+    })
+  })
+
+  describe(`GET ${endpoint}/:workflowId/canVote`, () => {
+    let testWorkflow: PrismaWorkflow
+    let workflowRequiringGroup1: PrismaWorkflow
+    let ruleForGroup1: GroupRequirementRule
+
+    beforeEach(async () => {
+      ruleForGroup1 = {
+        type: ApprovalRuleType.GROUP_REQUIREMENT,
+        groupId: mockGroupId1,
+        minCount: 1
+      }
+      // Workflow that orgMemberUser can vote on after being added to mockGroupId1
+      workflowRequiringGroup1 = await createTestWorkflow(
+        "Workflow-Group1-Req",
+        ruleForGroup1,
+        "Workflow requiring group 1"
+      )
+
+      // Add orgMemberUser to mockGroupId1 to test canVote scenarios
+      await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id, HumanGroupMembershipRole.APPROVER)
+
+      // A generic workflow for other tests (e.g., admin access)
+      testWorkflow = await createTestWorkflow("Generic-Workflow-For-CanVote", ruleForGroup1)
+    })
+
+    describe("good cases", () => {
+      it("should return 200 OK with canVote:true for a user in the required group (as OrgMember)", async () => {
+        // When
+        const response = await get(app, `${endpoint}/${workflowRequiringGroup1.id}/canVote`)
+          .withToken(orgMemberUser.token)
+          .build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: CanVoteResponseApi = response.body
+        expect(body.canVote).toBe(true)
+        expect(body.voteStatus).toEqual("VOTE_PENDING") // Assuming user hasn't voted yet
+      })
+
+      it("should return 200 OK with canVote:true for OrgAdmin if they are part of a group", async () => {
+        await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id, HumanGroupMembershipRole.APPROVER)
+
+        // When
+        const response = await get(app, `${endpoint}/${workflowRequiringGroup1.id}/canVote`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: CanVoteResponseApi = response.body
+        expect(body.canVote).toBe(true)
+        expect(body.voteStatus).toEqual("VOTE_PENDING")
+      })
+
+      it("should return 200 OK with canVote:false if user is not in the required group", async () => {
+        // Given: Create a new user not in any group related to this workflow
+        const nonMemberUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.MEMBER})
+        const nonMemberToken = jwtService.sign({email: nonMemberUser.email, sub: nonMemberUser.id})
+
+        // When
+        const response = await get(app, `${endpoint}/${workflowRequiringGroup1.id}/canVote`)
+          .withToken(nonMemberToken)
+          .build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: CanVoteResponseApi = response.body
+        expect(body.canVote).toBe(false)
+      })
+    })
+
+    describe("bad cases", () => {
+      it("should return 401 UNAUTHORIZED if no token is provided", async () => {
+        // When
+        const response = await get(app, `${endpoint}/${testWorkflow.id}/canVote`).build()
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
+      })
+
+      it("should return 400 BAD_REQUEST if workflow does not exist", async () => {
+        // Given
+        const nonExistentWorkflowId = randomUUID()
+        // When
+        const response = await get(app, `${endpoint}/${nonExistentWorkflowId}/canVote`)
+          .withToken(orgAdminUser.token)
+          .build()
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("WORKFLOW_NOT_FOUND")
+      })
+    })
+  })
+
+  describe("POST /workflows/:workflowId/vote", () => {
+    let workflowForVoting: PrismaWorkflow
+    let ruleForGroup1Voting: GroupRequirementRule
+
+    beforeEach(async () => {
+      ruleForGroup1Voting = {type: "GROUP_REQUIREMENT", groupId: mockGroupId1, minCount: 1}
+      workflowForVoting = await createTestWorkflow("Workflow-For-Actual-Voting", ruleForGroup1Voting, "Voting Test")
+
+      // Add orgMemberUser to mockGroupId1 so they can vote
+      await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id, HumanGroupMembershipRole.APPROVER)
+      // Add orgAdminUser to mockGroupId1 as well for their voting tests
+      await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id, HumanGroupMembershipRole.APPROVER)
+    })
+
+    describe("good cases", () => {
+      it("should allow OrgMember in the group to APPROVE a workflow and return 200 OK", async () => {
+        // Given
+        const requestBody: WorkflowVoteRequestApi = {
+          voteType: "APPROVE",
+          voteMode: {type: "VOTE_FOR_ALL"}
+        }
+
+        // When
+        const response = await post(app, `${endpoint}/${workflowForVoting.id}/vote`)
+          .withToken(orgMemberUser.token)
+          .build()
+          .send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.ACCEPTED)
+
+        const voteInDb = await prisma.vote.findFirst({
+          where: {workflowId: workflowForVoting.id, userId: orgMemberUser.user.id}
+        })
+        expect(voteInDb).toBeDefined()
+        expect(voteInDb?.voteType).toEqual("APPROVE")
+      })
+
+      it("should allow OrgAdmin in the group to DECLINE a workflow and return 200 OK", async () => {
+        // Given
+        const requestBody: WorkflowVoteRequestApi = {
+          voteType: "DECLINE",
+          voteMode: {type: "VOTE_FOR_ALL"},
+          reason: "Admin declined"
+        }
+
+        // When
+        const response = await post(app, `${endpoint}/${workflowForVoting.id}/vote`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.ACCEPTED)
+      })
+
+      it("should be possible to vote multiple times", async () => {
+        // Given
+        const requestBody: WorkflowVoteRequestApi = {
+          voteType: "APPROVE",
+          voteMode: {type: "VOTE_FOR_ALL"}
+        }
+
+        // When
+        const response = await post(app, `${endpoint}/${workflowForVoting.id}/vote`)
+          .withToken(orgMemberUser.token)
+          .build()
+          .send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.ACCEPTED)
+
+        // When
+        const response2 = await post(app, `${endpoint}/${workflowForVoting.id}/vote`)
+          .withToken(orgMemberUser.token)
+          .build()
+          .send(requestBody)
+
+        // Expect
+        expect(response2).toHaveStatusCode(HttpStatus.ACCEPTED)
+
+        const voteInDb = await prisma.vote.findMany({
+          where: {workflowId: workflowForVoting.id, userId: orgMemberUser.user.id}
+        })
+        expect(voteInDb).toHaveLength(2)
+      }, 60000)
+    })
+
+    describe("bad cases", () => {
+      it("should return 401 UNAUTHORIZED if no token is provided", async () => {
+        // Given
+        const requestBody: WorkflowVoteRequestApi = {
+          voteType: "APPROVE",
+          voteMode: {type: "VOTE_FOR_ALL"}
+        }
+        // When
+        const response = await post(app, `${endpoint}/${workflowForVoting.id}/vote`).build().send(requestBody)
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
+      })
+
+      it("should return 400 BAD_REQUEST if workflow does not exist", async () => {
+        // Given
+        const nonExistentWorkflowId = randomUUID()
+        const requestBody: WorkflowVoteRequestApi = {
+          voteType: "APPROVE",
+          voteMode: {type: "VOTE_FOR_ALL"}
+        }
+        // When
+        const response = await post(app, `${endpoint}/${nonExistentWorkflowId}/vote`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(requestBody)
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("WORKFLOW_NOT_FOUND")
+      })
+
+      it("should return 400 BAD_REQUEST if user is not eligible to vote (e.g., not in group)", async () => {
+        // Given: Create a new user not in any group related to this workflow
+        const nonVoter = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.MEMBER})
+        const nonVoterToken = jwtService.sign({email: nonVoter.email, sub: nonVoter.id})
+        const requestBody: WorkflowVoteRequestApi = {
+          voteType: "APPROVE",
+          voteMode: {type: "VOTE_FOR_ALL"}
+        }
+
+        // When
+        const response = await post(app, `${endpoint}/${workflowForVoting.id}/vote`)
+          .withToken(nonVoterToken)
+          .build()
+          .send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.FORBIDDEN)
+        expect(response.body).toHaveErrorCode("USER_NOT_ELIGIBLE_TO_VOTE")
+      })
+
+      it("should return 400 BAD_REQUEST for invalid voteType", async () => {
+        // Given
+        const requestBody: WorkflowVoteRequestApi = {
+          voteType: "MAYBE_LATER",
+          voteMode: {type: "VOTE_FOR_ALL"}
+        }
+
+        // When
+        const response = await post(app, `${endpoint}/${workflowForVoting.id}/vote`)
+          .withToken(orgMemberUser.token) // User who can normally vote
+          .build()
+          .send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("INVALID_VOTE_TYPE")
       })
     })
   })

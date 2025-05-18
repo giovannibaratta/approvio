@@ -1,4 +1,11 @@
-import {GroupValidationError, Membership, MembershipFactory, MembershipValidationError} from "@domain"
+import {
+  GroupValidationError,
+  Membership,
+  MembershipFactory,
+  MembershipValidationError,
+  MembershipValidationErrorWithGroupRef,
+  MembershipWithGroupRef
+} from "@domain"
 import {
   isPrismaForeignKeyConstraintError,
   isPrismaRecordNotFoundError,
@@ -16,7 +23,8 @@ import {
   MembershipAddError,
   MembershipRemoveError,
   RemoveMembershipRepoRequest,
-  RemoveMembershipResult
+  RemoveMembershipResult,
+  UnknownError
 } from "@services"
 import * as A from "fp-ts/Array"
 import {sequenceS} from "fp-ts/lib/Apply"
@@ -64,6 +72,17 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
       TE.right,
       TE.chainW(this.deleteMembershipTask()),
       TE.chainEitherKW(mapToVersionedDomainWithMembership)
+    )
+  }
+
+  getUserMembershipsByUserId(
+    userId: string
+  ): TaskEither<MembershipValidationErrorWithGroupRef | UnknownError, ReadonlyArray<MembershipWithGroupRef>> {
+    return pipe(
+      userId,
+      TE.right,
+      TE.chainW(this.getUserMembershipsByUserIdTask()),
+      TE.chainEitherKW(mapToDomainMembershipWithGroupRefs)
     )
   }
 
@@ -178,6 +197,19 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
       return updatedGroup
     })
   }
+
+  private getUserMembershipsByUserIdTask(): (
+    userId: string
+  ) => TaskEither<UnknownError, ReadonlyArray<PrismaGroupMembership>> {
+    return userId =>
+      TE.tryCatchK(
+        () => this.dbClient.groupMembership.findMany({where: {userId}}),
+        error => {
+          Logger.error("Error while retrieving user memberships. Unknown error", error)
+          return "unknown_error" as const
+        }
+      )()
+  }
 }
 
 function mapMembershipToDomain(dbObject: PrismaGroupMembership): Either<MembershipValidationError, Membership> {
@@ -200,6 +232,28 @@ function mapToVersionedDomainWithMembership(
       group: eitherGroup,
       memberships: eitherMemberships
     })
+  )
+}
+
+function mapToDomainMembershipWithGroupRefs(
+  dbObject: ReadonlyArray<PrismaGroupMembership>
+): Either<MembershipValidationErrorWithGroupRef, ReadonlyArray<MembershipWithGroupRef>> {
+  return pipe([...dbObject], A.traverse(E.Applicative)(mapToDomainMembershipWithGroupRef))
+}
+
+function mapToDomainMembershipWithGroupRef(
+  dbObject: Readonly<PrismaGroupMembership>
+): Either<MembershipValidationErrorWithGroupRef, MembershipWithGroupRef> {
+  return pipe(
+    dbObject,
+    data => ({
+      entity: data.userId,
+      role: data.role,
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+      groupId: data.groupId
+    }),
+    MembershipFactory.validateWithGroupRef
   )
 }
 

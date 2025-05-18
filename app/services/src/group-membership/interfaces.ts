@@ -3,7 +3,9 @@ import {
   GroupManagerValidationError,
   HumanGroupMembershipRole,
   Membership,
-  MembershipValidationError
+  MembershipValidationError,
+  MembershipValidationErrorWithGroupRef,
+  MembershipWithGroupRef
 } from "@domain"
 import {ConcurrentModificationError, UnknownError} from "@services/error"
 import {GetGroupRepoError} from "@services/group/interfaces"
@@ -67,6 +69,9 @@ export interface GroupMembershipRepository {
   removeMembershipFromGroup(
     request: RemoveMembershipRepoRequest
   ): TaskEither<MembershipRemoveError, RemoveMembershipResult>
+  getUserMembershipsByUserId(
+    userId: string
+  ): TaskEither<MembershipValidationErrorWithGroupRef | UnknownError, ReadonlyArray<MembershipWithGroupRef>>
 }
 
 export interface GetGroupWithMembershipRepo {

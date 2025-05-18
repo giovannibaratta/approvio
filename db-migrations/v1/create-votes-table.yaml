@@ -1,0 +1,64 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-votes-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: votes
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: workflow_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_votes_workflow
+                    references: workflows(id)
+                    deleteCascade: true
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_votes_user
+                    references: users(id)
+                    deleteCascade: true
+              - column:
+                  name: vote_type
+                  remarks: The type of vote (e.g. APPROVE, DECLINE)
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: reason
+                  type: TEXT
+                  constraints:
+                    nullable: true
+              - column:
+                  name: vote_mode
+                  remarks: The mode of the vote (e.g. VOTE_FOR_ALL, VOTE_FOR_GROUPS)
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+
+        - createIndex:
+            tableName: votes
+            indexName: idx_votes_workflow_user_created
+            columns:
+              - column:
+                  name: workflow_id
+              - column:
+                  name: user_id
+              - column:
+                  name: created_at
+                  descending: true # To get the most recent vote easily
