@@ -6,7 +6,8 @@ alwaysApply: true
 When writing code:
 - If a switch statement is used, try to use switch exhaustiveness check instead of adding default case
 - If a file contains both interfaces and classes with implementations logic, place the interfaces at the end of the file.
+- Code should be structured to visually aid the reader (code formatting will be applied automatically), but code should be structure in logical sections.
 
 When writing tests:
-- use the Given:[context], When, Expect pattern
-- group tests in bad cases, good cases 
+- Inside the IT block, use the Given:[context], When, Expect pattern (use comments to divide the code in logic sections, leave spaces around the sections)
+- When testing a specific functionality, group tests in bad cases and good cases using the describe block
