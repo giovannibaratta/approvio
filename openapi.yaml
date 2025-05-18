@@ -280,7 +280,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/Group"
+                type: object
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
