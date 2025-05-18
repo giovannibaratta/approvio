@@ -3,6 +3,9 @@ description: Help the model understand the codebase
 globs: 
 alwaysApply: true
 ---
+<context>
+The project you are working on is a backend service to manage the Approval process at scale. The project is written in Typescript.
+</context>
 
 // Folders to prioritize for general context.
 // The agent will look here first when trying to understand the project.
