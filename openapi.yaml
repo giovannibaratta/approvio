@@ -193,18 +193,17 @@ paths:
                 $ref: "#/components/schemas/APIError"
     get:
       summary: List users
-      description: Returns a list of users, optionally filtered by group ID.
+      description: Returns a list of users
       operationId: listUsers
       tags:
         - Users
       parameters:
-        - name: groupId
+        - name: search
           in: query
-          description: Filter users by the group they belong to.
+          description: Fuzzy search term for user display name or email.
           required: false
           schema:
             type: string
-            format: uuid
         - name: page
           in: query
           description: Page number for pagination
@@ -224,11 +223,14 @@ paths:
             application/json:
               schema:
                 type: object
+                required:
+                  - users
+                  - pagination
                 properties:
-                  data:
+                  users:
                     type: array
                     items:
-                      $ref: "#/components/schemas/User"
+                      $ref: "#/components/schemas/UserSummary"
                   pagination:
                     $ref: "#/components/schemas/Pagination"
         "401":
@@ -491,6 +493,28 @@ paths:
 
 components:
   schemas:
+    UserSummary:
+      type: object
+      required:
+        - id
+        - displayName
+        - email
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Internal unique identifier for the user.
+          readOnly: true
+          example: "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+        displayName:
+          type: string
+          description: User's display name.
+          example: "Alex Chen"
+        email:
+          type: string
+          format: email
+          description: User's email address.
+          example: "alex.chen@example.com"
     UserCreate:
       type: object
       required:

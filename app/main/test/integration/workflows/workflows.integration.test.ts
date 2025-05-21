@@ -28,7 +28,6 @@ import {cleanDatabase, prepareDatabase} from "../database"
 import {createDomainMockUserInDb} from "../shared/mock-data"
 import {get, post} from "../shared/requests"
 import {UserWithToken} from "../shared/types"
-import {time} from "console"
 
 // Helper function to create a mock group for tests
 async function createTestGroup(prisma: PrismaClient, name: string): Promise<{id: string}> {

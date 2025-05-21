@@ -31,6 +31,11 @@ export class RequestBuilder {
   build(): request.Test {
     return this.partialRequest
   }
+
+  query(params: Record<string, unknown>): RequestBuilder {
+    this.partialRequest = this.partialRequest.query(params)
+    return this
+  }
 }
 
 export function get(app: NestApplication, endpoint: string) {

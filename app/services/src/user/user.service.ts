@@ -8,6 +8,13 @@ import {USER_REPOSITORY_TOKEN, UserCreateError, UserGetError, UserRepository} fr
 import {Versioned} from "@services/shared/utils"
 import {isEmail, isUUIDv4} from "@utils"
 import {RequestorAwareRequest} from "@services/shared/types"
+import {PaginatedUsersList, UserListError} from "./interfaces"
+
+const MIN_PAGE = 1
+const MIN_LIMIT = 1
+const DEFAULT_LIMIT = 10
+const MAX_LIMIT = 100
+const MAX_SEARCH_LENGTH = 100
 
 @Injectable()
 export class UserService {
@@ -40,8 +47,29 @@ export class UserService {
 
     return pipe(userIdentifier, TE.right, TE.chainW(repoGetUser))
   }
+
+  listUsers(request: ListUsersRequest): TaskEither<UserListError, PaginatedUsersList> {
+    const {search} = request
+    const page = request.page ?? 1
+    const limit = request.limit ?? DEFAULT_LIMIT
+
+    if (page < MIN_PAGE) return TE.left("invalid_page_number")
+    if (limit < MIN_LIMIT || limit > MAX_LIMIT) return TE.left("invalid_limit_number")
+    if (search !== undefined) {
+      if (search.length > MAX_SEARCH_LENGTH) return TE.left("search_too_long")
+      if (!search.match(/^[a-zA-Z0-9@.%_+.-]+$/)) return TE.left("search_term_invalid_characters")
+    }
+
+    return this.userRepo.listUsers({search, page, limit})
+  }
 }
 
 export interface CreateUserRequest extends RequestorAwareRequest {
   userData: Parameters<typeof UserFactory.newUser>[0]
+}
+
+export interface ListUsersRequest {
+  readonly search?: string
+  readonly page?: number
+  readonly limit?: number
 }

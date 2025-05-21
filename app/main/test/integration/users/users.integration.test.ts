@@ -14,6 +14,8 @@ import {JwtService} from "@nestjs/jwt"
 import {OrgRole} from "@domain"
 import {get, post} from "../shared/requests"
 import {UserWithToken} from "../shared/types"
+import {UserSummary} from "@api"
+import "expect-more-jest"
 
 describe("Users API", () => {
   let app: NestApplication
@@ -240,6 +242,77 @@ describe("Users API", () => {
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("INVALID_IDENTIFIER")
+      })
+    })
+  })
+
+  describe(`GET ${endpoint}`, () => {
+    describe("good cases", () => {
+      it("should return a list of users (as OrgAdmin)", async () => {
+        // Given
+        const user1 = await createMockUserInDb(prisma, {email: "user1@example.com"})
+        const user2 = await createMockUserInDb(prisma, {email: "user2@example.com"})
+
+        // When
+        const response = await get(app, endpoint).withToken(orgAdminUser.token).build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        expect(response.body.users).toBeArray()
+        // Check if the created users are in the response, without assuming order
+        const responseUserIds = response.body.users.map((u: UserSummary) => u.id)
+        expect(responseUserIds).toBeArrayOfSize(4) // accounts for admin and member user created in beforeEach
+        expect(responseUserIds).toBeArrayIncludingAllOf([user1.id, user2.id])
+      })
+
+      it("should return users matching fuzzy display name search (as OrgAdmin)", async () => {
+        // Given
+        const user1 = await createMockUserInDb(prisma, {displayName: "Alice Smith", email: "alice.smith@example.com"})
+        await createMockUserInDb(prisma, {displayName: "Bob Johnson", email: "bob.j@example.com"})
+        await createMockUserInDb(prisma, {displayName: "Charlie Brown", email: "charlie.b@example.com"})
+
+        // When
+        const response = await get(app, endpoint).withToken(orgAdminUser.token).query({search: "alic"}).build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        expect(response.body.users).toBeArrayOfSize(1)
+        expect(response.body.users.map((u: UserSummary) => u.id)).toBeArrayIncludingOnly([user1.id])
+      })
+
+      it("should return users matching fuzzy email search (as OrgAdmin)", async () => {
+        // Given
+        await createMockUserInDb(prisma, {displayName: "Alice Smith", email: "alice.smith@example1.com"})
+        const user2 = await createMockUserInDb(prisma, {displayName: "Bob Johnson", email: "bob.j@example.com"})
+        const user3 = await createMockUserInDb(prisma, {displayName: "Charlie Brown", email: "charlie.b@example.com"})
+
+        // When
+        const response = await get(app, endpoint).withToken(orgAdminUser.token).query({search: "@example.com"}).build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        expect(response.body.users).toBeArrayOfSize(2)
+        const responseUserEmails = response.body.users.map((u: UserSummary) => u.email)
+        expect(responseUserEmails).toBeArrayIncludingOnly([user2.email, user3.email])
+      })
+
+      it("should return a list of users (as OrgMember)", async () => {
+        // When
+        const response = await get(app, endpoint).withToken(orgMemberUser.token).build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        expect(response.body.users).toBeArray()
+      })
+    })
+
+    describe("bad cases", () => {
+      it("should return 401 UNAUTHORIZED if no token is provided", async () => {
+        // When
+        const response = await get(app, endpoint).build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
       })
     })
   })

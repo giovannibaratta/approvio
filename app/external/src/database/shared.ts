@@ -5,6 +5,7 @@ import {
   GroupWithEntitiesCount,
   User,
   UserFactory,
+  UserSummary,
   UserValidationError,
   Workflow,
   WorkflowFactory,
@@ -17,6 +18,8 @@ import {Either} from "fp-ts/lib/Either"
 import {pipe} from "fp-ts/lib/function"
 import {PrismaGroupWithCount} from "./group.repository"
 import {Prisma} from "@prisma/client"
+import {UserSummaryRepo} from "./user.repository"
+import {UserSummaryValidationError} from "@domain"
 
 export function mapToDomainVersionedGroup(dbObject: PrismaGroup): Either<GroupValidationError, Versioned<Group>> {
   const object: Group = {
@@ -106,4 +109,12 @@ export function mapToDomainVersionedWorkflow(
 function prismaJsonToJson(prismaJson: Prisma.JsonValue): Either<"rule_invalid", JSON> {
   if (prismaJson === null) return E.left("rule_invalid")
   return E.right(JSON.parse(JSON.stringify(prismaJson)))
+}
+
+export function mapToDomainUserSummary(dbObject: UserSummaryRepo): Either<UserSummaryValidationError, UserSummary> {
+  const object: UserSummary = {
+    ...dbObject
+  }
+
+  return pipe(object, UserFactory.validateUserSummary)
 }
