@@ -2,7 +2,7 @@ import {Pagination as PaginationApi, User as UserApi, UserCreate, UserSummary as
 import {GetAuthenticatedUser} from "@app/auth"
 import {User} from "@domain"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Res} from "@nestjs/common"
-import {UserService} from "@services"
+import {ListUsersRequest, UserService} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -12,6 +12,7 @@ import {
   generateErrorResponseForCreateUser,
   generateErrorResponseForGetUser,
   generateErrorResponseForListUsers,
+  mapToServiceRequest,
   mapUserToApi,
   mapUsersToApi
 } from "./users.mappers"
@@ -53,20 +54,22 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   async listUsers(
     @Query("search") search?: string,
-    @Query("page") page?: number,
-    @Query("limit") limit?: number
+    @Query("page") page?: string,
+    @Query("limit") limit?: string
   ): Promise<{users: UserSummaryApi[]; pagination: PaginationApi}> {
-    const eitherUsers = await this.userService.listUsers({
-      search,
-      page,
-      limit
-    })()
+    const requestToService = (request: ListUsersRequest) => this.userService.listUsers(request)
 
-    if (isLeft(eitherUsers)) {
-      throw generateErrorResponseForListUsers(eitherUsers.left, "Failed to list users")
-    }
-    const result = mapUsersToApi(eitherUsers.right)
-    return result
+    const eitherUsers = await pipe(
+      {search, page, limit},
+      mapToServiceRequest,
+      TE.fromEither,
+      TE.chainW(requestToService),
+      TE.map(mapUsersToApi)
+    )()
+
+    if (isLeft(eitherUsers)) throw generateErrorResponseForListUsers(eitherUsers.left, "Failed to list users")
+
+    return eitherUsers.right
   }
 
   @Get(":userIdentifier")

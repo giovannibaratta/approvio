@@ -11,14 +11,17 @@ import {
 import {
   AuthorizationError,
   CreateUserRequest,
+  ListUsersRequest,
   PaginatedUsersList,
   UserCreateError,
   UserGetError,
   UserListError
 } from "@services"
-import {Either, right} from "fp-ts/Either"
+import {bindW, Do, Either, map, left, right} from "fp-ts/Either"
 import {generateErrorPayload} from "../error"
-
+import {pipe} from "fp-ts/lib/function"
+import * as O from "fp-ts/Option"
+import {Option} from "fp-ts/Option"
 export function createUserApiToServiceModel(data: {
   userData: UserCreate
   requestor: User
@@ -131,4 +134,34 @@ export function generateErrorResponseForListUsers(error: UserListError, context:
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
   }
+}
+
+export function mapToServiceRequest(request: {
+  search?: string
+  page?: string
+  limit?: string
+}): Either<"invalid_page_number" | "invalid_limit_number", ListUsersRequest> {
+  const {search, page, limit} = request
+
+  const validateInteger = <LValue>(value: string | undefined, lValue: LValue): Either<LValue, Option<number>> => {
+    if (!value) return right(O.none)
+
+    try {
+      return right(O.some(parseInt(value)))
+    } catch {
+      return left(lValue)
+    }
+  }
+
+  return pipe(
+    Do,
+    bindW("search", () => right(search)),
+    bindW("page", () => validateInteger(page, "invalid_page_number" as const)),
+    bindW("limit", () => validateInteger(limit, "invalid_limit_number" as const)),
+    map(request => ({
+      search: request.search,
+      page: O.isSome(request.page) ? request.page.value : undefined,
+      limit: O.isSome(request.limit) ? request.limit.value : undefined
+    }))
+  )
 }
