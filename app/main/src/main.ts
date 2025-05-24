@@ -5,7 +5,9 @@ import {AppModule} from "./app.module"
 async function bootstrap() {
   const app = await NestFactory.create(AppModule)
   app.useGlobalPipes(globalValidationPipe)
-  app.enableCors()
+  app.enableCors({
+    exposedHeaders: ["Location"]
+  })
   await app.listen(3000)
 }
 
