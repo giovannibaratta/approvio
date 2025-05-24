@@ -55,7 +55,7 @@ export class DebugController {
 
     // Generate JWT token
     const payload = {email: userDomain.email, sub: userDomain.id}
-    const token = this.jwtService.sign(payload)
+    const token = this.jwtService.sign(payload, {expiresIn: "1h"})
 
     return {token}
   }
