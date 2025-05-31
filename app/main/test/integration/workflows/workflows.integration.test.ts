@@ -5,7 +5,7 @@ import {
   Workflow as WorkflowApi,
   WorkflowCreate,
   WorkflowVoteRequest as WorkflowVoteRequestApi
-} from "@api"
+} from "@approvio/api"
 import {AppModule} from "@app/app.module"
 import {WORKFLOWS_ENDPOINT_ROOT} from "@controllers"
 import {

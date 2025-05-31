@@ -1,7 +1,0 @@
-api/**
-api.module.ts
-configuration.ts
-git_push.sh
-index.ts
-README.md
-variables.ts

@@ -1,4 +1,3 @@
-import {WorkflowCreate} from "@api"
 import {GetAuthenticatedUser} from "@app/auth"
 import {User} from "@domain"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Res} from "@nestjs/common"
@@ -20,8 +19,9 @@ import {
 import {
   Workflow as WorkflowApi,
   CanVoteResponse as CanVoteResponseApi,
-  WorkflowVoteRequest as WorkflowVoteRequestApi
-} from "@api"
+  WorkflowVoteRequest as WorkflowVoteRequestApi,
+  WorkflowCreate
+} from "@approvio/api"
 
 export const WORKFLOWS_ENDPOINT_ROOT = "workflows"
 

@@ -1,4 +1,4 @@
-import {Group as GroupApi, GroupCreate, ListGroupEntities200Response, ListGroups200Response} from "@api"
+import {Group as GroupApi, GroupCreate, ListGroupEntities200Response, ListGroups200Response} from "@approvio/api"
 import {EntityType, Role} from "@controllers/shared/types"
 import {
   DESCRIPTION_MAX_LENGTH,

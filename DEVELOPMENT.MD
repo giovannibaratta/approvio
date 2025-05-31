@@ -6,8 +6,7 @@
 
 ##
 
-1. yarn generate-api
-2. yarn prisma:generate
-3. yarn deps:start
-4. yarn db:migrate
-5. yarn start:dev
+1. yarn prisma:generate
+2. yarn deps:start
+3. yarn db:migrate
+4. yarn start:dev

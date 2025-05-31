@@ -5,7 +5,7 @@ import {
   ListGroupEntities200Response,
   ListGroups200Response,
   RemoveGroupEntitiesRequest
-} from "@api"
+} from "@approvio/api"
 import {GetAuthenticatedUser} from "@app/auth"
 import {
   createGroupApiToServiceModel,

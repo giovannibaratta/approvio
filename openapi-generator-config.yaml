@@ -1,5 +1,0 @@
-additionalProperties:
-  withInterfaces: true
-  withSeparateModelsAndApi: true
-  modelPropertyNaming: camelCase
-  strict: true

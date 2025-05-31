@@ -46,8 +46,6 @@ rule {
     app/controllers/src/**/*mappers.ts
     app/controllers/src/controllers.module.ts
     app/services/src/** // Controllers often use services
-    generated/openapi/model/** // API data structures
-    openapi.yaml // API definition
   ]
 }
 
@@ -109,20 +107,6 @@ rule {
   ]
 }
 
-// --- API Definition & Generated Code ---
-rule {
-  glob: [openapi.yaml, generated/openapi/**/*.ts]
-  category: api-definition
-  description: OpenAPI specification and auto-generated client code (models, API interfaces). Files in 'generated/' are auto-generated and should usually not be edited directly.
-  associated: [
-    app/controllers/src/** // Controllers implement the API
-  ]
-  ignore: [
-    generated/openapi/api/** // Generated API client services, less relevant for backend changes
-    generated/openapi/.openapi-generator-ignore
-    generated/openapi/.openapi-generator/**
-  ]
-}
 
 // --- Testing ---
 rule {

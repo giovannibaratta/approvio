@@ -9,7 +9,6 @@
     "allowJs": true,
     "noUncheckedIndexedAccess": true,
     "paths": {
-      "@api": ["generated/openapi/model/models"],
       "@app": ["app/main/src"],
       "@app/*": ["app/main/src/*"],
       "@services": ["app/services/src"],

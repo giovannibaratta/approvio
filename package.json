@@ -1,5 +1,5 @@
 {
-  "name": "approvio",
+  "name": "@approvio/backend",
   "version": "0.0.1",
   "author": "Giovanni Baratta",
   "license": "MIT",
@@ -23,13 +23,13 @@
     "prisma:pull": "yarn prisma db pull && prisma-case-format --file prisma/schema.prisma -p --table-case pascal,singular --field-case camel",
     "prisma:generate": "yarn prisma generate",
     "build": "nest build",
-    "generate-api": "openapi-generator-cli generate -i openapi.yaml -g typescript-nestjs -o generated/openapi/ -c openapi-generator-config.yaml",
     "test:setup": "yarn deps:start:test && yarn prisma:generate && yarn liquibase:update:test",
     "test": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest app/**/*.test.ts",
     "test:single": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest "
   },
   "packageManager": "yarn@4.7.0",
   "dependencies": {
+    "@approvio/api": "0.0.2",
     "@nestjs/common": "11.0.11",
     "@nestjs/core": "11.0.11",
     "@nestjs/jwt": "11.0.0",
@@ -48,7 +48,6 @@
     "@nestjs/cli": "11.0.5",
     "@nestjs/schematics": "11.0.1",
     "@nestjs/testing": "11.0.11",
-    "@openapitools/openapi-generator-cli": "2.17.0",
     "@types/chance": "1.1.6",
     "@types/express": "5.0.0",
     "@types/jest": "29.5.14",

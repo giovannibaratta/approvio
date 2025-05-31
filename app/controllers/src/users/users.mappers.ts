@@ -1,4 +1,4 @@
-import {ListUsers200Response, User as UserApi, UserCreate} from "@api"
+import {ListUsers200Response, User as UserApi, UserCreate} from "@approvio/api"
 import {User, User as UserDomain} from "@domain"
 import {
   BadRequestException,

@@ -7,7 +7,7 @@ import {
   WorkflowCreate,
   CanVoteResponse as CanVoteResponseApi,
   WorkflowVoteRequest as WorkflowVoteRequestApi
-} from "@api"
+} from "@approvio/api"
 import {generateErrorPayload} from "@controllers/error"
 import {
   AndRule,

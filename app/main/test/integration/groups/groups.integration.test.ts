@@ -5,7 +5,7 @@ import {
   ListGroups200Response,
   RemoveGroupEntitiesRequest,
   Group as GroupApi
-} from "@api"
+} from "@approvio/api"
 import {AppModule} from "@app/app.module"
 import {EntityType, GROUPS_ENDPOINT_ROOT, Role} from "@controllers"
 import {DESCRIPTION_MAX_LENGTH, OrgRole} from "@domain"
