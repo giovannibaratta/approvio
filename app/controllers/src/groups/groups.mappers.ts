@@ -273,11 +273,15 @@ export function generateErrorResponseForRemoveUserFromGroup(
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: group not found`))
     case "user_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: user not found`))
-    case "entity_not_in_group":
-      return new NotFoundException(generateErrorPayload(errorCode, `${context}: user is not a member of this group`))
+    case "membership_not_found":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: user is not a member of this group`))
     case "requestor_not_authorized":
       return new ForbiddenException(
         generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
+      )
+    case "membership_no_owner":
+      return new BadRequestException(
+        generateErrorPayload(errorCode, `${context}: Cannot remove the last owner from a group`)
       )
     case "invalid_role":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid role provided`))

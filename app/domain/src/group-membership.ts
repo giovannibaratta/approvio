@@ -107,16 +107,18 @@ export class MembershipFactory {
   }
 }
 
-function getEntityId(entity: PrivateMembership["entity"]): string {
+function getEntityId(entity: PrivateMembership["entity"]): EntityId {
   return typeof entity === "string" ? entity : entity.id
 }
 
 export type GroupManagerValidationError = "duplicated_membership"
-export type RemoveMembershipError = "membership_not_found"
+export type RemoveMembershipError = "membership_not_found" | "membership_no_owner"
 export type UpdateMembershipError = RemoveMembershipError
 
+type EntityId = string
+
 export class GroupManager {
-  private readonly memberships: Map<string, Membership> = new Map()
+  private readonly memberships: Map<EntityId, Membership> = new Map()
 
   private constructor(
     readonly group: Group,
@@ -143,11 +145,14 @@ export class GroupManager {
     return right(this)
   }
 
-  isEntityInMembership(entityId: string): boolean {
+  isEntityInMembership(entityId: EntityId): boolean {
     return this.memberships.has(entityId)
   }
 
-  isEntityInMembershipWithRole(entityId: string, role: HumanGroupMembershipRole | HumanGroupMembershipRole[]): boolean {
+  isEntityInMembershipWithRole(
+    entityId: EntityId,
+    role: HumanGroupMembershipRole | HumanGroupMembershipRole[]
+  ): boolean {
     const membership = this.memberships.get(entityId)
     const admissibleRoles = Array.isArray(role) ? role : [role]
     return membership !== undefined && admissibleRoles.includes(membership.role)
@@ -156,15 +161,21 @@ export class GroupManager {
   removeMembership(entityId: string): Either<RemoveMembershipError, GroupManager> {
     if (!this.isEntityInMembership(entityId)) return left("membership_not_found")
 
-    this.memberships.delete(entityId)
-    return right(this)
-  }
+    // Check if removing this member would leave the group without an owner
+    const membershipToRemove = this.memberships.get(entityId)
 
-  updateMembership(membership: Membership): Either<UpdateMembershipError, GroupManager> {
-    const eitherRemove = this.removeMembership(membership.getEntityId())
-    if (isLeft(eitherRemove)) return eitherRemove
-    const eitherAdd = this.addMembership(membership)
-    if (isLeft(eitherAdd)) throw new Error("Unexpected error: membership should have been added successfully")
+    if (membershipToRemove === undefined) return left("membership_not_found")
+
+    if (membershipToRemove.role === HumanGroupMembershipRole.OWNER) {
+      const remainingOwners = Array.from(this.memberships.values()).filter(
+        m => m.role === HumanGroupMembershipRole.OWNER && m.getEntityId() !== entityId
+      )
+      if (remainingOwners.length === 0)
+        // Removing the entity would leave the group without an owner, which is not allowed
+        return left("membership_no_owner")
+    }
+
+    this.memberships.delete(entityId)
     return right(this)
   }
 
@@ -172,6 +183,12 @@ export class GroupManager {
     return this.canAdministerGroup(requestor)
   }
 
+  /**
+   * Validate that the requestor has enough permissions to remove a membership.
+   *
+   * Returns:
+   * - true if the requestor has enough permissions to remove a membership, false otherwise
+   */
   canRemoveMembership(requestor: User): boolean {
     return this.canAdministerGroup(requestor)
   }

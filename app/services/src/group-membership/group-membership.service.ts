@@ -141,6 +141,12 @@ export class GroupMembershipService {
 
       if (!groupManager.canRemoveMembership(requestor)) return TE.left("requestor_not_authorized" as const)
 
+      // Simulate removing each member
+      for (const member of request.members) {
+        const removeResult = groupManager.removeMembership(member.userId)
+        if (isLeft(removeResult)) return TE.left(removeResult.left)
+      }
+
       return TE.right({group: data.group, memberships: data.memberships})
     }
 

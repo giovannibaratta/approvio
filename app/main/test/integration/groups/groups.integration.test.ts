@@ -3,7 +3,8 @@ import {
   GroupCreate,
   ListGroupEntities200Response,
   ListGroups200Response,
-  RemoveGroupEntitiesRequest
+  RemoveGroupEntitiesRequest,
+  Group as GroupApi
 } from "@api"
 import {AppModule} from "@app/app.module"
 import {EntityType, GROUPS_ENDPOINT_ROOT, Role} from "@controllers"
@@ -234,7 +235,7 @@ describe("Groups API", () => {
         const bodyPage1: ListGroups200Response = response.body
         expect(bodyPage1.groups).toHaveLength(2)
         // Assuming default order is insertion/creation time ASC
-        expect(bodyPage1.groups.map((g: any) => g.id)).toEqual([group1.id, group2.id])
+        expect(bodyPage1.groups.map((g: GroupApi) => g.id)).toEqual([group1.id, group2.id])
         expect(bodyPage1.pagination).toEqual({
           total: 3,
           page: 1,
@@ -248,7 +249,7 @@ describe("Groups API", () => {
         expect(responsePage2).toHaveStatusCode(HttpStatus.OK)
         const bodyPage2: ListGroups200Response = responsePage2.body
         expect(bodyPage2.groups).toHaveLength(1)
-        expect(bodyPage2.groups.map((g: any) => g.id)).toEqual([group3.id])
+        expect(bodyPage2.groups.map((g: GroupApi) => g.id)).toEqual([group3.id])
         expect(bodyPage2.pagination).toEqual({
           total: 3,
           page: 2,
@@ -813,7 +814,7 @@ describe("Groups API", () => {
           expect(remainingMemberships).toHaveLength(0)
         })
 
-        it("should return OK if user to remove is not in the group (as OrgAdmin)", async () => {
+        it("should return BAD_REQUEST if user to remove is not in the group (as OrgAdmin)", async () => {
           // Given: user3 was not added
           const requestBody: RemoveGroupEntitiesRequest = {
             entities: [{entity: {entityId: user2.id, entityType: EntityType.HUMAN}}]
@@ -825,9 +826,8 @@ describe("Groups API", () => {
             .send(requestBody)
 
           // Expect
-          expect(response).toHaveStatusCode(HttpStatus.OK)
-          // Count should remain unchanged (2 members)
-          expect(response.body.entitiesCount).toEqual(2)
+          expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+          expect(response.body).toHaveErrorCode("MEMBERSHIP_NOT_FOUND")
         })
       })
 
@@ -897,6 +897,72 @@ describe("Groups API", () => {
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
           expect(response.body).toHaveErrorCode("INVALID_UUID")
+        })
+
+        it("should return 400 BAD_REQUEST (membership_no_owner) if attempting to remove the last owner", async () => {
+          // Given: group has one owner (user1) and one other member (orgMemberUser)
+          // Ensure user1 is the only owner and orgMemberUser is not an owner.
+          await prisma.groupMembership.deleteMany({where: {groupId: group.id}})
+          await prisma.groupMembership.create({
+            data: {
+              groupId: group.id,
+              userId: user1.id,
+              role: Role.OWNER,
+              createdAt: new Date(),
+              updatedAt: new Date()
+            }
+          })
+          await prisma.groupMembership.create({
+            data: {
+              groupId: group.id,
+              userId: orgMemberUser.user.id,
+              role: Role.APPROVER,
+              createdAt: new Date(),
+              updatedAt: new Date()
+            }
+          })
+
+          const requestBody: RemoveGroupEntitiesRequest = {
+            entities: [{entity: {entityId: user1.id, entityType: EntityType.HUMAN}}]
+          }
+
+          // When
+          const response = await del(app, entitiesEndpoint(group.id))
+            .withToken(orgAdminUser.token)
+            .build()
+            .send(requestBody)
+
+          // Expect
+          expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+          expect(response.body).toHaveErrorCode("MEMBERSHIP_NO_OWNER")
+        })
+
+        it("should return 400 BAD_REQUEST (membership_no_owner) if attempting to remove the last member (who is also the only owner)", async () => {
+          // Given: group has only one member who is also the owner
+          await prisma.groupMembership.deleteMany({where: {groupId: group.id}})
+          await prisma.groupMembership.create({
+            data: {
+              groupId: group.id,
+              userId: user1.id,
+              role: Role.OWNER,
+              createdAt: new Date(),
+              updatedAt: new Date()
+            }
+          })
+
+          const requestBody: RemoveGroupEntitiesRequest = {
+            entities: [{entity: {entityId: user1.id, entityType: EntityType.HUMAN}}]
+          }
+
+          // When
+          const response = await del(app, entitiesEndpoint(group.id))
+            .withToken(orgAdminUser.token)
+            .build()
+            .send(requestBody)
+
+          // Expect
+          expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+          expect(response.body).toHaveErrorCode("MEMBERSHIP_NO_OWNER")
         })
       })
     })

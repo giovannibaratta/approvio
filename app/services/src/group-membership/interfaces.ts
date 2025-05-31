@@ -5,7 +5,8 @@ import {
   Membership,
   MembershipValidationError,
   MembershipValidationErrorWithGroupRef,
-  MembershipWithGroupRef
+  MembershipWithGroupRef,
+  RemoveMembershipError
 } from "@domain"
 import {ConcurrentModificationError, UnknownError} from "@services/error"
 import {GetGroupRepoError} from "@services/group/interfaces"
@@ -28,7 +29,7 @@ export type MembershipRemoveError =
   | GetGroupRepoError
   | UserGetError
   | MembershipValidationError
-  | "entity_not_in_group"
+  | RemoveMembershipError
   | UnknownError
   | ConcurrentModificationError
 
