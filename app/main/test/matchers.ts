@@ -76,28 +76,29 @@ export function toHaveStatusCode(
   if (!hasOwnProperty(actualResponse, "statusCode")) {
     return {
       pass: false,
-      message: () => "Expected response object to have a 'statusCode' property, but it was missing or undefined."
+      message: () => "Expected response object to have a 'statusCode' property."
     }
   }
 
   if (typeof actualResponse.statusCode !== "number") {
     return {
       pass: false,
-      message: () => "Expected response object to have a 'statusCode' property, but it was missing or undefined."
+      message: () => "Expected response object to have a 'statusCode' property of type number."
     }
   }
 
   if (!hasOwnProperty(actualResponse, "body")) {
     return {
       pass: false,
-      message: () => "Expected response object to have a 'body' property, but it was missing or undefined."
+      message: () => "Expected response object to have a 'body' property."
     }
   }
 
   if (typeof actualResponse.body !== "object" || actualResponse.body === null) {
     return {
       pass: false,
-      message: () => "Expected response object to have a 'body' property, but it was missing or undefined."
+      message: () =>
+        "Expected response object to have a 'body' property of type object, but it was missing or undefined."
     }
   }
 
@@ -142,5 +143,5 @@ expect.extend({
 })
 
 function hasOwnProperty<T extends object, K extends PropertyKey>(obj: T, prop: K): obj is T & Record<K, unknown> {
-  return Object.prototype.hasOwnProperty.call(obj, prop)
+  return prop in obj
 }
