@@ -10,8 +10,8 @@ const mainSettings = {
     ]
   },
   moduleNameMapper: {
-    "@app/(.*)": "<rootDir>/app/main/src/$1",
-    "@app": "<rootDir>/app/main/src",
+    "^@app/(.*)$": "<rootDir>/app/main/src/$1",
+    "^@app$": "<rootDir>/app/main/src",
     "@controllers/(.*)": "<rootDir>/app/controllers/src/$1",
     "@controllers": "<rootDir>/app/controllers/src",
     "@domain/(.*)": "<rootDir>/app/domain/src/$1",
