@@ -1,7 +1,9 @@
 import {ErrorPayload} from "@controllers/error"
+// eslint-disable-next-line node/no-extraneous-import
 import {MatcherFunction} from "expect"
 
 declare global {
+  // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace jest {
     interface Matchers<R, T> {
       toHaveErrorCode(expectedCode: string): T
@@ -23,8 +25,15 @@ export {}
 
 export function toHaveErrorCode(received: unknown, expectedCode: string) {
   // Type guard function to validate ErrorPayload structure
-  const isErrorPayload = (obj: any): obj is ErrorPayload => {
-    return obj !== null && typeof obj === "object" && typeof obj.code === "string" && typeof obj.message === "string"
+  const isErrorPayload = (obj: unknown): obj is ErrorPayload => {
+    return (
+      obj !== null &&
+      typeof obj === "object" &&
+      hasOwnProperty(obj, "code") &&
+      typeof obj.code === "string" &&
+      hasOwnProperty(obj, "message") &&
+      typeof obj.message === "string"
+    )
   }
 
   if (!isErrorPayload(received)) {
@@ -54,9 +63,44 @@ export function toHaveErrorCode(received: unknown, expectedCode: string) {
  */
 export function toHaveStatusCode(
   this: jest.MatcherContext,
-  actualResponse: any,
+  actualResponse: unknown,
   expectedStatusCode: number
 ): jest.CustomMatcherResult {
+  if (typeof actualResponse !== "object" || actualResponse === null) {
+    return {
+      pass: false,
+      message: () => "Expected response object to be an object, but it was not."
+    }
+  }
+
+  if (!hasOwnProperty(actualResponse, "statusCode")) {
+    return {
+      pass: false,
+      message: () => "Expected response object to have a 'statusCode' property, but it was missing or undefined."
+    }
+  }
+
+  if (typeof actualResponse.statusCode !== "number") {
+    return {
+      pass: false,
+      message: () => "Expected response object to have a 'statusCode' property, but it was missing or undefined."
+    }
+  }
+
+  if (!hasOwnProperty(actualResponse, "body")) {
+    return {
+      pass: false,
+      message: () => "Expected response object to have a 'body' property, but it was missing or undefined."
+    }
+  }
+
+  if (typeof actualResponse.body !== "object" || actualResponse.body === null) {
+    return {
+      pass: false,
+      message: () => "Expected response object to have a 'body' property, but it was missing or undefined."
+    }
+  }
+
   // Determine if the response object has a 'statusCode' property.
   const actualStatusCode = actualResponse?.statusCode
   const actualBody = actualResponse?.body
@@ -96,3 +140,7 @@ expect.extend({
   toHaveErrorCode,
   toHaveStatusCode
 })
+
+function hasOwnProperty<T extends object, K extends PropertyKey>(obj: T, prop: K): obj is T & Record<K, unknown> {
+  return Object.prototype.hasOwnProperty.call(obj, prop)
+}
