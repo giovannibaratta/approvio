@@ -88,6 +88,14 @@ function validateGroupName(name: string): Either<NameValidationError, string> {
     return left("name_too_long")
   }
 
+  // A valid group name:
+  // - Contains only letters (a-z, A-Z), numbers (0-9), or hyphens (-)
+  // - Cannot start with a number
+  // - Cannot start or end with a hyphen
+  if (/[^a-zA-Z0-9-]|(^[-0-9])|(-$)/.test(name)) {
+    return left("name_invalid_characters")
+  }
+
   return right(name)
 }
 

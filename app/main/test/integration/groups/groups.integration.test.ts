@@ -134,7 +134,7 @@ describe("Groups API", () => {
 
     describe("bad cases", () => {
       it("should return 401 UNAUTHORIZED if no token is provided", async () => {
-        const requestBody: GroupCreate = {name: "Unauthorized Group"}
+        const requestBody: GroupCreate = {name: "Unauthorized-Group"}
         const response = await post(app, endpoint).build().send(requestBody)
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
       })
@@ -142,7 +142,7 @@ describe("Groups API", () => {
       it("should return 409 CONFLICT (GROUP_ALREADY_EXISTS) if a group with the same name exists (as OrgAdmin)", async () => {
         // Given
         const requestBody: GroupCreate = {
-          name: "Duplicate Group Name"
+          name: "Duplicate-Group-Name"
         }
         await createTestGroup(prisma, requestBody.name)
 
@@ -168,11 +168,67 @@ describe("Groups API", () => {
         expect(response.body).toHaveErrorCode("NAME_EMPTY")
       })
 
+      it("should return 400 BAD_REQUEST (NAME_INVALID_CHARACTERS) if name contains invalid characters", async () => {
+        // Given
+        const requestBody: GroupCreate = {
+          name: "group@1"
+        }
+
+        // When
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("NAME_INVALID_CHARACTERS")
+      })
+
+      it("should return 400 BAD_REQUEST (NAME_INVALID_CHARACTERS) if name starts with a number", async () => {
+        // Given
+        const requestBody: GroupCreate = {
+          name: "1group"
+        }
+
+        // When
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("NAME_INVALID_CHARACTERS")
+      })
+
+      it("should return 400 BAD_REQUEST (NAME_INVALID_CHARACTERS) if name starts with a hyphen", async () => {
+        // Given
+        const requestBody: GroupCreate = {
+          name: "-group"
+        }
+
+        // When
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("NAME_INVALID_CHARACTERS")
+      })
+
+      it("should return 400 BAD_REQUEST (NAME_INVALID_CHARACTERS) if name ends with a hyphen", async () => {
+        // Given
+        const requestBody: GroupCreate = {
+          name: "group-"
+        }
+
+        // When
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("NAME_INVALID_CHARACTERS")
+      })
+
       it("should return 400 BAD_REQUEST (DESCRIPTION_TOO_LONG) if description is too long (as OrgAdmin)", async () => {
         // Given
         const longDescription = "a".repeat(DESCRIPTION_MAX_LENGTH + 1)
         const requestBody: GroupCreate = {
-          name: "Long Desc Group",
+          name: "Long-Desc-Group",
           description: longDescription
         }
 
@@ -205,7 +261,7 @@ describe("Groups API", () => {
 
       it("should return an empty list if OrgMember is not part of any group", async () => {
         // Given: OrgMember is not added to any group yet
-        await createTestGroup(prisma, "Group Member Is Not In")
+        await createTestGroup(prisma, "Group-Member-Is-Not-In")
 
         // When
         const response = await get(app, endpoint).withToken(orgMemberUser.token).build()
@@ -223,9 +279,9 @@ describe("Groups API", () => {
 
       it("should return a list of all groups with correct pagination (as OrgAdmin)", async () => {
         // Given: some groups
-        const group1 = await createTestGroup(prisma, "Group 1")
-        const group2 = await createTestGroup(prisma, "Group 2")
-        const group3 = await createTestGroup(prisma, "Group 3")
+        const group1 = await createTestGroup(prisma, "Group-1")
+        const group2 = await createTestGroup(prisma, "Group-2")
+        const group3 = await createTestGroup(prisma, "Group-3")
 
         // When: Request the first page with limit 2
         const response = await get(app, `${endpoint}?page=1&limit=2`).withToken(orgAdminUser.token).build()
@@ -259,8 +315,8 @@ describe("Groups API", () => {
 
       it("should return only groups the OrgMember is part of", async () => {
         // Given: some groups and member is part of group2
-        await createTestGroup(prisma, "Group 1")
-        const group2 = await createTestGroup(prisma, "Group 2")
+        await createTestGroup(prisma, "Group-1")
+        const group2 = await createTestGroup(prisma, "Group-2")
 
         // Add OrgMember to group2
         await prisma.groupMembership.create({
@@ -328,7 +384,7 @@ describe("Groups API", () => {
     describe("good cases", () => {
       it("should return group details when fetching by ID (as OrgAdmin)", async () => {
         // Given
-        const createdGroup = await createTestGroup(prisma, "Specific Group", "Details here")
+        const createdGroup = await createTestGroup(prisma, "Specific-Group", "Details here")
 
         // When
         const response = await get(app, `${endpoint}/${createdGroup.id}`).withToken(orgAdminUser.token).build()
@@ -361,7 +417,7 @@ describe("Groups API", () => {
 
       it("should return group details if OrgMember is a member of the group (fetching by ID)", async () => {
         // Given
-        const createdGroup = await createTestGroup(prisma, "Member Group")
+        const createdGroup = await createTestGroup(prisma, "Member-Group")
         // Add OrgMember to the group
         await prisma.groupMembership.create({
           data: {
@@ -386,14 +442,14 @@ describe("Groups API", () => {
 
     describe("bad cases", () => {
       it("should return 401 UNAUTHORIZED if no token is provided", async () => {
-        const createdGroup = await createTestGroup(prisma, "Unauthorized Group")
+        const createdGroup = await createTestGroup(prisma, "Unauthorized-Group")
         const response = await get(app, `${endpoint}/${createdGroup.id}`).build()
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
       })
 
       it("should return 404 NOT_FOUND if OrgMember tries to fetch group they are not part of", async () => {
         // Given:  OrgMember is NOT part of the group
-        const createdGroup = await createTestGroup(prisma, "Other Group")
+        const createdGroup = await createTestGroup(prisma, "Other-Group")
 
         // When
         const response = await get(app, `${endpoint}/${createdGroup.id}`).withToken(orgMemberUser.token).build()
@@ -437,7 +493,7 @@ describe("Groups API", () => {
 
     beforeEach(async () => {
       // Create common resources for membership tests
-      group = await createTestGroup(prisma, "Membership Test Group")
+      group = await createTestGroup(prisma, "Membership-Test-Group")
       // User1 is admin, User2 is member for auth tests
       user1 = await createMockUserInDb(prisma, {orgRole: OrgRole.ADMIN})
       user2 = await createMockUserInDb(prisma, {orgRole: OrgRole.MEMBER})
@@ -698,7 +754,7 @@ describe("Groups API", () => {
 
         it("should return 404 NOT_FOUND if OrgMember tries to list members of a group they are not in", async () => {
           // Given
-          const otherGroup = await createTestGroup(prisma, "Other Group")
+          const otherGroup = await createTestGroup(prisma, "Other-Group")
           // orgMemberUser (user2) is not in otherGroup
 
           // When
