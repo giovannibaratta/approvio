@@ -24,3 +24,12 @@ type ExtractReturnType<
 > =
   // Get the return type of the specified method
   ReturnType<InstanceType<ClassType>[MethodName]>
+
+/**
+ * Omit a key from a union type preserving the type of the union
+ * @example
+ * type MyUnion = {a: string, c: number} | {b: number, c: string}
+ * type MyUnionWithoutC = DistributiveOmit<MyUnion, "c"> // {a: string} | {b: number}
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type DistributiveOmit<T, K extends keyof any> = T extends any ? Omit<T, K> : never
