@@ -38,7 +38,7 @@ const testSettings = {
     "!build/**"
   ],
   modulePathIgnorePatterns: ["<rootDir>/build/"],
-  setupFilesAfterEnv: ["<rootDir>/app/main/test/matchers.ts"]
+  setupFilesAfterEnv: ["<rootDir>/app/utils/src/matchers.ts"]
 }
 
 module.exports = {

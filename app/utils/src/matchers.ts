@@ -1,6 +1,7 @@
 import {ErrorPayload} from "@controllers/error"
 // eslint-disable-next-line node/no-extraneous-import
 import {MatcherFunction} from "expect"
+import {Either, isLeft, isRight} from "fp-ts/lib/Either"
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -13,15 +14,95 @@ declare global {
        * @param expectedStatusCode The expected HTTP status code (e.g., 200, 404).
        */
       toHaveStatusCode(expectedStatusCode: number): R
+      toBeLeft(): R
+      toBeLeftOf(expected: unknown): R
+      toBeRight(): R
     }
 
     interface ExpectExtendMap {
       toHaveErrorCode: MatcherFunction<[expectedCode: string]>
+      toBeLeft: MatcherFunction<[]>
+      toBeLeftOf: MatcherFunction<[expected: unknown]>
+      toBeRight: MatcherFunction<[]>
     }
   }
 }
 
 export {}
+
+function isEither(received: unknown): received is Either<unknown, unknown> {
+  const has_tag =
+    typeof received === "object" &&
+    received !== null &&
+    "_tag" in received &&
+    typeof received._tag === "string" &&
+    (received._tag === "Left" || received._tag === "Right")
+
+  if (!has_tag) return false
+
+  if (received._tag === "Left" && "left" in received) return true
+  if (received._tag === "Right" && "right" in received) return true
+
+  return false
+}
+
+export function toBeLeft(received: unknown): jest.CustomMatcherResult {
+  if (!isEither(received)) {
+    return {
+      pass: false,
+      message: () => `Expected ${received} to be an Either`
+    }
+  }
+
+  return {
+    pass: isLeft(received),
+    message: () => `Expected ${received} to be left`
+  }
+}
+
+export function toBeLeftOf(received: unknown, expected: unknown): jest.CustomMatcherResult {
+  if (!isEither(received)) {
+    return {
+      pass: false,
+      message: () => `Expected ${received} to be an Either`
+    }
+  }
+
+  if (!isLeft(received)) {
+    return {
+      pass: false,
+      message: () => `Expected ${received} to be left`
+    }
+  }
+
+  const pass = received.left === expected
+
+  return {
+    pass,
+    message: () => `Expected ${received} to be left of ${expected}`
+  }
+}
+
+export function toBeRight(received: unknown): jest.CustomMatcherResult {
+  if (!isEither(received)) {
+    return {
+      pass: false,
+      message: () => `Expected ${received} to be an Either`
+    }
+  }
+
+  if (!isRight(received)) {
+    return {
+      pass: false,
+      message: () => `Expected ${received} to be right`
+    }
+  }
+
+  return {
+    pass: true,
+    message: () => `Expected ${received} to be right`
+  }
+}
 
 export function toHaveErrorCode(received: unknown, expectedCode: string) {
   // Type guard function to validate ErrorPayload structure
@@ -139,7 +220,10 @@ export function toHaveStatusCode(
 
 expect.extend({
   toHaveErrorCode,
-  toHaveStatusCode
+  toHaveStatusCode,
+  toBeLeft,
+  toBeLeftOf,
+  toBeRight
 })
 
 function hasOwnProperty<T extends object, K extends PropertyKey>(obj: T, prop: K): obj is T & Record<K, unknown> {
