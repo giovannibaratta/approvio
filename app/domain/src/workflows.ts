@@ -3,14 +3,23 @@ import * as E from "fp-ts/Either"
 import {Either, isLeft, left, right} from "fp-ts/lib/Either"
 import {ApprovalRule, ApprovalRuleFactory, ApprovalRuleType, ApprovalRuleValidationError} from "./approval-rules"
 import {getStringAsEnum} from "@utils"
-import {MembershipWithGroupRef, HumanGroupMembershipRole} from "@domain"
+import {
+  MembershipWithGroupRef,
+  HumanGroupMembershipRole,
+  Vote,
+  consolidateVotes,
+  doesVotesCoverApprovalRules
+} from "@domain"
 
 export const WORKFLOW_NAME_MAX_LENGTH = 512
 export const WORKFLOW_DESCRIPTION_MAX_LENGTH = 2048
 
 export enum WorkflowStatus {
-  EVALUATION_IN_PROGRESS = "EVALUATION_IN_PROGRESS",
-  EVALUATION_COMPLETED = "EVALUATION_COMPLETED"
+  PENDING = "PENDING",
+  APPROVED = "APPROVED",
+  REJECTED = "REJECTED",
+  CANCELED = "CANCELED",
+  EVALUATION_IN_PROGRESS = "EVALUATION_IN_PROGRESS"
 }
 
 export type Workflow = Readonly<WorkflowData & WorkflowLogic>
@@ -21,12 +30,14 @@ interface WorkflowData {
   description?: string
   rule: ApprovalRule
   status: WorkflowStatus
+  recalculationRequired: boolean
   createdAt: Date
   updatedAt: Date
 }
 
 interface WorkflowLogic {
   canVote(memberships: ReadonlyArray<MembershipWithGroupRef>): boolean
+  evaluateStatus(votes: ReadonlyArray<Vote>): Either<WorkflowValidationError, Workflow>
 }
 
 export type WorkflowValidationError =
@@ -58,14 +69,18 @@ export class WorkflowFactory {
    * @returns Either a validation error or the newly created Workflow object.
    */
   static newWorkflow(
-    data: Omit<Parameters<typeof WorkflowFactory.validate>[0], "id" | "createdAt" | "updatedAt" | "status">
+    data: Omit<
+      Parameters<typeof WorkflowFactory.validate>[0],
+      "id" | "createdAt" | "updatedAt" | "status" | "recalculationRequired"
+    >
   ): Either<WorkflowValidationError, Workflow> {
     const uuid = randomUUID()
     const now = new Date()
     const workflow = {
       ...data,
       id: uuid,
-      status: WorkflowStatus.EVALUATION_IN_PROGRESS,
+      status: WorkflowStatus.PENDING,
+      recalculationRequired: false,
       createdAt: now,
       updatedAt: now
     }
@@ -79,7 +94,7 @@ export class WorkflowFactory {
    * @returns Either a validation error or the validated Workflow object.
    */
   private static createWorkflow(
-    data: Omit<Workflow, "status" | "rule" | "canVote"> & {
+    data: Omit<WorkflowData, "status" | "rule"> & {
       status: string
       rule: unknown
     }
@@ -100,12 +115,13 @@ export class WorkflowFactory {
       name: nameValidation.right,
       description: descriptionValidation.right,
       rule: ruleValidation.right,
-      status: statusValidation.right
+      status: data.recalculationRequired ? WorkflowStatus.EVALUATION_IN_PROGRESS : statusValidation.right
     }
 
     return right({
       ...workflowData,
-      canVote: (memberships: ReadonlyArray<MembershipWithGroupRef>) => canVote(workflowData, memberships)
+      canVote: (memberships: ReadonlyArray<MembershipWithGroupRef>) => canVote(workflowData, memberships),
+      evaluateStatus: (votes: ReadonlyArray<Vote>) => evaluateStatus(workflowData, votes)
     })
   }
 }
@@ -117,6 +133,8 @@ const ROLES_ALLOWED_TO_VOTE: HumanGroupMembershipRole[] = [
 ]
 
 function canVote(workflow: WorkflowData, memberships: ReadonlyArray<MembershipWithGroupRef>): boolean {
+  if (workflow.status === WorkflowStatus.CANCELED || workflow.status === WorkflowStatus.APPROVED) return false
+
   const votingGroups = getVotingGroups(workflow.rule)
 
   // Is it possible to vote if at least one of the membership group is listed in approval rules
@@ -124,6 +142,32 @@ function canVote(workflow: WorkflowData, memberships: ReadonlyArray<MembershipWi
   return memberships.some(
     membership => votingGroups.includes(membership.groupId) && ROLES_ALLOWED_TO_VOTE.includes(membership.role)
   )
+}
+
+function evaluateStatus(workflow: WorkflowData, votes: ReadonlyArray<Vote>): Either<WorkflowValidationError, Workflow> {
+  // After a workflow has been approved, it's not possible to change its status
+  if (workflow.status === WorkflowStatus.APPROVED || workflow.status === WorkflowStatus.CANCELED)
+    return WorkflowFactory.validate({...workflow, recalculationRequired: false})
+
+  const votesConsolidated = consolidateVotes(votes)
+  const votesAgainst = votesConsolidated.filter(vote => vote.type === "VETO")
+  const votesFor = votesConsolidated.filter(vote => vote.type === "APPROVE")
+
+  if (votesConsolidated.length === 0) return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.PENDING)
+
+  if (votesAgainst.length > 0) return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.REJECTED)
+
+  if (doesVotesCoverApprovalRules(workflow.rule, votesFor))
+    return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.APPROVED)
+
+  return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.PENDING)
+}
+
+function changeStatusAndMarkAsRecalculated(
+  workflow: WorkflowData,
+  status: WorkflowStatus
+): Either<WorkflowValidationError, Workflow> {
+  return WorkflowFactory.validate({...workflow, status, recalculationRequired: false})
 }
 
 function getVotingGroups(rule: ApprovalRule): ReadonlyArray<string> {

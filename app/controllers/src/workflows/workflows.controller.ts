@@ -106,9 +106,9 @@ export class WorkflowsController {
     const serviceCastVote = (req: CastVoteRequest) => this.voteService.castVote(req)
 
     const eitherVote = await pipe(
-      {workflowId, voteData: request, requestor},
+      {workflowId, request, requestor},
       createCastVoteApiToServiceModel,
-      TE.right,
+      TE.fromEither,
       TE.chainW(serviceCastVote)
     )()
 

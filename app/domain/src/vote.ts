@@ -1,80 +1,88 @@
 export const VOTE_REASON_MAX_LENGTH = 1024
 import {randomUUID} from "crypto"
 import {Either, isLeft, left, right} from "fp-ts/Either"
-import {getStringAsEnum, isUUIDv4} from "@utils"
+import {DistributiveOmit, isUUIDv4} from "@utils"
 
-export enum VoteType {
-  APPROVE = "APPROVE",
-  DECLINE = "DECLINE",
-  WITHDRAW = "WITHDRAW"
-}
+export type Vote = Readonly<ApproveVote | VetoVote | WithdrawVote>
 
-export enum VoteModeType {
-  VOTE_FOR_ALL = "VOTE_FOR_ALL"
-}
-
-export type Vote = Readonly<PrivateVote>
-
-interface PrivateVote {
+interface _BaseVote {
   id: string
   workflowId: string
   userId: string
-  voteType: VoteType
   reason?: string
-  voteMode: VoteModeType
-  createdAt: Date
+  castedAt: Date
+}
+
+export interface ApproveVote extends _BaseVote {
+  readonly type: "APPROVE"
+  votedForGroups: ReadonlyArray<string>
+}
+
+export interface VetoVote extends _BaseVote {
+  readonly type: "VETO"
+}
+
+export interface WithdrawVote extends _BaseVote {
+  readonly type: "WITHDRAW"
 }
 
 export type VoteValidationError =
   | "invalid_workflow_id"
   | "invalid_user_id"
   | "invalid_vote_type"
-  | "invalid_vote_mode"
   | "reason_too_long"
+  | "invalid_group_id"
+  | "voted_for_groups_required"
 
 export class VoteFactory {
-  static newVote(data: {
-    workflowId: string
-    userId: string
-    voteType: string
-    voteMode: string
-    reason?: string
-  }): Either<VoteValidationError, Vote> {
+  static newVote(data: DistributiveOmit<Vote, "id" | "castedAt">): Either<VoteValidationError, Vote> {
     const id = randomUUID()
-    const createdAt = new Date()
+    const castedAt = new Date()
 
-    const vote: Omit<Vote, "voteType" | "voteMode"> & {voteType: string; voteMode: string} = {
-      ...data,
+    const baseVoteProperties = {
       id,
-      createdAt
+      workflowId: data.workflowId,
+      userId: data.userId,
+      reason: data.reason,
+      castedAt
     }
-    return VoteFactory.validate(vote)
+
+    switch (data.type) {
+      case "APPROVE":
+        return VoteFactory.validate({
+          ...baseVoteProperties,
+          type: "APPROVE",
+          votedForGroups: data.votedForGroups
+        })
+      case "VETO":
+        return VoteFactory.validate({
+          ...baseVoteProperties,
+          type: "VETO"
+        })
+      case "WITHDRAW":
+        return VoteFactory.validate({
+          ...baseVoteProperties,
+          type: "WITHDRAW"
+        })
+    }
   }
 
-  static validate(
-    data: Omit<Vote, "voteType" | "voteMode"> & {voteType: string; voteMode: string}
-  ): Either<VoteValidationError, Vote> {
+  static validate(data: Vote): Either<VoteValidationError, Vote> {
     const workflowIdValidation = validateUUID(data.workflowId, "invalid_workflow_id")
     const userIdValidation = validateUUID(data.userId, "invalid_user_id")
-    const voteTypeValidation = validateVoteType(data.voteType)
-    const voteModeValidation = validateVoteMode(data.voteMode)
+
     const reasonValidation = data.reason ? validateReason(data.reason) : right(undefined)
 
     if (isLeft(workflowIdValidation)) return workflowIdValidation
     if (isLeft(userIdValidation)) return userIdValidation
-    if (isLeft(voteTypeValidation)) return voteTypeValidation
-    if (isLeft(voteModeValidation)) return voteModeValidation
     if (isLeft(reasonValidation)) return reasonValidation
 
-    return right({
-      id: data.id,
-      workflowId: workflowIdValidation.right,
-      userId: userIdValidation.right,
-      voteType: voteTypeValidation.right,
-      reason: reasonValidation.right,
-      voteMode: voteModeValidation.right,
-      createdAt: data.createdAt
-    })
+    if (data.type === "APPROVE") {
+      const votedForGroupsValidation = validateGroupIds(data.votedForGroups)
+      if (isLeft(votedForGroupsValidation)) return votedForGroupsValidation
+    }
+
+    return right(data)
   }
 }
 
@@ -83,19 +91,33 @@ function validateUUID<T extends "invalid_workflow_id" | "invalid_user_id">(id: s
   return right(id)
 }
 
-function validateVoteType(voteType: string): Either<VoteValidationError, VoteType> {
-  const enumVoteType = getStringAsEnum(voteType, VoteType)
-  if (enumVoteType === undefined) return left("invalid_vote_type")
-  return right(enumVoteType)
-}
-
-function validateVoteMode(voteMode: string): Either<VoteValidationError, VoteModeType> {
-  const enumVoteMode = getStringAsEnum(voteMode, VoteModeType)
-  if (enumVoteMode === undefined) return left("invalid_vote_mode")
-  return right(enumVoteMode)
+function validateGroupIds(groupIds: ReadonlyArray<string>): Either<VoteValidationError, ReadonlyArray<string>> {
+  if (groupIds.some(id => !isUUIDv4(id))) return left("invalid_group_id")
+  return right(groupIds)
 }
 
 function validateReason(reason: string): Either<VoteValidationError, string> {
   if (reason.length > VOTE_REASON_MAX_LENGTH) return left("reason_too_long")
   return right(reason)
+}
+
+/**
+ * Consolidates votes by removing outdated votes and keeping the most meaningful vote for each user.
+ * @param votes - The votes to consolidate.
+ * @returns The consolidated votes.
+ */
+export function consolidateVotes(votes: ReadonlyArray<Vote>): ReadonlyArray<Vote> {
+  const votesSortedDesc = [...votes].sort((a, b) => b.castedAt.getTime() - a.castedAt.getTime())
+  const processedUsers: Set<string> = new Set()
+  const votesToKeep = []
+
+  for (const vote of votesSortedDesc) {
+    if (processedUsers.has(vote.userId)) continue
+
+    processedUsers.add(vote.userId)
+
+    if (vote.type === "APPROVE" || vote.type === "VETO") votesToKeep.push(vote)
+  }
+
+  return votesToKeep
 }

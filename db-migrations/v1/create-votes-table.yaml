@@ -30,7 +30,7 @@ databaseChangeLog:
                     deleteCascade: true
               - column:
                   name: vote_type
-                  remarks: The type of vote (e.g. APPROVE, DECLINE)
+                  remarks: The type of vote (e.g. APPROVE, VETO, WITHDRAW)
                   type: VARCHAR(255)
                   constraints:
                     nullable: false
@@ -40,11 +40,8 @@ databaseChangeLog:
                   constraints:
                     nullable: true
               - column:
-                  name: vote_mode
-                  remarks: The mode of the vote (e.g. VOTE_FOR_ALL, VOTE_FOR_GROUPS)
-                  type: VARCHAR(255)
-                  constraints:
-                    nullable: false
+                  name: voted_for_groups
+                  type: VARCHAR[]
               - column:
                   name: created_at
                   type: timestamp

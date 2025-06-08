@@ -45,6 +45,11 @@ databaseChangeLog:
                   type: bigint
                   constraints:
                     nullable: false
+              - column:
+                  name: recalculation_required
+                  type: boolean
+                  constraints:
+                    nullable: false
         - addUniqueConstraint:
             tableName: workflows
             columnNames: name

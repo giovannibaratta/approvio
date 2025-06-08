@@ -1,4 +1,15 @@
-import {HumanGroupMembershipRole, MembershipFactory, MembershipValidationError} from "@domain"
+import {
+  Group,
+  GroupFactory,
+  GroupManager,
+  HumanGroupMembershipRole,
+  Membership,
+  MembershipFactory,
+  MembershipValidationError,
+  OrgRole,
+  User,
+  UserFactory
+} from "@domain"
 import {randomUUID} from "crypto"
 
 import {Either, isLeft, isRight} from "fp-ts/lib/Either"
@@ -57,6 +68,108 @@ describe("MembershipFactory", () => {
       // Expect
       expect(isLeft(result)).toBe(true)
       expect(unwrapLeft(result)).toBe<MembershipValidationError>("invalid_role")
+    })
+  })
+})
+
+describe("GroupManager", () => {
+  let group: Group
+  let owner: User
+  let member: User
+  let admin: User
+  let orgAdmin: User
+  let ownerMembership: Membership
+  let memberMembership: Membership
+  let adminMembership: Membership
+
+  beforeEach(() => {
+    group = unwrapRight(GroupFactory.newGroup({name: "Test-Group", description: "Test-Description"}))
+    owner = unwrapRight(UserFactory.newUser({displayName: "owner", email: "owner@test.com", orgRole: OrgRole.MEMBER}))
+    member = unwrapRight(
+      UserFactory.newUser({displayName: "member", email: "member@test.com", orgRole: OrgRole.MEMBER})
+    )
+    admin = unwrapRight(UserFactory.newUser({displayName: "admin", email: "admin@test.com", orgRole: OrgRole.MEMBER}))
+    orgAdmin = unwrapRight(
+      UserFactory.newUser({displayName: "orgadmin", email: "orgadmin@test.com", orgRole: OrgRole.ADMIN})
+    )
+
+    ownerMembership = unwrapRight(
+      MembershipFactory.newMembership({
+        user: owner.id,
+        role: "owner"
+      })
+    )
+    memberMembership = unwrapRight(
+      MembershipFactory.newMembership({
+        user: member.id,
+        role: "approver"
+      })
+    )
+    adminMembership = unwrapRight(
+      MembershipFactory.newMembership({
+        user: admin.id,
+        role: "admin"
+      })
+    )
+  })
+
+  describe("createGroupManager", () => {
+    it("should create a group manager successfully", () => {
+      const result = GroupManager.createGroupManager(group, [ownerMembership])
+      expect(result).toBeRight()
+    })
+
+    it("should fail if there are duplicate memberships", () => {
+      const result = GroupManager.createGroupManager(group, [ownerMembership, ownerMembership])
+      expect(result).toBeLeftOf("duplicated_membership")
+    })
+  })
+
+  describe("addMembership", () => {
+    it("should fail to add a duplicate membership", () => {
+      const manager = unwrapRight(GroupManager.createGroupManager(group, [ownerMembership]))
+      const result = manager.addMembership(ownerMembership)
+      expect(result).toBeLeftOf("duplicated_membership")
+    })
+  })
+
+  describe("removeMembership", () => {
+    it("should fail to remove a non-existent membership", () => {
+      const manager = unwrapRight(GroupManager.createGroupManager(group, [ownerMembership]))
+      const result = manager.removeMembership(member.id)
+      expect(result).toBeLeftOf("membership_not_found")
+    })
+
+    it("should fail to remove the last owner", () => {
+      const manager = unwrapRight(GroupManager.createGroupManager(group, [ownerMembership]))
+      const result = manager.removeMembership(owner.id)
+      expect(result).toBeLeftOf("membership_no_owner")
+    })
+  })
+
+  describe("canAdministerGroup", () => {
+    let manager: GroupManager
+
+    beforeEach(() => {
+      manager = unwrapRight(
+        GroupManager.createGroupManager(group, [ownerMembership, adminMembership, memberMembership])
+      )
+    })
+
+    it("should return true for an org admin", () => {
+      expect(manager.canUpdateMembership(orgAdmin)).toBe(true)
+    })
+
+    it("should return true for a group owner", () => {
+      expect(manager.canUpdateMembership(owner)).toBe(true)
+    })
+
+    it("should return true for a group admin", () => {
+      expect(manager.canUpdateMembership(admin)).toBe(true)
+    })
+
+    it("should return false for a regular member", () => {
+      expect(manager.canUpdateMembership(member)).toBe(false)
     })
   })
 })

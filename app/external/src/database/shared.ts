@@ -88,6 +88,7 @@ export function mapWorkflowToDomain(dbObject: PrismaWorkflow): Either<WorkflowVa
     updatedAt: dbObject.updatedAt,
     rule: eitherRule.right,
     status: dbObject.status,
+    recalculationRequired: dbObject.recalculationRequired,
     occ: dbObject.occ
   }
   return pipe(object, WorkflowFactory.validate)

@@ -1,2 +1,2 @@
-export * from "./workflow.service"
 export * from "./interfaces"
+export * from "./workflow.service"

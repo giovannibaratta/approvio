@@ -6,8 +6,8 @@ import {Either, isLeft, isRight} from "fp-ts/lib/Either"
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace jest {
-    interface Matchers<R, T> {
-      toHaveErrorCode(expectedCode: string): T
+    interface Matchers<R> {
+      toHaveErrorCode(expectedCode: string): R
       /**
        * Asserts that the response has the expected HTTP status code.
        * If the status code differs, the response body is printed in the error message.
@@ -104,7 +104,7 @@ export function toBeRight(received: unknown): jest.CustomMatcherResult {
   }
 }
 
-export function toHaveErrorCode(received: unknown, expectedCode: string) {
+export function toHaveErrorCode(received: unknown, expectedCode: string): jest.CustomMatcherResult {
   // Type guard function to validate ErrorPayload structure
   const isErrorPayload = (obj: unknown): obj is ErrorPayload => {
     return (

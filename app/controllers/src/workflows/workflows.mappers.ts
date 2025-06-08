@@ -18,6 +18,7 @@ import {
   GroupRequirementRule,
   OrRule,
   User,
+  VoteValidationError,
   Workflow
 } from "@domain"
 import {
@@ -173,6 +174,17 @@ export function generateErrorResponseForGetWorkflow(error: GetWorkflowLeft, cont
     case "group_rule_invalid_group_id":
     case "max_rule_nesting_exceeded":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid workflow data`))
+    case "invalid_workflow_id":
+    case "invalid_user_id":
+    case "invalid_vote_type":
+    case "reason_too_long":
+    case "invalid_group_id":
+    case "voted_for_groups_required":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow data`))
+    case "concurrency_error":
+      return new ConflictException(
+        generateErrorPayload(errorCode, `${context}: Workflow has been updated concurrently`)
+      )
   }
 }
 
@@ -219,16 +231,35 @@ export function mapCanVoteResponseToApi(response: CanVoteResponse): CanVoteRespo
 
 export function createCastVoteApiToServiceModel(data: {
   workflowId: string
-  voteData: WorkflowVoteRequestApi
+  request: WorkflowVoteRequestApi
   requestor: User
-}): CastVoteRequest {
-  return {
-    workflowId: data.workflowId,
-    voteType: data.voteData.voteType,
-    voteMode: data.voteData.voteMode.type,
-    reason: data.voteData.reason,
-    requestor: data.requestor
+}): Either<VoteValidationError, CastVoteRequest> {
+  if (data.request.voteType.type === "APPROVE") {
+    return right({
+      workflowId: data.workflowId,
+      type: "APPROVE",
+      votedForGroups: data.request.voteType.votedForGroups,
+      reason: data.request.reason,
+      requestor: data.requestor
+    })
   }
+  if (data.request.voteType.type === "VETO") {
+    return right({
+      workflowId: data.workflowId,
+      type: "VETO",
+      reason: data.request.reason,
+      requestor: data.requestor
+    })
+  }
+  if (data.request.voteType.type === "WITHDRAW") {
+    return right({
+      workflowId: data.workflowId,
+      type: "WITHDRAW",
+      reason: data.request.reason,
+      requestor: data.requestor
+    })
+  }
+  return left("invalid_vote_type")
 }
 
 export function generateErrorResponseForCanVote(error: CanVoteError, context: string): HttpException {
@@ -262,11 +293,13 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "invalid_workflow_id":
     case "invalid_user_id":
     case "invalid_vote_type":
-    case "invalid_vote_mode":
     case "reason_too_long":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
+    case "invalid_group_id":
+    case "voted_for_groups_required":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow data`))
   }
 }
 
@@ -286,7 +319,6 @@ export function generateErrorResponseForCastVote(error: CastVoteServiceError, co
     case "invalid_workflow_id":
     case "invalid_user_id":
     case "invalid_vote_type":
-    case "invalid_vote_mode":
     case "reason_too_long":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid vote parameters`))
     case "name_empty":
@@ -308,6 +340,13 @@ export function generateErrorResponseForCastVote(error: CastVoteServiceError, co
     case "invalid_group_uuid":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
+      )
+    case "invalid_group_id":
+    case "voted_for_groups_required":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow data`))
+    case "concurrency_error":
+      return new ConflictException(
+        generateErrorPayload(errorCode, `${context}: Workflow has been updated concurrently`)
       )
   }
 }

@@ -16,6 +16,7 @@ import {get, post} from "../shared/requests"
 import {UserWithToken} from "../shared/types"
 import {UserSummary} from "@approvio/api"
 import "expect-more-jest"
+import "@utils/matchers"
 
 describe("Users API", () => {
   let app: NestApplication

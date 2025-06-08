@@ -3,6 +3,7 @@ import * as E from "fp-ts/Either"
 import {Either, left, right} from "fp-ts/lib/Either"
 import {pipe} from "fp-ts/lib/function"
 import * as A from "fp-ts/Array"
+import {ApproveVote} from "@domain"
 
 export enum ApprovalRuleType {
   AND = "AND",
@@ -114,4 +115,27 @@ export class ApprovalRuleFactory {
 
 function isObject(val: unknown): val is Record<string, unknown> {
   return typeof val === "object" && val !== null && !Array.isArray(val)
+}
+
+/**
+ * Checks if the given votes cover the given approval rule.
+ * @param rule The approval rule to check.
+ * @param votes The votes to check.
+ * @returns True if the votes cover the rule, false otherwise.
+ */
+export function doesVotesCoverApprovalRules(rule: ApprovalRule, votes: ReadonlyArray<ApproveVote>): boolean {
+  switch (rule.type) {
+    case ApprovalRuleType.GROUP_REQUIREMENT:
+      return doesVotesCoverGroupRequirementRule(rule, votes)
+    case ApprovalRuleType.AND:
+      return rule.rules.every(rule => doesVotesCoverApprovalRules(rule, votes))
+    case ApprovalRuleType.OR:
+      return rule.rules.some(rule => doesVotesCoverApprovalRules(rule, votes))
+  }
+}
+
+function doesVotesCoverGroupRequirementRule(rule: GroupRequirementRule, votes: ReadonlyArray<ApproveVote>): boolean {
+  const votesForGroup = votes.filter(vote => vote.votedForGroups.includes(rule.groupId))
+  const uniqueUsersWhoVotedForGroup = new Set(votesForGroup.map(vote => vote.userId))
+  return uniqueUsersWhoVotedForGroup.size >= rule.minCount
 }
