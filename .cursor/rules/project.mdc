@@ -7,6 +7,14 @@ alwaysApply: true
 The project you are working on is a backend service to manage the Approval process at scale. The project is written in Typescript.
 </context>
 
+<prisma schema>
+In order to update the prima schema after the liquibase migration files has been modified:
+1. start the database with yarn deps:start
+2. update the database with yarn liquibase:update:dev
+3. Pull the schema with yarn prisma:pull (this will update schema.prisma)
+4. Regenerate the Prisma client with yarn prisma:generate
+</prisma>
+
 // Folders to prioritize for general context.
 // The agent will look here first when trying to understand the project.
 priority {
