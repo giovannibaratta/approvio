@@ -1,0 +1,21 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+<workflow development>
+Workflow for Code Modifications:
+1. Schema Update (if needed):
+* Modify Liquibase migration files.
+* Run 'yarn deps:down && yarn deps:start && yarn liquibase:update:dev && yarn prisma:pull && yarn prisma:generate' to generate the new prisma schema and prisma client.
+1. Implement Domain Logic.
+1. Define Domain Unit Tests.
+1. Define Service and Dependency Interfaces (e.g. repository, third-part provider, ...).
+1. Implement External Dependencies (e.g., repository).
+1. Implement Service Logic.
+1. Implement Controller Logic.
+1. Write Controller Integration Tests.
+
+Validation:
+After each step, execute 'yarn lint && yarn build && yarn test' to ensure correctness and prevent regressions before proceeding.
+</workflow development>
