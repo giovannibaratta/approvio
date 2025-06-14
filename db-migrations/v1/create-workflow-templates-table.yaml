@@ -1,0 +1,55 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-workflow-templates-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: workflow_templates
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: varchar
+              - column:
+                  name: approval_rule
+                  type: jsonb
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actions
+                  type: jsonb
+                  constraints:
+                    nullable: false
+                  defaultValue: '[]'
+              - column:
+                  name: default_expires_in_hours
+                  type: integer
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: workflow_templates
+            columnNames: name
+            constraintName: workflow_templates_name_unique 

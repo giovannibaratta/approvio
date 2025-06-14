@@ -5,9 +5,18 @@ import {GroupMembershipService} from "./group-membership"
 import {UserService} from "./user"
 import {DebugService} from "./debug"
 import {WorkflowService} from "./workflow"
+import {WorkflowTemplateService} from "./workflow-template"
 import {VoteService} from "./vote"
 
-const services = [GroupService, GroupMembershipService, UserService, WorkflowService, DebugService, VoteService]
+const services = [
+  GroupService,
+  GroupMembershipService,
+  UserService,
+  WorkflowService,
+  WorkflowTemplateService,
+  DebugService,
+  VoteService
+]
 
 @Module({
   imports: [PersistenceModule],

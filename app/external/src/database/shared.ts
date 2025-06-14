@@ -9,9 +9,17 @@ import {
   UserValidationError,
   Workflow,
   WorkflowFactory,
-  WorkflowValidationError
+  WorkflowValidationError,
+  WorkflowTemplate,
+  WorkflowTemplateFactory,
+  WorkflowTemplateValidationError
 } from "@domain"
-import {Group as PrismaGroup, User as PrismaUser, Workflow as PrismaWorkflow} from "@prisma/client"
+import {
+  Group as PrismaGroup,
+  User as PrismaUser,
+  Workflow as PrismaWorkflow,
+  WorkflowTemplate as PrismaWorkflowTemplate
+} from "@prisma/client"
 import {Versioned} from "@services/shared/utils"
 import * as E from "fp-ts/lib/Either"
 import {Either} from "fp-ts/lib/Either"
@@ -118,4 +126,40 @@ export function mapToDomainUserSummary(dbObject: UserSummaryRepo): Either<UserSu
   }
 
   return pipe(object, UserFactory.validateUserSummary)
+}
+
+export function mapWorkflowTemplateToDomain(
+  dbObject: PrismaWorkflowTemplate
+): Either<WorkflowTemplateValidationError, WorkflowTemplate> {
+  const eitherApprovalRule = prismaJsonToJson(dbObject.approvalRule)
+  if (E.isLeft(eitherApprovalRule)) return eitherApprovalRule
+
+  const eitherActions = prismaJsonToJson(dbObject.actions)
+  if (E.isLeft(eitherActions)) return eitherActions
+
+  const object = {
+    createdAt: dbObject.createdAt,
+    description: dbObject.description ?? undefined,
+    id: dbObject.id,
+    name: dbObject.name,
+    updatedAt: dbObject.updatedAt,
+    approvalRule: eitherApprovalRule.right,
+    actions: eitherActions.right,
+    defaultExpiresInHours: dbObject.defaultExpiresInHours ?? undefined,
+    occ: dbObject.occ
+  }
+  return pipe(object, WorkflowTemplateFactory.validate)
+}
+
+export function mapToDomainVersionedWorkflowTemplate(
+  dbObject: PrismaWorkflowTemplate
+): Either<WorkflowTemplateValidationError, Versioned<WorkflowTemplate>> {
+  return pipe(
+    dbObject,
+    mapWorkflowTemplateToDomain,
+    E.map(domainObject => ({
+      ...domainObject,
+      occ: dbObject.occ
+    }))
+  )
 }

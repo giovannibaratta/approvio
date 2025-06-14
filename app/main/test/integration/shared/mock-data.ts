@@ -1,5 +1,5 @@
-import {Prisma, PrismaClient, User as PrismaUser} from "@prisma/client"
-import {OrgRole, User} from "@domain"
+import {Prisma, PrismaClient, User as PrismaUser, WorkflowTemplate as PrismaWorkflowTemplate} from "@prisma/client"
+import {ApprovalRuleType, OrgRole, User} from "@domain"
 import {mapToDomainVersionedUser} from "@external/database/shared"
 import {isLeft} from "fp-ts/lib/Either"
 // eslint-disable-next-line node/no-unpublished-import
@@ -39,4 +39,37 @@ export async function createDomainMockUserInDb(
   const eitherUser = mapToDomainVersionedUser(dbUser)
   if (isLeft(eitherUser)) throw new Error("Unable to create mock user")
   return eitherUser.right
+}
+
+export async function createMockWorkflowTemplateInDb(
+  prisma: PrismaClient,
+  overrides?: Partial<Omit<Prisma.WorkflowTemplateCreateInput, "id" | "occ" | "createdAt" | "updatedAt">>
+): Promise<PrismaWorkflowTemplate> {
+  const randomTemplate: Prisma.WorkflowTemplateCreateInput = {
+    id: chance.guid({
+      version: 4
+    }),
+    name: chance.sentence({words: 3}),
+    description: chance.sentence(),
+    approvalRule: {
+      type: ApprovalRuleType.GROUP_REQUIREMENT,
+      groupId: chance.guid({
+        version: 4
+      }),
+      minCount: 1
+    },
+    actions: [],
+    defaultExpiresInHours: chance.integer({min: 1, max: 168}), // 1 hour to 1 week
+    occ: 1,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  }
+
+  const data: Prisma.WorkflowTemplateCreateInput = {
+    ...randomTemplate,
+    ...overrides
+  }
+
+  const template = await prisma.workflowTemplate.create({data})
+  return template
 }

@@ -5,6 +5,7 @@ import {
   UserDbRepository,
   GroupMembershipDbRepository,
   WorkflowDbRepository,
+  WorkflowTemplateDbRepository,
   VoteDbRepository
 } from "./database/"
 import {GroupDbRepository} from "./database"
@@ -13,7 +14,8 @@ import {
   GROUP_REPOSITORY_TOKEN,
   USER_REPOSITORY_TOKEN,
   VOTE_REPOSITORY_TOKEN,
-  WORKFLOW_REPOSITORY_TOKEN
+  WORKFLOW_REPOSITORY_TOKEN,
+  WORKFLOW_TEMPLATE_REPOSITORY_TOKEN
 } from "@services"
 
 const groupRepository = {
@@ -36,12 +38,24 @@ const workflowRepository = {
   useClass: WorkflowDbRepository
 }
 
+const workflowTemplateRepository = {
+  provide: WORKFLOW_TEMPLATE_REPOSITORY_TOKEN,
+  useClass: WorkflowTemplateDbRepository
+}
+
 const voteRepository = {
   provide: VOTE_REPOSITORY_TOKEN,
   useClass: VoteDbRepository
 }
 
-const repositories = [groupRepository, userRepository, groupMembershipRepository, workflowRepository, voteRepository]
+const repositories = [
+  groupRepository,
+  userRepository,
+  groupMembershipRepository,
+  workflowRepository,
+  workflowTemplateRepository,
+  voteRepository
+]
 
 @Module({
   imports: [],

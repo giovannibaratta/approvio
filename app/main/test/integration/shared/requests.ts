@@ -2,7 +2,7 @@ import {NestApplication} from "@nestjs/core"
 // eslint-disable-next-line node/no-unpublished-import
 import * as request from "supertest"
 
-type Method = "get" | "post" | "delete"
+type Method = "get" | "post" | "put" | "delete"
 
 export class RequestBuilder {
   partialRequest: request.Test
@@ -16,6 +16,9 @@ export class RequestBuilder {
         break
       case "post":
         this.partialRequest = req.post(endpoint)
+        break
+      case "put":
+        this.partialRequest = req.put(endpoint)
         break
       case "delete":
         this.partialRequest = req.delete(endpoint)
@@ -44,6 +47,10 @@ export function get(app: NestApplication, endpoint: string) {
 
 export function post(app: NestApplication, endpoint: string) {
   return new RequestBuilder(app, "post", endpoint)
+}
+
+export function put(app: NestApplication, endpoint: string) {
+  return new RequestBuilder(app, "put", endpoint)
 }
 
 export function del(app: NestApplication, endpoint: string) {
