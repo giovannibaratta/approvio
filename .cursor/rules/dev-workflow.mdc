@@ -7,7 +7,7 @@ alwaysApply: true
 Workflow for Code Modifications:
 1. Schema Update (if needed):
 * Modify Liquibase migration files.
-* Run 'yarn deps:down && yarn deps:start && yarn liquibase:update:dev && yarn prisma:pull && yarn prisma:generate' to generate the new prisma schema and prisma client.
+* Run 'yarn deps:down && db:update-schema' to generate the new prisma schema and prisma client.
 1. Implement Domain Logic.
 1. Define Domain Unit Tests.
 1. Define Service and Dependency Interfaces (e.g. repository, third-part provider, ...).
@@ -18,4 +18,11 @@ Workflow for Code Modifications:
 
 Validation:
 After each step, execute 'yarn lint && yarn build && yarn test' to ensure correctness and prevent regressions before proceeding.
+
+Hint:
+If you need to understand which modification have been done to a file, you can use the git --no-pager diff command
+
+<constraints>
+- Never to a git commit, git stash or a git push. You are not allowed to perform these actions. You can only act in read only mode on git.
+</constraints>
 </workflow development>
