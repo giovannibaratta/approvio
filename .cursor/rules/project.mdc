@@ -139,7 +139,7 @@ rule {
 
 // --- Configuration Files ---
 rule {
-  glob: [*.json, *.js, *.yaml, .env*, Dockerfile, .dockerignore, .prettierrc, .eslintrc.js]
+  glob: [*.json, *.js, *.yaml, .env*, .prettierrc, .eslintrc.json]
   category: configuration
   description: Project-level configuration files (NestJS, TypeScript, ESLint, Prettier, Docker, Jest, environment variables, etc.).
   ignore: [
