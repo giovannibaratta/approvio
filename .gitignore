@@ -43,3 +43,5 @@ combined_output.txt
 
 .vscode/*
 !.vscode/extensions.json
+
+coverage
