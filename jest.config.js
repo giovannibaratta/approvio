@@ -1,13 +1,7 @@
 const mainSettings = {
   testEnvironment: "node",
   transform: {
-    "^.+\\.(t|j)sx?$": [
-      "ts-jest",
-      {
-        // Skip type check
-        isolatedModules: true
-      }
-    ]
+    "^.+\\.(t|j)sx?$": ["ts-jest", {}]
   },
   moduleNameMapper: {
     "^@app/(.*)$": "<rootDir>/app/main/src/$1",
