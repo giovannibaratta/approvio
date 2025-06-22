@@ -1,15 +1,9 @@
 import {randomUUID} from "crypto"
 import * as E from "fp-ts/Either"
 import {Either, isLeft, left, right} from "fp-ts/lib/Either"
-import {ApprovalRule, ApprovalRuleFactory, ApprovalRuleType, ApprovalRuleValidationError} from "./approval-rules"
-import {getStringAsEnum} from "@utils"
-import {
-  MembershipWithGroupRef,
-  HumanGroupMembershipRole,
-  Vote,
-  consolidateVotes,
-  doesVotesCoverApprovalRules
-} from "@domain"
+import {getStringAsEnum, isUUIDv4} from "@utils"
+import {MembershipWithGroupRef, Vote, consolidateVotes, doesVotesCoverApprovalRules} from "@domain"
+import {WorkflowTemplate} from "./workflow-templates"
 
 export const WORKFLOW_NAME_MAX_LENGTH = 512
 export const WORKFLOW_DESCRIPTION_MAX_LENGTH = 2048
@@ -23,21 +17,29 @@ export enum WorkflowStatus {
 }
 
 export type Workflow = Readonly<WorkflowData & WorkflowLogic>
+export type WorkflowWithTemplate = Readonly<WorkflowDataWithTemplate & WorkflowWithTemplateLogic>
 
 interface WorkflowData {
   id: string
   name: string
   description?: string
-  rule: ApprovalRule
   status: WorkflowStatus
   recalculationRequired: boolean
+  workflowTemplateId: string
   createdAt: Date
   updatedAt: Date
 }
 
+interface WorkflowDataWithTemplate extends WorkflowData {
+  workflowTemplateRef: WorkflowTemplate
+}
+
 interface WorkflowLogic {
-  canVote(memberships: ReadonlyArray<MembershipWithGroupRef>): boolean
   evaluateStatus(votes: ReadonlyArray<Vote>): Either<WorkflowValidationError, Workflow>
+}
+
+interface WorkflowWithTemplateLogic extends WorkflowLogic {
+  canVote(memberships: ReadonlyArray<MembershipWithGroupRef>): boolean
 }
 
 export type WorkflowValidationError =
@@ -46,9 +48,8 @@ export type WorkflowValidationError =
   | "name_invalid_characters"
   | "description_too_long"
   | "update_before_create"
-  | "rule_invalid"
   | "status_invalid"
-  | ApprovalRuleValidationError
+  | "workflow_template_id_invalid_uuid"
 
 export class WorkflowFactory {
   /**
@@ -57,9 +58,15 @@ export class WorkflowFactory {
    * @returns Either a validation error or the valid Workflow object.
    */
   static validate(
-    data: Parameters<typeof WorkflowFactory.createWorkflow>[0]
+    data: Parameters<typeof WorkflowFactory.instantiateWorkflow>[0]
   ): Either<WorkflowValidationError, Workflow> {
-    return WorkflowFactory.createWorkflow(data)
+    return WorkflowFactory.instantiateWorkflow(data)
+  }
+
+  static validateWithTemplate(
+    data: Parameters<typeof WorkflowFactory.instantiateWorkflowWithTemplate>[0]
+  ): Either<WorkflowValidationError, WorkflowWithTemplate> {
+    return WorkflowFactory.instantiateWorkflowWithTemplate(data)
   }
 
   /**
@@ -93,20 +100,18 @@ export class WorkflowFactory {
    * @param data The Workflow object data.
    * @returns Either a validation error or the validated Workflow object.
    */
-  private static createWorkflow(
-    data: Omit<WorkflowData, "status" | "rule"> & {
+  private static instantiateWorkflow(
+    data: Omit<WorkflowData, "status"> & {
       status: string
-      rule: unknown
     }
   ): Either<WorkflowValidationError, Workflow> {
     const nameValidation = validateWorkflowName(data.name)
     const descriptionValidation = data.description ? validateWorkflowDescription(data.description) : right(undefined)
-    const ruleValidation = ApprovalRuleFactory.validate(data.rule)
     const statusValidation = validateWorkflowStatus(data.status)
 
+    if (!isUUIDv4(data.workflowTemplateId)) return left("workflow_template_id_invalid_uuid")
     if (isLeft(nameValidation)) return nameValidation
     if (isLeft(descriptionValidation)) return descriptionValidation
-    if (isLeft(ruleValidation)) return ruleValidation
     if (data.createdAt > data.updatedAt) return left("update_before_create")
     if (isLeft(statusValidation)) return statusValidation
 
@@ -114,40 +119,50 @@ export class WorkflowFactory {
       ...data,
       name: nameValidation.right,
       description: descriptionValidation.right,
-      rule: ruleValidation.right,
       status: data.recalculationRequired ? WorkflowStatus.EVALUATION_IN_PROGRESS : statusValidation.right
     }
 
     return right({
       ...workflowData,
-      canVote: (memberships: ReadonlyArray<MembershipWithGroupRef>) => canVote(workflowData, memberships),
       evaluateStatus: (votes: ReadonlyArray<Vote>) => evaluateStatus(workflowData, votes)
+    })
+  }
+
+  private static instantiateWorkflowWithTemplate(
+    data: Omit<WorkflowDataWithTemplate, "status"> & {
+      status: string
+    }
+  ): Either<WorkflowValidationError, WorkflowWithTemplate> {
+    const workflow = WorkflowFactory.instantiateWorkflow(data)
+    if (isLeft(workflow)) return workflow
+
+    const workflowWithTemplateData = {
+      ...workflow.right,
+      workflowTemplateRef: data.workflowTemplateRef
+    }
+
+    return right({
+      ...workflowWithTemplateData,
+      canVote: (memberships: ReadonlyArray<MembershipWithGroupRef>) => canVote(workflowWithTemplateData, memberships)
     })
   }
 }
 
-const ROLES_ALLOWED_TO_VOTE: HumanGroupMembershipRole[] = [
-  HumanGroupMembershipRole.APPROVER,
-  HumanGroupMembershipRole.ADMIN,
-  HumanGroupMembershipRole.OWNER
-]
-
-function canVote(workflow: WorkflowData, memberships: ReadonlyArray<MembershipWithGroupRef>): boolean {
+function canVote(workflow: WorkflowDataWithTemplate, memberships: ReadonlyArray<MembershipWithGroupRef>): boolean {
   if (workflow.status === WorkflowStatus.CANCELED || workflow.status === WorkflowStatus.APPROVED) return false
-
-  const votingGroups = getVotingGroups(workflow.rule)
-
-  // Is it possible to vote if at least one of the membership group is listed in approval rules
-  // and the user has an allowed role in that group
-  return memberships.some(
-    membership => votingGroups.includes(membership.groupId) && ROLES_ALLOWED_TO_VOTE.includes(membership.role)
-  )
+  return workflow.workflowTemplateRef.canVote(memberships)
 }
 
-function evaluateStatus(workflow: WorkflowData, votes: ReadonlyArray<Vote>): Either<WorkflowValidationError, Workflow> {
+function evaluateStatus(
+  workflow: WorkflowData,
+  votes: ReadonlyArray<Vote>,
+  template?: WorkflowTemplate
+): Either<WorkflowValidationError, Workflow> {
   // After a workflow has been approved, it's not possible to change its status
   if (workflow.status === WorkflowStatus.APPROVED || workflow.status === WorkflowStatus.CANCELED)
-    return WorkflowFactory.validate({...workflow, recalculationRequired: false})
+    return changeStatusAndMarkAsRecalculated(workflow, workflow.status)
+
+  if (!template) return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.PENDING)
 
   const votesConsolidated = consolidateVotes(votes)
   const votesAgainst = votesConsolidated.filter(vote => vote.type === "VETO")
@@ -157,7 +172,7 @@ function evaluateStatus(workflow: WorkflowData, votes: ReadonlyArray<Vote>): Eit
 
   if (votesAgainst.length > 0) return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.REJECTED)
 
-  if (doesVotesCoverApprovalRules(workflow.rule, votesFor))
+  if (doesVotesCoverApprovalRules(template.approvalRule, votesFor))
     return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.APPROVED)
 
   return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.PENDING)
@@ -168,17 +183,6 @@ function changeStatusAndMarkAsRecalculated(
   status: WorkflowStatus
 ): Either<WorkflowValidationError, Workflow> {
   return WorkflowFactory.validate({...workflow, status, recalculationRequired: false})
-}
-
-function getVotingGroups(rule: ApprovalRule): ReadonlyArray<string> {
-  switch (rule.type) {
-    case ApprovalRuleType.GROUP_REQUIREMENT:
-      return [rule.groupId]
-    case ApprovalRuleType.AND:
-      return rule.rules.flatMap(getVotingGroups)
-    case ApprovalRuleType.OR:
-      return rule.rules.flatMap(getVotingGroups)
-  }
 }
 
 function validateWorkflowName(name: string): Either<WorkflowValidationError, string> {

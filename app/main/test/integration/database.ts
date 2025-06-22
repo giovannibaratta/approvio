@@ -26,6 +26,7 @@ export async function prepareDatabase(): Promise<string> {
 
 export async function cleanDatabase(client: PrismaClient): Promise<void> {
   await client.workflow.deleteMany()
+  await client.workflowTemplate.deleteMany()
   await client.groupMembership.deleteMany()
   await client.group.deleteMany()
   await client.user.deleteMany()

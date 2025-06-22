@@ -28,6 +28,16 @@ import {PrismaGroupWithCount} from "./group.repository"
 import {Prisma} from "@prisma/client"
 import {UserSummaryRepo} from "./user.repository"
 import {UserSummaryValidationError} from "@domain"
+import {DecoratedWorkflow, WorkflowDecoratorSelector} from "@services"
+import {iPrismaDecoratedWorkflow, PrismaDecoratedWorkflow, PrismaWorkflowDecoratorSelector} from "./workflow.repository"
+
+export type PrismaWorkflowWithTemplate = PrismaWorkflow & {
+  workflowTemplates: PrismaWorkflowTemplate
+}
+
+export type PrismaWorkflowWithOptionalTemplate = PrismaWorkflow & {
+  workflowTemplates?: PrismaWorkflowTemplate | null
+}
 
 export function mapToDomainVersionedGroup(dbObject: PrismaGroup): Either<GroupValidationError, Versioned<Group>> {
   const object: Group = {
@@ -84,19 +94,42 @@ export function mapUserToDomain(dbObject: PrismaUser): Either<UserValidationErro
   return pipe(object, UserFactory.validate)
 }
 
-export function mapWorkflowToDomain(dbObject: PrismaWorkflow): Either<WorkflowValidationError, Workflow> {
-  const eitherRule = prismaJsonToJson(dbObject.rule)
-  if (E.isLeft(eitherRule)) return eitherRule
+export function mapWorkflowToDomain<
+  DomainSelectors extends WorkflowDecoratorSelector,
+  PrismaSelectors extends PrismaWorkflowDecoratorSelector
+>(
+  dbObject: PrismaDecoratedWorkflow<PrismaSelectors>,
+  include?: PrismaSelectors
+): Either<
+  WorkflowValidationError | WorkflowTemplateValidationError | "unknown_error",
+  DecoratedWorkflow<DomainSelectors>
+> {
+  if (include?.workflowTemplates === true) {
+    if (iPrismaDecoratedWorkflow(dbObject, "workflowTemplates", include)) {
+      const workflowWithTemplate = dbObject as PrismaWorkflowWithTemplate
+      return mapToDomainVersionedWorkflowWithTemplate(workflowWithTemplate) as Either<
+        WorkflowValidationError | WorkflowTemplateValidationError,
+        DecoratedWorkflow<DomainSelectors>
+      >
+    }
 
+    // This should never happen, but we need to handle the case where the workflow template is not found
+    return E.left("unknown_error" as const)
+  }
+
+  return mapToDomainVersionedWorkflow(dbObject) as Either<WorkflowValidationError, DecoratedWorkflow<DomainSelectors>>
+}
+
+function mapWorkflowToNonVersionedDomain(dbObject: PrismaWorkflow): Either<WorkflowValidationError, Workflow> {
   const object = {
     createdAt: dbObject.createdAt,
     description: dbObject.description ?? undefined,
     id: dbObject.id,
     name: dbObject.name,
     updatedAt: dbObject.updatedAt,
-    rule: eitherRule.right,
     status: dbObject.status,
     recalculationRequired: dbObject.recalculationRequired,
+    workflowTemplateId: dbObject.workflowTemplateId,
     occ: dbObject.occ
   }
   return pipe(object, WorkflowFactory.validate)
@@ -107,10 +140,28 @@ export function mapToDomainVersionedWorkflow(
 ): Either<WorkflowValidationError, Versioned<Workflow>> {
   return pipe(
     dbObject,
-    mapWorkflowToDomain,
+    mapWorkflowToNonVersionedDomain,
     E.map(domainObject => ({
       ...domainObject,
       occ: dbObject.occ
+    }))
+  )
+}
+
+export function mapToDomainVersionedWorkflowWithTemplate(
+  dbObject: PrismaWorkflowWithTemplate
+): Either<
+  WorkflowValidationError | WorkflowTemplateValidationError,
+  Versioned<Workflow> & {workflowTemplate: WorkflowTemplate}
+> {
+  return pipe(
+    E.Do,
+    E.bindW("workflow", () => mapWorkflowToNonVersionedDomain(dbObject)),
+    E.bindW("workflowTemplate", () => mapWorkflowTemplateToDomain(dbObject.workflowTemplates)),
+    E.map(({workflow, workflowTemplate}) => ({
+      ...workflow,
+      occ: dbObject.occ,
+      workflowTemplate
     }))
   )
 }

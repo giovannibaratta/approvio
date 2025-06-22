@@ -1,3 +1,4 @@
+import {hasOwnProperty} from "@utils"
 import {TaskEither} from "fp-ts/TaskEither"
 
 /**
@@ -33,3 +34,54 @@ type ExtractReturnType<
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type DistributiveOmit<T, K extends keyof any> = T extends any ? Omit<T, K> : never
+
+/**************************
+ * Dynamic typing
+ *
+ * The types defined below allow the user to have functions that return an entity based on the requested
+ * properties by the caller. In this case we can have a single entry point to return the same entity
+ * but with different facets.
+ *
+ * For example, we can have a user entity that we can decorate with properties like age, name, etc.
+ * We can dynamically request and build the user type with the properties we need.
+ **************************/
+
+/** Helper type that allows has to decorate a base entity using the decorators specified by the user.
+ * e.g.  we can have a base entity user that we can decorate with properties like age, name, etc.
+ * We can dynamically request and build the user type with the properties we need.
+ */
+type DynamicDecorators<
+  AllowedDecorators extends object,
+  SelectedDecorators extends Partial<Record<keyof AllowedDecorators, boolean>>
+> = {
+  // Include in the final type only the keys that are in the both AllowedDecorators and SelectedDecorators
+  // and have a value of true.
+  [K in keyof AllowedDecorators & keyof SelectedDecorators as SelectedDecorators[K] extends true
+    ? K
+    : never]: AllowedDecorators[K]
+}
+
+/**
+ * Helper type that allows has to decorate a base entity using the decorators specified by the user.
+ */
+export type DecorableEntity<
+  BaseEntity,
+  AllowedDecorators extends object,
+  SelectedDecorators extends Partial<Record<keyof AllowedDecorators, boolean>>
+> = BaseEntity & DynamicDecorators<AllowedDecorators, SelectedDecorators>
+
+/** Type guard to validate is a entity has the specified properties */
+export function isDecoratedWith<
+  TBase extends object,
+  TAllowed extends object,
+  TSelected extends Partial<Record<keyof TAllowed, boolean>>,
+  TKey extends keyof TAllowed
+>(
+  // The type of entity is not ideal since it's not strict enough but using DecorableEntity<TBase, TAllowed, TSelected>
+  // generates a Typescript error. I haven't found a solution yet to narrow the type.
+  entity: TBase,
+  key: TKey,
+  options?: TSelected
+): entity is DecorableEntity<TBase, TAllowed, TSelected & Record<TKey, true>> {
+  return options !== undefined && options[key] === true && hasOwnProperty(entity, key)
+}

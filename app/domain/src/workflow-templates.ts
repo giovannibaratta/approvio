@@ -3,6 +3,7 @@ import * as E from "fp-ts/Either"
 import {Either, isLeft, left, right} from "fp-ts/lib/Either"
 import {ApprovalRule, ApprovalRuleFactory, ApprovalRuleValidationError} from "./approval-rules"
 import {WorkflowAction, validateWorkflowActions} from "./workflow-actions"
+import {HumanGroupMembershipRole, MembershipWithGroupRef} from "@domain"
 
 export const WORKFLOW_TEMPLATE_NAME_MAX_LENGTH = 512
 export const WORKFLOW_TEMPLATE_DESCRIPTION_MAX_LENGTH = 2048
@@ -29,9 +30,8 @@ export interface WorkflowTemplateSummary {
   updatedAt: Date
 }
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface WorkflowTemplateLogic {
-  // Additional business logic methods can be added here
+  canVote(memberships: ReadonlyArray<MembershipWithGroupRef>): boolean
 }
 
 export type WorkflowTemplateValidationError =
@@ -45,10 +45,6 @@ export type WorkflowTemplateValidationError =
   | "action_type_invalid"
   | "action_recipients_empty"
   | "action_recipients_invalid_email"
-  | "action_subject_empty"
-  | "action_subject_too_long"
-  | "action_body_empty"
-  | "action_body_too_long"
   | "expires_in_hours_invalid"
   | ApprovalRuleValidationError
 
@@ -159,7 +155,8 @@ export class WorkflowTemplateFactory {
     }
 
     return right({
-      ...workflowTemplateData
+      ...workflowTemplateData,
+      canVote: (memberships: ReadonlyArray<MembershipWithGroupRef>) => canVote(workflowTemplateData, memberships)
     })
   }
 }
@@ -167,7 +164,9 @@ export class WorkflowTemplateFactory {
 function validateWorkflowTemplateName(name: string): Either<WorkflowTemplateValidationError, string> {
   if (!name || name.trim().length === 0) return E.left("name_empty")
   if (name.length > WORKFLOW_TEMPLATE_NAME_MAX_LENGTH) return E.left("name_too_long")
-  if (!/^[a-zA-Z0-9_\-\s]+$/.test(name)) return E.left("name_invalid_characters")
+  // String must start and end with a letter or number
+  // String can only contain letters, numbers, hyphens and spaces
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_\-\s]+[a-zA-Z0-9]$/.test(name)) return E.left("name_invalid_characters")
 
   return E.right(name)
 }
@@ -184,4 +183,20 @@ function validateExpiresInHours(hours: unknown): Either<WorkflowTemplateValidati
   }
 
   return right(hours)
+}
+
+const ROLES_ALLOWED_TO_VOTE: HumanGroupMembershipRole[] = [
+  HumanGroupMembershipRole.APPROVER,
+  HumanGroupMembershipRole.ADMIN,
+  HumanGroupMembershipRole.OWNER
+]
+
+function canVote(workflowTemplate: WorkflowTemplateData, memberships: ReadonlyArray<MembershipWithGroupRef>): boolean {
+  const votingGroups = workflowTemplate.approvalRule.getVotingGroupIds()
+
+  // Is it possible to vote if at least one of the membership group is listed in approval rules
+  // and the user has an allowed role in that group
+  return memberships.some(
+    membership => votingGroups.includes(membership.groupId) && ROLES_ALLOWED_TO_VOTE.includes(membership.role)
+  )
 }

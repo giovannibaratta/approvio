@@ -49,7 +49,7 @@ export async function createMockWorkflowTemplateInDb(
     id: chance.guid({
       version: 4
     }),
-    name: chance.sentence({words: 3}),
+    name: chance.guid({version: 4}),
     description: chance.sentence(),
     approvalRule: {
       type: ApprovalRuleType.GROUP_REQUIREMENT,

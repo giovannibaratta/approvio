@@ -1,52 +1,55 @@
 import {
-  ApprovalRule,
+  ApprovalRuleData,
   ApprovalRuleFactory,
   ApprovalRuleType,
-  ApprovalRuleValidationError,
-  doesVotesCoverApprovalRules,
-  ApproveVote
+  ApproveVote,
+  doesVotesCoverApprovalRules
 } from "@domain"
-import {unwrapLeft, unwrapRight} from "@utils/either"
+import {unwrapRight} from "@utils/either"
 import {randomUUID} from "crypto"
-import {isLeft, isRight} from "fp-ts/lib/Either"
+import "@utils/matchers"
+import {createAndRule, createGroupRequirementRule, createOrRule} from "./workflow-test-helpers"
 
 describe("ApprovalRuleFactory.validate", () => {
   describe("GROUP_REQUIREMENT", () => {
     it("validates a correct group requirement rule", () => {
       const rule = {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID(), minCount: 2}
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isRight(result)).toBe(true)
-      expect(unwrapRight(result)).toEqual(rule)
+      expect(result).toBeRight()
     })
+
     it("fails if groupId is missing", () => {
       const rule = {type: ApprovalRuleType.GROUP_REQUIREMENT, minCount: 2}
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<ApprovalRuleValidationError>("group_rule_invalid_group_id")
+      expect(result).toBeLeftOf("group_rule_invalid_group_id")
     })
+
     it("fails if groupId is not a uuid", () => {
       const rule = {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: "not-a-uuid", minCount: 2}
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<ApprovalRuleValidationError>("group_rule_invalid_group_id")
+      expect(result).toBeLeftOf("group_rule_invalid_group_id")
     })
+
     it("fails if minCount is missing", () => {
       const rule = {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID()}
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<ApprovalRuleValidationError>("group_rule_invalid_min_count")
+      expect(result).toBeLeftOf("group_rule_invalid_min_count")
     })
+
     it("fails if minCount is not a number", () => {
       const rule = {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID(), minCount: "2"}
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<ApprovalRuleValidationError>("group_rule_invalid_min_count")
+      expect(result).toBeLeftOf("group_rule_invalid_min_count")
     })
+
     it("fails if minCount < 1", () => {
-      const rule: ApprovalRule = {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID(), minCount: 0}
+      const rule = {
+        type: ApprovalRuleType.GROUP_REQUIREMENT,
+        groupId: randomUUID(),
+        minCount: 0
+      }
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<ApprovalRuleValidationError>("group_rule_invalid_min_count")
+      expect(result).toBeLeftOf("group_rule_invalid_min_count")
     })
   })
 
@@ -60,18 +63,16 @@ describe("ApprovalRuleFactory.validate", () => {
         ]
       }
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isRight(result)).toBe(true)
-      expect(unwrapRight(result)).toEqual(rule)
+      expect(result).toBeRight()
+      expect(unwrapRight(result)).toMatchObject(rule)
     })
     it("fails if rules is missing or empty", () => {
       const rule = {type: ApprovalRuleType.AND}
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<ApprovalRuleValidationError>("and_rule_must_have_rules")
+      expect(result).toBeLeftOf("and_rule_must_have_rules")
       const rule2 = {type: ApprovalRuleType.AND, rules: []}
       const result2 = ApprovalRuleFactory.validate(rule2)
-      expect(isLeft(result2)).toBe(true)
-      expect(unwrapLeft(result2)).toBe<ApprovalRuleValidationError>("and_rule_must_have_rules")
+      expect(result2).toBeLeftOf("and_rule_must_have_rules")
     })
     it("fails if any nested rule is invalid", () => {
       const rule = {
@@ -79,8 +80,7 @@ describe("ApprovalRuleFactory.validate", () => {
         rules: [{type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: "not-a-uuid", minCount: 1}]
       }
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<ApprovalRuleValidationError>("group_rule_invalid_group_id")
+      expect(result).toBeLeftOf("group_rule_invalid_group_id")
     })
   })
 
@@ -94,18 +94,16 @@ describe("ApprovalRuleFactory.validate", () => {
         ]
       }
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isRight(result)).toBe(true)
-      expect(unwrapRight(result)).toEqual(rule)
+      expect(result).toBeRight()
+      expect(unwrapRight(result)).toMatchObject(rule)
     })
     it("fails if rules is missing or empty", () => {
       const rule = {type: ApprovalRuleType.OR}
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<ApprovalRuleValidationError>("or_rule_must_have_rules")
+      expect(result).toBeLeftOf("or_rule_must_have_rules")
       const rule2 = {type: ApprovalRuleType.OR, rules: []}
       const result2 = ApprovalRuleFactory.validate(rule2)
-      expect(isLeft(result2)).toBe(true)
-      expect(unwrapLeft(result2)).toBe<ApprovalRuleValidationError>("or_rule_must_have_rules")
+      expect(result2).toBeLeftOf("or_rule_must_have_rules")
     })
     it("fails if any nested rule is invalid", () => {
       const rule = {
@@ -113,8 +111,7 @@ describe("ApprovalRuleFactory.validate", () => {
         rules: [{type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: "not-a-uuid", minCount: 1}]
       }
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<ApprovalRuleValidationError>("group_rule_invalid_group_id")
+      expect(result).toBeLeftOf("group_rule_invalid_group_id")
     })
   })
 
@@ -135,8 +132,7 @@ describe("ApprovalRuleFactory.validate", () => {
         ]
       }
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<ApprovalRuleValidationError>("max_rule_nesting_exceeded")
+      expect(result).toBeLeftOf("max_rule_nesting_exceeded")
     })
     it("fails if OR is nested more than 2 levels", () => {
       const rule = {
@@ -154,8 +150,7 @@ describe("ApprovalRuleFactory.validate", () => {
         ]
       }
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<ApprovalRuleValidationError>("max_rule_nesting_exceeded")
+      expect(result).toBeLeftOf("max_rule_nesting_exceeded")
     })
 
     it("fails if AND and OR are mixed and exceed 2 levels", () => {
@@ -174,8 +169,7 @@ describe("ApprovalRuleFactory.validate", () => {
         ]
       }
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<ApprovalRuleValidationError>("max_rule_nesting_exceeded")
+      expect(result).toBeLeftOf("max_rule_nesting_exceeded")
     })
 
     it("allows 2 levels of nesting", () => {
@@ -189,7 +183,7 @@ describe("ApprovalRuleFactory.validate", () => {
         ]
       }
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isRight(result)).toBe(true)
+      expect(result).toBeRight()
     })
   })
 
@@ -197,16 +191,15 @@ describe("ApprovalRuleFactory.validate", () => {
     it("fails if type is not recognized", () => {
       const rule = {type: "NOT_A_TYPE", foo: 1}
       const result = ApprovalRuleFactory.validate(rule)
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<ApprovalRuleValidationError>("invalid_rule_type")
+
+      expect(result).toBeLeftOf("invalid_rule_type")
     })
     it("fails if not an object", () => {
       const result = ApprovalRuleFactory.validate(null)
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<ApprovalRuleValidationError>("invalid_rule_type")
+
+      expect(result).toBeLeftOf("invalid_rule_type")
       const result2 = ApprovalRuleFactory.validate(42)
-      expect(isLeft(result2)).toBe(true)
-      expect(unwrapLeft(result2)).toBe<ApprovalRuleValidationError>("invalid_rule_type")
+      expect(result2).toBeLeftOf("invalid_rule_type")
     })
   })
 })
@@ -227,11 +220,7 @@ describe("doesVotesCoverApprovalRules", () => {
         // Given: a group requirement rule with minCount 1 and one user vote for that group
         const groupId = randomUUID()
         const userId = randomUUID()
-        const rule: ApprovalRule = {
-          type: ApprovalRuleType.GROUP_REQUIREMENT,
-          groupId,
-          minCount: 1
-        }
+        const rule = createGroupRequirementRule(groupId, 1)
         const votes = [createApproveVote([groupId], userId)]
 
         // When: checking if votes cover the approval rule
@@ -246,11 +235,7 @@ describe("doesVotesCoverApprovalRules", () => {
         const groupId = randomUUID()
         const otherGroupId = randomUUID()
         const userId = randomUUID()
-        const rule: ApprovalRule = {
-          type: ApprovalRuleType.GROUP_REQUIREMENT,
-          groupId,
-          minCount: 1
-        }
+        const rule = createGroupRequirementRule(groupId, 1)
         const votes = [createApproveVote([otherGroupId, groupId], userId)]
 
         // When: checking if votes cover the approval rule
@@ -265,11 +250,7 @@ describe("doesVotesCoverApprovalRules", () => {
         const groupId = randomUUID()
         const userId1 = randomUUID()
         const userId2 = randomUUID()
-        const rule: ApprovalRule = {
-          type: ApprovalRuleType.GROUP_REQUIREMENT,
-          groupId,
-          minCount: 2
-        }
+        const rule = createGroupRequirementRule(groupId, 2)
         const votes = [createApproveVote([groupId], userId1), createApproveVote([groupId], userId2)]
 
         // When: checking if votes cover the approval rule
@@ -285,11 +266,7 @@ describe("doesVotesCoverApprovalRules", () => {
         const userId1 = randomUUID()
         const userId2 = randomUUID()
         const userId3 = randomUUID()
-        const rule: ApprovalRule = {
-          type: ApprovalRuleType.GROUP_REQUIREMENT,
-          groupId,
-          minCount: 2
-        }
+        const rule = createGroupRequirementRule(groupId, 2)
         const votes = [
           createApproveVote([groupId], userId1),
           createApproveVote([groupId], userId2),
@@ -307,11 +284,7 @@ describe("doesVotesCoverApprovalRules", () => {
         // Given: a group requirement rule with minCount 1 and multiple votes from same user
         const groupId = randomUUID()
         const userId = randomUUID()
-        const rule: ApprovalRule = {
-          type: ApprovalRuleType.GROUP_REQUIREMENT,
-          groupId,
-          minCount: 1
-        }
+        const rule = createGroupRequirementRule(groupId, 1)
         const votes = [
           createApproveVote([groupId], userId),
           createApproveVote([groupId], userId) // Same user voting again
@@ -329,11 +302,7 @@ describe("doesVotesCoverApprovalRules", () => {
       it("returns false when no votes exist", () => {
         // Given: a group requirement rule and no votes
         const groupId = randomUUID()
-        const rule: ApprovalRule = {
-          type: ApprovalRuleType.GROUP_REQUIREMENT,
-          groupId,
-          minCount: 1
-        }
+        const rule = createGroupRequirementRule(groupId, 1)
         const votes: ApproveVote[] = []
 
         // When: checking if votes cover the approval rule
@@ -348,7 +317,7 @@ describe("doesVotesCoverApprovalRules", () => {
         const groupId = randomUUID()
         const otherGroupId = randomUUID()
         const userId = randomUUID()
-        const rule: ApprovalRule = {
+        const rule: ApprovalRuleData = {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
           groupId,
           minCount: 1
@@ -367,7 +336,7 @@ describe("doesVotesCoverApprovalRules", () => {
         const groupId = randomUUID()
         const userId1 = randomUUID()
         const userId2 = randomUUID()
-        const rule: ApprovalRule = {
+        const rule: ApprovalRuleData = {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
           groupId,
           minCount: 3
@@ -385,7 +354,7 @@ describe("doesVotesCoverApprovalRules", () => {
         // Given: a group requirement rule with minCount 2 and multiple votes from same user
         const groupId = randomUUID()
         const userId = randomUUID()
-        const rule: ApprovalRule = {
+        const rule: ApprovalRuleData = {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
           groupId,
           minCount: 2
@@ -412,13 +381,7 @@ describe("doesVotesCoverApprovalRules", () => {
         const groupId1 = randomUUID()
         const groupId2 = randomUUID()
         const userId = randomUUID()
-        const rule: ApprovalRule = {
-          type: ApprovalRuleType.AND,
-          rules: [
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId1, minCount: 1},
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId2, minCount: 1}
-          ]
-        }
+        const rule = createAndRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([groupId1, groupId2], userId)]
 
         // When: checking if votes cover the approval rule
@@ -434,13 +397,7 @@ describe("doesVotesCoverApprovalRules", () => {
         const groupId2 = randomUUID()
         const userId1 = randomUUID()
         const userId2 = randomUUID()
-        const rule: ApprovalRule = {
-          type: ApprovalRuleType.AND,
-          rules: [
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId1, minCount: 1},
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId2, minCount: 1}
-          ]
-        }
+        const rule = createAndRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([groupId1], userId1), createApproveVote([groupId2], userId2)]
 
         // When: checking if votes cover the approval rule
@@ -457,13 +414,7 @@ describe("doesVotesCoverApprovalRules", () => {
         const groupId1 = randomUUID()
         const groupId2 = randomUUID()
         const userId = randomUUID()
-        const rule: ApprovalRule = {
-          type: ApprovalRuleType.AND,
-          rules: [
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId1, minCount: 1},
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId2, minCount: 1}
-          ]
-        }
+        const rule = createAndRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([groupId1], userId)]
 
         // When: checking if votes cover the approval rule
@@ -479,13 +430,7 @@ describe("doesVotesCoverApprovalRules", () => {
         const groupId2 = randomUUID()
         const otherGroupId = randomUUID()
         const userId = randomUUID()
-        const rule: ApprovalRule = {
-          type: ApprovalRuleType.AND,
-          rules: [
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId1, minCount: 1},
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId2, minCount: 1}
-          ]
-        }
+        const rule = createAndRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([otherGroupId], userId)]
 
         // When: checking if votes cover the approval rule
@@ -504,13 +449,7 @@ describe("doesVotesCoverApprovalRules", () => {
         const groupId1 = randomUUID()
         const groupId2 = randomUUID()
         const userId = randomUUID()
-        const rule: ApprovalRule = {
-          type: ApprovalRuleType.OR,
-          rules: [
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId1, minCount: 1},
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId2, minCount: 1}
-          ]
-        }
+        const rule = createOrRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([groupId1], userId)]
 
         // When: checking if votes cover the approval rule
@@ -525,13 +464,7 @@ describe("doesVotesCoverApprovalRules", () => {
         const groupId1 = randomUUID()
         const groupId2 = randomUUID()
         const userId = randomUUID()
-        const rule: ApprovalRule = {
-          type: ApprovalRuleType.OR,
-          rules: [
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId1, minCount: 1},
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId2, minCount: 1}
-          ]
-        }
+        const rule = createOrRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([groupId1, groupId2], userId)]
 
         // When: checking if votes cover the approval rule
@@ -546,13 +479,7 @@ describe("doesVotesCoverApprovalRules", () => {
         const groupId1 = randomUUID()
         const groupId2 = randomUUID()
         const userId = randomUUID()
-        const rule: ApprovalRule = {
-          type: ApprovalRuleType.OR,
-          rules: [
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId1, minCount: 1},
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId2, minCount: 1}
-          ]
-        }
+        const rule = createOrRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([groupId2], userId)]
 
         // When: checking if votes cover the approval rule
@@ -570,13 +497,7 @@ describe("doesVotesCoverApprovalRules", () => {
         const groupId2 = randomUUID()
         const otherGroupId = randomUUID()
         const userId = randomUUID()
-        const rule: ApprovalRule = {
-          type: ApprovalRuleType.OR,
-          rules: [
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId1, minCount: 1},
-            {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId2, minCount: 1}
-          ]
-        }
+        const rule = createOrRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([otherGroupId], userId)]
 
         // When: checking if votes cover the approval rule
@@ -595,19 +516,10 @@ describe("doesVotesCoverApprovalRules", () => {
       const groupId2 = randomUUID()
       const groupId3 = randomUUID()
       const userId = randomUUID()
-      const rule: ApprovalRule = {
-        type: ApprovalRuleType.OR,
-        rules: [
-          {
-            type: ApprovalRuleType.AND,
-            rules: [
-              {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId1, minCount: 1},
-              {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId2, minCount: 1}
-            ]
-          },
-          {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId3, minCount: 1}
-        ]
-      }
+      const rule = createOrRule([
+        createAndRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)]),
+        createGroupRequirementRule(groupId3, 1)
+      ])
       const votes = [createApproveVote([groupId3], userId)]
 
       // When: checking if votes cover the approval rule
@@ -623,19 +535,10 @@ describe("doesVotesCoverApprovalRules", () => {
       const groupId2 = randomUUID()
       const groupId3 = randomUUID()
       const userId = randomUUID()
-      const rule: ApprovalRule = {
-        type: ApprovalRuleType.AND,
-        rules: [
-          {
-            type: ApprovalRuleType.OR,
-            rules: [
-              {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId1, minCount: 1},
-              {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId2, minCount: 1}
-            ]
-          },
-          {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId3, minCount: 1}
-        ]
-      }
+      const rule = createAndRule([
+        createOrRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)]),
+        createGroupRequirementRule(groupId3, 1)
+      ])
       const votes = [createApproveVote([groupId1, groupId3], userId)]
 
       // When: checking if votes cover the approval rule
@@ -651,19 +554,10 @@ describe("doesVotesCoverApprovalRules", () => {
       const groupId2 = randomUUID()
       const groupId3 = randomUUID()
       const userId = randomUUID()
-      const rule: ApprovalRule = {
-        type: ApprovalRuleType.AND,
-        rules: [
-          {
-            type: ApprovalRuleType.OR,
-            rules: [
-              {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId1, minCount: 1},
-              {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId2, minCount: 1}
-            ]
-          },
-          {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId3, minCount: 1}
-        ]
-      }
+      const rule = createAndRule([
+        createOrRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)]),
+        createGroupRequirementRule(groupId3, 1)
+      ])
       const votes = [createApproveVote([groupId1], userId)] // Missing groupId3
 
       // When: checking if votes cover the approval rule
@@ -680,13 +574,7 @@ describe("doesVotesCoverApprovalRules", () => {
       const userId1 = randomUUID()
       const userId2 = randomUUID()
       const userId3 = randomUUID()
-      const rule: ApprovalRule = {
-        type: ApprovalRuleType.AND,
-        rules: [
-          {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId1, minCount: 2},
-          {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId2, minCount: 1}
-        ]
-      }
+      const rule = createAndRule([createGroupRequirementRule(groupId1, 2), createGroupRequirementRule(groupId2, 1)])
       const votes = [
         createApproveVote([groupId1], userId1),
         createApproveVote([groupId1], userId2),
@@ -707,13 +595,7 @@ describe("doesVotesCoverApprovalRules", () => {
       const userId1 = randomUUID()
       const userId2 = randomUUID()
       const userId3 = randomUUID()
-      const rule: ApprovalRule = {
-        type: ApprovalRuleType.AND,
-        rules: [
-          {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId1, minCount: 3},
-          {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: groupId2, minCount: 1}
-        ]
-      }
+      const rule = createAndRule([createGroupRequirementRule(groupId1, 3), createGroupRequirementRule(groupId2, 1)])
       const votes = [
         createApproveVote([groupId1], userId1),
         createApproveVote([groupId1], userId2), // Only 2 users for group1, need 3

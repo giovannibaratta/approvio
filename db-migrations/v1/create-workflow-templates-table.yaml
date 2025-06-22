@@ -29,8 +29,7 @@ databaseChangeLog:
                   name: actions
                   type: jsonb
                   constraints:
-                    nullable: false
-                  defaultValue: '[]'
+                    nullable: true
               - column:
                   name: default_expires_in_hours
                   type: integer
@@ -52,4 +51,4 @@ databaseChangeLog:
         - addUniqueConstraint:
             tableName: workflow_templates
             columnNames: name
-            constraintName: workflow_templates_name_unique 
+            constraintName: workflow_templates_name_unique

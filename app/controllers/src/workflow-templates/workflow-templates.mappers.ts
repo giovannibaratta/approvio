@@ -8,13 +8,13 @@ import {
   ListWorkflowTemplates200Response
 } from "@approvio/api"
 import {generateErrorPayload} from "@controllers/error"
+import {mapApprovalRuleDataToApi} from "@controllers/shared"
 import {
   WorkflowTemplate,
   WorkflowTemplateValidationError,
   ApprovalRule,
   ApprovalRuleValidationError,
   ApprovalRuleFactory,
-  ApprovalRuleType,
   User,
   WorkflowAction,
   WorkflowActionType,
@@ -111,8 +111,8 @@ export function mapWorkflowTemplateToApi(workflowTemplate: WorkflowTemplate): Wo
     id: workflowTemplate.id,
     name: workflowTemplate.name,
     description: workflowTemplate.description,
-    approvalRule: mapApprovalRuleToApi(workflowTemplate.approvalRule),
-    metadata: {},
+    approvalRule: mapApprovalRuleDataToApi(workflowTemplate.approvalRule),
+    metadata: {}, // Metadata are currently not supported
     actions: workflowTemplate.actions.map(mapWorkflowActionToApi),
     defaultExpiresInHours: workflowTemplate.defaultExpiresInHours,
     createdAt: workflowTemplate.createdAt.toISOString(),
@@ -141,27 +141,6 @@ function mapWorkflowTemplateSummaryToApi(workflowTemplateSummary: WorkflowTempla
   }
 }
 
-function mapApprovalRuleToApi(rule: ApprovalRule): ApprovalRuleApi {
-  switch (rule.type) {
-    case ApprovalRuleType.GROUP_REQUIREMENT:
-      return {
-        type: rule.type,
-        groupId: rule.groupId,
-        minCount: rule.minCount
-      }
-    case ApprovalRuleType.AND:
-      return {
-        type: rule.type,
-        rules: rule.rules.map(mapApprovalRuleToApi)
-      }
-    case ApprovalRuleType.OR:
-      return {
-        type: rule.type,
-        rules: rule.rules.map(mapApprovalRuleToApi)
-      }
-  }
-}
-
 function mapWorkflowActionToApi(action: WorkflowAction): WorkflowActionApi {
   switch (action.type) {
     case WorkflowActionType.EMAIL:
@@ -187,10 +166,6 @@ export function generateErrorResponseForCreateWorkflowTemplate(error: CreateWork
     case "action_type_invalid":
     case "action_recipients_empty":
     case "action_recipients_invalid_email":
-    case "action_subject_empty":
-    case "action_subject_too_long":
-    case "action_body_empty":
-    case "action_body_too_long":
     case "expires_in_hours_invalid":
     case "invalid_rule_type":
     case "and_rule_must_have_rules":
@@ -247,10 +222,6 @@ export function generateErrorResponseForUpdateWorkflowTemplate(error: UpdateWork
     case "action_type_invalid":
     case "action_recipients_empty":
     case "action_recipients_invalid_email":
-    case "action_subject_empty":
-    case "action_subject_too_long":
-    case "action_body_empty":
-    case "action_body_too_long":
     case "expires_in_hours_invalid":
     case "invalid_rule_type":
     case "and_rule_must_have_rules":
@@ -294,10 +265,6 @@ export function generateErrorResponseForListWorkflowTemplates(error: ListWorkflo
     case "action_type_invalid":
     case "action_recipients_empty":
     case "action_recipients_invalid_email":
-    case "action_subject_empty":
-    case "action_subject_too_long":
-    case "action_body_empty":
-    case "action_body_too_long":
     case "expires_in_hours_invalid":
     case "invalid_rule_type":
     case "and_rule_must_have_rules":

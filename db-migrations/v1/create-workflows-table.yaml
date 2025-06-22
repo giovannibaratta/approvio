@@ -1,6 +1,6 @@
 databaseChangeLog:
   - changeSet:
-      id: create-approval-workflows-table
+      id: create-workflows-table
       author: giovannibaratta
       changes:
         - createTable:
@@ -20,11 +20,6 @@ databaseChangeLog:
               - column:
                   name: description
                   type: varchar
-              - column:
-                  name: rule
-                  type: jsonb
-                  constraints:
-                    nullable: false
               - column:
                   name: created_at
                   type: timestamp
@@ -50,6 +45,14 @@ databaseChangeLog:
                   type: boolean
                   constraints:
                     nullable: false
+              - column:
+                  name: workflow_template_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_workflows_workflow_template_id
+                    references: workflow_templates(id)
+                    deleteCascade: true
         - addUniqueConstraint:
             tableName: workflows
             columnNames: name

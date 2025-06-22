@@ -97,7 +97,7 @@ export class GroupDbRepository implements GroupRepository {
           }),
         error => {
           if (isPrismaUniqueConstraintError(error, ["name"])) return "group_already_exists"
-          if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_user (index)")) return "user_not_found"
+          if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_user")) return "user_not_found"
 
           Logger.error("Error while creating group. Unknown error", error)
           return "unknown_error"

@@ -307,6 +307,61 @@ describe("Workflow Templates API", () => {
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("GROUP_RULE_INVALID_MIN_COUNT")
       })
+
+      it("should return 400 BAD_REQUEST (GROUP_RULE_INVALID_GROUP_ID) for invalid group ID in approval rule", async () => {
+        // Given
+        const requestBody: WorkflowTemplateCreate = {
+          name: "Invalid Group Rule Template",
+          approvalRule: {
+            type: ApprovalRuleType.GROUP_REQUIREMENT,
+            groupId: "invalid-group-id", // Invalid: not a valid UUID
+            minCount: 1
+          }
+        }
+
+        // When
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("GROUP_RULE_INVALID_GROUP_ID")
+      })
+
+      it("should return 400 BAD_REQUEST (AND_RULE_MUST_HAVE_RULES) for AND rule with empty rules array", async () => {
+        // Given
+        const requestBody: WorkflowTemplateCreate = {
+          name: "Empty AND Rule Template",
+          approvalRule: {
+            type: ApprovalRuleType.AND,
+            rules: [] // Invalid: AND rule must have at least one rule
+          }
+        }
+
+        // When
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("AND_RULE_MUST_HAVE_RULES")
+      })
+
+      it("should return 400 BAD_REQUEST (OR_RULE_MUST_HAVE_RULES) for OR rule with empty rules array", async () => {
+        // Given
+        const requestBody: WorkflowTemplateCreate = {
+          name: "Empty OR Rule Template",
+          approvalRule: {
+            type: ApprovalRuleType.OR,
+            rules: [] // Invalid: OR rule must have at least one rule
+          }
+        }
+
+        // When
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("OR_RULE_MUST_HAVE_RULES")
+      })
     })
   })
 

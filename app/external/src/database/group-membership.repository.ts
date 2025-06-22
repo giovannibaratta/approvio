@@ -130,8 +130,8 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
       TE.tryCatchK(
         () => this.createMembershipWithOccCheck(data),
         error => {
-          if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_group (index)")) return "group_not_found"
-          if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_user (index)")) return "user_not_found"
+          if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_group)")) return "group_not_found"
+          if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_user")) return "user_not_found"
           if (isPrismaUniqueConstraintError(error, ["group_id", "user_id"])) return "entity_already_in_group"
           if (error instanceof ConcurrentModificationError) return "concurrent_modification_error"
           return "unknown_error"

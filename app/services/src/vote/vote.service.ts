@@ -2,7 +2,8 @@ import {MembershipValidationErrorWithGroupRef, Vote, VoteFactory, Workflow, Work
 import {Inject, Injectable, Logger} from "@nestjs/common"
 import {UnknownError} from "@services/error"
 import {RequestorAwareRequest} from "@services/shared/types"
-import {WORKFLOW_REPOSITORY_TOKEN, WorkflowGetError, WorkflowRepository, WorkflowUpdateError} from "@services/workflow"
+import {WorkflowGetError, WorkflowUpdateError} from "../workflow/interfaces"
+import {WorkflowService} from "../workflow/workflow.service"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
@@ -17,8 +18,7 @@ export class VoteService {
   constructor(
     @Inject(VOTE_REPOSITORY_TOKEN)
     private readonly voteRepo: VoteRepository,
-    @Inject(WORKFLOW_REPOSITORY_TOKEN)
-    private readonly workflowRepo: WorkflowRepository,
+    private readonly workflowService: WorkflowService,
     @Inject(GROUP_MEMBERSHIP_REPOSITORY_TOKEN)
     private readonly groupMembershipRepo: GroupMembershipRepository
   ) {}
@@ -31,14 +31,16 @@ export class VoteService {
   canVote(request: CanVoteRequest): TaskEither<CanVoteError, CanVoteResponse> {
     return pipe(
       sequenceS(TE.ApplicativePar)({
-        workflow: this.workflowRepo.getWorkflowById(request.workflowId),
+        workflowWithTemplate: this.workflowService.getWorkflowByIdentifier(request.workflowId, {
+          workflowTemplate: true
+        }),
         vote: this.voteRepo.getOptionalLatestVoteByWorkflowAndUser(request.workflowId, request.requestor.id),
         userMemberships: this.groupMembershipRepo.getUserMembershipsByUserId(request.requestor.id)
       }),
       TE.map(scope => {
-        const {workflow, vote, userMemberships} = scope
-        const status = this.getVoteStatus(workflow, vote)
-        const canVote = workflow.canVote(userMemberships)
+        const {workflowWithTemplate, vote, userMemberships} = scope
+        const status = this.getVoteStatus(workflowWithTemplate, vote)
+        const canVote = workflowWithTemplate.workflowTemplate.canVote(userMemberships)
 
         return {canVote, status}
       })
@@ -98,7 +100,12 @@ export interface CanVoteResponse {
   status: VoteStatus
 }
 
-export type CanVoteError = WorkflowGetError | MembershipValidationErrorWithGroupRef | GetLatestVoteError | UnknownError
+export type CanVoteError =
+  | "concurrency_error"
+  | WorkflowGetError
+  | MembershipValidationErrorWithGroupRef
+  | GetLatestVoteError
+  | UnknownError
 
 export type CastVoteRequest = RequestorAwareRequest & DistributiveOmit<Vote, "id" | "castedAt" | "userId">
 

@@ -1,7 +1,14 @@
 import {GetAuthenticatedUser} from "@app/auth"
 import {User} from "@domain"
-import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Res} from "@nestjs/common"
-import {CreateWorkflowRequest, WorkflowService, VoteService, CanVoteRequest, CastVoteRequest} from "@services"
+import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Res, Query} from "@nestjs/common"
+import {
+  CreateWorkflowRequest,
+  WorkflowService,
+  VoteService,
+  CanVoteRequest,
+  CastVoteRequest,
+  WorkflowDecoratorSelector
+} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -10,17 +17,20 @@ import {
   createWorkflowApiToServiceModel,
   generateErrorResponseForCreateWorkflow,
   generateErrorResponseForGetWorkflow,
+  generateErrorResponseForListWorkflows,
   mapWorkflowToApi,
+  mapWorkflowListToApi,
   mapCanVoteResponseToApi,
   createCastVoteApiToServiceModel,
   generateErrorResponseForCanVote,
-  generateErrorResponseForCastVote
+  generateErrorResponseForCastVote,
+  validateWorkflowCreateRequest
 } from "./workflows.mappers"
 import {
   Workflow as WorkflowApi,
   CanVoteResponse as CanVoteResponseApi,
   WorkflowVoteRequest as WorkflowVoteRequestApi,
-  WorkflowCreate
+  ListWorkflows200Response
 } from "@approvio/api"
 
 export const WORKFLOWS_ENDPOINT_ROOT = "workflows"
@@ -35,7 +45,7 @@ export class WorkflowsController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createWorkflow(
-    @Body() request: WorkflowCreate,
+    @Body() request: unknown,
     @Res({passthrough: true}) response: Response,
     @GetAuthenticatedUser() requestor: User
   ): Promise<void> {
@@ -43,10 +53,13 @@ export class WorkflowsController {
     const serviceCreateWorkflow = (req: CreateWorkflowRequest) => this.workflowService.createWorkflow(req)
 
     const eitherWorkflow = await pipe(
-      {workflowData: request, requestor},
-      createWorkflowApiToServiceModel,
-      TE.fromEither,
-      TE.chainW(serviceCreateWorkflow)
+      TE.Do,
+      TE.bindW("validatedApiRequest", () => TE.fromEither(validateWorkflowCreateRequest(request))),
+      TE.bindW("requestor", () => TE.right(requestor)),
+      TE.bindW("serviceRequest", ({validatedApiRequest, requestor}) =>
+        TE.fromEither(createWorkflowApiToServiceModel({workflowData: validatedApiRequest, requestor}))
+      ),
+      TE.chainW(({serviceRequest}) => serviceCreateWorkflow(serviceRequest))
     )()
 
     if (isLeft(eitherWorkflow)) {
@@ -60,16 +73,55 @@ export class WorkflowsController {
   }
 
   @Get(":identifier")
-  async getWorkflow(@Param("identifier") identifier: string): Promise<WorkflowApi> {
-    const getWorkflowService = (request: string) => this.workflowService.getWorkflowByIdentifier(request)
+  async getWorkflow(@Param("identifier") identifier: string, @Query("include") include?: string): Promise<WorkflowApi> {
+    const workflowDecoratorSelector = includeOptionsToWorkflowDecoratorSelector(include)
 
-    const eitherWorkflow = await pipe(identifier, TE.right, TE.chainW(getWorkflowService), TE.map(mapWorkflowToApi))()
+    const getWorkflowService = (request: string) =>
+      this.workflowService.getWorkflowByIdentifier(request, workflowDecoratorSelector)
+
+    const eitherWorkflow = await pipe(
+      identifier,
+      TE.right,
+      TE.chainW(getWorkflowService),
+      TE.map(workflow => mapWorkflowToApi(workflow, workflowDecoratorSelector))
+    )()
 
     if (isLeft(eitherWorkflow)) {
       throw generateErrorResponseForGetWorkflow(eitherWorkflow.left, "Failed to get workflow")
     }
 
     return eitherWorkflow.right
+  }
+
+  @Get()
+  async listWorkflows(
+    @Query("page") page: string = "1",
+    @Query("limit") limit: string = "20",
+    @GetAuthenticatedUser() requestor: User,
+    @Query("include") include?: string
+  ): Promise<ListWorkflows200Response> {
+    const pageNum = parseInt(page, 10) || 1
+    const limitNum = parseInt(limit, 10) || 20
+    const workflowDecoratorSelector = includeOptionsToWorkflowDecoratorSelector(include)
+
+    const request = {
+      pagination: {page: pageNum, limit: limitNum},
+      include: workflowDecoratorSelector,
+      requestor
+    }
+
+    const eitherWorkflows = await pipe(
+      request,
+      TE.right,
+      TE.chainW(req => this.workflowService.listWorkflows(req)),
+      TE.map(mapWorkflowListToApi)
+    )()
+
+    if (isLeft(eitherWorkflows)) {
+      throw generateErrorResponseForListWorkflows(eitherWorkflows.left, "Failed to list workflows")
+    }
+
+    return eitherWorkflows.right
   }
 
   @Get(":workflowId/canVote")
@@ -114,5 +166,14 @@ export class WorkflowsController {
 
     if (isLeft(eitherVote))
       throw generateErrorResponseForCastVote(eitherVote.left, `Failed to cast vote for workflow ${workflowId}`)
+  }
+}
+
+function includeOptionsToWorkflowDecoratorSelector(include?: string): WorkflowDecoratorSelector | undefined {
+  if (!include) return undefined
+  const split = include.split(",").map(s => s.trim())
+
+  return {
+    workflowTemplate: split.includes("workflow-template")
   }
 }

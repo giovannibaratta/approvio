@@ -1,4 +1,4 @@
-import {Group, GroupManager, MembershipFactory, MembershipValidationError} from "@domain" // Add User
+import {Group, GroupManager, MembershipFactory, MembershipValidationError} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError, GetGroupError} from "@services"
 import {RequestorAwareRequest} from "@services/shared/types"

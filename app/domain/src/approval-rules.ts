@@ -11,7 +11,9 @@ export enum ApprovalRuleType {
   GROUP_REQUIREMENT = "GROUP_REQUIREMENT"
 }
 
-export type ApprovalRule = AndRule | OrRule | GroupRequirementRule
+export type ApprovalRule = ApprovalRuleData & ApprovalRuleLogic
+
+export type ApprovalRuleData = AndRule | OrRule | GroupRequirementRule
 
 export type GroupRequirementRule = Readonly<PrivateGroupRequirementRule>
 
@@ -33,6 +35,14 @@ interface PrivateOrRule {
   rules: ReadonlyArray<ApprovalRule>
 }
 
+interface ApprovalRuleLogic {
+  /**
+   * Return the voting group ids that are part of the approval rule. Also nested rules are considered.
+   * @returns The voting group ids.
+   */
+  getVotingGroupIds(): ReadonlyArray<string>
+}
+
 export type ApprovalRuleValidationError =
   | "invalid_rule_type"
   | "and_rule_must_have_rules"
@@ -50,19 +60,22 @@ export class ApprovalRuleFactory {
    * @param data The raw object to validate.
    * @returns Either a validation error or the valid ApprovalRules object.
    */
-  static validate(data: unknown, depth = 0): Either<ApprovalRuleValidationError, ApprovalRule> {
+  static validate(data: unknown): Either<ApprovalRuleValidationError, ApprovalRule> {
+    const rule = this.validateApprovalRuleData(data, 0)
+    return E.isRight(rule) ? right(this.decorateApprovalRuleData(rule.right)) : rule
+  }
+
+  private static validateApprovalRuleData(data: unknown, depth = 0): Either<ApprovalRuleValidationError, ApprovalRule> {
     if (depth > MAX_NESTING_DEPTH) return left("max_rule_nesting_exceeded")
-    if (!isObject(data) || typeof data.type !== "string") {
-      return left("invalid_rule_type")
-    }
+    if (!isObject(data) || typeof data.type !== "string") return left("invalid_rule_type")
 
     switch (data.type) {
       case ApprovalRuleType.GROUP_REQUIREMENT:
-        return this.validateGroupRequirementRule(data)
+        return pipe(this.validateGroupRequirementRule(data), E.map(this.decorateApprovalRuleData))
       case ApprovalRuleType.AND:
-        return this.validateAndRule(data, depth)
+        return pipe(this.validateAndRule(data, depth), E.map(this.decorateApprovalRuleData))
       case ApprovalRuleType.OR:
-        return this.validateOrRule(data, depth)
+        return pipe(this.validateOrRule(data, depth), E.map(this.decorateApprovalRuleData))
       default:
         return left("invalid_rule_type")
     }
@@ -92,7 +105,7 @@ export class ApprovalRuleFactory {
 
     return pipe(
       data.rules,
-      A.traverse(E.Applicative)(rule => ApprovalRuleFactory.validate(rule, depth + 1)),
+      A.traverse(E.Applicative)(rule => ApprovalRuleFactory.validateApprovalRuleData(rule, depth + 1)),
       E.map(rules => ({type: ApprovalRuleType.AND, rules}))
     )
   }
@@ -107,9 +120,16 @@ export class ApprovalRuleFactory {
 
     return pipe(
       data.rules,
-      A.traverse(E.Applicative)(rule => ApprovalRuleFactory.validate(rule, depth + 1)),
+      A.traverse(E.Applicative)(rule => ApprovalRuleFactory.validateApprovalRuleData(rule, depth + 1)),
       E.map(rules => ({type: ApprovalRuleType.OR, rules}))
     )
+  }
+
+  private static decorateApprovalRuleData(data: ApprovalRuleData): ApprovalRule {
+    return {
+      ...data,
+      getVotingGroupIds: () => getVotingGroupIds(data)
+    }
   }
 }
 
@@ -123,7 +143,7 @@ function isObject(val: unknown): val is Record<string, unknown> {
  * @param votes The votes to check.
  * @returns True if the votes cover the rule, false otherwise.
  */
-export function doesVotesCoverApprovalRules(rule: ApprovalRule, votes: ReadonlyArray<ApproveVote>): boolean {
+export function doesVotesCoverApprovalRules(rule: ApprovalRuleData, votes: ReadonlyArray<ApproveVote>): boolean {
   switch (rule.type) {
     case ApprovalRuleType.GROUP_REQUIREMENT:
       return doesVotesCoverGroupRequirementRule(rule, votes)
@@ -138,4 +158,15 @@ function doesVotesCoverGroupRequirementRule(rule: GroupRequirementRule, votes: R
   const votesForGroup = votes.filter(vote => vote.votedForGroups.includes(rule.groupId))
   const uniqueUsersWhoVotedForGroup = new Set(votesForGroup.map(vote => vote.userId))
   return uniqueUsersWhoVotedForGroup.size >= rule.minCount
+}
+
+function getVotingGroupIds(rule: ApprovalRuleData): ReadonlyArray<string> {
+  switch (rule.type) {
+    case ApprovalRuleType.GROUP_REQUIREMENT:
+      return [rule.groupId]
+    case ApprovalRuleType.AND:
+      return rule.rules.flatMap(getVotingGroupIds)
+    case ApprovalRuleType.OR:
+      return rule.rules.flatMap(getVotingGroupIds)
+  }
 }

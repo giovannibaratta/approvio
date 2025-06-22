@@ -1,4 +1,10 @@
-import {WorkflowTemplate, WorkflowTemplateValidationError, WorkflowTemplateSummary} from "@domain"
+import {
+  WorkflowTemplate,
+  WorkflowTemplateValidationError,
+  WorkflowTemplateSummary,
+  ApprovalRule,
+  ApprovalRuleType
+} from "@domain"
 import {DatabaseClient} from "@external/database/database-client"
 import {mapToDomainVersionedWorkflowTemplate, mapWorkflowTemplateToDomain} from "@external/database/shared"
 import {chainNullableToLeft} from "@external/database/utils"
@@ -75,6 +81,10 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
     return pipe(
       {templateId, data, occCheck},
       TE.right,
+      TE.map(data => ({
+        ...data,
+        data: {...data.data, approvalRule: mapOptionalApprovalRuleToJsonb(data.data.approvalRule)}
+      })),
       TE.chainW(this.updateWorkflowTemplateTask()),
       TE.chainEitherKW(mapToDomainVersionedWorkflowTemplate)
     )
@@ -208,7 +218,7 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
               id: data.id,
               name: data.name,
               description: data.description,
-              approvalRule: data.approvalRule,
+              approvalRule: mapApprovalRuleToJsonb(data.approvalRule),
               actions: data.actions,
               defaultExpiresInHours: data.defaultExpiresInHours,
               createdAt: data.createdAt,
@@ -222,5 +232,31 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
           return "unknown_error"
         }
       )()
+  }
+}
+
+function mapOptionalApprovalRuleToJsonb(approvalRule?: ApprovalRule): Prisma.InputJsonValue | undefined {
+  if (!approvalRule) return undefined
+  return mapApprovalRuleToJsonb(approvalRule)
+}
+
+function mapApprovalRuleToJsonb(approvalRule: ApprovalRule): Prisma.InputJsonValue {
+  switch (approvalRule.type) {
+    case ApprovalRuleType.AND:
+      return {
+        type: "AND",
+        rules: approvalRule.rules.map(rule => mapApprovalRuleToJsonb(rule))
+      }
+    case ApprovalRuleType.OR:
+      return {
+        type: "OR",
+        rules: approvalRule.rules.map(rule => mapApprovalRuleToJsonb(rule))
+      }
+    case ApprovalRuleType.GROUP_REQUIREMENT:
+      return {
+        type: "GROUP_REQUIREMENT",
+        groupId: approvalRule.groupId,
+        minCount: approvalRule.minCount
+      }
   }
 }
