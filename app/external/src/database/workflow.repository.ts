@@ -1,4 +1,10 @@
-import {Workflow, WorkflowTemplateValidationError, WorkflowValidationError} from "@domain"
+import {
+  DecoratedWorkflow,
+  Workflow,
+  WorkflowDecoratorSelector,
+  WorkflowTemplateValidationError,
+  WorkflowValidationError
+} from "@domain"
 import {DatabaseClient} from "@external/database/database-client"
 import {mapWorkflowToDomain} from "@external/database/shared"
 import {chainNullableToLeft} from "@external/database/utils"
@@ -13,9 +19,7 @@ import {
   WorkflowRepository,
   WorkflowUpdateError,
   ListWorkflowsRequest,
-  ListWorkflowsResponse,
-  WorkflowDecoratorSelector,
-  DecoratedWorkflow
+  ListWorkflowsResponse
 } from "@services"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
@@ -230,7 +234,8 @@ export class WorkflowDbRepository implements WorkflowRepository {
               updatedAt: data.workflow.updatedAt,
               occ: POSTGRES_BIGINT_LOWER_BOUND,
               recalculationRequired: data.workflow.recalculationRequired,
-              workflowTemplateId: data.workflow.workflowTemplateId
+              workflowTemplateId: data.workflow.workflowTemplateId,
+              expiresAt: data.workflow.expiresAt
             }
           }),
         error => {

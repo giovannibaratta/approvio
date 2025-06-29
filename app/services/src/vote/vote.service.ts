@@ -1,4 +1,4 @@
-import {MembershipValidationErrorWithGroupRef, Vote, VoteFactory, Workflow, WorkflowStatus} from "@domain"
+import {MembershipValidationErrorWithGroupRef, Vote, VoteFactory, CantVoteReason, canVoteOnWorkflow} from "@domain"
 import {Inject, Injectable, Logger} from "@nestjs/common"
 import {UnknownError} from "@services/error"
 import {RequestorAwareRequest} from "@services/shared/types"
@@ -12,6 +12,7 @@ import {sequenceS} from "fp-ts/lib/Apply"
 import {GROUP_MEMBERSHIP_REPOSITORY_TOKEN, GroupMembershipRepository} from "@services/group-membership"
 import {isNone, Option} from "fp-ts/lib/Option"
 import {DistributiveOmit} from "@utils"
+import {isRight} from "fp-ts/lib/Either"
 
 @Injectable()
 export class VoteService {
@@ -39,16 +40,16 @@ export class VoteService {
       }),
       TE.map(scope => {
         const {workflowWithTemplate, vote, userMemberships} = scope
-        const status = this.getVoteStatus(workflowWithTemplate, vote)
-        const canVote = workflowWithTemplate.workflowTemplate.canVote(userMemberships)
+        const status = this.getVoteStatus(vote)
+        const canVoteResult = canVoteOnWorkflow(workflowWithTemplate, userMemberships)
+        const canVote = isRight(canVoteResult) ? true : {reason: canVoteResult.left}
 
         return {canVote, status}
       })
     )
   }
 
-  private getVoteStatus(workflow: Workflow, vote: Option<Vote>): VoteStatus {
-    if (workflow.status === WorkflowStatus.CANCELED) return VoteStatus.VOTE_CANCELLED
+  private getVoteStatus(vote: Option<Vote>): VoteStatus {
     if (isNone(vote) || vote.value.type === "WITHDRAW") return VoteStatus.VOTE_PENDING
     return VoteStatus.ALREADY_VOTED
   }
@@ -71,9 +72,11 @@ export class VoteService {
       TE.Do,
       TE.bind("canVoteCheck", () => this.canVote({workflowId: request.workflowId, requestor: request.requestor})),
       TE.chainW(({canVoteCheck}) => {
-        if (!canVoteCheck.canVote) {
-          Logger.error(`User ${request.requestor.id} is not eligible to vote for workflow ${request.workflowId}`)
-          return TE.left("user_not_eligible_to_vote" as const)
+        if (canVoteCheck.canVote !== true) {
+          Logger.error(
+            `User ${request.requestor.id} cannot vote for workflow ${request.workflowId}: ${canVoteCheck.canVote.reason}`
+          )
+          return TE.left(canVoteCheck.canVote.reason)
         }
         return pipe(
           VoteFactory.newVote({...request, userId: request.requestor.id}),
@@ -91,12 +94,11 @@ export interface CanVoteRequest extends RequestorAwareRequest {
 
 export enum VoteStatus {
   ALREADY_VOTED = "ALREADY_VOTED",
-  VOTE_PENDING = "VOTE_PENDING",
-  VOTE_CANCELLED = "VOTE_CANCELLED"
+  VOTE_PENDING = "VOTE_PENDING"
 }
 
 export interface CanVoteResponse {
-  canVote: boolean
+  canVote: true | {reason: CantVoteReason}
   status: VoteStatus
 }
 
@@ -113,6 +115,7 @@ export type CastVoteServiceError =
   | "workflow_not_found"
   | "user_not_found"
   | "user_not_eligible_to_vote"
+  | CantVoteReason
   | PersistVoteError
   | CanVoteError
   | UnknownError

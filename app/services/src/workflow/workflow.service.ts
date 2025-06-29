@@ -1,6 +1,19 @@
-import {Workflow, WorkflowFactory, WorkflowValidationError} from "@domain"
+import {
+  DecoratedWorkflow,
+  evaluateWorkflowStatus,
+  Workflow,
+  WorkflowDecoratorSelector,
+  WorkflowFactory,
+  WorkflowTemplate,
+  WorkflowValidationError
+} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {FindVotesError, VOTE_REPOSITORY_TOKEN, VoteRepository} from "../vote/interfaces"
+import {
+  WORKFLOW_TEMPLATE_REPOSITORY_TOKEN,
+  WorkflowTemplateGetError,
+  WorkflowTemplateRepository
+} from "../workflow-template/interfaces"
 import {isUUIDv4} from "@utils"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
@@ -14,9 +27,7 @@ import {
   WorkflowRepository,
   WorkflowUpdateError,
   ListWorkflowsRequest,
-  ListWorkflowsResponse,
-  WorkflowDecoratorSelector,
-  DecoratedWorkflow
+  ListWorkflowsResponse
 } from "./interfaces"
 
 @Injectable()
@@ -25,7 +36,9 @@ export class WorkflowService {
     @Inject(WORKFLOW_REPOSITORY_TOKEN)
     private readonly workflowRepo: WorkflowRepository,
     @Inject(VOTE_REPOSITORY_TOKEN)
-    private readonly voteRepo: VoteRepository
+    private readonly voteRepo: VoteRepository,
+    @Inject(WORKFLOW_TEMPLATE_REPOSITORY_TOKEN)
+    private readonly workflowTemplateRepo: WorkflowTemplateRepository
   ) {}
 
   /**
@@ -33,21 +46,36 @@ export class WorkflowService {
    * @param request The request containing the workflow data and the requestor.
    * @returns A TaskEither with the created workflow or an error.
    */
-  createWorkflow(request: CreateWorkflowRequest): TaskEither<CreateWorkflowError, Workflow> {
+  createWorkflow(request: CreateWorkflowRequest): TaskEither<CreateWorkflowError | WorkflowTemplateGetError, Workflow> {
     // Wrap repo call in a lambda to preserve `this` context
     const persistWorkflow = (data: CreateWorkflowRepo) => this.workflowRepo.createWorkflow(data)
 
-    const validateRequest = (request: CreateWorkflowRequest): TaskEither<WorkflowValidationError, Workflow> => {
+    const getWorkflowTemplate = (
+      request: CreateWorkflowRequest
+    ): TaskEither<WorkflowTemplateGetError, WorkflowTemplate> => {
+      return this.workflowTemplateRepo.getWorkflowTemplateById(request.workflowData.workflowTemplateId)
+    }
+
+    const validateAndCreateWorkflow = (
+      template: WorkflowTemplate,
+      request: CreateWorkflowRequest
+    ): TaskEither<WorkflowValidationError, Workflow> => {
       const {workflowData} = request
-      const workflow = WorkflowFactory.newWorkflow(workflowData)
+
+      const expiresAt = template.defaultExpiresInHours
+        ? new Date(Date.now() + template.defaultExpiresInHours * 60 * 60 * 1000)
+        : new Date(Date.now() + DEFAULT_EXPIRES_IN_MS)
+
+      const workflow = WorkflowFactory.newWorkflow({...workflowData, expiresAt})
       return TE.fromEither(workflow)
     }
 
     return pipe(
-      request,
-      validateRequest,
-      TE.map(workflow => ({workflow})),
-      TE.chainW(persistWorkflow)
+      TE.Do,
+      TE.bindW("request", () => TE.right(request)),
+      TE.bindW("template", ({request}) => getWorkflowTemplate(request)),
+      TE.bindW("workflow", ({request, template}) => validateAndCreateWorkflow(template, request)),
+      TE.chainW(({workflow}) => persistWorkflow({workflow}))
     )
   }
 
@@ -66,8 +94,8 @@ export class WorkflowService {
 
     const repoGetWorkflow = (value: string) =>
       isUuid
-        ? this.workflowRepo.getWorkflowById(value, {...includeRef, occ: true})
-        : this.workflowRepo.getWorkflowByName(value, {...includeRef, occ: true})
+        ? this.workflowRepo.getWorkflowById(value, {...includeRef, occ: true, workflowTemplate: true})
+        : this.workflowRepo.getWorkflowByName(value, {...includeRef, occ: true, workflowTemplate: true})
 
     return pipe(
       identifier,
@@ -92,7 +120,7 @@ export class WorkflowService {
   }
 
   private recalculateWorkflowStatus<T extends WorkflowDecoratorSelector>(
-    workflow: DecoratedWorkflow<{occ: true}>,
+    workflow: DecoratedWorkflow<{occ: true; workflowTemplate: true}>,
     includeRef?: T
   ): TaskEither<WorkflowGetError | FindVotesError | WorkflowUpdateError, DecoratedWorkflow<T>> {
     const getVotesTask = () => this.voteRepo.getVotesByWorkflowId(workflow.id)
@@ -100,7 +128,7 @@ export class WorkflowService {
     return pipe(
       TE.Do,
       TE.bindW("votes", getVotesTask),
-      TE.bindW("workflowWithUpdatedStatus", ({votes}) => TE.fromEither(workflow.evaluateStatus(votes))),
+      TE.bindW("workflowWithUpdatedStatus", ({votes}) => TE.fromEither(evaluateWorkflowStatus(workflow, votes))),
       TE.chainW(({workflowWithUpdatedStatus}) =>
         this.workflowRepo.updateWorkflowConcurrentSafe(
           workflowWithUpdatedStatus.id,
@@ -116,3 +144,5 @@ export class WorkflowService {
     )
   }
 }
+
+const DEFAULT_EXPIRES_IN_MS = 30 * 24 * 60 * 60 * 1000 // 30 days

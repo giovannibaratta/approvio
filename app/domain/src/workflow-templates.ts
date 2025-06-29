@@ -2,8 +2,9 @@ import {randomUUID} from "crypto"
 import * as E from "fp-ts/Either"
 import {Either, isLeft, left, right} from "fp-ts/lib/Either"
 import {ApprovalRule, ApprovalRuleFactory, ApprovalRuleValidationError} from "./approval-rules"
-import {WorkflowAction, validateWorkflowActions} from "./workflow-actions"
+import {WorkflowAction, WorkflowActionValidationError, validateWorkflowActions} from "./workflow-actions"
 import {HumanGroupMembershipRole, MembershipWithGroupRef} from "@domain"
+import {PrefixUnion} from "@utils"
 
 export const WORKFLOW_TEMPLATE_NAME_MAX_LENGTH = 512
 export const WORKFLOW_TEMPLATE_DESCRIPTION_MAX_LENGTH = 2048
@@ -30,23 +31,24 @@ export interface WorkflowTemplateSummary {
   updatedAt: Date
 }
 
+export type WorkflowTemplateCantVoteReason = "user_not_in_required_group"
+
 interface WorkflowTemplateLogic {
-  canVote(memberships: ReadonlyArray<MembershipWithGroupRef>): boolean
+  canVote(memberships: ReadonlyArray<MembershipWithGroupRef>): Either<WorkflowTemplateCantVoteReason, true>
 }
 
 export type WorkflowTemplateValidationError =
+  | PrefixUnion<"workflow_template", UnprefixedWorkflowTemplateValidationError>
+  | ApprovalRuleValidationError
+  | WorkflowActionValidationError
+
+type UnprefixedWorkflowTemplateValidationError =
   | "name_empty"
   | "name_too_long"
   | "name_invalid_characters"
   | "description_too_long"
   | "update_before_create"
-  | "rule_invalid"
-  | "action_invalid"
-  | "action_type_invalid"
-  | "action_recipients_empty"
-  | "action_recipients_invalid_email"
   | "expires_in_hours_invalid"
-  | ApprovalRuleValidationError
 
 export class WorkflowTemplateFactory {
   /**
@@ -143,7 +145,7 @@ export class WorkflowTemplateFactory {
     if (isLeft(ruleValidation)) return ruleValidation
     if (isLeft(actionsValidation)) return actionsValidation
     if (isLeft(expiresValidation)) return expiresValidation
-    if (data.createdAt > data.updatedAt) return left("update_before_create")
+    if (data.createdAt > data.updatedAt) return left("workflow_template_update_before_create")
 
     const workflowTemplateData = {
       ...data,
@@ -162,24 +164,26 @@ export class WorkflowTemplateFactory {
 }
 
 function validateWorkflowTemplateName(name: string): Either<WorkflowTemplateValidationError, string> {
-  if (!name || name.trim().length === 0) return E.left("name_empty")
-  if (name.length > WORKFLOW_TEMPLATE_NAME_MAX_LENGTH) return E.left("name_too_long")
+  if (!name || name.trim().length === 0) return E.left("workflow_template_name_empty")
+  if (name.length > WORKFLOW_TEMPLATE_NAME_MAX_LENGTH) return E.left("workflow_template_name_too_long")
   // String must start and end with a letter or number
   // String can only contain letters, numbers, hyphens and spaces
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_\-\s]+[a-zA-Z0-9]$/.test(name)) return E.left("name_invalid_characters")
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_\-\s]+[a-zA-Z0-9]$/.test(name))
+    return E.left("workflow_template_name_invalid_characters")
 
   return E.right(name)
 }
 
 function validateWorkflowTemplateDescription(description: string): Either<WorkflowTemplateValidationError, string> {
-  if (description.length > WORKFLOW_TEMPLATE_DESCRIPTION_MAX_LENGTH) return E.left("description_too_long")
+  if (description.length > WORKFLOW_TEMPLATE_DESCRIPTION_MAX_LENGTH)
+    return E.left("workflow_template_description_too_long")
 
   return E.right(description)
 }
 
 function validateExpiresInHours(hours: unknown): Either<WorkflowTemplateValidationError, number> {
   if (typeof hours !== "number" || !Number.isInteger(hours) || hours < 1 || hours > MAX_EXPIRES_IN_HOURS) {
-    return left("expires_in_hours_invalid")
+    return left("workflow_template_expires_in_hours_invalid")
   }
 
   return right(hours)
@@ -191,12 +195,19 @@ const ROLES_ALLOWED_TO_VOTE: HumanGroupMembershipRole[] = [
   HumanGroupMembershipRole.OWNER
 ]
 
-function canVote(workflowTemplate: WorkflowTemplateData, memberships: ReadonlyArray<MembershipWithGroupRef>): boolean {
+function canVote(
+  workflowTemplate: WorkflowTemplateData,
+  memberships: ReadonlyArray<MembershipWithGroupRef>
+): Either<WorkflowTemplateCantVoteReason, true> {
   const votingGroups = workflowTemplate.approvalRule.getVotingGroupIds()
 
   // Is it possible to vote if at least one of the membership group is listed in approval rules
   // and the user has an allowed role in that group
-  return memberships.some(
+  const hasValidMembership = memberships.some(
     membership => votingGroups.includes(membership.groupId) && ROLES_ALLOWED_TO_VOTE.includes(membership.role)
   )
+
+  if (!hasValidMembership) return left("user_not_in_required_group")
+
+  return right(true)
 }

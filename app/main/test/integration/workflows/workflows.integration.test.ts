@@ -23,7 +23,7 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient, Workflow as PrismaWorkflow, WorkflowTemplate as PrismaWorkflowTemplate} from "@prisma/client"
 import {randomUUID} from "crypto"
 import {cleanDatabase, prepareDatabase} from "../database"
-import {createDomainMockUserInDb, createMockWorkflowTemplateInDb} from "../shared/mock-data"
+import {createDomainMockUserInDb, createMockWorkflowInDb, createMockWorkflowTemplateInDb} from "../shared/mock-data"
 import {get, post} from "../shared/requests"
 import {UserWithToken} from "../shared/types"
 
@@ -92,7 +92,13 @@ describe("Workflows API", () => {
     orgMemberUser = {user: memberUser, token: jwtService.sign({email: memberUser.email, sub: memberUser.id})}
     mockGroupId1 = testGroup1.id
 
-    mockWorkflowTemplate = await createMockWorkflowTemplateInDb(prisma)
+    mockWorkflowTemplate = await createMockWorkflowTemplateInDb(prisma, {
+      approvalRule: {
+        type: ApprovalRuleType.GROUP_REQUIREMENT,
+        groupId: mockGroupId1,
+        minCount: 1
+      }
+    })
 
     await app.init()
   })
@@ -106,36 +112,6 @@ describe("Workflows API", () => {
   it("should be defined", () => {
     expect(app).toBeDefined()
   })
-
-  // Helper function to create a workflow for tests
-  async function createTestWorkflow(params: {
-    name: string
-    description?: string
-    status?: WorkflowStatus
-    workflowTemplateId?: string
-  }): Promise<PrismaWorkflow> {
-    let workflowId: string | undefined = params.workflowTemplateId
-
-    if (!workflowId) {
-      const template = await createMockWorkflowTemplateInDb(prisma)
-      workflowId = template.id
-    }
-
-    const workflow = await prisma.workflow.create({
-      data: {
-        id: randomUUID(),
-        name: params.name,
-        description: params.description,
-        status: params.status ?? WorkflowStatus.APPROVED,
-        recalculationRequired: false,
-        workflowTemplateId: workflowId,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        occ: 1n
-      }
-    })
-    return workflow
-  }
 
   describe("POST /workflows", () => {
     describe("good cases", () => {
@@ -214,7 +190,7 @@ describe("Workflows API", () => {
         expect(response.body).toHaveErrorCode("WORKFLOW_ALREADY_EXISTS")
       })
 
-      it("should return 400 BAD_REQUEST (NAME_EMPTY) if name is empty (as OrgAdmin)", async () => {
+      it("should return 400 BAD_REQUEST (WORKFLOW_NAME_EMPTY) if name is empty (as OrgAdmin)", async () => {
         // Given: a workflow creation request with an empty name
         const requestBody: WorkflowCreate = {
           name: " ", // Whitespace only
@@ -224,12 +200,12 @@ describe("Workflows API", () => {
         // When: the request is sent with an OrgAdmin token
         const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
 
-        // Expect: a 400 Bad Request status with NAME_EMPTY error code
+        // Expect: a 400 Bad Request status with WORKFLOW_NAME_EMPTY error code
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("NAME_EMPTY")
+        expect(response.body).toHaveErrorCode("WORKFLOW_NAME_EMPTY")
       })
 
-      it("should return 400 BAD_REQUEST (NAME_INVALID_CHARACTERS) if name has invalid characters (as OrgAdmin)", async () => {
+      it("should return 400 BAD_REQUEST (WORKFLOW_NAME_INVALID_CHARACTERS) if name has invalid characters (as OrgAdmin)", async () => {
         // Given: a workflow creation request with invalid characters in the name
         const requestBody: WorkflowCreate = {
           name: "Invalid Name!", // Contains '!'
@@ -239,12 +215,12 @@ describe("Workflows API", () => {
         // When: the request is sent with an OrgAdmin token
         const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
 
-        // Expect: a 400 Bad Request status with NAME_INVALID_CHARACTERS error code
+        // Expect: a 400 Bad Request status with WORKFLOW_NAME_INVALID_CHARACTERS error code
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("NAME_INVALID_CHARACTERS")
+        expect(response.body).toHaveErrorCode("WORKFLOW_NAME_INVALID_CHARACTERS")
       })
 
-      it("should return 400 BAD_REQUEST (NAME_TOO_LONG) if name is too long (as OrgAdmin)", async () => {
+      it("should return 400 BAD_REQUEST (WORKFLOW_NAME_TOO_LONG) if name is too long (as OrgAdmin)", async () => {
         // Given: a workflow creation request with a name that is too long
         const requestBody: WorkflowCreate = {
           name: "a".repeat(WORKFLOW_NAME_MAX_LENGTH + 1),
@@ -254,12 +230,12 @@ describe("Workflows API", () => {
         // When: the request is sent with an OrgAdmin token
         const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
 
-        // Expect: a 400 Bad Request status with NAME_TOO_LONG error code
+        // Expect: a 400 Bad Request status with WORKFLOW_NAME_TOO_LONG error code
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("NAME_TOO_LONG")
+        expect(response.body).toHaveErrorCode("WORKFLOW_NAME_TOO_LONG")
       })
 
-      it("should return 400 BAD_REQUEST (DESCRIPTION_TOO_LONG) if description is too long (as OrgAdmin)", async () => {
+      it("should return 400 BAD_REQUEST (WORKFLOW_DESCRIPTION_TOO_LONG) if description is too long (as OrgAdmin)", async () => {
         // Given: a workflow creation request with a description that is too long
         const requestBody: WorkflowCreate = {
           name: "Long-Description-Workflow",
@@ -270,9 +246,9 @@ describe("Workflows API", () => {
         // When: the request is sent with an OrgAdmin token
         const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
 
-        // Expect: a 400 Bad Request status with DESCRIPTION_TOO_LONG error code
+        // Expect: a 400 Bad Request status with WORKFLOW_DESCRIPTION_TOO_LONG error code
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("DESCRIPTION_TOO_LONG")
+        expect(response.body).toHaveErrorCode("WORKFLOW_DESCRIPTION_TOO_LONG")
       })
     })
   })
@@ -281,10 +257,10 @@ describe("Workflows API", () => {
     let testWorkflow: PrismaWorkflow
 
     beforeEach(async () => {
-      testWorkflow = await createTestWorkflow({
+      testWorkflow = await createMockWorkflowInDb(prisma, {
         name: "Specific-Workflow",
         description: "Details for specific workflow",
-        status: WorkflowStatus.PENDING
+        status: WorkflowStatus.EVALUATION_IN_PROGRESS
       })
     })
 
@@ -375,16 +351,16 @@ describe("Workflows API", () => {
         }
       })
 
-      workflowRequiringGroup1 = await createTestWorkflow({
+      workflowRequiringGroup1 = await createMockWorkflowInDb(prisma, {
         name: "Workflow-Group1-Req",
         description: "Workflow requiring group 1",
-        status: WorkflowStatus.PENDING,
+        status: WorkflowStatus.EVALUATION_IN_PROGRESS,
         workflowTemplateId: template.id
       })
       await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id, HumanGroupMembershipRole.APPROVER)
 
       // Given: a generic workflow for other tests (e.g., admin access)
-      testWorkflow = await createTestWorkflow({
+      testWorkflow = await createMockWorkflowInDb(prisma, {
         name: "Generic-Workflow-For-CanVote"
       })
     })
@@ -401,6 +377,7 @@ describe("Workflows API", () => {
         const body: CanVoteResponseApi = response.body
         expect(body.canVote).toBe(true)
         expect(body.voteStatus).toEqual("VOTE_PENDING")
+        expect(body.cantVoteReason).toBeUndefined()
       })
 
       it("should return 200 OK with canVote:true for OrgAdmin if they are part of a group", async () => {
@@ -417,6 +394,7 @@ describe("Workflows API", () => {
         const body: CanVoteResponseApi = response.body
         expect(body.canVote).toBe(true)
         expect(body.voteStatus).toEqual("VOTE_PENDING")
+        expect(body.cantVoteReason).toBeUndefined()
       })
 
       it("should return 200 OK with canVote:false if user is not in the required group", async () => {
@@ -433,6 +411,27 @@ describe("Workflows API", () => {
         expect(response).toHaveStatusCode(HttpStatus.OK)
         const body: CanVoteResponseApi = response.body
         expect(body.canVote).toBe(false)
+        expect(body.cantVoteReason).toEqual("NOT_ELIGIBLE_TO_VOTE")
+      })
+
+      it("should return 200 OK with canVote:false if workflow has expired", async () => {
+        // Given: a workflow with an expired date
+        const expiredWorkflow = await createMockWorkflowInDb(prisma, {
+          name: "Expired-Workflow",
+          status: WorkflowStatus.EVALUATION_IN_PROGRESS,
+          expiresAt: new Date(Date.now() - 1000)
+        })
+
+        // When: a request is sent to check voting eligibility with an OrgMember token
+        const response = await get(app, `${endpoint}/${expiredWorkflow.id}/canVote`)
+          .withToken(orgMemberUser.token)
+          .build()
+
+        // Expect: a 200 OK status with canVote set to false
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: CanVoteResponseApi = response.body
+        expect(body.canVote).toBe(false)
+        expect(body.cantVoteReason).toEqual("WORKFLOW_EXPIRED")
       })
     })
 
@@ -462,28 +461,32 @@ describe("Workflows API", () => {
   })
 
   describe("POST /workflows/:workflowId/vote", () => {
-    let workflowForVoting: PrismaWorkflow
+    let workflowTemplate: PrismaWorkflowTemplate
 
     beforeEach(async () => {
-      const template = await createMockWorkflowTemplateInDb(prisma, {
+      workflowTemplate = await createMockWorkflowTemplateInDb(prisma, {
         approvalRule: {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
           groupId: mockGroupId1,
-          minCount: 1
+          minCount: 2
         }
       })
-
-      workflowForVoting = await createTestWorkflow({
-        name: "Workflow-For-Actual-Voting",
-        description: "Voting Test",
-        status: WorkflowStatus.PENDING,
-        workflowTemplateId: template.id
-      })
-      await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id, HumanGroupMembershipRole.APPROVER)
-      await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id, HumanGroupMembershipRole.APPROVER)
     })
 
     describe("good cases", () => {
+      let workflowForVoting: PrismaWorkflow
+      beforeEach(async () => {
+        workflowForVoting = await createMockWorkflowInDb(prisma, {
+          name: "Workflow-For-Actual-Voting",
+          description: "Voting Test",
+          status: WorkflowStatus.EVALUATION_IN_PROGRESS,
+          workflowTemplateId: workflowTemplate.id,
+          expiresAt: "active"
+        })
+        await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id, HumanGroupMembershipRole.APPROVER)
+        await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id, HumanGroupMembershipRole.APPROVER)
+      })
+
       it("should allow OrgMember in the group to APPROVE a workflow and return 200 OK", async () => {
         // Given: a request body to approve the workflow
         const requestBody: WorkflowVoteRequestApi = {
@@ -554,7 +557,7 @@ describe("Workflows API", () => {
           where: {workflowId: workflowForVoting.id, userId: orgMemberUser.user.id}
         })
         expect(voteInDb).toHaveLength(2)
-      }, 100000)
+      })
     })
 
     describe("bad cases", () => {
@@ -568,7 +571,7 @@ describe("Workflows API", () => {
         }
 
         // When: the vote request is sent without a token
-        const response = await post(app, `${endpoint}/${workflowForVoting.id}/vote`).build().send(requestBody)
+        const response = await post(app, `${endpoint}/random-id/vote`).build().send(requestBody)
 
         // Expect: a 401 Unauthorized status
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
@@ -595,7 +598,15 @@ describe("Workflows API", () => {
         expect(response.body).toHaveErrorCode("WORKFLOW_NOT_FOUND")
       })
 
-      it("should return 400 BAD_REQUEST if user is not eligible to vote (e.g., not in group)", async () => {
+      it("should return 422 UNPROCESSABLE_ENTITY if user is not eligible to vote (e.g., not in group)", async () => {
+        const workflow = await createMockWorkflowInDb(prisma, {
+          name: "Workflow-For-Actual-Voting",
+          description: "Voting Test",
+          status: WorkflowStatus.EVALUATION_IN_PROGRESS,
+          workflowTemplateId: workflowTemplate.id,
+          expiresAt: "active"
+        })
+
         // Given: a new user not in any group related to this workflow and a vote request body
         const nonVoter = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.MEMBER})
         const nonVoterToken = jwtService.sign({email: nonVoter.email, sub: nonVoter.id})
@@ -607,14 +618,14 @@ describe("Workflows API", () => {
         }
 
         // When: the vote request is sent with the non-voter user's token
-        const response = await post(app, `${endpoint}/${workflowForVoting.id}/vote`)
+        const response = await post(app, `${endpoint}/${workflow.id}/vote`)
           .withToken(nonVoterToken)
           .build()
           .send(requestBody)
 
-        // Expect: a 403 Forbidden status with USER_NOT_ELIGIBLE_TO_VOTE error code
-        expect(response).toHaveStatusCode(HttpStatus.FORBIDDEN)
-        expect(response.body).toHaveErrorCode("USER_NOT_ELIGIBLE_TO_VOTE")
+        // Expect: a 422 UNPROCESSABLE_ENTITY status with USER_NOT_IN_REQUIRED_GROUP error code
+        expect(response).toHaveStatusCode(HttpStatus.UNPROCESSABLE_ENTITY)
+        expect(response.body).toHaveErrorCode("USER_NOT_IN_REQUIRED_GROUP")
       })
 
       it("should return 400 BAD_REQUEST for invalid voteType", async () => {
@@ -626,7 +637,7 @@ describe("Workflows API", () => {
         }
 
         // When: the vote request is sent with a user who can normally vote
-        const response = await post(app, `${endpoint}/${workflowForVoting.id}/vote`)
+        const response = await post(app, `${endpoint}/a-workflow/vote`)
           .withToken(orgMemberUser.token)
           .build()
           .send(requestBody)

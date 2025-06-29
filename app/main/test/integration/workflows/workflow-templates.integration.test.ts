@@ -190,7 +190,7 @@ describe("Workflow Templates API", () => {
         expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_ALREADY_EXISTS")
       })
 
-      it("should return 400 BAD_REQUEST (NAME_EMPTY) for empty name", async () => {
+      it("should return 400 BAD_REQUEST (WORKFLOW_TEMPLATE_NAME_EMPTY) for empty name", async () => {
         // Given
         const requestBody: WorkflowTemplateCreate = {
           name: "  ", // Whitespace only
@@ -206,10 +206,10 @@ describe("Workflow Templates API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("NAME_EMPTY")
+        expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_NAME_EMPTY")
       })
 
-      it("should return 400 BAD_REQUEST (NAME_TOO_LONG) for name exceeding max length", async () => {
+      it("should return 400 BAD_REQUEST (WORKFLOW_TEMPLATE_NAME_TOO_LONG) for name exceeding max length", async () => {
         // Given
         const longName = "A".repeat(513) // Exceeds WORKFLOW_TEMPLATE_NAME_MAX_LENGTH (512)
         const requestBody: WorkflowTemplateCreate = {
@@ -226,10 +226,10 @@ describe("Workflow Templates API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("NAME_TOO_LONG")
+        expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_NAME_TOO_LONG")
       })
 
-      it("should return 400 BAD_REQUEST (NAME_INVALID_CHARACTERS) for name with invalid characters", async () => {
+      it("should return 400 BAD_REQUEST (WORKFLOW_TEMPLATE_NAME_INVALID_CHARACTERS) for name with invalid characters", async () => {
         // Given
         const requestBody: WorkflowTemplateCreate = {
           name: "template@name!",
@@ -245,10 +245,10 @@ describe("Workflow Templates API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("NAME_INVALID_CHARACTERS")
+        expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_NAME_INVALID_CHARACTERS")
       })
 
-      it("should return 400 BAD_REQUEST (DESCRIPTION_TOO_LONG) for description exceeding max length", async () => {
+      it("should return 400 BAD_REQUEST (WORKFLOW_TEMPLATE_DESCRIPTION_TOO_LONG) for description exceeding max length", async () => {
         // Given
         const longDescription = "A".repeat(2049) // Exceeds WORKFLOW_TEMPLATE_DESCRIPTION_MAX_LENGTH (2048)
         const requestBody: WorkflowTemplateCreate = {
@@ -266,10 +266,10 @@ describe("Workflow Templates API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("DESCRIPTION_TOO_LONG")
+        expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_DESCRIPTION_TOO_LONG")
       })
 
-      it("should return 400 BAD_REQUEST (EXPIRES_IN_HOURS_INVALID) for invalid expires in hours", async () => {
+      it("should return 400 BAD_REQUEST (WORKFLOW_TEMPLATE_EXPIRES_IN_HOURS_INVALID) for invalid expires in hours", async () => {
         // Given
         const requestBody: WorkflowTemplateCreate = {
           name: "Invalid Expires Template",
@@ -286,7 +286,7 @@ describe("Workflow Templates API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("EXPIRES_IN_HOURS_INVALID")
+        expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_EXPIRES_IN_HOURS_INVALID")
       })
 
       it("should return 400 BAD_REQUEST (GROUP_RULE_INVALID_MIN_COUNT) for invalid min count in approval rule", async () => {
@@ -593,7 +593,7 @@ describe("Workflow Templates API", () => {
         expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_NOT_FOUND")
       })
 
-      it("should return 400 BAD_REQUEST (NAME_EMPTY) for empty name in update", async () => {
+      it("should return 400 BAD_REQUEST (WORKFLOW_TEMPLATE_NAME_EMPTY) for empty name in update", async () => {
         // Given
         const invalidUpdate: WorkflowTemplateUpdate = {
           name: "  " // Whitespace only
@@ -607,7 +607,7 @@ describe("Workflow Templates API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("NAME_EMPTY")
+        expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_NAME_EMPTY")
       })
     })
   })

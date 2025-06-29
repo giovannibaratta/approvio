@@ -5,10 +5,7 @@ import {
   CastVoteRequest,
   CastVoteServiceError,
   CanVoteError,
-  ListWorkflowsResponse,
-  DecoratedWorkflow,
-  WorkflowDecoratorSelector,
-  isDecoratedWorkflow
+  ListWorkflowsResponse
 } from "@services"
 import {ExtractLeftFromMethod} from "@utils"
 import {Either, right, left} from "fp-ts/Either"
@@ -25,10 +22,19 @@ import {
   ConflictException,
   NotFoundException,
   InternalServerErrorException,
-  ForbiddenException
+  ForbiddenException,
+  UnprocessableEntityException,
+  Logger
 } from "@nestjs/common"
 import {generateErrorPayload} from "@controllers/error"
-import {ApprovalRuleValidationError, User, VoteValidationError} from "@domain"
+import {
+  ApprovalRuleValidationError,
+  DecoratedWorkflow,
+  isDecoratedWorkflow,
+  User,
+  VoteValidationError,
+  WorkflowDecoratorSelector
+} from "@domain"
 import {mapWorkflowTemplateToApi} from "@controllers/workflow-templates"
 
 type CreateWorkflowApiError =
@@ -95,23 +101,22 @@ export function generateErrorResponseForCreateWorkflow(
   const errorCode = error.toUpperCase()
 
   switch (error) {
-    case "name_empty":
-    case "name_too_long":
-    case "name_invalid_characters":
-    case "description_too_long":
-    case "workflow_template_id_invalid_uuid":
+    case "workflow_name_empty":
+    case "workflow_name_too_long":
+    case "workflow_name_invalid_characters":
+    case "workflow_description_too_long":
+    case "workflow_workflow_template_id_invalid_uuid":
+    case "workflow_template_not_found":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow data`))
     case "workflow_already_exists":
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: Workflow with this name already exists`)
       )
-    case "update_before_create":
+    case "workflow_update_before_create":
+    case "workflow_expires_at_in_the_past":
+    case "workflow_status_invalid":
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
-    case "status_invalid":
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
-      )
     case "name_missing":
     case "name_not_string":
     case "description_not_string":
@@ -120,18 +125,23 @@ export function generateErrorResponseForCreateWorkflow(
     case "workflow_template_id_missing":
     case "malformed_request":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: request is malformed or invalid`))
-    case "rule_invalid":
-    case "action_invalid":
     case "action_type_invalid":
     case "action_recipients_empty":
     case "action_recipients_invalid_email":
-    case "expires_in_hours_invalid":
+    case "workflow_template_expires_in_hours_invalid":
     case "invalid_rule_type":
     case "and_rule_must_have_rules":
     case "or_rule_must_have_rules":
     case "group_rule_invalid_min_count":
     case "group_rule_invalid_group_id":
     case "max_rule_nesting_exceeded":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_too_long":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_description_too_long":
+    case "workflow_template_update_before_create":
+    case "malformed_content":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
@@ -148,37 +158,41 @@ export function generateErrorResponseForGetWorkflow(error: GetWorkflowLeft, cont
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow not found`))
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
-    case "name_empty":
-    case "name_too_long":
-    case "name_invalid_characters":
-    case "description_too_long":
-    case "update_before_create":
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid workflow data`))
-    case "invalid_workflow_id":
-    case "invalid_user_id":
-    case "invalid_vote_type":
-    case "reason_too_long":
-    case "invalid_group_id":
-    case "workflow_template_id_invalid_uuid":
-    case "voted_for_groups_required":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow data`))
     case "concurrency_error":
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: Workflow has been updated concurrently`)
       )
-    case "rule_invalid":
-    case "status_invalid":
+    case "workflow_status_invalid":
     case "invalid_rule_type":
     case "and_rule_must_have_rules":
     case "or_rule_must_have_rules":
     case "group_rule_invalid_min_count":
     case "group_rule_invalid_group_id":
     case "max_rule_nesting_exceeded":
-    case "action_invalid":
     case "action_type_invalid":
     case "action_recipients_empty":
     case "action_recipients_invalid_email":
-    case "expires_in_hours_invalid":
+    case "workflow_name_empty":
+    case "workflow_name_too_long":
+    case "workflow_name_invalid_characters":
+    case "workflow_description_too_long":
+    case "workflow_update_before_create":
+    case "workflow_expires_at_in_the_past":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_too_long":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_description_too_long":
+    case "workflow_template_update_before_create":
+    case "workflow_template_expires_in_hours_invalid":
+    case "invalid_workflow_id":
+    case "invalid_user_id":
+    case "invalid_vote_type":
+    case "reason_too_long":
+    case "invalid_group_id":
+    case "workflow_workflow_template_id_invalid_uuid":
+    case "voted_for_groups_required":
+    case "malformed_content":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
@@ -191,29 +205,34 @@ export function generateErrorResponseForListWorkflows(error: ListWorkflowsLeft, 
   const errorCode = error.toUpperCase()
 
   switch (error) {
-    case "workflow_not_found":
-      return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflows not found`))
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
-    case "name_empty":
-    case "name_too_long":
-    case "name_invalid_characters":
-    case "description_too_long":
-    case "update_before_create":
-    case "status_invalid":
-    case "workflow_template_id_invalid_uuid":
-    case "rule_invalid":
-    case "action_invalid":
+    case "workflow_name_empty":
+    case "workflow_name_too_long":
+    case "workflow_name_invalid_characters":
+    case "workflow_description_too_long":
+    case "workflow_update_before_create":
+    case "workflow_status_invalid":
+    case "workflow_workflow_template_id_invalid_uuid":
     case "action_type_invalid":
     case "action_recipients_empty":
     case "action_recipients_invalid_email":
-    case "expires_in_hours_invalid":
+    case "workflow_template_expires_in_hours_invalid":
     case "invalid_rule_type":
     case "and_rule_must_have_rules":
     case "or_rule_must_have_rules":
     case "group_rule_invalid_min_count":
     case "group_rule_invalid_group_id":
     case "max_rule_nesting_exceeded":
+    case "workflow_not_found":
+    case "workflow_expires_at_in_the_past":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_too_long":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_description_too_long":
+    case "workflow_template_update_before_create":
+    case "malformed_content":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
@@ -225,27 +244,27 @@ export function mapWorkflowToApi<T extends WorkflowDecoratorSelector>(
   workflowResult: DecoratedWorkflow<T>,
   includeRequestedByUser?: T
 ): WorkflowApi {
-  const workflow = workflowResult
-
-  const baseWorkflow = {
-    id: workflow.id,
-    name: workflow.name,
-    description: workflow.description,
-    status: workflow.status,
-    workflowTemplateId: workflow.workflowTemplateId,
+  const {id, name, description, status, createdAt, updatedAt, expiresAt, workflowTemplateId} = workflowResult
+  const workflow: WorkflowApi = {
+    id,
+    name,
+    status,
+    workflowTemplateId,
     metadata: {},
-    createdAt: workflow.createdAt.toISOString(),
-    updatedAt: workflow.updatedAt.toISOString()
+    description,
+    createdAt: createdAt.toISOString(),
+    updatedAt: updatedAt.toISOString(),
+    expiresAt: expiresAt.toISOString()
   }
 
   const ref: WorkflowApi["ref"] = {}
 
-  if (isDecoratedWorkflow(workflow, "workflowTemplate", includeRequestedByUser)) {
-    ref.workflowTemplate = mapWorkflowTemplateToApi(workflow.workflowTemplate)
+  if (isDecoratedWorkflow(workflowResult, "workflowTemplate", includeRequestedByUser)) {
+    ref.workflowTemplate = mapWorkflowTemplateToApi(workflowResult.workflowTemplate)
   }
 
   return {
-    ...baseWorkflow,
+    ...workflow,
     ref
   }
 }
@@ -266,9 +285,26 @@ export function mapWorkflowListToApi(
 
 /** Map the domain model to the API model */
 export function mapCanVoteResponseToApi(response: CanVoteResponse): CanVoteResponseApi {
+  const cantVoteReason = mapCantVoteReasonToApi(response)
+
   return {
-    canVote: response.canVote,
-    voteStatus: response.status
+    canVote: response.canVote === true,
+    voteStatus: response.status,
+    cantVoteReason
+  }
+}
+
+function mapCantVoteReasonToApi(response: CanVoteResponse): string | undefined {
+  if (response.canVote === true) return undefined
+  switch (response.canVote.reason) {
+    case "workflow_expired":
+      return "WORKFLOW_EXPIRED"
+    case "workflow_cancelled":
+      return "WORKFLOW_CANCELED"
+    case "workflow_already_approved":
+      return "WORKFLOW_APPROVED"
+    case "user_not_in_required_group":
+      return "NOT_ELIGIBLE_TO_VOTE"
   }
 }
 
@@ -320,15 +356,6 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
-    case "name_empty":
-    case "name_too_long":
-    case "name_invalid_characters":
-    case "description_too_long":
-    case "update_before_create":
-    case "workflow_template_id_invalid_uuid":
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
-      )
     case "invalid_group_id":
     case "voted_for_groups_required":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow data`))
@@ -336,24 +363,36 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: Workflow has been updated concurrently`)
       )
-    case "rule_invalid":
-    case "status_invalid":
+    case "workflow_name_empty":
+    case "workflow_name_too_long":
+    case "workflow_name_invalid_characters":
+    case "workflow_description_too_long":
+    case "workflow_update_before_create":
+    case "workflow_workflow_template_id_invalid_uuid":
     case "invalid_rule_type":
     case "and_rule_must_have_rules":
     case "or_rule_must_have_rules":
     case "group_rule_invalid_min_count":
     case "group_rule_invalid_group_id":
     case "max_rule_nesting_exceeded":
-    case "action_invalid":
     case "action_type_invalid":
     case "action_recipients_empty":
     case "action_recipients_invalid_email":
-    case "expires_in_hours_invalid":
+    case "workflow_template_expires_in_hours_invalid":
     case "inconsistent_dates":
     case "invalid_workflow_id":
     case "invalid_user_id":
     case "invalid_vote_type":
     case "reason_too_long":
+    case "workflow_expires_at_in_the_past":
+    case "workflow_status_invalid":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_too_long":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_description_too_long":
+    case "workflow_template_update_before_create":
+    case "malformed_content":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
@@ -378,15 +417,6 @@ export function generateErrorResponseForCastVote(error: CastVoteServiceError, co
     case "invalid_vote_type":
     case "reason_too_long":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid vote parameters`))
-    case "name_empty":
-    case "name_too_long":
-    case "name_invalid_characters":
-    case "description_too_long":
-    case "update_before_create":
-    case "workflow_template_id_invalid_uuid":
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
-      )
     case "invalid_group_id":
     case "voted_for_groups_required":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow data`))
@@ -394,25 +424,42 @@ export function generateErrorResponseForCastVote(error: CastVoteServiceError, co
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: Workflow has been updated concurrently`)
       )
-    case "rule_invalid":
-    case "status_invalid":
+    case "workflow_name_empty":
+    case "workflow_name_too_long":
+    case "workflow_name_invalid_characters":
+    case "workflow_description_too_long":
+    case "workflow_update_before_create":
+    case "workflow_workflow_template_id_invalid_uuid":
+    case "workflow_expires_at_in_the_past":
+    case "workflow_status_invalid":
     case "invalid_rule_type":
     case "and_rule_must_have_rules":
     case "or_rule_must_have_rules":
     case "group_rule_invalid_min_count":
     case "group_rule_invalid_group_id":
     case "max_rule_nesting_exceeded":
-    case "action_invalid":
     case "action_type_invalid":
     case "action_recipients_empty":
     case "action_recipients_invalid_email":
-    case "expires_in_hours_invalid":
+    case "workflow_template_expires_in_hours_invalid":
     case "invalid_role":
     case "invalid_uuid":
     case "inconsistent_dates":
     case "invalid_group_uuid":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_too_long":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_description_too_long":
+    case "workflow_template_update_before_create":
+    case "malformed_content":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
+    case "workflow_already_approved":
+    case "workflow_cancelled":
+    case "workflow_expired":
+    case "user_not_in_required_group":
+      return new UnprocessableEntityException(generateErrorPayload(errorCode, `${context}: Cannot cast vote`))
   }
 }

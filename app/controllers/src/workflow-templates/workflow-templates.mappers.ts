@@ -20,7 +20,13 @@ import {
   WorkflowActionType,
   WorkflowTemplateSummary
 } from "@domain"
-import {BadRequestException, ConflictException, InternalServerErrorException, NotFoundException} from "@nestjs/common"
+import {
+  BadRequestException,
+  ConflictException,
+  InternalServerErrorException,
+  Logger,
+  NotFoundException
+} from "@nestjs/common"
 import {
   CreateWorkflowTemplateRequest,
   ListWorkflowTemplatesResponse,
@@ -157,28 +163,31 @@ export function generateErrorResponseForCreateWorkflowTemplate(error: CreateWork
   const errorCode = error.toUpperCase()
 
   switch (error) {
-    case "name_empty":
-    case "name_too_long":
-    case "name_invalid_characters":
-    case "description_too_long":
-    case "rule_invalid":
-    case "action_invalid":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_too_long":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_description_too_long":
     case "action_type_invalid":
     case "action_recipients_empty":
     case "action_recipients_invalid_email":
-    case "expires_in_hours_invalid":
+    case "workflow_template_expires_in_hours_invalid":
     case "invalid_rule_type":
     case "and_rule_must_have_rules":
     case "or_rule_must_have_rules":
     case "group_rule_invalid_min_count":
     case "group_rule_invalid_group_id":
     case "max_rule_nesting_exceeded":
+    case "malformed_content":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
     case "workflow_template_already_exists":
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: Workflow template with this name already exists`)
       )
-    case "update_before_create":
+    case "workflow_template_update_before_create":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Found internal data inconsistency`)
+      )
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
   }
@@ -213,24 +222,27 @@ export function generateErrorResponseForUpdateWorkflowTemplate(error: UpdateWork
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: Workflow template has been updated concurrently`)
       )
-    case "name_empty":
-    case "name_too_long":
-    case "name_invalid_characters":
-    case "description_too_long":
-    case "rule_invalid":
-    case "action_invalid":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_too_long":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_description_too_long":
     case "action_type_invalid":
     case "action_recipients_empty":
     case "action_recipients_invalid_email":
-    case "expires_in_hours_invalid":
+    case "workflow_template_expires_in_hours_invalid":
     case "invalid_rule_type":
     case "and_rule_must_have_rules":
     case "or_rule_must_have_rules":
     case "group_rule_invalid_min_count":
     case "group_rule_invalid_group_id":
     case "max_rule_nesting_exceeded":
+    case "malformed_content":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
-    case "update_before_create":
+    case "workflow_template_update_before_create":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Found internal data inconsistency`)
+      )
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
   }
@@ -255,25 +267,25 @@ export function generateErrorResponseForListWorkflowTemplates(error: ListWorkflo
   const errorCode = error.toUpperCase()
 
   switch (error) {
-    case "name_empty":
-    case "name_too_long":
-    case "name_invalid_characters":
-    case "description_too_long":
-    case "update_before_create":
-    case "rule_invalid":
-    case "action_invalid":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_too_long":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_description_too_long":
+    case "workflow_template_update_before_create":
+    case "workflow_template_expires_in_hours_invalid":
     case "action_type_invalid":
     case "action_recipients_empty":
     case "action_recipients_invalid_email":
-    case "expires_in_hours_invalid":
     case "invalid_rule_type":
     case "and_rule_must_have_rules":
     case "or_rule_must_have_rules":
     case "group_rule_invalid_min_count":
     case "group_rule_invalid_group_id":
     case "max_rule_nesting_exceeded":
+    case "malformed_content":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
-        generateErrorPayload(errorCode, `${context}: Invalid workflow template data`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Found internal data inconsistency`)
       )
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))

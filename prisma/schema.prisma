@@ -87,6 +87,7 @@ model Workflow {
   occ                   BigInt
   recalculationRequired Boolean          @map("recalculation_required")
   workflowTemplateId    String           @map("workflow_template_id") @db.Uuid
+  expiresAt             DateTime         @map("expires_at") @db.Timestamp(6)
   votes                 Vote[]
   workflowTemplates     WorkflowTemplate @relation(fields: [workflowTemplateId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_workflows_workflow_template")
 

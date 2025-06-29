@@ -53,6 +53,11 @@ databaseChangeLog:
                     foreignKeyName: fk_workflows_workflow_template_id
                     references: workflow_templates(id)
                     deleteCascade: true
+              - column:
+                  name: expires_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
         - addUniqueConstraint:
             tableName: workflows
             columnNames: name

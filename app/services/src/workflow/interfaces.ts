@@ -1,7 +1,12 @@
-import {Workflow, WorkflowTemplate, WorkflowTemplateValidationError, WorkflowValidationError} from "@domain"
+import {
+  DecoratedWorkflow,
+  Workflow,
+  WorkflowDecoratorSelector,
+  WorkflowTemplateValidationError,
+  WorkflowValidationError
+} from "@domain"
 import {UnknownError} from "@services/error"
 import {RequestorAwareRequest} from "@services/shared/types"
-import {DecorableEntity, isDecoratedWith} from "@utils"
 import {TaskEither} from "fp-ts/TaskEither"
 
 export interface WorkflowRepository {
@@ -118,28 +123,6 @@ export interface ListWorkflowsResponse<TInclude extends WorkflowDecoratorSelecto
     page: number
     limit: number
   }
-}
-
-export interface WorkflowDecorators {
-  workflowTemplate: WorkflowTemplate
-  occ: bigint
-}
-
-export type WorkflowDecoratorSelector = Partial<Record<keyof WorkflowDecorators, boolean>>
-
-export type DecoratedWorkflow<T extends WorkflowDecoratorSelector> = DecorableEntity<Workflow, WorkflowDecorators, T>
-
-export function isDecoratedWorkflow<K extends keyof WorkflowDecorators>(
-  workflow: DecoratedWorkflow<WorkflowDecoratorSelector>,
-  key: K,
-  options?: WorkflowDecoratorSelector
-): workflow is DecoratedWorkflow<WorkflowDecoratorSelector & Record<K, true>> {
-  return isDecoratedWith<
-    DecoratedWorkflow<WorkflowDecoratorSelector>,
-    WorkflowDecorators,
-    WorkflowDecoratorSelector,
-    keyof WorkflowDecorators
-  >(workflow, key, options)
 }
 
 export const WORKFLOW_REPOSITORY_TOKEN = Symbol("WORKFLOW_REPOSITORY_TOKEN")

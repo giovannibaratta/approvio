@@ -17,6 +17,7 @@ declare global {
       toBeLeft(): R
       toBeLeftOf(expected: unknown): R
       toBeRight(): R
+      toBeRightOf(expected: unknown): R
     }
 
     interface ExpectExtendMap {
@@ -24,6 +25,7 @@ declare global {
       toBeLeft: MatcherFunction<[]>
       toBeLeftOf: MatcherFunction<[expected: unknown]>
       toBeRight: MatcherFunction<[]>
+      toBeRightOf: MatcherFunction<[expected: unknown]>
     }
   }
 }
@@ -101,6 +103,30 @@ export function toBeRight(received: unknown): jest.CustomMatcherResult {
   return {
     pass: true,
     message: () => `Expected ${received} to be right`
+  }
+}
+
+export function toBeRightOf(this: jest.MatcherContext, received: unknown, expected: unknown): jest.CustomMatcherResult {
+  if (!isEither(received)) {
+    return {
+      pass: false,
+      message: () => `Expected ${received} to be an Either`
+    }
+  }
+
+  if (!isRight(received)) {
+    return {
+      pass: false,
+      message: () => `Expected ${received} to be right`
+    }
+  }
+
+  const pass = this.equals(received.right, expected)
+
+  return {
+    pass,
+    message: () =>
+      pass ? `Expected ${received} not to be right of ${expected}` : `Expected ${received} to be right of ${expected}`
   }
 }
 
@@ -223,7 +249,8 @@ expect.extend({
   toHaveStatusCode,
   toBeLeft,
   toBeLeftOf,
-  toBeRight
+  toBeRight,
+  toBeRightOf
 })
 
 function hasOwnProperty<T extends object, K extends PropertyKey>(obj: T, prop: K): obj is T & Record<K, unknown> {

@@ -12,7 +12,9 @@ import {
   WorkflowValidationError,
   WorkflowTemplate,
   WorkflowTemplateFactory,
-  WorkflowTemplateValidationError
+  WorkflowTemplateValidationError,
+  DecoratedWorkflow,
+  WorkflowDecoratorSelector
 } from "@domain"
 import {
   Group as PrismaGroup,
@@ -28,7 +30,6 @@ import {PrismaGroupWithCount} from "./group.repository"
 import {Prisma} from "@prisma/client"
 import {UserSummaryRepo} from "./user.repository"
 import {UserSummaryValidationError} from "@domain"
-import {DecoratedWorkflow, WorkflowDecoratorSelector} from "@services"
 import {iPrismaDecoratedWorkflow, PrismaDecoratedWorkflow, PrismaWorkflowDecoratorSelector} from "./workflow.repository"
 
 export type PrismaWorkflowWithTemplate = PrismaWorkflow & {
@@ -130,6 +131,7 @@ function mapWorkflowToNonVersionedDomain(dbObject: PrismaWorkflow): Either<Workf
     status: dbObject.status,
     recalculationRequired: dbObject.recalculationRequired,
     workflowTemplateId: dbObject.workflowTemplateId,
+    expiresAt: dbObject.expiresAt,
     occ: dbObject.occ
   }
   return pipe(object, WorkflowFactory.validate)
@@ -166,8 +168,8 @@ export function mapToDomainVersionedWorkflowWithTemplate(
   )
 }
 
-function prismaJsonToJson(prismaJson: Prisma.JsonValue): Either<"rule_invalid", JSON> {
-  if (prismaJson === null) return E.left("rule_invalid")
+function prismaJsonToJson(prismaJson: Prisma.JsonValue): Either<"malformed_content", JSON> {
+  if (prismaJson === null) return E.left("malformed_content")
   return E.right(JSON.parse(JSON.stringify(prismaJson)))
 }
 

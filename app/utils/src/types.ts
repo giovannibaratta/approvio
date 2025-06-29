@@ -35,6 +35,13 @@ type ExtractReturnType<
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type DistributiveOmit<T, K extends keyof any> = T extends any ? Omit<T, K> : never
 
+/**
+ * Create a union type with a prefix
+ * @example
+ * type MyUnion = PrefixUnion<"workflow", "name_empty" | "name_too_long"> // "workflow_name_empty" | "workflow_name_too_long"
+ */
+export type PrefixUnion<TPrefix extends string, TUnion extends string> = `${TPrefix}_${TUnion}`
+
 /**************************
  * Dynamic typing
  *

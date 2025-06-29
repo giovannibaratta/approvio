@@ -1,23 +1,28 @@
 import {randomUUID} from "crypto"
 import * as E from "fp-ts/Either"
 import {Either, isLeft, left, right} from "fp-ts/lib/Either"
-import {getStringAsEnum, isUUIDv4} from "@utils"
+import {DecorableEntity, getStringAsEnum, isDecoratedWith, isUUIDv4, PrefixUnion} from "@utils"
 import {MembershipWithGroupRef, Vote, consolidateVotes, doesVotesCoverApprovalRules} from "@domain"
-import {WorkflowTemplate} from "./workflow-templates"
+import {WorkflowTemplate, WorkflowTemplateCantVoteReason} from "./workflow-templates"
 
 export const WORKFLOW_NAME_MAX_LENGTH = 512
 export const WORKFLOW_DESCRIPTION_MAX_LENGTH = 2048
 
 export enum WorkflowStatus {
-  PENDING = "PENDING",
   APPROVED = "APPROVED",
-  REJECTED = "REJECTED",
   CANCELED = "CANCELED",
+  EXPIRED = "EXPIRED",
+  REJECTED = "REJECTED",
   EVALUATION_IN_PROGRESS = "EVALUATION_IN_PROGRESS"
 }
 
-export type Workflow = Readonly<WorkflowData & WorkflowLogic>
-export type WorkflowWithTemplate = Readonly<WorkflowDataWithTemplate & WorkflowWithTemplateLogic>
+export type CantVoteReason =
+  | "workflow_already_approved"
+  | "workflow_cancelled"
+  | "workflow_expired"
+  | WorkflowTemplateCantVoteReason
+
+export type Workflow = Readonly<WorkflowData>
 
 interface WorkflowData {
   id: string
@@ -26,23 +31,14 @@ interface WorkflowData {
   status: WorkflowStatus
   recalculationRequired: boolean
   workflowTemplateId: string
+  expiresAt: Date
   createdAt: Date
   updatedAt: Date
 }
 
-interface WorkflowDataWithTemplate extends WorkflowData {
-  workflowTemplateRef: WorkflowTemplate
-}
+export type WorkflowValidationError = PrefixUnion<"workflow", UnprefixedWorkflowValidationError>
 
-interface WorkflowLogic {
-  evaluateStatus(votes: ReadonlyArray<Vote>): Either<WorkflowValidationError, Workflow>
-}
-
-interface WorkflowWithTemplateLogic extends WorkflowLogic {
-  canVote(memberships: ReadonlyArray<MembershipWithGroupRef>): boolean
-}
-
-export type WorkflowValidationError =
+type UnprefixedWorkflowValidationError =
   | "name_empty"
   | "name_too_long"
   | "name_invalid_characters"
@@ -50,6 +46,7 @@ export type WorkflowValidationError =
   | "update_before_create"
   | "status_invalid"
   | "workflow_template_id_invalid_uuid"
+  | "expires_at_in_the_past"
 
 export class WorkflowFactory {
   /**
@@ -61,12 +58,6 @@ export class WorkflowFactory {
     data: Parameters<typeof WorkflowFactory.instantiateWorkflow>[0]
   ): Either<WorkflowValidationError, Workflow> {
     return WorkflowFactory.instantiateWorkflow(data)
-  }
-
-  static validateWithTemplate(
-    data: Parameters<typeof WorkflowFactory.instantiateWorkflowWithTemplate>[0]
-  ): Either<WorkflowValidationError, WorkflowWithTemplate> {
-    return WorkflowFactory.instantiateWorkflowWithTemplate(data)
   }
 
   /**
@@ -86,7 +77,7 @@ export class WorkflowFactory {
     const workflow = {
       ...data,
       id: uuid,
-      status: WorkflowStatus.PENDING,
+      status: WorkflowStatus.EVALUATION_IN_PROGRESS,
       recalculationRequired: false,
       createdAt: now,
       updatedAt: now
@@ -109,10 +100,11 @@ export class WorkflowFactory {
     const descriptionValidation = data.description ? validateWorkflowDescription(data.description) : right(undefined)
     const statusValidation = validateWorkflowStatus(data.status)
 
-    if (!isUUIDv4(data.workflowTemplateId)) return left("workflow_template_id_invalid_uuid")
+    if (!isUUIDv4(data.workflowTemplateId)) return left("workflow_workflow_template_id_invalid_uuid")
     if (isLeft(nameValidation)) return nameValidation
     if (isLeft(descriptionValidation)) return descriptionValidation
-    if (data.createdAt > data.updatedAt) return left("update_before_create")
+    if (data.createdAt > data.updatedAt) return left("workflow_update_before_create")
+    if (data.expiresAt < data.createdAt) return left("workflow_expires_at_in_the_past")
     if (isLeft(statusValidation)) return statusValidation
 
     const workflowData = {
@@ -122,60 +114,66 @@ export class WorkflowFactory {
       status: data.recalculationRequired ? WorkflowStatus.EVALUATION_IN_PROGRESS : statusValidation.right
     }
 
-    return right({
-      ...workflowData,
-      evaluateStatus: (votes: ReadonlyArray<Vote>) => evaluateStatus(workflowData, votes)
-    })
-  }
-
-  private static instantiateWorkflowWithTemplate(
-    data: Omit<WorkflowDataWithTemplate, "status"> & {
-      status: string
-    }
-  ): Either<WorkflowValidationError, WorkflowWithTemplate> {
-    const workflow = WorkflowFactory.instantiateWorkflow(data)
-    if (isLeft(workflow)) return workflow
-
-    const workflowWithTemplateData = {
-      ...workflow.right,
-      workflowTemplateRef: data.workflowTemplateRef
-    }
-
-    return right({
-      ...workflowWithTemplateData,
-      canVote: (memberships: ReadonlyArray<MembershipWithGroupRef>) => canVote(workflowWithTemplateData, memberships)
-    })
+    return right(workflowData)
   }
 }
 
-function canVote(workflow: WorkflowDataWithTemplate, memberships: ReadonlyArray<MembershipWithGroupRef>): boolean {
-  if (workflow.status === WorkflowStatus.CANCELED || workflow.status === WorkflowStatus.APPROVED) return false
-  return workflow.workflowTemplateRef.canVote(memberships)
+const WORKFLOW_TERMINAL_STATUSES = [WorkflowStatus.APPROVED, WorkflowStatus.CANCELED, WorkflowStatus.EXPIRED]
+
+export function canVoteOnWorkflow(
+  workflow: DecoratedWorkflow<{workflowTemplate: true}>,
+  memberships: ReadonlyArray<MembershipWithGroupRef>
+): Either<CantVoteReason, true> {
+  if (WORKFLOW_TERMINAL_STATUSES.includes(workflow.status))
+    return left(generateCantVoteReasonForTerminalStatus(workflow.status))
+
+  // Check if workflow has expired
+  const now = new Date(Date.now())
+  if (workflow.expiresAt < now) return left("workflow_expired")
+
+  const templateCanVoteResult = workflow.workflowTemplate.canVote(memberships)
+  if (isLeft(templateCanVoteResult)) return templateCanVoteResult
+
+  return right(true)
 }
 
-function evaluateStatus(
-  workflow: WorkflowData,
-  votes: ReadonlyArray<Vote>,
-  template?: WorkflowTemplate
+function generateCantVoteReasonForTerminalStatus(status: WorkflowStatus): CantVoteReason {
+  switch (status) {
+    case WorkflowStatus.APPROVED:
+      return "workflow_already_approved"
+    case WorkflowStatus.CANCELED:
+      return "workflow_cancelled"
+    case WorkflowStatus.EXPIRED:
+      return "workflow_expired"
+    default:
+      throw new Error(`Invalid terminal status: ${status}`)
+  }
+}
+
+export function evaluateWorkflowStatus(
+  workflow: DecoratedWorkflow<{workflowTemplate: true}>,
+  votes: ReadonlyArray<Vote>
 ): Either<WorkflowValidationError, Workflow> {
-  // After a workflow has been approved, it's not possible to change its status
-  if (workflow.status === WorkflowStatus.APPROVED || workflow.status === WorkflowStatus.CANCELED)
-    return changeStatusAndMarkAsRecalculated(workflow, workflow.status)
+  const now = new Date(Date.now())
 
-  if (!template) return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.PENDING)
+  // After a workflow has reached a terminal status, it's not possible to change its status
+  if (WORKFLOW_TERMINAL_STATUSES.includes(workflow.status))
+    return changeStatusAndMarkAsRecalculated(workflow, workflow.status)
+  if (workflow.expiresAt < now) return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.EXPIRED)
 
   const votesConsolidated = consolidateVotes(votes)
   const votesAgainst = votesConsolidated.filter(vote => vote.type === "VETO")
   const votesFor = votesConsolidated.filter(vote => vote.type === "APPROVE")
 
-  if (votesConsolidated.length === 0) return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.PENDING)
+  if (votesConsolidated.length === 0)
+    return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.EVALUATION_IN_PROGRESS)
 
   if (votesAgainst.length > 0) return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.REJECTED)
 
-  if (doesVotesCoverApprovalRules(template.approvalRule, votesFor))
+  if (doesVotesCoverApprovalRules(workflow.workflowTemplate.approvalRule, votesFor))
     return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.APPROVED)
 
-  return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.PENDING)
+  return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.EVALUATION_IN_PROGRESS)
 }
 
 function changeStatusAndMarkAsRecalculated(
@@ -186,21 +184,43 @@ function changeStatusAndMarkAsRecalculated(
 }
 
 function validateWorkflowName(name: string): Either<WorkflowValidationError, string> {
-  if (!name || name.trim().length === 0) return E.left("name_empty")
-  if (name.length > WORKFLOW_NAME_MAX_LENGTH) return E.left("name_too_long")
-  if (!/^[a-zA-Z0-9_-]+$/.test(name)) return E.left("name_invalid_characters")
+  if (!name || name.trim().length === 0) return E.left("workflow_name_empty")
+  if (name.length > WORKFLOW_NAME_MAX_LENGTH) return E.left("workflow_name_too_long")
+  if (!/^[a-zA-Z0-9_-]+$/.test(name)) return E.left("workflow_name_invalid_characters")
 
   return E.right(name)
 }
 
 function validateWorkflowDescription(description: string): Either<WorkflowValidationError, string> {
-  if (description.length > WORKFLOW_DESCRIPTION_MAX_LENGTH) return E.left("description_too_long")
+  if (description.length > WORKFLOW_DESCRIPTION_MAX_LENGTH) return E.left("workflow_description_too_long")
 
   return E.right(description)
 }
 
 function validateWorkflowStatus(status: string): Either<WorkflowValidationError, WorkflowStatus> {
   const enumStatus = getStringAsEnum(status, WorkflowStatus)
-  if (enumStatus === undefined) return left("status_invalid")
+  if (enumStatus === undefined) return left("workflow_status_invalid")
   return right(enumStatus)
+}
+
+export interface WorkflowDecorators {
+  workflowTemplate: WorkflowTemplate
+  occ: bigint
+}
+
+export type WorkflowDecoratorSelector = Partial<Record<keyof WorkflowDecorators, boolean>>
+
+export type DecoratedWorkflow<T extends WorkflowDecoratorSelector> = DecorableEntity<Workflow, WorkflowDecorators, T>
+
+export function isDecoratedWorkflow<K extends keyof WorkflowDecorators>(
+  workflow: DecoratedWorkflow<WorkflowDecoratorSelector>,
+  key: K,
+  options?: WorkflowDecoratorSelector
+): workflow is DecoratedWorkflow<WorkflowDecoratorSelector & Record<K, true>> {
+  return isDecoratedWith<
+    DecoratedWorkflow<WorkflowDecoratorSelector>,
+    WorkflowDecorators,
+    WorkflowDecoratorSelector,
+    keyof WorkflowDecorators
+  >(workflow, key, options)
 }

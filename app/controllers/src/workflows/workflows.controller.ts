@@ -1,14 +1,7 @@
 import {GetAuthenticatedUser} from "@app/auth"
-import {User} from "@domain"
+import {User, WorkflowDecoratorSelector} from "@domain"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Res, Query} from "@nestjs/common"
-import {
-  CreateWorkflowRequest,
-  WorkflowService,
-  VoteService,
-  CanVoteRequest,
-  CastVoteRequest,
-  WorkflowDecoratorSelector
-} from "@services"
+import {CreateWorkflowRequest, WorkflowService, VoteService, CanVoteRequest, CastVoteRequest} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"

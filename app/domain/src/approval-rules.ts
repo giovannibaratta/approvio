@@ -44,6 +44,7 @@ interface ApprovalRuleLogic {
 }
 
 export type ApprovalRuleValidationError =
+  | "malformed_content"
   | "invalid_rule_type"
   | "and_rule_must_have_rules"
   | "or_rule_must_have_rules"
