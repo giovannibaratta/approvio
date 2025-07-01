@@ -1,4 +1,5 @@
 import {
+  AddMembershipError,
   Group,
   GroupManagerValidationError,
   HumanGroupMembershipRole,
@@ -16,13 +17,14 @@ import {TaskEither} from "fp-ts/TaskEither"
 
 export type MembershipAddError =
   | GroupManagerValidationError
+  | AddMembershipError
   | GetGroupRepoError
   | UserGetError
   | MembershipValidationError
-  | "entity_already_in_group"
-  | "invalid_role"
   | UnknownError
   | ConcurrentModificationError
+  | "membership_group_not_found"
+  | "membership_user_not_found"
 
 export type MembershipRemoveError =
   | GroupManagerValidationError

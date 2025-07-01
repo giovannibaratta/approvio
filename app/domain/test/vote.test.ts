@@ -40,7 +40,7 @@ describe("Vote", () => {
             workflowId: "not-a-uuid"
           }
           const result = VoteFactory.validate(vote)
-          expect(result).toBeLeftOf("invalid_workflow_id")
+          expect(result).toBeLeftOf("vote_invalid_workflow_id")
         })
 
         it("should return invalid_user_id if userId is not a UUID", () => {
@@ -51,7 +51,7 @@ describe("Vote", () => {
             userId: "not-a-uuid"
           }
           const result = VoteFactory.validate(vote)
-          expect(result).toBeLeftOf("invalid_user_id")
+          expect(result).toBeLeftOf("vote_invalid_user_id")
         })
 
         it("should return reason_too_long if reason is too long", () => {
@@ -62,7 +62,7 @@ describe("Vote", () => {
             reason: "a".repeat(1025)
           }
           const result = VoteFactory.validate(vote)
-          expect(result).toBeLeftOf("reason_too_long")
+          expect(result).toBeLeftOf("vote_reason_too_long")
         })
 
         it("should return invalid_group_id if a groupId is not a UUID for an APPROVE vote", () => {
@@ -75,7 +75,7 @@ describe("Vote", () => {
             votedForGroups: ["not-a-uuid"]
           }
           const result = VoteFactory.validate(vote)
-          expect(result).toBeLeftOf("invalid_group_id")
+          expect(result).toBeLeftOf("vote_invalid_group_id")
         })
       })
     })

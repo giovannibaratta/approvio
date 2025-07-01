@@ -1,5 +1,4 @@
 import {GroupFactory} from "../src/group"
-import * as E from "fp-ts/Either"
 
 describe("GroupFactory", () => {
   describe("newGroup name validation", () => {
@@ -13,7 +12,7 @@ describe("GroupFactory", () => {
 
         // Then
         results.forEach(result => {
-          expect(E.isRight(result)).toBe(true)
+          expect(result).toBeRight()
         })
       })
     })
@@ -28,7 +27,7 @@ describe("GroupFactory", () => {
 
         // Then
         results.forEach(result => {
-          expect(result).toEqual(E.left("name_invalid_characters"))
+          expect(result).toBeLeftOf("group_name_invalid_characters")
         })
       })
 
@@ -40,7 +39,7 @@ describe("GroupFactory", () => {
         const group = GroupFactory.newGroup({name, description: null})
 
         // Then
-        expect(group).toEqual(E.left("name_invalid_characters"))
+        expect(group).toBeLeftOf("group_name_invalid_characters")
       })
 
       it("should not allow names starting with a hyphen", () => {
@@ -51,7 +50,7 @@ describe("GroupFactory", () => {
         const group = GroupFactory.newGroup({name, description: null})
 
         // Then
-        expect(group).toEqual(E.left("name_invalid_characters"))
+        expect(group).toBeLeftOf("group_name_invalid_characters")
       })
 
       it("should not allow names ending with a hyphen", () => {
@@ -62,10 +61,10 @@ describe("GroupFactory", () => {
         const group = GroupFactory.newGroup({name, description: null})
 
         // Then
-        expect(group).toEqual(E.left("name_invalid_characters"))
+        expect(group).toBeLeftOf("group_name_invalid_characters")
       })
 
-      it('should return "name_empty" for empty names', () => {
+      it('should return "group_name_empty" for empty names', () => {
         // Given
         const name = ""
 
@@ -73,10 +72,10 @@ describe("GroupFactory", () => {
         const group = GroupFactory.newGroup({name, description: null})
 
         // Then
-        expect(group).toEqual(E.left("name_empty"))
+        expect(group).toBeLeftOf("group_name_empty")
       })
 
-      it('should return "name_too_long" for long names', () => {
+      it('should return "group_name_too_long" for long names', () => {
         // Given
         const longName = "a".repeat(513)
 
@@ -84,7 +83,7 @@ describe("GroupFactory", () => {
         const group = GroupFactory.newGroup({name: longName, description: null})
 
         // Then
-        expect(group).toEqual(E.left("name_too_long"))
+        expect(group).toBeLeftOf("group_name_too_long")
       })
     })
   })

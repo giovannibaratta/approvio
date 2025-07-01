@@ -165,7 +165,7 @@ describe("Groups API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("NAME_EMPTY")
+        expect(response.body).toHaveErrorCode("GROUP_NAME_EMPTY")
       })
 
       it("should return 400 BAD_REQUEST (NAME_INVALID_CHARACTERS) if name contains invalid characters", async () => {
@@ -179,7 +179,7 @@ describe("Groups API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("NAME_INVALID_CHARACTERS")
+        expect(response.body).toHaveErrorCode("GROUP_NAME_INVALID_CHARACTERS")
       })
 
       it("should return 400 BAD_REQUEST (NAME_INVALID_CHARACTERS) if name starts with a number", async () => {
@@ -193,7 +193,7 @@ describe("Groups API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("NAME_INVALID_CHARACTERS")
+        expect(response.body).toHaveErrorCode("GROUP_NAME_INVALID_CHARACTERS")
       })
 
       it("should return 400 BAD_REQUEST (NAME_INVALID_CHARACTERS) if name starts with a hyphen", async () => {
@@ -207,7 +207,7 @@ describe("Groups API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("NAME_INVALID_CHARACTERS")
+        expect(response.body).toHaveErrorCode("GROUP_NAME_INVALID_CHARACTERS")
       })
 
       it("should return 400 BAD_REQUEST (NAME_INVALID_CHARACTERS) if name ends with a hyphen", async () => {
@@ -221,7 +221,7 @@ describe("Groups API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("NAME_INVALID_CHARACTERS")
+        expect(response.body).toHaveErrorCode("GROUP_NAME_INVALID_CHARACTERS")
       })
 
       it("should return 400 BAD_REQUEST (DESCRIPTION_TOO_LONG) if description is too long (as OrgAdmin)", async () => {
@@ -237,7 +237,7 @@ describe("Groups API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("DESCRIPTION_TOO_LONG")
+        expect(response.body).toHaveErrorCode("GROUP_DESCRIPTION_TOO_LONG")
       })
     })
   })
@@ -485,7 +485,7 @@ describe("Groups API", () => {
     })
   })
 
-  describe(`Group Membership Endpoints (${endpoint}/:groupId/entities)`, () => {
+  describe("Group Membership Endpoints (/groups/:groupId/entities)", () => {
     let group: PrismaGroup
     let user1: PrismaUser
     let user2: PrismaUser
@@ -519,7 +519,7 @@ describe("Groups API", () => {
       })
     })
 
-    describe(`POST ${entitiesEndpoint(":groupId")}`, () => {
+    describe("POST", () => {
       describe("good cases", () => {
         it("should add multiple users to a group and return updated group details (as OrgAdmin)", async () => {
           // Given
@@ -607,7 +607,7 @@ describe("Groups API", () => {
         })
 
         it("should return 400 BAD_REQUEST (USER_NOT_FOUND) if a user does not exist (as OrgAdmin)", async () => {
-          // Expect
+          // Given
           const nonExistentUserId = randomUUID()
           const requestBody: AddGroupEntitiesRequest = {
             entities: [{entity: {entityId: nonExistentUserId, entityType: EntityType.HUMAN}, role: Role.ADMIN}]
@@ -621,7 +621,7 @@ describe("Groups API", () => {
 
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-          expect(response.body).toHaveErrorCode("USER_NOT_FOUND")
+          expect(response.body).toHaveErrorCode("MEMBERSHIP_USER_NOT_FOUND")
         })
 
         it("should return 400 BAD_REQUEST (INVALID_ROLE) if role is invalid (as OrgAdmin)", async () => {
@@ -638,7 +638,7 @@ describe("Groups API", () => {
 
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-          expect(response.body).toHaveErrorCode("INVALID_ROLE")
+          expect(response.body).toHaveErrorCode("MEMBERSHIP_INVALID_ROLE")
         })
 
         it("should return 409 CONFLICT (ENTITY_ALREADY_IN_GROUP) if user is already a member (as OrgAdmin)", async () => {
@@ -655,7 +655,7 @@ describe("Groups API", () => {
 
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
-          expect(response.body).toHaveErrorCode("ENTITY_ALREADY_IN_GROUP")
+          expect(response.body).toHaveErrorCode("MEMBERSHIP_ENTITY_ALREADY_IN_GROUP")
         })
 
         it("should return 400 BAD_REQUEST (INVALID_UUID) if groupId is not a UUID (as OrgAdmin)", async () => {
@@ -672,7 +672,7 @@ describe("Groups API", () => {
 
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-          expect(response.body).toHaveErrorCode("INVALID_UUID")
+          expect(response.body).toHaveErrorCode("REQUEST_INVALID_GROUP_UUID")
         })
 
         it("should return 400 BAD_REQUEST (INVALID_UUID) if entityId is not a UUID in body (as OrgAdmin)", async () => {
@@ -684,12 +684,12 @@ describe("Groups API", () => {
             .build()
             .send(requestBody)
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-          expect(response.body).toHaveErrorCode("INVALID_UUID")
+          expect(response.body).toHaveErrorCode("REQUEST_INVALID_USER_UUID")
         })
       })
     })
 
-    describe(`GET ${entitiesEndpoint(":groupId")}`, () => {
+    describe("GET", () => {
       describe("good cases", () => {
         it("should list members of a group with default pagination (as OrgAdmin)", async () => {
           // When
@@ -780,7 +780,7 @@ describe("Groups API", () => {
           const response = await get(app, entitiesEndpoint("not-a-uuid")).withToken(orgAdminUser.token).build()
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-          expect(response.body).toHaveErrorCode("INVALID_UUID")
+          expect(response.body).toHaveErrorCode("REQUEST_INVALID_GROUP_UUID")
         })
 
         it("should return 400 BAD_REQUEST (INVALID_PAGE) for page <= 0", async () => {
@@ -936,7 +936,7 @@ describe("Groups API", () => {
 
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-          expect(response.body).toHaveErrorCode("INVALID_UUID")
+          expect(response.body).toHaveErrorCode("REQUEST_INVALID_GROUP_UUID")
         })
 
         it("should return 400 BAD_REQUEST (INVALID_UUID) if entityId is not a UUID in body (as OrgAdmin)", async () => {
@@ -952,7 +952,7 @@ describe("Groups API", () => {
 
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-          expect(response.body).toHaveErrorCode("INVALID_UUID")
+          expect(response.body).toHaveErrorCode("REQUEST_INVALID_USER_UUID")
         })
 
         it("should return 400 BAD_REQUEST (membership_no_owner) if attempting to remove the last owner", async () => {

@@ -1,4 +1,4 @@
-import {isUUIDv4} from "@utils"
+import {isUUIDv4, PrefixUnion} from "@utils"
 import * as E from "fp-ts/Either"
 import {Either, left, right} from "fp-ts/lib/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -43,7 +43,9 @@ interface ApprovalRuleLogic {
   getVotingGroupIds(): ReadonlyArray<string>
 }
 
-export type ApprovalRuleValidationError =
+export type ApprovalRuleValidationError = PrefixUnion<"approval_rule", UnprefixedApprovalRuleValidationError>
+
+type UnprefixedApprovalRuleValidationError =
   | "malformed_content"
   | "invalid_rule_type"
   | "and_rule_must_have_rules"
@@ -67,8 +69,8 @@ export class ApprovalRuleFactory {
   }
 
   private static validateApprovalRuleData(data: unknown, depth = 0): Either<ApprovalRuleValidationError, ApprovalRule> {
-    if (depth > MAX_NESTING_DEPTH) return left("max_rule_nesting_exceeded")
-    if (!isObject(data) || typeof data.type !== "string") return left("invalid_rule_type")
+    if (depth > MAX_NESTING_DEPTH) return left("approval_rule_max_rule_nesting_exceeded")
+    if (!isObject(data) || typeof data.type !== "string") return left("approval_rule_invalid_rule_type")
 
     switch (data.type) {
       case ApprovalRuleType.GROUP_REQUIREMENT:
@@ -78,18 +80,18 @@ export class ApprovalRuleFactory {
       case ApprovalRuleType.OR:
         return pipe(this.validateOrRule(data, depth), E.map(this.decorateApprovalRuleData))
       default:
-        return left("invalid_rule_type")
+        return left("approval_rule_invalid_rule_type")
     }
   }
 
   private static validateGroupRequirementRule(
     data: Record<string, unknown>
   ): Either<ApprovalRuleValidationError, GroupRequirementRule> {
-    if (typeof data.groupId !== "string") return left("group_rule_invalid_group_id")
-    if (!isUUIDv4(data.groupId)) return left("group_rule_invalid_group_id")
+    if (typeof data.groupId !== "string") return left("approval_rule_group_rule_invalid_group_id")
+    if (!isUUIDv4(data.groupId)) return left("approval_rule_group_rule_invalid_group_id")
     if (typeof data.minCount !== "number" || !Number.isInteger(data.minCount))
-      return left("group_rule_invalid_min_count")
-    if (data.minCount < 1) return left("group_rule_invalid_min_count")
+      return left("approval_rule_group_rule_invalid_min_count")
+    if (data.minCount < 1) return left("approval_rule_group_rule_invalid_min_count")
 
     return right({
       type: ApprovalRuleType.GROUP_REQUIREMENT,
@@ -102,7 +104,7 @@ export class ApprovalRuleFactory {
     data: Record<string, unknown>,
     depth: number
   ): Either<ApprovalRuleValidationError, AndRule> {
-    if (!Array.isArray(data.rules) || data.rules.length === 0) return left("and_rule_must_have_rules")
+    if (!Array.isArray(data.rules) || data.rules.length === 0) return left("approval_rule_and_rule_must_have_rules")
 
     return pipe(
       data.rules,
@@ -116,7 +118,7 @@ export class ApprovalRuleFactory {
     depth: number
   ): Either<ApprovalRuleValidationError, OrRule> {
     if (!Array.isArray(data.rules) || data.rules.length === 0) {
-      return left("or_rule_must_have_rules")
+      return left("approval_rule_or_rule_must_have_rules")
     }
 
     return pipe(

@@ -124,7 +124,7 @@ function mapPrismaVoteToDomainVote(prismaVote: PrismaVote): E.Either<VoteValidat
   }
 
   if (prismaVote.voteType === "APPROVE") {
-    if (!prismaVote.votedForGroups) return E.left("voted_for_groups_required")
+    if (!prismaVote.votedForGroups) return E.left("vote_voted_for_groups_required")
 
     return VoteFactory.validate({
       ...domainData,
@@ -147,7 +147,7 @@ function mapPrismaVoteToDomainVote(prismaVote: PrismaVote): E.Either<VoteValidat
     })
   }
 
-  return E.left("invalid_vote_type")
+  return E.left("vote_invalid_vote_type")
 }
 
 function mapPrismaVotesToDomainVotes(

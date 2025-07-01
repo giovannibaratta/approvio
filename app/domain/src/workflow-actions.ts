@@ -1,4 +1,4 @@
-import {getStringAsEnum, isEmail, isObject} from "@utils"
+import {getStringAsEnum, isEmail, isObject, PrefixUnion} from "@utils"
 import {Either, left, right, traverseArray} from "fp-ts/lib/Either"
 
 export enum WorkflowActionType {
@@ -12,6 +12,10 @@ export type EmailAction = Readonly<{
   recipients: ReadonlyArray<string>
 }>
 
+export type WorkflowActionValidationError = PrefixUnion<"workflow_action", UnprefixedWorkflowActionValidationError>
+
+type UnprefixedWorkflowActionValidationError = "type_invalid" | "recipients_empty" | "recipients_invalid_email"
+
 export function validateWorkflowActions(
   actions: unknown
 ): Either<WorkflowActionValidationError, ReadonlyArray<WorkflowAction>> {
@@ -22,28 +26,28 @@ export function validateWorkflowActions(
 
 function validateWorkflowAction(action: unknown): Either<WorkflowActionValidationError, WorkflowAction> {
   if (!isObject(action) || typeof action.type !== "string") {
-    return left("action_type_invalid")
+    return left("workflow_action_type_invalid")
   }
 
   const actionType = getStringAsEnum(action.type, WorkflowActionType)
-  if (actionType === undefined) return left("action_type_invalid")
+  if (actionType === undefined) return left("workflow_action_type_invalid")
 
   switch (actionType) {
     case WorkflowActionType.EMAIL:
       return validateEmailAction(action)
     default:
-      return left("action_type_invalid")
+      return left("workflow_action_type_invalid")
   }
 }
 
 function validateEmailAction(data: Record<string, unknown>): Either<WorkflowActionValidationError, EmailAction> {
   if (!Array.isArray(data.recipients) || data.recipients.length === 0) {
-    return left("action_recipients_empty")
+    return left("workflow_action_recipients_empty")
   }
 
   for (const recipient of data.recipients) {
     if (typeof recipient !== "string" || !isEmail(recipient)) {
-      return left("action_recipients_invalid_email")
+      return left("workflow_action_recipients_invalid_email")
     }
   }
 
@@ -54,8 +58,3 @@ function validateEmailAction(data: Record<string, unknown>): Either<WorkflowActi
     body: data.body
   })
 }
-
-export type WorkflowActionValidationError =
-  | "action_type_invalid"
-  | "action_recipients_empty"
-  | "action_recipients_invalid_email"

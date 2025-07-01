@@ -6,7 +6,6 @@ import {
   GroupWithEntitiesCount,
   HumanGroupMembershipRole,
   Membership,
-  MembershipValidationError,
   NAME_MAX_LENGTH,
   User
 } from "@domain"
@@ -16,7 +15,8 @@ import {
   HttpException,
   InternalServerErrorException,
   NotFoundException,
-  ForbiddenException
+  ForbiddenException,
+  Logger
 } from "@nestjs/common"
 import {
   CreateGroupError,
@@ -24,13 +24,13 @@ import {
   GetGroupMembershipResult,
   ListGroupsRepoError,
   ListGroupsResult,
-  MembershipAddError,
-  MembershipRemoveError,
   AuthorizationError,
-  CreateGroupRequest
+  CreateGroupRequest,
+  GroupMembershipService
 } from "@services"
 import {Either, right} from "fp-ts/Either"
 import {generateErrorPayload} from "../error"
+import {ExtractLeftFromMethod} from "@utils"
 
 export type CreateGroupRequestValidationError = never
 
@@ -105,52 +105,56 @@ export function mapListGroupMembersResultToApi(
 export function generateErrorResponseForCreateGroup(error: CreateGroupError, context: string): HttpException {
   const errorCode = error.toUpperCase()
   switch (error) {
-    case "description_too_long":
+    case "group_description_too_long":
       return new BadRequestException(
         generateErrorPayload(
           errorCode,
           `${context}: group description must be less than ${DESCRIPTION_MAX_LENGTH} characters`
         )
       )
-    case "name_too_long":
+    case "group_name_too_long":
       return new BadRequestException(
         generateErrorPayload(errorCode, `${context}: group name must be less than ${NAME_MAX_LENGTH} characters`)
       )
-    case "name_empty":
+    case "group_name_empty":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: group name can not be empty`))
-    case "name_invalid_characters":
+    case "group_name_invalid_characters":
       return new BadRequestException(
         generateErrorPayload(errorCode, `${context}: group name contains invalid characters`)
       )
-    case "entities_count_invalid":
-    case "update_before_create":
-    case "org_role_invalid":
+    case "group_entities_count_invalid":
+    case "group_update_before_create":
+    case "user_org_role_invalid":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
-        generateErrorPayload(errorCode, `${context}: Internal data inconsistency`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
     case "group_already_exists":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: group already exists`))
     case "user_not_found":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Creator user not found`))
-    case "invalid_uuid":
+    case "user_invalid_uuid":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid UUID provided`))
-    case "entity_already_in_group":
+    case "membership_entity_already_in_group":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: Entity already in group`))
     case "unknown_error":
-    case "duplicated_membership":
+    case "membership_duplicated_membership":
     case "group_not_found":
     case "not_a_member":
     case "invalid_identifier":
-    case "display_name_empty":
-    case "display_name_too_long":
-    case "email_empty":
-    case "email_too_long":
-    case "email_invalid":
-    case "inconsistent_dates":
-    case "invalid_role":
+    case "user_display_name_empty":
+    case "user_display_name_too_long":
+    case "user_email_empty":
+    case "user_email_too_long":
+    case "user_email_invalid":
+    case "membership_invalid_role":
+    case "membership_inconsistent_dates":
+    case "membership_invalid_user_uuid":
     case "concurrent_modification_error":
+    case "membership_group_not_found":
+    case "membership_user_not_found":
       return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
   }
 }
@@ -167,14 +171,15 @@ export function generateErrorResponseForGetGroup(
       return new ForbiddenException(
         generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
       )
-    case "name_empty":
-    case "name_too_long":
-    case "name_invalid_characters":
-    case "description_too_long":
-    case "entities_count_invalid":
-    case "update_before_create":
+    case "group_name_empty":
+    case "group_name_too_long":
+    case "group_name_invalid_characters":
+    case "group_description_too_long":
+    case "group_entities_count_invalid":
+    case "group_update_before_create":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
-        generateErrorPayload(errorCode, `${context}: Internal data inconsistency`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
     case "not_a_member":
     case "unknown_error":
@@ -197,14 +202,15 @@ export function generateErrorResponseForListGroups(
       return new ForbiddenException(
         generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
       )
-    case "name_empty":
-    case "name_too_long":
-    case "name_invalid_characters":
-    case "entities_count_invalid":
-    case "description_too_long":
-    case "update_before_create":
+    case "group_name_empty":
+    case "group_name_too_long":
+    case "group_name_invalid_characters":
+    case "group_entities_count_invalid":
+    case "group_description_too_long":
+    case "group_update_before_create":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
-        generateErrorPayload(errorCode, `${context}: Internal data inconsistency`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
     case "unknown_error":
       return new InternalServerErrorException(
@@ -213,44 +219,48 @@ export function generateErrorResponseForListGroups(
   }
 }
 
+type AddUserToGroupServiceError = ExtractLeftFromMethod<typeof GroupMembershipService, "addMembersToGroup">
+
 export function generateErrorResponseForAddUserToGroup(
-  error: MembershipAddError | AuthorizationError,
+  error: AddUserToGroupServiceError | AuthorizationError,
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
   switch (error) {
     case "group_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: group not found`))
-    case "entity_already_in_group":
-      return new ConflictException(
-        generateErrorPayload(errorCode, `${context}: user is already a member of this group`)
-      )
-    case "invalid_role":
+    case "membership_invalid_role":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid role provided`))
     case "requestor_not_authorized":
       return new ForbiddenException(
         generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
       )
-    case "user_not_found":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: user not found`))
-    case "invalid_uuid":
     case "invalid_identifier":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid uuid`))
-    case "display_name_empty":
-    case "email_invalid":
-    case "name_empty":
-    case "name_too_long":
-    case "name_invalid_characters":
-    case "update_before_create":
-    case "description_too_long":
-    case "display_name_too_long":
-    case "entities_count_invalid":
-    case "email_empty":
-    case "email_too_long":
-    case "org_role_invalid":
-    case "inconsistent_dates":
+    case "request_invalid_group_uuid":
+    case "request_invalid_user_uuid":
+    case "membership_user_not_found":
+    case "user_invalid_uuid":
+    case "user_not_found":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
+    case "user_display_name_empty":
+    case "user_email_invalid":
+    case "group_name_empty":
+    case "group_name_too_long":
+    case "group_name_invalid_characters":
+    case "group_update_before_create":
+    case "group_description_too_long":
+    case "user_display_name_too_long":
+    case "group_entities_count_invalid":
+    case "user_email_empty":
+    case "user_email_too_long":
+    case "user_org_role_invalid":
+    case "membership_inconsistent_dates":
+    case "membership_invalid_user_uuid":
+    case "membership_group_not_found":
+    case "membership_duplicated_membership":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
-        generateErrorPayload(errorCode, `${context}: Internal data inconsistency`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
     case "not_a_member":
     case "unknown_error":
@@ -258,13 +268,15 @@ export function generateErrorResponseForAddUserToGroup(
         generateErrorPayload(errorCode, `${context}: An unexpected error occurred`)
       )
     case "concurrent_modification_error":
-    case "duplicated_membership":
+    case "membership_entity_already_in_group":
       return new ConflictException(generateErrorPayload(errorCode, context))
   }
 }
 
+type RemoveUserFromGroupServiceError = ExtractLeftFromMethod<typeof GroupMembershipService, "removeEntitiesFromGroup">
+
 export function generateErrorResponseForRemoveUserFromGroup(
-  error: MembershipRemoveError | AuthorizationError,
+  error: RemoveUserFromGroupServiceError | AuthorizationError,
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
@@ -283,24 +295,27 @@ export function generateErrorResponseForRemoveUserFromGroup(
       return new BadRequestException(
         generateErrorPayload(errorCode, `${context}: Cannot remove the last owner from a group`)
       )
-    case "invalid_role":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid role provided`))
-    case "invalid_uuid":
+    case "user_invalid_uuid":
     case "invalid_identifier":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid uuid`))
-    case "display_name_empty":
-    case "name_too_long":
-    case "name_invalid_characters":
-    case "update_before_create":
-    case "description_too_long":
-    case "display_name_too_long":
-    case "email_empty":
-    case "email_too_long":
-    case "email_invalid":
-    case "entities_count_invalid":
-    case "name_empty":
-    case "org_role_invalid":
-    case "inconsistent_dates":
+    case "request_invalid_group_uuid":
+    case "request_invalid_user_uuid":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
+    case "group_description_too_long":
+    case "group_entities_count_invalid":
+    case "group_name_empty":
+    case "group_name_invalid_characters":
+    case "group_name_too_long":
+    case "group_update_before_create":
+    case "membership_inconsistent_dates":
+    case "membership_invalid_user_uuid":
+    case "membership_invalid_role":
+    case "user_display_name_empty":
+    case "user_display_name_too_long":
+    case "user_email_empty":
+    case "user_email_invalid":
+    case "user_email_too_long":
+    case "user_org_role_invalid":
+    case "membership_duplicated_membership":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: Internal data inconsistency`)
       )
@@ -310,13 +325,17 @@ export function generateErrorResponseForRemoveUserFromGroup(
         generateErrorPayload(errorCode, `${context}: An unexpected error occurred`)
       )
     case "concurrent_modification_error":
-    case "duplicated_membership":
       return new ConflictException(generateErrorPayload(errorCode, context))
   }
 }
 
+type ListUsersInGroupServiceError = ExtractLeftFromMethod<
+  typeof GroupMembershipService,
+  "getGroupByIdentifierWithMembership"
+>
+
 export function generateErrorResponseForListUsersInGroup(
-  error: "invalid_page" | "invalid_limit" | GetGroupError | MembershipValidationError | AuthorizationError,
+  error: "invalid_page" | "invalid_limit" | ListUsersInGroupServiceError | AuthorizationError,
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
@@ -327,26 +346,24 @@ export function generateErrorResponseForListUsersInGroup(
       return new ForbiddenException(
         generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
       )
-    case "invalid_role":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid role provided`))
-    case "invalid_uuid":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid uuid`))
-    case "name_empty":
-    case "name_too_long":
-    case "name_invalid_characters":
-    case "update_before_create":
-    case "description_too_long":
-    case "entities_count_invalid":
+    case "group_name_empty":
+    case "group_name_too_long":
+    case "group_name_invalid_characters":
+    case "group_update_before_create":
+    case "group_description_too_long":
+    case "group_entities_count_invalid":
     case "not_a_member":
-    case "inconsistent_dates":
+    case "membership_inconsistent_dates":
+    case "membership_invalid_user_uuid":
+    case "membership_invalid_role":
     case "unknown_error":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: An unexpected error occurred`)
       )
     case "invalid_page":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid page`))
+    case "request_invalid_group_uuid":
     case "invalid_limit":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid limit`))
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
   }
 }
 

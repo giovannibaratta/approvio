@@ -1,6 +1,6 @@
 import {Either, left, right, isLeft} from "fp-ts/Either"
 import {randomUUID} from "crypto"
-import {getStringAsEnum, isEmail, isUUIDv4} from "@utils"
+import {getStringAsEnum, isEmail, isUUIDv4, PrefixUnion} from "@utils"
 
 export const DISPLAY_NAME_MAX_LENGTH = 255
 export const EMAIL_MAX_LENGTH = 255
@@ -29,8 +29,11 @@ type DisplayNameValidationError = "display_name_empty" | "display_name_too_long"
 type OrgValidationError = "org_role_invalid"
 type IdValidationError = "invalid_uuid"
 
-export type UserValidationError = UserSummaryValidationError | OrgValidationError
-export type UserSummaryValidationError = IdValidationError | DisplayNameValidationError | EmailValidationError
+export type UserValidationError = PrefixUnion<"user", UnprefixedUserValidationError>
+export type UserSummaryValidationError = PrefixUnion<"user", UnprefixedUserSummaryValidationError>
+
+type UnprefixedUserValidationError = UnprefixedUserSummaryValidationError | OrgValidationError
+type UnprefixedUserSummaryValidationError = IdValidationError | DisplayNameValidationError | EmailValidationError
 
 export class UserFactory {
   /**
@@ -111,28 +114,28 @@ export class UserFactory {
   }
 }
 
-function validateDisplayName(displayName: string): Either<DisplayNameValidationError, string> {
-  if (!displayName || displayName.trim().length === 0) return left("display_name_empty")
-  if (displayName.length > DISPLAY_NAME_MAX_LENGTH) return left("display_name_too_long")
+function validateDisplayName(displayName: string): Either<UserSummaryValidationError, string> {
+  if (!displayName || displayName.trim().length === 0) return left("user_display_name_empty")
+  if (displayName.length > DISPLAY_NAME_MAX_LENGTH) return left("user_display_name_too_long")
 
   return right(displayName)
 }
 
-function validateEmail(email: string): Either<EmailValidationError, string> {
-  if (!email || email.trim().length === 0) return left("email_empty")
-  if (email.length > EMAIL_MAX_LENGTH) return left("email_too_long")
-  if (!isEmail(email)) return left("email_invalid")
+function validateEmail(email: string): Either<UserSummaryValidationError, string> {
+  if (!email || email.trim().length === 0) return left("user_email_empty")
+  if (email.length > EMAIL_MAX_LENGTH) return left("user_email_too_long")
+  if (!isEmail(email)) return left("user_email_invalid")
 
   return right(email)
 }
 
-function validateOrgRole(orgRole: string): Either<OrgValidationError, OrgRole> {
+function validateOrgRole(orgRole: string): Either<UserValidationError, OrgRole> {
   const enumOrgRole = getStringAsEnum(orgRole, OrgRole)
-  if (enumOrgRole === undefined) return left("org_role_invalid")
+  if (enumOrgRole === undefined) return left("user_org_role_invalid")
   return right(enumOrgRole)
 }
 
-function validateId(id: string): Either<IdValidationError, string> {
-  if (!isUUIDv4(id)) return left("invalid_uuid")
+function validateId(id: string): Either<UserSummaryValidationError, string> {
+  if (!isUUIDv4(id)) return left("user_invalid_uuid")
   return right(id)
 }

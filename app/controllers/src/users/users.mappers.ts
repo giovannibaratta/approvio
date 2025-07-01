@@ -48,11 +48,11 @@ export function generateErrorResponseForCreateUser(
   const errorCode = error.toUpperCase()
 
   switch (error) {
-    case "display_name_empty":
-    case "display_name_too_long":
-    case "email_empty":
-    case "email_too_long":
-    case "email_invalid":
+    case "user_display_name_empty":
+    case "user_display_name_too_long":
+    case "user_email_empty":
+    case "user_email_too_long":
+    case "user_email_invalid":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid user data`))
     case "user_already_exists":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: User with this email already exists`))
@@ -60,14 +60,14 @@ export function generateErrorResponseForCreateUser(
       return new ForbiddenException(
         generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
       )
-    case "invalid_uuid":
+    case "user_invalid_uuid":
     case "unknown_error":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
-    case "org_role_invalid":
+    case "user_org_role_invalid":
       return new InternalServerErrorException(
-        generateErrorPayload(errorCode, `${context}: Internal data inconsistency - invalid org role`)
+        generateErrorPayload(errorCode, `${context}: Internal data inconsistency`)
       )
   }
 }
@@ -80,13 +80,13 @@ export function generateErrorResponseForGetUser(error: UserGetError, context: st
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: User not found`))
     case "invalid_identifier":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid identifier`))
-    case "invalid_uuid":
-    case "email_empty":
-    case "email_too_long":
-    case "email_invalid":
-    case "display_name_empty":
-    case "display_name_too_long":
-    case "org_role_invalid":
+    case "user_invalid_uuid":
+    case "user_display_name_empty":
+    case "user_display_name_too_long":
+    case "user_email_empty":
+    case "user_email_too_long":
+    case "user_email_invalid":
+    case "user_org_role_invalid":
     case "unknown_error":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
@@ -124,12 +124,12 @@ export function generateErrorResponseForListUsers(error: UserListError, context:
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred while listing users`)
       )
-    case "invalid_uuid":
-    case "display_name_empty":
-    case "display_name_too_long":
-    case "email_empty":
-    case "email_too_long":
-    case "email_invalid":
+    case "user_invalid_uuid":
+    case "user_display_name_empty":
+    case "user_display_name_too_long":
+    case "user_email_empty":
+    case "user_email_too_long":
+    case "user_email_invalid":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )

@@ -1,7 +1,7 @@
 export const VOTE_REASON_MAX_LENGTH = 1024
 import {randomUUID} from "crypto"
 import {Either, isLeft, left, right} from "fp-ts/Either"
-import {DistributiveOmit, isUUIDv4} from "@utils"
+import {DistributiveOmit, isUUIDv4, PrefixUnion} from "@utils"
 
 export type Vote = Readonly<ApproveVote | VetoVote | WithdrawVote>
 
@@ -26,7 +26,9 @@ export interface WithdrawVote extends _BaseVote {
   readonly type: "WITHDRAW"
 }
 
-export type VoteValidationError =
+export type VoteValidationError = PrefixUnion<"vote", UnprefixedVoteValidationError>
+
+type UnprefixedVoteValidationError =
   | "invalid_workflow_id"
   | "invalid_user_id"
   | "invalid_vote_type"
@@ -68,8 +70,8 @@ export class VoteFactory {
   }
 
   static validate(data: Vote): Either<VoteValidationError, Vote> {
-    const workflowIdValidation = validateUUID(data.workflowId, "invalid_workflow_id")
-    const userIdValidation = validateUUID(data.userId, "invalid_user_id")
+    const workflowIdValidation = validateUUID(data.workflowId, "vote_invalid_workflow_id")
+    const userIdValidation = validateUUID(data.userId, "vote_invalid_user_id")
 
     const reasonValidation = data.reason ? validateReason(data.reason) : right(undefined)
 
@@ -86,18 +88,18 @@ export class VoteFactory {
   }
 }
 
-function validateUUID<T extends "invalid_workflow_id" | "invalid_user_id">(id: string, error: T): Either<T, string> {
+function validateUUID<T extends VoteValidationError>(id: string, error: T): Either<T, string> {
   if (!isUUIDv4(id)) return left(error)
   return right(id)
 }
 
 function validateGroupIds(groupIds: ReadonlyArray<string>): Either<VoteValidationError, ReadonlyArray<string>> {
-  if (groupIds.some(id => !isUUIDv4(id))) return left("invalid_group_id")
+  if (groupIds.some(id => !isUUIDv4(id))) return left("vote_invalid_group_id")
   return right(groupIds)
 }
 
 function validateReason(reason: string): Either<VoteValidationError, string> {
-  if (reason.length > VOTE_REASON_MAX_LENGTH) return left("reason_too_long")
+  if (reason.length > VOTE_REASON_MAX_LENGTH) return left("vote_reason_too_long")
   return right(reason)
 }
 

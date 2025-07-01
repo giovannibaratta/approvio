@@ -74,7 +74,7 @@ function mapWorkflowActionToDomain(action: WorkflowActionApi): Either<WorkflowTe
       return right({type: WorkflowActionType.EMAIL, recipients: action.recipients})
   }
 
-  return left("action_type_invalid")
+  return left("workflow_action_type_invalid")
 }
 
 export function updateWorkflowTemplateApiToServiceModel(data: {
@@ -163,21 +163,21 @@ export function generateErrorResponseForCreateWorkflowTemplate(error: CreateWork
   const errorCode = error.toUpperCase()
 
   switch (error) {
-    case "workflow_template_name_empty":
-    case "workflow_template_name_too_long":
-    case "workflow_template_name_invalid_characters":
+    case "approval_rule_and_rule_must_have_rules":
+    case "approval_rule_group_rule_invalid_group_id":
+    case "approval_rule_group_rule_invalid_min_count":
+    case "approval_rule_invalid_rule_type":
+    case "approval_rule_malformed_content":
+    case "approval_rule_max_rule_nesting_exceeded":
+    case "approval_rule_or_rule_must_have_rules":
+    case "workflow_action_recipients_empty":
+    case "workflow_action_recipients_invalid_email":
+    case "workflow_action_type_invalid":
     case "workflow_template_description_too_long":
-    case "action_type_invalid":
-    case "action_recipients_empty":
-    case "action_recipients_invalid_email":
     case "workflow_template_expires_in_hours_invalid":
-    case "invalid_rule_type":
-    case "and_rule_must_have_rules":
-    case "or_rule_must_have_rules":
-    case "group_rule_invalid_min_count":
-    case "group_rule_invalid_group_id":
-    case "max_rule_nesting_exceeded":
-    case "malformed_content":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_name_too_long":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
     case "workflow_template_already_exists":
       return new ConflictException(
@@ -222,21 +222,21 @@ export function generateErrorResponseForUpdateWorkflowTemplate(error: UpdateWork
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: Workflow template has been updated concurrently`)
       )
-    case "workflow_template_name_empty":
-    case "workflow_template_name_too_long":
-    case "workflow_template_name_invalid_characters":
+    case "approval_rule_and_rule_must_have_rules":
+    case "approval_rule_group_rule_invalid_group_id":
+    case "approval_rule_group_rule_invalid_min_count":
+    case "approval_rule_invalid_rule_type":
+    case "approval_rule_malformed_content":
+    case "approval_rule_max_rule_nesting_exceeded":
+    case "approval_rule_or_rule_must_have_rules":
+    case "workflow_action_recipients_empty":
+    case "workflow_action_recipients_invalid_email":
+    case "workflow_action_type_invalid":
     case "workflow_template_description_too_long":
-    case "action_type_invalid":
-    case "action_recipients_empty":
-    case "action_recipients_invalid_email":
     case "workflow_template_expires_in_hours_invalid":
-    case "invalid_rule_type":
-    case "and_rule_must_have_rules":
-    case "or_rule_must_have_rules":
-    case "group_rule_invalid_min_count":
-    case "group_rule_invalid_group_id":
-    case "max_rule_nesting_exceeded":
-    case "malformed_content":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_name_too_long":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
     case "workflow_template_update_before_create":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
@@ -267,22 +267,22 @@ export function generateErrorResponseForListWorkflowTemplates(error: ListWorkflo
   const errorCode = error.toUpperCase()
 
   switch (error) {
-    case "workflow_template_name_empty":
-    case "workflow_template_name_too_long":
-    case "workflow_template_name_invalid_characters":
+    case "approval_rule_and_rule_must_have_rules":
+    case "approval_rule_group_rule_invalid_group_id":
+    case "approval_rule_group_rule_invalid_min_count":
+    case "approval_rule_invalid_rule_type":
+    case "approval_rule_malformed_content":
+    case "approval_rule_max_rule_nesting_exceeded":
+    case "approval_rule_or_rule_must_have_rules":
+    case "workflow_action_recipients_empty":
+    case "workflow_action_recipients_invalid_email":
+    case "workflow_action_type_invalid":
     case "workflow_template_description_too_long":
-    case "workflow_template_update_before_create":
     case "workflow_template_expires_in_hours_invalid":
-    case "action_type_invalid":
-    case "action_recipients_empty":
-    case "action_recipients_invalid_email":
-    case "invalid_rule_type":
-    case "and_rule_must_have_rules":
-    case "or_rule_must_have_rules":
-    case "group_rule_invalid_min_count":
-    case "group_rule_invalid_group_id":
-    case "max_rule_nesting_exceeded":
-    case "malformed_content":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_name_too_long":
+    case "workflow_template_update_before_create":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Found internal data inconsistency`)

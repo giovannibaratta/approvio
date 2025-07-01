@@ -125,22 +125,22 @@ export function generateErrorResponseForCreateWorkflow(
     case "workflow_template_id_missing":
     case "malformed_request":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: request is malformed or invalid`))
-    case "action_type_invalid":
-    case "action_recipients_empty":
-    case "action_recipients_invalid_email":
-    case "workflow_template_expires_in_hours_invalid":
-    case "invalid_rule_type":
-    case "and_rule_must_have_rules":
-    case "or_rule_must_have_rules":
-    case "group_rule_invalid_min_count":
-    case "group_rule_invalid_group_id":
-    case "max_rule_nesting_exceeded":
-    case "workflow_template_name_empty":
-    case "workflow_template_name_too_long":
-    case "workflow_template_name_invalid_characters":
+    case "approval_rule_and_rule_must_have_rules":
+    case "approval_rule_group_rule_invalid_group_id":
+    case "approval_rule_group_rule_invalid_min_count":
+    case "approval_rule_invalid_rule_type":
+    case "approval_rule_malformed_content":
+    case "approval_rule_max_rule_nesting_exceeded":
+    case "approval_rule_or_rule_must_have_rules":
+    case "workflow_action_recipients_empty":
+    case "workflow_action_recipients_invalid_email":
+    case "workflow_action_type_invalid":
     case "workflow_template_description_too_long":
+    case "workflow_template_expires_in_hours_invalid":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_name_too_long":
     case "workflow_template_update_before_create":
-    case "malformed_content":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -162,36 +162,36 @@ export function generateErrorResponseForGetWorkflow(error: GetWorkflowLeft, cont
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: Workflow has been updated concurrently`)
       )
-    case "workflow_status_invalid":
-    case "invalid_rule_type":
-    case "and_rule_must_have_rules":
-    case "or_rule_must_have_rules":
-    case "group_rule_invalid_min_count":
-    case "group_rule_invalid_group_id":
-    case "max_rule_nesting_exceeded":
-    case "action_type_invalid":
-    case "action_recipients_empty":
-    case "action_recipients_invalid_email":
-    case "workflow_name_empty":
-    case "workflow_name_too_long":
-    case "workflow_name_invalid_characters":
+    case "approval_rule_and_rule_must_have_rules":
+    case "approval_rule_group_rule_invalid_group_id":
+    case "approval_rule_group_rule_invalid_min_count":
+    case "approval_rule_invalid_rule_type":
+    case "approval_rule_malformed_content":
+    case "approval_rule_max_rule_nesting_exceeded":
+    case "approval_rule_or_rule_must_have_rules":
+    case "vote_invalid_group_id":
+    case "vote_invalid_user_id":
+    case "vote_invalid_vote_type":
+    case "vote_invalid_workflow_id":
+    case "vote_reason_too_long":
+    case "vote_voted_for_groups_required":
+    case "workflow_action_recipients_empty":
+    case "workflow_action_recipients_invalid_email":
+    case "workflow_action_type_invalid":
     case "workflow_description_too_long":
-    case "workflow_update_before_create":
     case "workflow_expires_at_in_the_past":
-    case "workflow_template_name_empty":
-    case "workflow_template_name_too_long":
-    case "workflow_template_name_invalid_characters":
+    case "workflow_name_empty":
+    case "workflow_name_invalid_characters":
+    case "workflow_name_too_long":
+    case "workflow_status_invalid":
     case "workflow_template_description_too_long":
-    case "workflow_template_update_before_create":
     case "workflow_template_expires_in_hours_invalid":
-    case "invalid_workflow_id":
-    case "invalid_user_id":
-    case "invalid_vote_type":
-    case "reason_too_long":
-    case "invalid_group_id":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_name_too_long":
+    case "workflow_template_update_before_create":
+    case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
-    case "voted_for_groups_required":
-    case "malformed_content":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -207,31 +207,31 @@ export function generateErrorResponseForListWorkflows(error: ListWorkflowsLeft, 
   switch (error) {
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
-    case "workflow_name_empty":
-    case "workflow_name_too_long":
-    case "workflow_name_invalid_characters":
+    case "approval_rule_and_rule_must_have_rules":
+    case "approval_rule_group_rule_invalid_group_id":
+    case "approval_rule_group_rule_invalid_min_count":
+    case "approval_rule_invalid_rule_type":
+    case "approval_rule_malformed_content":
+    case "approval_rule_max_rule_nesting_exceeded":
+    case "approval_rule_or_rule_must_have_rules":
+    case "workflow_action_recipients_empty":
+    case "workflow_action_recipients_invalid_email":
+    case "workflow_action_type_invalid":
     case "workflow_description_too_long":
-    case "workflow_update_before_create":
-    case "workflow_status_invalid":
-    case "workflow_workflow_template_id_invalid_uuid":
-    case "action_type_invalid":
-    case "action_recipients_empty":
-    case "action_recipients_invalid_email":
-    case "workflow_template_expires_in_hours_invalid":
-    case "invalid_rule_type":
-    case "and_rule_must_have_rules":
-    case "or_rule_must_have_rules":
-    case "group_rule_invalid_min_count":
-    case "group_rule_invalid_group_id":
-    case "max_rule_nesting_exceeded":
-    case "workflow_not_found":
     case "workflow_expires_at_in_the_past":
-    case "workflow_template_name_empty":
-    case "workflow_template_name_too_long":
-    case "workflow_template_name_invalid_characters":
+    case "workflow_name_empty":
+    case "workflow_name_invalid_characters":
+    case "workflow_name_too_long":
+    case "workflow_not_found":
+    case "workflow_status_invalid":
     case "workflow_template_description_too_long":
+    case "workflow_template_expires_in_hours_invalid":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_name_too_long":
     case "workflow_template_update_before_create":
-    case "malformed_content":
+    case "workflow_update_before_create":
+    case "workflow_workflow_template_id_invalid_uuid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -339,16 +339,13 @@ export function createCastVoteApiToServiceModel(data: {
       requestor: data.requestor
     })
   }
-  return left("invalid_vote_type")
+  return left("vote_invalid_vote_type")
 }
 
 export function generateErrorResponseForCanVote(error: CanVoteError, context: string): HttpException {
   const errorCode = error.toUpperCase()
   switch (error) {
     case "workflow_not_found":
-    case "invalid_uuid":
-    case "invalid_group_uuid":
-    case "invalid_role":
       return new BadRequestException(
         generateErrorPayload(errorCode, `${context}: Invalid parameters for vote eligibility check`)
       )
@@ -356,42 +353,44 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
-    case "invalid_group_id":
-    case "voted_for_groups_required":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow data`))
     case "concurrency_error":
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: Workflow has been updated concurrently`)
       )
-    case "workflow_name_empty":
-    case "workflow_name_too_long":
-    case "workflow_name_invalid_characters":
+    case "approval_rule_and_rule_must_have_rules":
+    case "approval_rule_group_rule_invalid_group_id":
+    case "approval_rule_group_rule_invalid_min_count":
+    case "approval_rule_invalid_rule_type":
+    case "approval_rule_malformed_content":
+    case "approval_rule_max_rule_nesting_exceeded":
+    case "approval_rule_or_rule_must_have_rules":
+    case "membership_inconsistent_dates":
+    case "membership_invalid_group_uuid":
+    case "membership_invalid_role":
+    case "membership_invalid_user_uuid":
+    case "vote_invalid_group_id":
+    case "vote_invalid_user_id":
+    case "vote_invalid_vote_type":
+    case "vote_invalid_workflow_id":
+    case "vote_reason_too_long":
+    case "vote_voted_for_groups_required":
+    case "workflow_action_recipients_empty":
+    case "workflow_action_recipients_invalid_email":
+    case "workflow_action_type_invalid":
     case "workflow_description_too_long":
+    case "workflow_expires_at_in_the_past":
+    case "workflow_name_empty":
+    case "workflow_name_invalid_characters":
+    case "workflow_name_too_long":
+    case "workflow_status_invalid":
+    case "workflow_template_description_too_long":
+    case "workflow_template_expires_in_hours_invalid":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_name_too_long":
+    case "workflow_template_update_before_create":
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
-    case "invalid_rule_type":
-    case "and_rule_must_have_rules":
-    case "or_rule_must_have_rules":
-    case "group_rule_invalid_min_count":
-    case "group_rule_invalid_group_id":
-    case "max_rule_nesting_exceeded":
-    case "action_type_invalid":
-    case "action_recipients_empty":
-    case "action_recipients_invalid_email":
-    case "workflow_template_expires_in_hours_invalid":
-    case "inconsistent_dates":
-    case "invalid_workflow_id":
-    case "invalid_user_id":
-    case "invalid_vote_type":
-    case "reason_too_long":
-    case "workflow_expires_at_in_the_past":
-    case "workflow_status_invalid":
-    case "workflow_template_name_empty":
-    case "workflow_template_name_too_long":
-    case "workflow_template_name_invalid_characters":
-    case "workflow_template_description_too_long":
-    case "workflow_template_update_before_create":
-    case "malformed_content":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -412,46 +411,45 @@ export function generateErrorResponseForCastVote(error: CastVoteServiceError, co
       return new InternalServerErrorException(
         generateErrorPayload("VOTE_CAST_FAILED", `${context}: An unexpected error occurred while casting vote`)
       )
-    case "invalid_workflow_id":
-    case "invalid_user_id":
-    case "invalid_vote_type":
-    case "reason_too_long":
+    case "vote_invalid_group_id":
+    case "vote_invalid_user_id":
+    case "vote_invalid_vote_type":
+    case "vote_invalid_workflow_id":
+    case "vote_reason_too_long":
+    case "vote_voted_for_groups_required":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid vote parameters`))
-    case "invalid_group_id":
-    case "voted_for_groups_required":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow data`))
     case "concurrency_error":
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: Workflow has been updated concurrently`)
       )
-    case "workflow_name_empty":
-    case "workflow_name_too_long":
-    case "workflow_name_invalid_characters":
+    case "approval_rule_and_rule_must_have_rules":
+    case "approval_rule_group_rule_invalid_group_id":
+    case "approval_rule_group_rule_invalid_min_count":
+    case "approval_rule_invalid_rule_type":
+    case "approval_rule_malformed_content":
+    case "approval_rule_max_rule_nesting_exceeded":
+    case "approval_rule_or_rule_must_have_rules":
+    case "membership_inconsistent_dates":
+    case "membership_invalid_group_uuid":
+    case "membership_invalid_role":
+    case "membership_invalid_user_uuid":
+    case "workflow_action_recipients_empty":
+    case "workflow_action_recipients_invalid_email":
+    case "workflow_action_type_invalid":
     case "workflow_description_too_long":
+    case "workflow_expires_at_in_the_past":
+    case "workflow_name_empty":
+    case "workflow_name_invalid_characters":
+    case "workflow_name_too_long":
+    case "workflow_status_invalid":
+    case "workflow_template_description_too_long":
+    case "workflow_template_expires_in_hours_invalid":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_name_too_long":
+    case "workflow_template_update_before_create":
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
-    case "workflow_expires_at_in_the_past":
-    case "workflow_status_invalid":
-    case "invalid_rule_type":
-    case "and_rule_must_have_rules":
-    case "or_rule_must_have_rules":
-    case "group_rule_invalid_min_count":
-    case "group_rule_invalid_group_id":
-    case "max_rule_nesting_exceeded":
-    case "action_type_invalid":
-    case "action_recipients_empty":
-    case "action_recipients_invalid_email":
-    case "workflow_template_expires_in_hours_invalid":
-    case "invalid_role":
-    case "invalid_uuid":
-    case "inconsistent_dates":
-    case "invalid_group_uuid":
-    case "workflow_template_name_empty":
-    case "workflow_template_name_too_long":
-    case "workflow_template_name_invalid_characters":
-    case "workflow_template_description_too_long":
-    case "workflow_template_update_before_create":
-    case "malformed_content":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)

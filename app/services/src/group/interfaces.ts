@@ -2,14 +2,9 @@ import {Group, GroupValidationError, GroupWithEntitiesCount, ListGroupsFilter, U
 import {TaskEither} from "fp-ts/TaskEither"
 import {PaginationError, UnknownError} from "@services/error"
 import {Versioned} from "@services/shared/utils"
+import {MembershipAddError} from "@services/group-membership/interfaces"
 
-export type CreateGroupRepoError =
-  | "group_already_exists"
-  | GroupValidationError
-  | UnknownError
-  | "user_not_found"
-  | "invalid_uuid"
-  | "entity_already_in_group"
+export type CreateGroupRepoError = "group_already_exists" | GroupValidationError | UnknownError | MembershipAddError
 
 export type GetGroupRepoError = "group_not_found" | "not_a_member" | GroupValidationError | UnknownError
 export type ListGroupsRepoError = PaginationError | GroupValidationError | UnknownError

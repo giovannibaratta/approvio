@@ -21,25 +21,25 @@ describe("ApprovalRuleFactory.validate", () => {
     it("fails if groupId is missing", () => {
       const rule = {type: ApprovalRuleType.GROUP_REQUIREMENT, minCount: 2}
       const result = ApprovalRuleFactory.validate(rule)
-      expect(result).toBeLeftOf("group_rule_invalid_group_id")
+      expect(result).toBeLeftOf("approval_rule_group_rule_invalid_group_id")
     })
 
     it("fails if groupId is not a uuid", () => {
       const rule = {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: "not-a-uuid", minCount: 2}
       const result = ApprovalRuleFactory.validate(rule)
-      expect(result).toBeLeftOf("group_rule_invalid_group_id")
+      expect(result).toBeLeftOf("approval_rule_group_rule_invalid_group_id")
     })
 
     it("fails if minCount is missing", () => {
       const rule = {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID()}
       const result = ApprovalRuleFactory.validate(rule)
-      expect(result).toBeLeftOf("group_rule_invalid_min_count")
+      expect(result).toBeLeftOf("approval_rule_group_rule_invalid_min_count")
     })
 
     it("fails if minCount is not a number", () => {
       const rule = {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID(), minCount: "2"}
       const result = ApprovalRuleFactory.validate(rule)
-      expect(result).toBeLeftOf("group_rule_invalid_min_count")
+      expect(result).toBeLeftOf("approval_rule_group_rule_invalid_min_count")
     })
 
     it("fails if minCount < 1", () => {
@@ -49,7 +49,7 @@ describe("ApprovalRuleFactory.validate", () => {
         minCount: 0
       }
       const result = ApprovalRuleFactory.validate(rule)
-      expect(result).toBeLeftOf("group_rule_invalid_min_count")
+      expect(result).toBeLeftOf("approval_rule_group_rule_invalid_min_count")
     })
   })
 
@@ -69,10 +69,10 @@ describe("ApprovalRuleFactory.validate", () => {
     it("fails if rules is missing or empty", () => {
       const rule = {type: ApprovalRuleType.AND}
       const result = ApprovalRuleFactory.validate(rule)
-      expect(result).toBeLeftOf("and_rule_must_have_rules")
+      expect(result).toBeLeftOf("approval_rule_and_rule_must_have_rules")
       const rule2 = {type: ApprovalRuleType.AND, rules: []}
       const result2 = ApprovalRuleFactory.validate(rule2)
-      expect(result2).toBeLeftOf("and_rule_must_have_rules")
+      expect(result2).toBeLeftOf("approval_rule_and_rule_must_have_rules")
     })
     it("fails if any nested rule is invalid", () => {
       const rule = {
@@ -80,7 +80,7 @@ describe("ApprovalRuleFactory.validate", () => {
         rules: [{type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: "not-a-uuid", minCount: 1}]
       }
       const result = ApprovalRuleFactory.validate(rule)
-      expect(result).toBeLeftOf("group_rule_invalid_group_id")
+      expect(result).toBeLeftOf("approval_rule_group_rule_invalid_group_id")
     })
   })
 
@@ -100,10 +100,10 @@ describe("ApprovalRuleFactory.validate", () => {
     it("fails if rules is missing or empty", () => {
       const rule = {type: ApprovalRuleType.OR}
       const result = ApprovalRuleFactory.validate(rule)
-      expect(result).toBeLeftOf("or_rule_must_have_rules")
+      expect(result).toBeLeftOf("approval_rule_or_rule_must_have_rules")
       const rule2 = {type: ApprovalRuleType.OR, rules: []}
       const result2 = ApprovalRuleFactory.validate(rule2)
-      expect(result2).toBeLeftOf("or_rule_must_have_rules")
+      expect(result2).toBeLeftOf("approval_rule_or_rule_must_have_rules")
     })
     it("fails if any nested rule is invalid", () => {
       const rule = {
@@ -111,7 +111,7 @@ describe("ApprovalRuleFactory.validate", () => {
         rules: [{type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: "not-a-uuid", minCount: 1}]
       }
       const result = ApprovalRuleFactory.validate(rule)
-      expect(result).toBeLeftOf("group_rule_invalid_group_id")
+      expect(result).toBeLeftOf("approval_rule_group_rule_invalid_group_id")
     })
   })
 
@@ -132,7 +132,7 @@ describe("ApprovalRuleFactory.validate", () => {
         ]
       }
       const result = ApprovalRuleFactory.validate(rule)
-      expect(result).toBeLeftOf("max_rule_nesting_exceeded")
+      expect(result).toBeLeftOf("approval_rule_max_rule_nesting_exceeded")
     })
     it("fails if OR is nested more than 2 levels", () => {
       const rule = {
@@ -150,7 +150,7 @@ describe("ApprovalRuleFactory.validate", () => {
         ]
       }
       const result = ApprovalRuleFactory.validate(rule)
-      expect(result).toBeLeftOf("max_rule_nesting_exceeded")
+      expect(result).toBeLeftOf("approval_rule_max_rule_nesting_exceeded")
     })
 
     it("fails if AND and OR are mixed and exceed 2 levels", () => {
@@ -169,7 +169,7 @@ describe("ApprovalRuleFactory.validate", () => {
         ]
       }
       const result = ApprovalRuleFactory.validate(rule)
-      expect(result).toBeLeftOf("max_rule_nesting_exceeded")
+      expect(result).toBeLeftOf("approval_rule_max_rule_nesting_exceeded")
     })
 
     it("allows 2 levels of nesting", () => {
@@ -192,14 +192,14 @@ describe("ApprovalRuleFactory.validate", () => {
       const rule = {type: "NOT_A_TYPE", foo: 1}
       const result = ApprovalRuleFactory.validate(rule)
 
-      expect(result).toBeLeftOf("invalid_rule_type")
+      expect(result).toBeLeftOf("approval_rule_invalid_rule_type")
     })
     it("fails if not an object", () => {
       const result = ApprovalRuleFactory.validate(null)
 
-      expect(result).toBeLeftOf("invalid_rule_type")
+      expect(result).toBeLeftOf("approval_rule_invalid_rule_type")
       const result2 = ApprovalRuleFactory.validate(42)
-      expect(result2).toBeLeftOf("invalid_rule_type")
+      expect(result2).toBeLeftOf("approval_rule_invalid_rule_type")
     })
   })
 })

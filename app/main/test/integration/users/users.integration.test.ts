@@ -133,7 +133,7 @@ describe("Users API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("EMAIL_INVALID")
+        expect(response.body).toHaveErrorCode("USER_EMAIL_INVALID")
       })
 
       it("should return 400 BAD_REQUEST (DISPLAY_NAME_EMPTY) for empty display name", async () => {
@@ -149,7 +149,7 @@ describe("Users API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("DISPLAY_NAME_EMPTY")
+        expect(response.body).toHaveErrorCode("USER_DISPLAY_NAME_EMPTY")
       })
 
       it("should return 400 BAD_REQUEST (EMAIL_EMPTY) for empty email", async () => {
@@ -165,7 +165,7 @@ describe("Users API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("EMAIL_EMPTY")
+        expect(response.body).toHaveErrorCode("USER_EMAIL_EMPTY")
       })
     })
   })

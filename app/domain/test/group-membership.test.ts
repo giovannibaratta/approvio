@@ -46,19 +46,19 @@ describe("MembershipFactory", () => {
   })
 
   describe("bad cases", () => {
-    it("should return left with 'invalid_uuid' for an invalid user string", () => {
+    it("should return left with 'membership_invalid_uuid' for an invalid user string", () => {
       // Given
-      const data = {user: "invalid-user-id", role: HumanGroupMembershipRole.ADMIN.toString()}
+      const data = {user: "invalid-uuid", role: HumanGroupMembershipRole.ADMIN.toString()}
 
       // When
       const result = MembershipFactory.newMembership(data)
 
       // Expect
       expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<MembershipValidationError>("invalid_uuid")
+      expect(unwrapLeft(result)).toBe<MembershipValidationError>("membership_invalid_user_uuid")
     })
 
-    it("should return left with 'invalid_role' for an invalid role string", () => {
+    it("should return left with 'membership_invalid_role' for an invalid role string", () => {
       // Given
       const data = {user: randomUUID(), role: "invalid_role_string"}
 
@@ -67,7 +67,29 @@ describe("MembershipFactory", () => {
 
       // Expect
       expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<MembershipValidationError>("invalid_role")
+      expect(unwrapLeft(result)).toBe<MembershipValidationError>("membership_invalid_role")
+    })
+
+    it("should return an error when user reference is not a valid UUID", () => {
+      // Given: user reference is not a valid UUID
+      const data = {entity: "invalid-uuid", role: "admin", createdAt: new Date(), updatedAt: new Date()}
+
+      // When
+      const result = MembershipFactory.validate(data)
+
+      // Expect
+      expect(result).toBeLeftOf("membership_invalid_user_uuid")
+    })
+
+    it("should return an error when role is not valid", () => {
+      // Given: role is not valid
+      const data = {entity: randomUUID(), role: "invalid", createdAt: new Date(), updatedAt: new Date()}
+
+      // When
+      const result = MembershipFactory.validate(data)
+
+      // Expect
+      expect(result).toBeLeftOf("membership_invalid_role")
     })
   })
 })
@@ -119,17 +141,34 @@ describe("GroupManager", () => {
       expect(result).toBeRight()
     })
 
-    it("should fail if there are duplicate memberships", () => {
-      const result = GroupManager.createGroupManager(group, [ownerMembership, ownerMembership])
-      expect(result).toBeLeftOf("duplicated_membership")
+    it("should fail with duplicated membership error when creating group manager with duplicate entities", () => {
+      // Given
+      const duplicateMembership = unwrapRight(
+        MembershipFactory.newMembership({
+          user: owner.id,
+          role: "owner"
+        })
+      )
+      const memberships = [duplicateMembership, duplicateMembership]
+
+      // When
+      const result = GroupManager.createGroupManager(group, memberships)
+
+      // Expect
+      expect(result).toBeLeftOf("membership_duplicated_membership")
     })
   })
 
   describe("addMembership", () => {
     it("should fail to add a duplicate membership", () => {
+      // Given: a group manager with existing memberships
       const manager = unwrapRight(GroupManager.createGroupManager(group, [ownerMembership]))
+
+      // When: trying to add the same membership again
       const result = manager.addMembership(ownerMembership)
-      expect(result).toBeLeftOf("duplicated_membership")
+
+      // Expect
+      expect(result).toBeLeftOf("membership_entity_already_in_group")
     })
   })
 

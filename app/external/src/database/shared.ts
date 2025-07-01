@@ -168,8 +168,8 @@ export function mapToDomainVersionedWorkflowWithTemplate(
   )
 }
 
-function prismaJsonToJson(prismaJson: Prisma.JsonValue): Either<"malformed_content", JSON> {
-  if (prismaJson === null) return E.left("malformed_content")
+function prismaJsonToJson(prismaJson: Prisma.JsonValue): Either<"approval_rule_malformed_content", JSON> {
+  if (prismaJson === null) return E.left("approval_rule_malformed_content")
   return E.right(JSON.parse(JSON.stringify(prismaJson)))
 }
 

@@ -292,11 +292,11 @@ describe("Workflow Templates API", () => {
       it("should return 400 BAD_REQUEST (GROUP_RULE_INVALID_MIN_COUNT) for invalid min count in approval rule", async () => {
         // Given
         const requestBody: WorkflowTemplateCreate = {
-          name: "Invalid Rule Template",
+          name: "Invalid MinCount Template",
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
             groupId: randomUUID(),
-            minCount: 0 // Invalid: must be >= 1
+            minCount: 0 // Invalid: minCount must be at least 1
           }
         }
 
@@ -305,7 +305,7 @@ describe("Workflow Templates API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("GROUP_RULE_INVALID_MIN_COUNT")
+        expect(response.body).toHaveErrorCode("APPROVAL_RULE_GROUP_RULE_INVALID_MIN_COUNT")
       })
 
       it("should return 400 BAD_REQUEST (GROUP_RULE_INVALID_GROUP_ID) for invalid group ID in approval rule", async () => {
@@ -324,7 +324,7 @@ describe("Workflow Templates API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("GROUP_RULE_INVALID_GROUP_ID")
+        expect(response.body).toHaveErrorCode("APPROVAL_RULE_GROUP_RULE_INVALID_GROUP_ID")
       })
 
       it("should return 400 BAD_REQUEST (AND_RULE_MUST_HAVE_RULES) for AND rule with empty rules array", async () => {
@@ -342,7 +342,7 @@ describe("Workflow Templates API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("AND_RULE_MUST_HAVE_RULES")
+        expect(response.body).toHaveErrorCode("APPROVAL_RULE_AND_RULE_MUST_HAVE_RULES")
       })
 
       it("should return 400 BAD_REQUEST (OR_RULE_MUST_HAVE_RULES) for OR rule with empty rules array", async () => {
@@ -360,7 +360,7 @@ describe("Workflow Templates API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("OR_RULE_MUST_HAVE_RULES")
+        expect(response.body).toHaveErrorCode("APPROVAL_RULE_OR_RULE_MUST_HAVE_RULES")
       })
     })
   })

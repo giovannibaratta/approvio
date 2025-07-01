@@ -1,5 +1,5 @@
 import {Group, User} from "@domain"
-import {getStringAsEnum, isUUIDv4} from "@utils"
+import {getStringAsEnum, isUUIDv4, PrefixUnion} from "@utils"
 import * as A from "fp-ts/Array"
 import {Applicative, Do, Either, isLeft, left, right, chain, bindW} from "fp-ts/lib/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -16,10 +16,18 @@ export type MembershipWithGroupRef = Readonly<PrivateMembershipWithGroupRef>
 
 type UserReference = string
 type RoleValidationError = "invalid_role"
-export type MembershipValidationError = RoleValidationError | UserValidationReferenceError | "inconsistent_dates"
-export type MembershipValidationErrorWithGroupRef = MembershipValidationError | GroupValidationReferenceError
-type UserValidationReferenceError = "invalid_uuid"
+export type MembershipValidationError = PrefixUnion<"membership", UnprefixedMembershipValidationError>
+export type MembershipValidationErrorWithGroupRef = PrefixUnion<
+  "membership",
+  UnprefixedMembershipValidationErrorWithGroupRef
+>
+type UserValidationReferenceError = "invalid_user_uuid"
 type GroupValidationReferenceError = "invalid_group_uuid"
+
+type UnprefixedMembershipValidationError = RoleValidationError | UserValidationReferenceError | "inconsistent_dates"
+type UnprefixedMembershipValidationErrorWithGroupRef =
+  | UnprefixedMembershipValidationError
+  | GroupValidationReferenceError
 
 interface PrivateMembershipWithGroupRef extends PrivateMembership {
   groupId: string
@@ -34,21 +42,19 @@ interface PrivateMembership {
   getEntityId(): string
 }
 
-function validateRole(role: string): Either<RoleValidationError, HumanGroupMembershipRole> {
+function validateRole(role: string): Either<MembershipValidationError, HumanGroupMembershipRole> {
   const enumRole = getStringAsEnum(role, HumanGroupMembershipRole)
-  if (enumRole === undefined) return left("invalid_role")
+  if (enumRole === undefined) return left("membership_invalid_role")
   return right(enumRole)
 }
 
-function validateGroupReference(groupReference: string): Either<GroupValidationReferenceError, string> {
-  if (!isUUIDv4(groupReference)) return left("invalid_group_uuid")
+function validateGroupReference(groupReference: string): Either<MembershipValidationErrorWithGroupRef, string> {
+  if (!isUUIDv4(groupReference)) return left("membership_invalid_group_uuid")
   return right(groupReference)
 }
 
-function validateUserReference(
-  userReference: string | User
-): Either<UserValidationReferenceError, UserReference | User> {
-  if (typeof userReference === "string" && !isUUIDv4(userReference)) return left("invalid_uuid")
+function validateUserReference(userReference: string | User): Either<MembershipValidationError, UserReference | User> {
+  if (typeof userReference === "string" && !isUUIDv4(userReference)) return left("membership_invalid_user_uuid")
   return right(userReference)
 }
 
@@ -95,7 +101,7 @@ export class MembershipFactory {
 
     if (isLeft(roleValidation)) return left(roleValidation.left)
     if (isLeft(userValidation)) return left(userValidation.left)
-    if (data.createdAt > data.updatedAt) return left("inconsistent_dates")
+    if (data.createdAt > data.updatedAt) return left("membership_inconsistent_dates")
 
     return right({
       entity: userValidation.right,
@@ -111,8 +117,9 @@ function getEntityId(entity: PrivateMembership["entity"]): EntityId {
   return typeof entity === "string" ? entity : entity.id
 }
 
-export type GroupManagerValidationError = "duplicated_membership"
-export type RemoveMembershipError = "membership_not_found" | "membership_no_owner"
+export type GroupManagerValidationError = PrefixUnion<"membership", "duplicated_membership">
+export type AddMembershipError = PrefixUnion<"membership", "entity_already_in_group">
+export type RemoveMembershipError = PrefixUnion<"membership", "not_found" | "no_owner">
 export type UpdateMembershipError = RemoveMembershipError
 
 type EntityId = string
@@ -131,15 +138,15 @@ export class GroupManager {
     return Array.from(this.memberships.values())
   }
 
-  addMembership(membershipToAdd: Membership): Either<GroupManagerValidationError, GroupManager> {
+  addMembership(membershipToAdd: Membership): Either<AddMembershipError, GroupManager> {
     const entityId = membershipToAdd.getEntityId()
-    if (this.isEntityInMembership(entityId)) return left("duplicated_membership")
+    if (this.isEntityInMembership(entityId)) return left("membership_entity_already_in_group")
 
     this.memberships.set(entityId, membershipToAdd)
     return right(this)
   }
 
-  addMemberships(membershipsToAdd: ReadonlyArray<Membership>): Either<GroupManagerValidationError, GroupManager> {
+  addMemberships(membershipsToAdd: ReadonlyArray<Membership>): Either<AddMembershipError, GroupManager> {
     const result = pipe([...membershipsToAdd], A.traverse(Applicative)(this.addMembership))
     if (isLeft(result)) return result
     return right(this)
@@ -208,7 +215,7 @@ export class GroupManager {
     const uniqueEntities = new Set(memberships.map(m => m.getEntityId()))
 
     if (uniqueEntities.size !== memberships.length) {
-      return left("duplicated_membership")
+      return left("membership_duplicated_membership")
     }
 
     return right(new GroupManager(group, memberships))

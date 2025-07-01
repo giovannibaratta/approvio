@@ -1,4 +1,4 @@
-import {Group, GroupManager, MembershipFactory, MembershipValidationError} from "@domain"
+import {Group, GroupManager, Membership, MembershipFactory, MembershipValidationError} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError, GetGroupError} from "@services"
 import {RequestorAwareRequest} from "@services/shared/types"
@@ -39,7 +39,7 @@ export class GroupMembershipService {
 
   getGroupByIdentifierWithMembership(
     request: GetGroupWithMembershipRequest
-  ): TaskEither<GetGroupError | MembershipValidationError, GetGroupMembershipResult> {
+  ): TaskEither<"request_invalid_group_uuid" | GetGroupError | MembershipValidationError, GetGroupMembershipResult> {
     const {requestor} = request
     const onlyIfMember = requestor.orgRole === "admin" ? false : {userId: requestor.id}
 
@@ -48,8 +48,8 @@ export class GroupMembershipService {
 
     const validateRequest = (
       req: GetGroupWithMembershipRequest
-    ): TE.TaskEither<"invalid_uuid", GetGroupWithMembershipRequest> => {
-      if (!isUUIDv4(req.groupId)) return TE.left("invalid_uuid" as const)
+    ): TE.TaskEither<"request_invalid_group_uuid", GetGroupWithMembershipRequest> => {
+      if (!isUUIDv4(req.groupId)) return TE.left("request_invalid_group_uuid" as const)
       return TE.right(req)
     }
 
@@ -63,31 +63,36 @@ export class GroupMembershipService {
 
   addMembersToGroup(
     request: AddMembersToGroupRequest
-  ): TaskEither<MembershipAddError | AuthorizationError, GetGroupMembershipResult> {
+  ): TaskEither<
+    "request_invalid_group_uuid" | "request_invalid_user_uuid" | MembershipAddError | AuthorizationError,
+    GetGroupMembershipResult
+  > {
     const {requestor} = request
 
-    const membershipsToAdd = pipe(
-      [...request.members],
-      A.traverse(E.Applicative)(member =>
-        MembershipFactory.newMembership({
-          user: member.userId,
-          role: member.role
-        })
+    const validateMembershipsToAdd = (req: AddMembersToGroupRequest) =>
+      pipe(
+        [...req.members],
+        A.traverse(E.Applicative)(member =>
+          MembershipFactory.newMembership({
+            user: member.userId,
+            role: member.role
+          })
+        ),
+        TE.fromEither
       )
-    )
 
-    if (isLeft(membershipsToAdd)) return TE.left(membershipsToAdd.left)
+    const validateRequest = (
+      req: AddMembersToGroupRequest
+    ): TE.TaskEither<"request_invalid_group_uuid" | "request_invalid_user_uuid", AddMembersToGroupRequest> => {
+      if (!isUUIDv4(req.groupId)) return TE.left("request_invalid_group_uuid" as const)
+      if (req.members.some(m => !isUUIDv4(m.userId))) return TE.left("request_invalid_user_uuid" as const)
+      return TE.right(req)
+    }
 
-    const validateRequest = (req: AddMembersToGroupRequest): TE.TaskEither<"invalid_uuid", AddMembersToGroupRequest> =>
-      isUUIDv4(req.groupId) ? TE.right(req) : TE.left("invalid_uuid" as const)
+    const fetchGroupMembershipData = (r: AddMembersToGroupRequest) =>
+      this.getGroupByIdentifierWithMembership({groupId: r.groupId, requestor: r.requestor})
 
-    const fetchGroupMembershipData = pipe(
-      request,
-      validateRequest,
-      TE.chainW(r => this.getGroupByIdentifierWithMembership({groupId: r.groupId, requestor: r.requestor}))
-    )
-
-    const simulateAddMemberships = (data: GetGroupMembershipResult) => {
+    const simulateAddMemberships = (data: GetGroupMembershipResult, membershipsToAdd: Readonly<Membership>[]) => {
       const groupManagerEither = GroupManager.createGroupManager(data.group, data.memberships)
 
       if (isLeft(groupManagerEither)) return TE.left(groupManagerEither.left)
@@ -97,34 +102,47 @@ export class GroupMembershipService {
       if (!groupManager.canUpdateMembership(requestor)) return TE.left("requestor_not_authorized" as const)
 
       // Check if any member to add is already in the group
-      for (const membership of membershipsToAdd.right) {
-        if (groupManager.isEntityInMembership(membership.getEntityId()))
-          return TE.left("entity_already_in_group" as const)
+      for (const membership of membershipsToAdd) {
+        const addResult = groupManager.addMembership(membership)
+        if (isLeft(addResult)) return TE.left(addResult.left)
       }
-
       return TE.right(data.group)
     }
 
-    const persistMemberships = (group: Versioned<Group>) =>
+    const persistMemberships = (group: Versioned<Group>, membershipsToAdd: Readonly<Membership>[]) =>
       this.groupMembershipRepo.addMembershipsToGroup({
         group,
-        memberships: membershipsToAdd.right
+        memberships: membershipsToAdd
       })
 
-    return pipe(fetchGroupMembershipData, TE.chainW(simulateAddMemberships), TE.chainW(persistMemberships))
+    return pipe(
+      TE.Do,
+      TE.bindW("request", () => TE.right(request)),
+      TE.bindW("validatedRequest", ({request}) => validateRequest(request)),
+      TE.bindW("membershipsToAdd", ({request}) => validateMembershipsToAdd(request)),
+      TE.bindW("groupMembershipData", ({request}) => fetchGroupMembershipData(request)),
+      TE.bindW("group", ({groupMembershipData, membershipsToAdd}) =>
+        simulateAddMemberships(groupMembershipData, membershipsToAdd)
+      ),
+      TE.chainW(({group, membershipsToAdd}) => persistMemberships(group, membershipsToAdd))
+    )
   }
 
   removeEntitiesFromGroup(
     request: RemoveMembersFromGroupRequest
-  ): TaskEither<MembershipRemoveError | AuthorizationError, GetGroupMembershipResult> {
+  ): TaskEither<
+    "request_invalid_group_uuid" | "request_invalid_user_uuid" | MembershipRemoveError | AuthorizationError,
+    GetGroupMembershipResult
+  > {
     const {requestor} = request
 
     const validateRequest = (
       req: RemoveMembersFromGroupRequest
-    ): TE.TaskEither<"invalid_uuid", RemoveMembersFromGroupRequest> =>
-      isUUIDv4(req.groupId) && req.members.every(m => isUUIDv4(m.userId))
-        ? TE.right(req)
-        : TE.left("invalid_uuid" as const)
+    ): TE.TaskEither<"request_invalid_group_uuid" | "request_invalid_user_uuid", RemoveMembersFromGroupRequest> => {
+      if (!isUUIDv4(req.groupId)) return TE.left("request_invalid_group_uuid" as const)
+      if (req.members.some(m => !isUUIDv4(m.userId))) return TE.left("request_invalid_user_uuid" as const)
+      return TE.right(req)
+    }
 
     const fetchGroupMembershipData = pipe(
       request,
