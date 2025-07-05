@@ -1,0 +1,61 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-workflow-actions-email-task-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: workflow_actions_email_task
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: workflow_id
+                  type: UUID
+                  constraints:
+                    foreignKeyName: fk_workflow_actions_email_workflow_id
+                    references: workflows(id)
+                    nullable: false
+              - column:
+                  name: status
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: configuration
+                  type: JSONB
+                  constraints:
+                    nullable: false
+              - column:
+                  name: retry_count
+                  type: INT
+                  defaultValue: 0
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: error_reason
+                  type: VARCHAR(16384)
+              - column:
+                  name: locked_by
+                  type: VARCHAR(512)
+              - column:
+                  name: locked_at
+                  type: timestamptz
+              - column:
+                  name: occ
+                  type: BIGINT
+                  constraints:
+                    nullable: false
