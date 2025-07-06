@@ -1,4 +1,10 @@
 version: "3.8"
+
+volumes:
+  # Ephermeral volume used to store Mailpit self-signed TLS certificates
+  mailpit_certs_test:
+  mailpit_certs_dev:
+
 services:
   # Local DB used for development and manual testing
   db:
@@ -24,3 +30,71 @@ services:
       POSTGRES_DB: approvio
     ports:
       - "5433:5432"
+
+  cert-generator-dev:
+    profiles: [dev]
+    image: alpine
+    command: >
+      sh -c "
+        # Ensure openssl is installed
+        apk update && apk add openssl &&
+        # Generate the certificate
+        openssl req -x509 -newkey rsa:2048 -nodes -keyout /certs/key.pem -out /certs/cert.pem -days 365 -subj '/CN=localhost' &&
+        # Set correct permissions
+        chmod 644 /certs/key.pem /certs/cert.pem
+      "
+    volumes:
+      - mailpit_certs_dev:/certs
+
+  cert-generator-test:
+    profiles: [test]
+    image: alpine
+    command: >
+      sh -c "
+        # Ensure openssl is installed
+        apk update && apk add openssl &&
+        # Generate the certificate
+        openssl req -x509 -newkey rsa:2048 -nodes -keyout /certs/key.pem -out /certs/cert.pem -days 365 -subj '/CN=localhost' &&
+        # Set correct permissions
+        chmod 644 /certs/key.pem /certs/cert.pem
+      "
+    volumes:
+      - mailpit_certs_test:/certs
+
+  # Local smtp server used for integration tests
+  mailpit-test:
+    profiles: [test]
+    image: axllent/mailpit:v1.27.1
+    ports:
+      - "1026:1025" # SMTP port
+      - "8026:8025" # Web UI port
+    environment:
+      - MP_SMTP_TLS_CERT=/certs/cert.pem
+      - MP_SMTP_TLS_KEY=/certs/key.pem
+      - MP_SMTP_REQUIRE_TLS=true
+      - MP_SMTP_AUTH_ACCEPT_ANY=true
+      - MP_SMTP_DISABLE_RDNS=true
+    volumes:
+      - mailpit_certs_test:/certs
+    depends_on:
+      cert-generator-test:
+        condition: service_completed_successfully
+
+  # Local smtp server used for development
+  mailpit-dev:
+    profiles: [dev]
+    image: axllent/mailpit:v1.27.1
+    ports:
+      - "1025:1025" # SMTP port
+      - "8025:8025" # Web UI port
+    environment:
+      - MP_SMTP_TLS_CERT=/certs/cert.pem
+      - MP_SMTP_TLS_KEY=/certs/key.pem
+      - MP_SMTP_REQUIRE_TLS=true
+      - MP_SMTP_AUTH_ACCEPT_ANY=true
+      - MP_SMTP_DISABLE_RDNS=true
+    volumes:
+      - mailpit_certs_dev:/certs
+    depends_on:
+      cert-generator-dev:
+        condition: service_completed_successfully

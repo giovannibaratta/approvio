@@ -39,9 +39,10 @@ function generate_provider_specific_flags_for_start() {
   echo "$flags"
 }
 
+# Determines the profile to use. Defaults to 'dev'.
 function profile(){
-  local test="$1"
-  if [ "${test}" == "test" ]; then
+  local test_arg="$1"
+  if [ "${test_arg}" == "test" ]; then
     echo "test"
   else
     echo "dev"
@@ -49,21 +50,38 @@ function profile(){
 }
 
 function start(){
-  test="$1"
-  profile=$(profile ${test})
+  local test_arg="$1"
+  local profile_to_start=$(profile "${test_arg}")
 
   provider=$(detect_compose_provider)
   flags=$(generate_provider_specific_flags_for_start "$provider")
 
-  docker compose -f "${EXTRERNAL_DEPS_COMPOSE_FILE}" --profile "${profile}" up -d ${flags}
+  # If starting the 'test' profile, bring it down first for a clean slate.
+  if [ "$profile_to_start" == "test" ]; then
+    echo "Bringing down 'test' profile before starting..."
+    down "test"
+  fi
+
+  echo "Starting services with profile: '${profile_to_start}'..."
+  docker compose -f "${EXTRERNAL_DEPS_COMPOSE_FILE}" --profile "${profile_to_start}" up -d ${flags}
 }
 
 function stop(){
-  docker compose -f "${EXTRERNAL_DEPS_COMPOSE_FILE}" --profile dev --profile test stop
+  local test_arg="$1"
+  local profile_to_stop=$(profile "${test_arg}")
+
+  echo "Stopping services with profile: '${profile_to_stop}'..."
+  docker compose -f "${EXTRERNAL_DEPS_COMPOSE_FILE}" --profile "${profile_to_stop}" stop
 }
+
 function down(){
-  docker compose -f "${EXTRERNAL_DEPS_COMPOSE_FILE}" --profile dev --profile test down
+  local test_arg="$1"
+  local profile_to_down=$(profile "${test_arg}")
+
+  echo "Bringing down services and volumes with profile: '${profile_to_down}'..."
+  docker compose -f "${EXTRERNAL_DEPS_COMPOSE_FILE}" --profile "${profile_to_down}" down --volumes
 }
+
 function rebuild(){
   provider=$(detect_compose_provider)
 

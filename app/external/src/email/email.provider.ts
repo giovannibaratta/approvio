@@ -15,8 +15,11 @@ export class NodemailerEmailProvider implements EmailProviderExternal {
     if (isSome(config)) {
       this.transporter = nodemailer.createTransport({
         host: config.value.smtpEndpoint,
-        port: 587,
+        port: config.value.smtpPort,
         secure: true,
+        tls: {
+          rejectUnauthorized: !config.value.allowSelfSignedCertificates
+        },
         auth: {
           user: config.value.smtpUsername,
           pass: config.value.smtpPassword

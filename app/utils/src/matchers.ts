@@ -54,13 +54,13 @@ export function toBeLeft(received: unknown): jest.CustomMatcherResult {
   if (!isEither(received)) {
     return {
       pass: false,
-      message: () => `Expected ${received} to be an Either`
+      message: () => `Expected ${format(received)} to be an Either`
     }
   }
 
   return {
     pass: isLeft(received),
-    message: () => `Expected ${received} to be left`
+    message: () => `Expected ${format(received)} to be left`
   }
 }
 
@@ -68,14 +68,14 @@ export function toBeLeftOf(received: unknown, expected: unknown): jest.CustomMat
   if (!isEither(received)) {
     return {
       pass: false,
-      message: () => `Expected ${received} to be an Either`
+      message: () => `Expected ${format(received)} to be an Either`
     }
   }
 
   if (!isLeft(received)) {
     return {
       pass: false,
-      message: () => `Expected ${received} to be left`
+      message: () => `Expected ${format(received)} to be left`
     }
   }
 
@@ -91,20 +91,20 @@ export function toBeRight(received: unknown): jest.CustomMatcherResult {
   if (!isEither(received)) {
     return {
       pass: false,
-      message: () => `Expected ${received} to be an Either`
+      message: () => `Expected ${format(received)} to be an Either`
     }
   }
 
   if (!isRight(received)) {
     return {
       pass: false,
-      message: () => `Expected ${received} to be right`
+      message: () => `Expected ${format(received)} to be right`
     }
   }
 
   return {
     pass: true,
-    message: () => `Expected ${received} to be right`
+    message: () => `Expected ${format(received)}} to be right`
   }
 }
 
@@ -112,14 +112,14 @@ export function toBeRightOf(this: jest.MatcherContext, received: unknown, expect
   if (!isEither(received)) {
     return {
       pass: false,
-      message: () => `Expected ${received} to be an Either`
+      message: () => `Expected ${format(received)} to be an Either`
     }
   }
 
   if (!isRight(received)) {
     return {
       pass: false,
-      message: () => `Expected ${received} to be right`
+      message: () => `Expected ${format(received)} to be right`
     }
   }
 
@@ -128,7 +128,9 @@ export function toBeRightOf(this: jest.MatcherContext, received: unknown, expect
   return {
     pass,
     message: () =>
-      pass ? `Expected ${received} not to be right of ${expected}` : `Expected ${received} to be right of ${expected}`
+      pass
+        ? `Expected ${format(received)} not to be right of ${expected}`
+        : `Expected ${format(received)} to be right of ${expected}`
   }
 }
 
