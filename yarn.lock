@@ -135,6 +135,7 @@ __metadata:
     "@types/express": "npm:5.0.3"
     "@types/jest": "npm:29.5.14"
     "@types/node": "npm:22.15.31"
+    "@types/nodemailer": "npm:6.4.17"
     "@types/passport-jwt": "npm:4.0.1"
     "@types/supertest": "npm:6.0.3"
     "@typescript-eslint/eslint-plugin": "npm:8.34.0"
@@ -152,6 +153,7 @@ __metadata:
     express: "npm:4.21.2"
     fp-ts: "npm:2.16.10"
     jest: "npm:29.7.0"
+    nodemailer: "npm:7.0.4"
     passport: "npm:0.7.0"
     passport-jwt: "npm:4.0.1"
     prettier: "npm:3.5.3"
@@ -2034,6 +2036,15 @@ __metadata:
   dependencies:
     undici-types: "npm:~6.21.0"
   checksum: 10/999da153fae4687c416421850ebd3c94be75e0dae27ccad192d9a073c7e74baade987d68fc9f082a825c4672bd8a26867636663baad0b9e851baf7b36fb9fdd9
+  languageName: node
+  linkType: hard
+
+"@types/nodemailer@npm:6.4.17":
+  version: 6.4.17
+  resolution: "@types/nodemailer@npm:6.4.17"
+  dependencies:
+    "@types/node": "npm:*"
+  checksum: 10/bd090c9a81f15ee5e1e2123de1004593bacc24d385460dd56c51ec657d61dc1cfd4f44fc71baac060a1abcb487aef5027509e0afd646e7118d7a8a13a95bad9d
   languageName: node
   linkType: hard
 
@@ -7010,6 +7021,13 @@ __metadata:
   version: 2.0.19
   resolution: "node-releases@npm:2.0.19"
   checksum: 10/c2b33b4f0c40445aee56141f13ca692fa6805db88510e5bbb3baadb2da13e1293b738e638e15e4a8eb668bb9e97debb08e7a35409b477b5cc18f171d35a83045
+  languageName: node
+  linkType: hard
+
+"nodemailer@npm:7.0.4":
+  version: 7.0.4
+  resolution: "nodemailer@npm:7.0.4"
+  checksum: 10/b8074c83920fedacf776c1bfd655c65c1d85684d7201522798b6aa08a519c132c3ab8dd96659db5855302d0fdf0fb271d3b587dc4a0956a38929c8377f43165d
   languageName: node
   linkType: hard
 

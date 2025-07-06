@@ -1,5 +1,5 @@
 import {Module} from "@nestjs/common"
-import {Config} from "./config/config"
+import {ConfigProvider} from "./config/config-provider"
 import {
   DatabaseClient,
   UserDbRepository,
@@ -59,7 +59,7 @@ const repositories = [
 
 @Module({
   imports: [],
-  providers: [DatabaseClient, Config, ...repositories],
+  providers: [DatabaseClient, ConfigProvider, ...repositories],
   exports: [...repositories]
 })
 export class PersistenceModule {}

@@ -10,8 +10,21 @@ import {mapToDomainVersionedUser} from "@external/database/shared"
 import {isLeft} from "fp-ts/lib/Either"
 // eslint-disable-next-line node/no-unpublished-import
 import {Chance} from "chance"
+import {EmailProviderConfig} from "@external/config"
+import {Option} from "fp-ts/lib/Option"
+import * as O from "fp-ts/lib/Option"
 
 const chance = Chance()
+
+export class MockConfigProvider {
+  dbConnectionUrl: string
+  emailProviderConfig: Option<EmailProviderConfig>
+
+  constructor(dbConnectionUrl: string) {
+    this.dbConnectionUrl = dbConnectionUrl
+    this.emailProviderConfig = O.none
+  }
+}
 
 export async function createMockUserInDb(
   prisma: PrismaClient,

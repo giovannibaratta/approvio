@@ -15,7 +15,7 @@ import {
   WorkflowStatus
 } from "@domain"
 import {DatabaseClient} from "@external"
-import {Config} from "@external/config"
+import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
 import {JwtService} from "@nestjs/jwt"
@@ -23,7 +23,12 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient, Workflow as PrismaWorkflow, WorkflowTemplate as PrismaWorkflowTemplate} from "@prisma/client"
 import {randomUUID} from "crypto"
 import {cleanDatabase, prepareDatabase} from "../database"
-import {createDomainMockUserInDb, createMockWorkflowInDb, createMockWorkflowTemplateInDb} from "../shared/mock-data"
+import {
+  createDomainMockUserInDb,
+  createMockWorkflowInDb,
+  createMockWorkflowTemplateInDb,
+  MockConfigProvider
+} from "../shared/mock-data"
 import {get, post} from "../shared/requests"
 import {UserWithToken} from "../shared/types"
 
@@ -72,12 +77,18 @@ describe("Workflows API", () => {
   beforeEach(async () => {
     const isolatedDb = await prepareDatabase()
 
-    const module: TestingModule = await Test.createTestingModule({
-      imports: [AppModule]
-    })
-      .overrideProvider(Config)
-      .useValue({getDbConnectionUrl: () => isolatedDb})
-      .compile()
+    let module: TestingModule
+    try {
+      module = await Test.createTestingModule({
+        imports: [AppModule]
+      })
+        .overrideProvider(ConfigProvider)
+        .useValue(new MockConfigProvider(isolatedDb))
+        .compile()
+    } catch (error) {
+      console.error(error)
+      throw error
+    }
 
     app = module.createNestApplication()
 

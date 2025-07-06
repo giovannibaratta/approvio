@@ -10,7 +10,7 @@ import {AppModule} from "@app/app.module"
 import {EntityType, GROUPS_ENDPOINT_ROOT, Role} from "@controllers"
 import {DESCRIPTION_MAX_LENGTH, OrgRole} from "@domain"
 import {DatabaseClient} from "@external"
-import {Config} from "@external/config"
+import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
 import {JwtService} from "@nestjs/jwt"
@@ -18,7 +18,7 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient, Group as PrismaGroup, User as PrismaUser} from "@prisma/client"
 import {randomUUID} from "crypto"
 import {cleanDatabase, prepareDatabase} from "../database"
-import {createDomainMockUserInDb, createMockUserInDb} from "../shared/mock-data"
+import {createDomainMockUserInDb, createMockUserInDb, MockConfigProvider} from "../shared/mock-data"
 import {get, post, del} from "../shared/requests"
 import {UserWithToken} from "../shared/types"
 import {MAX_LIMIT} from "@services"
@@ -49,12 +49,18 @@ describe("Groups API", () => {
   beforeEach(async () => {
     const isolatedDb = await prepareDatabase()
 
-    const module: TestingModule = await Test.createTestingModule({
-      imports: [AppModule]
-    })
-      .overrideProvider(Config)
-      .useValue({getDbConnectionUrl: () => isolatedDb})
-      .compile()
+    let module: TestingModule
+    try {
+      module = await Test.createTestingModule({
+        imports: [AppModule]
+      })
+        .overrideProvider(ConfigProvider)
+        .useValue(new MockConfigProvider(isolatedDb))
+        .compile()
+    } catch (error) {
+      console.error(error)
+      throw error
+    }
 
     app = module.createNestApplication()
 
