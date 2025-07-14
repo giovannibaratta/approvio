@@ -5,7 +5,7 @@
 readonly DOCKER_PROVIDER="docker"
 readonly PODMAN_PROVIDER="podman"
 readonly DEFAULT_PROVIDER="${DOCKER_PROVIDER}"
-readonly EXTRERNAL_DEPS_COMPOSE_FILE="dev-external-deps/docker-compose.yaml"
+readonly EXTERNAL_DEPS_COMPOSE_FILE="dev-external-deps/docker-compose.yaml"
 
 function detect_compose_provider() {
   # This function assume that podman-compose wrapper is installed.
@@ -63,7 +63,7 @@ function start(){
   fi
 
   echo "Starting services with profile: '${profile_to_start}'..."
-  docker compose -f "${EXTRERNAL_DEPS_COMPOSE_FILE}" --profile "${profile_to_start}" up -d ${flags}
+  docker compose -f "${EXTERNAL_DEPS_COMPOSE_FILE}" --profile "${profile_to_start}" up -d ${flags}
 }
 
 function stop(){
@@ -71,7 +71,7 @@ function stop(){
   local profile_to_stop=$(profile "${test_arg}")
 
   echo "Stopping services with profile: '${profile_to_stop}'..."
-  docker compose -f "${EXTRERNAL_DEPS_COMPOSE_FILE}" --profile "${profile_to_stop}" stop
+  docker compose -f "${EXTERNAL_DEPS_COMPOSE_FILE}" --profile "${profile_to_stop}" stop
 }
 
 function down(){
@@ -79,7 +79,7 @@ function down(){
   local profile_to_down=$(profile "${test_arg}")
 
   echo "Bringing down services and volumes with profile: '${profile_to_down}'..."
-  docker compose -f "${EXTRERNAL_DEPS_COMPOSE_FILE}" --profile "${profile_to_down}" down --volumes
+  docker compose -f "${EXTERNAL_DEPS_COMPOSE_FILE}" --profile "${profile_to_down}" down --volumes
 }
 
 function rebuild(){
@@ -89,7 +89,7 @@ function rebuild(){
     stop
   fi
 
-  docker ${pre_flags} compose -f "${EXTRERNAL_DEPS_COMPOSE_FILE}" --profile dev up -d --build ${flags}
+  docker ${pre_flags} compose -f "${EXTERNAL_DEPS_COMPOSE_FILE}" --profile dev up -d --build ${flags}
 }
 
 function main(){
