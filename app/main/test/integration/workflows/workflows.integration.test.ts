@@ -2,7 +2,8 @@ import {
   CanVoteResponse as CanVoteResponseApi,
   Workflow as WorkflowApi,
   WorkflowCreate,
-  WorkflowVoteRequest as WorkflowVoteRequestApi
+  WorkflowVoteRequest as WorkflowVoteRequestApi,
+  ListWorkflows200Response
 } from "@approvio/api"
 import {AppModule} from "@app/app.module"
 import {WORKFLOWS_ENDPOINT_ROOT} from "@controllers"
@@ -656,6 +657,87 @@ describe("Workflows API", () => {
         // Expect: a 400 Bad Request status with INVALID_VOTE_TYPE error code
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("VOTE_INVALID_VOTE_TYPE")
+      })
+    })
+  })
+
+  describe("GET /workflows", () => {
+    beforeEach(async () => {
+      await createMockWorkflowInDb(prisma, {
+        name: "Terminal-Workflow",
+        description: "A workflow in terminal state",
+        status: WorkflowStatus.APPROVED
+      })
+
+      await createMockWorkflowInDb(prisma, {
+        name: "Non-Terminal-Workflow",
+        description: "A workflow in non-terminal state",
+        status: WorkflowStatus.EVALUATION_IN_PROGRESS
+      })
+    })
+
+    describe("good cases", () => {
+      it("should return all workflows without filter (as OrgAdmin)", async () => {
+        // When: a request is sent to list workflows without filter
+        const response = await get(app, endpoint).withToken(orgAdminUser.token).build()
+
+        // Expect: a 200 OK status and all workflows in the response
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        expect(body.data).toHaveLength(2)
+        expect(body.data.map(w => w.name)).toContain("Terminal-Workflow")
+        expect(body.data.map(w => w.name)).toContain("Non-Terminal-Workflow")
+      })
+
+      it("should return only non-terminal workflows when include-only-non-terminal-state filter is true (as OrgAdmin)", async () => {
+        // When: a request is sent to list workflows with include-only-non-terminal-state=true
+        const response = await get(app, `${endpoint}?include-only-non-terminal-state=true`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect: a 200 OK status and only non-terminal workflows in the response
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        expect(body.data).toHaveLength(1)
+        expect(body.data[0]?.name).toEqual("Non-Terminal-Workflow")
+        expect(body.data[0]?.status).toEqual(WorkflowStatus.EVALUATION_IN_PROGRESS)
+      })
+
+      it("should return all workflows when include-only-non-terminal-state filter is false (as OrgAdmin)", async () => {
+        // When: a request is sent to list workflows with include-only-non-terminal-state=false
+        const response = await get(app, `${endpoint}?include-only-non-terminal-state=false`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect: a 200 OK status and all workflows in the response
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        expect(body.data).toHaveLength(2)
+      })
+
+      it("should work with pagination and the non-terminal filter (as OrgAdmin)", async () => {
+        // When: a request is sent with pagination and the non-terminal filter
+        const response = await get(app, `${endpoint}?page=1&limit=10&include-only-non-terminal-state=true`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect: a 200 OK status and only non-terminal workflows with correct pagination
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        expect(body.data).toHaveLength(1)
+        expect(body.pagination.total).toEqual(1)
+        expect(body.pagination.page).toEqual(1)
+        expect(body.pagination.limit).toEqual(10)
+      })
+    })
+
+    describe("bad cases", () => {
+      it("should return 401 UNAUTHORIZED if no token is provided", async () => {
+        // When: a request is sent without a token
+        const response = await get(app, endpoint).build()
+
+        // Expect: a 401 Unauthorized status
+        expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
       })
     })
   })

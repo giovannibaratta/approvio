@@ -114,6 +114,9 @@ export interface ListWorkflowsRequest<TInclude extends WorkflowDecoratorSelector
     limit: number
   }
   include?: TInclude
+  filters?: {
+    includeOnlyNonTerminalState?: boolean
+  }
 }
 
 export interface ListWorkflowsResponse<TInclude extends WorkflowDecoratorSelector> {

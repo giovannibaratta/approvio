@@ -3,7 +3,8 @@ import {
   Workflow,
   WorkflowDecoratorSelector,
   WorkflowTemplateValidationError,
-  WorkflowValidationError
+  WorkflowValidationError,
+  WORKFLOW_TERMINAL_STATUSES
 } from "@domain"
 import {DatabaseClient} from "@external/database/database-client"
 import {mapWorkflowToDomain} from "@external/database/shared"
@@ -275,18 +276,27 @@ export class WorkflowDbRepository implements WorkflowRepository {
     return async request => {
       const {
         pagination: {page, limit},
-        include
+        include,
+        filters
       } = request
 
       const prismaInclude: Prisma.WorkflowInclude = include?.workflowTemplate ? {workflowTemplates: true} : {}
+
+      const where: Prisma.WorkflowWhereInput = {}
+      if (filters?.includeOnlyNonTerminalState) {
+        where.status = {
+          notIn: WORKFLOW_TERMINAL_STATUSES
+        }
+      }
 
       const [workflows, total] = await this.dbClient.$transaction([
         this.dbClient.workflow.findMany({
           skip: (page - 1) * limit,
           take: limit,
-          include: prismaInclude
+          include: prismaInclude,
+          where
         }),
-        this.dbClient.workflow.count()
+        this.dbClient.workflow.count({where})
       ])
 
       return {

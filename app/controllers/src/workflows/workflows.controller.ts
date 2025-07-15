@@ -91,16 +91,19 @@ export class WorkflowsController {
     @Query("page") page: string = "1",
     @Query("limit") limit: string = "20",
     @GetAuthenticatedUser() requestor: User,
-    @Query("include") include?: string
+    @Query("include") include?: string,
+    @Query("include-only-non-terminal-state") includeOnlyNonTerminalState?: string
   ): Promise<ListWorkflows200Response> {
     const pageNum = parseInt(page, 10) || 1
     const limitNum = parseInt(limit, 10) || 20
     const workflowDecoratorSelector = includeOptionsToWorkflowDecoratorSelector(include)
+    const includeOnlyNonTerminalStateBool = includeOnlyNonTerminalState === "true"
 
     const request = {
       pagination: {page: pageNum, limit: limitNum},
       include: workflowDecoratorSelector,
-      requestor
+      requestor,
+      filters: includeOnlyNonTerminalStateBool ? {includeOnlyNonTerminalState: true} : undefined
     }
 
     const eitherWorkflows = await pipe(

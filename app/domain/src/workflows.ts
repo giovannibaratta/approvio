@@ -118,7 +118,7 @@ export class WorkflowFactory {
   }
 }
 
-const WORKFLOW_TERMINAL_STATUSES = [WorkflowStatus.APPROVED, WorkflowStatus.CANCELED, WorkflowStatus.EXPIRED]
+export const WORKFLOW_TERMINAL_STATUSES = [WorkflowStatus.APPROVED, WorkflowStatus.CANCELED, WorkflowStatus.EXPIRED]
 
 export function canVoteOnWorkflow(
   workflow: DecoratedWorkflow<{workflowTemplate: true}>,
