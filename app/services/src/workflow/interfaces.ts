@@ -42,7 +42,7 @@ export interface WorkflowRepository {
    * @returns A TaskEither with the workflows or an error.
    */
   listWorkflows<TInclude extends WorkflowDecoratorSelector>(
-    request: ListWorkflowsRequest<TInclude>
+    request: ListWorkflowsRequestRepo<TInclude>
   ): TaskEither<WorkflowGetError, ListWorkflowsResponse<TInclude>>
 
   /**
@@ -108,16 +108,21 @@ export type ConcurrentSafeWorkflowUpdateData = Pick<Workflow, "recalculationRequ
 export type ConcurrentUnsafeWorkflowUpdateData = Partial<Pick<Workflow, "status" | "recalculationRequired">> &
   Pick<Workflow, "updatedAt">
 
-export interface ListWorkflowsRequest<TInclude extends WorkflowDecoratorSelector> extends RequestorAwareRequest {
-  pagination: {
+export interface ListWorkflowsRequestRepo<TInclude extends WorkflowDecoratorSelector> {
+  pagination?: {
     page: number
     limit: number
   }
   include?: TInclude
   filters?: {
     includeOnlyNonTerminalState?: boolean
+    templateId?: string
   }
 }
+
+export interface ListWorkflowsRequest<TInclude extends WorkflowDecoratorSelector>
+  extends RequestorAwareRequest,
+    ListWorkflowsRequestRepo<TInclude> {}
 
 export interface ListWorkflowsResponse<TInclude extends WorkflowDecoratorSelector> {
   workflows: ReadonlyArray<DecoratedWorkflow<TInclude>>

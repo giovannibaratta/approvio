@@ -96,17 +96,21 @@ model Workflow {
 }
 
 model WorkflowTemplate {
-  id                    String     @id @db.Uuid
-  name                  String     @unique(map: "workflow_templates_name_unique") @db.VarChar
-  description           String?    @db.VarChar
-  approvalRule          Json       @map("approval_rule")
-  actions               Json?
-  defaultExpiresInHours Int?       @map("default_expires_in_hours")
-  createdAt             DateTime   @map("created_at") @db.Timestamp(6)
-  updatedAt             DateTime   @map("updated_at") @db.Timestamp(6)
-  occ                   BigInt
-  workflows             Workflow[]
+  id                              String     @id @db.Uuid
+  name                            String     @db.VarChar
+  description                     String?    @db.VarChar
+  approvalRule                    Json       @map("approval_rule")
+  actions                         Json?
+  defaultExpiresInHours           Int?       @map("default_expires_in_hours")
+  createdAt                       DateTime   @map("created_at") @db.Timestamp(6)
+  updatedAt                       DateTime   @map("updated_at") @db.Timestamp(6)
+  status                          String     @db.VarChar(50)
+  version                         String     @db.VarChar(50)
+  allowVotingOnDeprecatedTemplate Boolean    @map("allow_voting_on_deprecated_template")
+  occ                             BigInt
+  workflows                       Workflow[]
 
+  @@unique([name, version], map: "workflow_templates_name_version_unique")
   @@map("workflow_templates")
 }
 

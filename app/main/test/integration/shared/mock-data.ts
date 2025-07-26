@@ -3,7 +3,8 @@ import {
   PrismaClient,
   User as PrismaUser,
   WorkflowTemplate as PrismaWorkflowTemplate,
-  Workflow as PrismaWorkflow
+  Workflow as PrismaWorkflow,
+  Group as PrismaGroup
 } from "@prisma/client"
 import {ApprovalRuleType, OrgRole, User, WorkflowStatus} from "@domain"
 import {mapToDomainVersionedUser} from "@external/database/shared"
@@ -80,6 +81,9 @@ export async function createMockWorkflowTemplateInDb(
     },
     actions: [],
     defaultExpiresInHours: chance.integer({min: 1, max: 168}), // 1 hour to 1 week
+    status: "ACTIVE",
+    allowVotingOnDeprecatedTemplate: true,
+    version: "latest",
     occ: 1,
     createdAt: dates.createdAt,
     updatedAt: dates.updatedAt
@@ -192,4 +196,26 @@ export function randomDateBefore(date: Date | string): Date {
 export function randomDateAfter(date: Date | string): Date {
   if (typeof date === "string") date = new Date(date)
   return new Date(date.getTime() + chance.integer({min: 1, max: 1000 * 60 * 60 * 24 * 30}))
+}
+
+export async function createMockGroupInDb(
+  prisma: PrismaClient,
+  overrides?: Partial<Omit<Prisma.GroupCreateInput, "id" | "occ">>
+): Promise<PrismaGroup> {
+  const randomGroup: Prisma.GroupCreateInput = {
+    id: chance.guid({version: 4}),
+    name: chance.company(),
+    description: chance.sentence(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    occ: 1
+  }
+
+  const data: Prisma.GroupCreateInput = {
+    ...randomGroup,
+    ...overrides
+  }
+
+  const group = await prisma.group.create({data})
+  return group
 }

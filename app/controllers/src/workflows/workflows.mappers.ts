@@ -140,7 +140,12 @@ export function generateErrorResponseForCreateWorkflow(
     case "workflow_template_name_empty":
     case "workflow_template_name_invalid_characters":
     case "workflow_template_name_too_long":
+    case "workflow_template_status_invalid":
     case "workflow_template_update_before_create":
+    case "workflow_template_version_invalid_format":
+    case "workflow_template_version_invalid_number":
+    case "workflow_template_version_too_long":
+    case "workflow_template_active_is_not_latest":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -189,9 +194,14 @@ export function generateErrorResponseForGetWorkflow(error: GetWorkflowLeft, cont
     case "workflow_template_name_empty":
     case "workflow_template_name_invalid_characters":
     case "workflow_template_name_too_long":
+    case "workflow_template_status_invalid":
     case "workflow_template_update_before_create":
+    case "workflow_template_version_invalid_format":
+    case "workflow_template_version_invalid_number":
+    case "workflow_template_version_too_long":
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
+    case "workflow_template_active_is_not_latest":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -229,9 +239,14 @@ export function generateErrorResponseForListWorkflows(error: ListWorkflowsLeft, 
     case "workflow_template_name_empty":
     case "workflow_template_name_invalid_characters":
     case "workflow_template_name_too_long":
+    case "workflow_template_status_invalid":
     case "workflow_template_update_before_create":
+    case "workflow_template_version_invalid_format":
+    case "workflow_template_version_invalid_number":
+    case "workflow_template_version_too_long":
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
+    case "workflow_template_active_is_not_latest":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -305,7 +320,77 @@ function mapCantVoteReasonToApi(response: CanVoteResponse): string | undefined {
       return "WORKFLOW_APPROVED"
     case "user_not_in_required_group":
       return "NOT_ELIGIBLE_TO_VOTE"
+    case "not_active":
+      return "WORKFLOW_TEMPLATE_NOT_ACTIVE"
   }
+}
+
+type VoteApiValidationError =
+  | "malformed_request"
+  | "vote_type_missing"
+  | "vote_type_malformed"
+  | "vote_type_invalid"
+  | "voted_for_groups_missing"
+  | "voted_for_groups_invalid"
+  | "reason_invalid"
+
+/** Validate the vote request structure and enum values according to OpenAPI spec */
+export function validateApiRequest(request: unknown): Either<VoteApiValidationError, WorkflowVoteRequestApi> {
+  if (typeof request !== "object" || request === null) {
+    return left("malformed_request")
+  }
+
+  const requestObj = request as Record<string, unknown>
+
+  if (!("voteType" in requestObj)) return left("vote_type_missing")
+
+  if (typeof requestObj.voteType !== "object" || requestObj.voteType === null) {
+    return left("vote_type_malformed")
+  }
+
+  const voteTypeObj = requestObj.voteType as Record<string, unknown>
+
+  if (!("type" in voteTypeObj) || typeof voteTypeObj.type !== "string") {
+    return left("vote_type_malformed")
+  }
+
+  // Validate vote type enum values
+  const validVoteTypes = ["APPROVE", "VETO", "WITHDRAW"] as const
+  if (!(validVoteTypes as readonly string[]).includes(voteTypeObj.type)) {
+    return left("vote_type_invalid")
+  }
+
+  const voteTypeString = voteTypeObj.type as "APPROVE" | "VETO" | "WITHDRAW"
+
+  // For APPROVE votes, votedForGroups is required
+  if (voteTypeString === "APPROVE") {
+    if (!("votedForGroups" in voteTypeObj)) {
+      return left("voted_for_groups_missing")
+    }
+
+    if (!Array.isArray(voteTypeObj.votedForGroups) || !voteTypeObj.votedForGroups.every(id => typeof id === "string")) {
+      return left("voted_for_groups_invalid")
+    }
+  }
+
+  // Validate optional reason field
+  if ("reason" in requestObj && requestObj.reason !== undefined && typeof requestObj.reason !== "string") {
+    return left("reason_invalid")
+  }
+
+  // Construct the validated API request
+  const voteType: WorkflowVoteRequestApi["voteType"] =
+    voteTypeString === "APPROVE"
+      ? {
+          type: "APPROVE",
+          votedForGroups: voteTypeObj.votedForGroups as string[]
+        }
+      : {type: voteTypeString}
+
+  return right({
+    voteType,
+    reason: "reason" in requestObj ? (requestObj.reason as string) : undefined
+  })
 }
 
 /** Map the API model to the domain model */
@@ -314,32 +399,30 @@ export function createCastVoteApiToServiceModel(data: {
   request: WorkflowVoteRequestApi
   requestor: User
 }): Either<VoteValidationError, CastVoteRequest> {
-  if (data.request.voteType.type === "APPROVE") {
-    return right({
-      workflowId: data.workflowId,
-      type: "APPROVE",
-      votedForGroups: data.request.voteType.votedForGroups,
-      reason: data.request.reason,
-      requestor: data.requestor
-    })
+  switch (data.request.voteType.type) {
+    case "APPROVE":
+      return right({
+        workflowId: data.workflowId,
+        type: "APPROVE",
+        votedForGroups: data.request.voteType.votedForGroups,
+        reason: data.request.reason,
+        requestor: data.requestor
+      })
+    case "VETO":
+      return right({
+        workflowId: data.workflowId,
+        type: "VETO",
+        reason: data.request.reason,
+        requestor: data.requestor
+      })
+    case "WITHDRAW":
+      return right({
+        workflowId: data.workflowId,
+        type: "WITHDRAW",
+        reason: data.request.reason,
+        requestor: data.requestor
+      })
   }
-  if (data.request.voteType.type === "VETO") {
-    return right({
-      workflowId: data.workflowId,
-      type: "VETO",
-      reason: data.request.reason,
-      requestor: data.requestor
-    })
-  }
-  if (data.request.voteType.type === "WITHDRAW") {
-    return right({
-      workflowId: data.workflowId,
-      type: "WITHDRAW",
-      reason: data.request.reason,
-      requestor: data.requestor
-    })
-  }
-  return left("vote_invalid_vote_type")
 }
 
 export function generateErrorResponseForCanVote(error: CanVoteError, context: string): HttpException {
@@ -388,9 +471,14 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "workflow_template_name_empty":
     case "workflow_template_name_invalid_characters":
     case "workflow_template_name_too_long":
+    case "workflow_template_status_invalid":
     case "workflow_template_update_before_create":
+    case "workflow_template_version_invalid_format":
+    case "workflow_template_version_invalid_number":
+    case "workflow_template_version_too_long":
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
+    case "workflow_template_active_is_not_latest":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -398,7 +486,10 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
   }
 }
 
-export function generateErrorResponseForCastVote(error: CastVoteServiceError, context: string): HttpException {
+export function generateErrorResponseForCastVote(
+  error: CastVoteServiceError | VoteApiValidationError,
+  context: string
+): HttpException {
   const errorCode = error.toUpperCase()
   switch (error) {
     case "workflow_not_found":
@@ -411,6 +502,14 @@ export function generateErrorResponseForCastVote(error: CastVoteServiceError, co
       return new InternalServerErrorException(
         generateErrorPayload("VOTE_CAST_FAILED", `${context}: An unexpected error occurred while casting vote`)
       )
+    case "malformed_request":
+    case "vote_type_missing":
+    case "vote_type_malformed":
+    case "vote_type_invalid":
+    case "voted_for_groups_missing":
+    case "voted_for_groups_invalid":
+    case "reason_invalid":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request format`))
     case "vote_invalid_group_id":
     case "vote_invalid_user_id":
     case "vote_invalid_vote_type":
@@ -447,9 +546,14 @@ export function generateErrorResponseForCastVote(error: CastVoteServiceError, co
     case "workflow_template_name_empty":
     case "workflow_template_name_invalid_characters":
     case "workflow_template_name_too_long":
+    case "workflow_template_status_invalid":
     case "workflow_template_update_before_create":
+    case "workflow_template_version_invalid_format":
+    case "workflow_template_version_invalid_number":
+    case "workflow_template_version_too_long":
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
+    case "workflow_template_active_is_not_latest":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
@@ -458,6 +562,7 @@ export function generateErrorResponseForCastVote(error: CastVoteServiceError, co
     case "workflow_cancelled":
     case "workflow_expired":
     case "user_not_in_required_group":
+    case "not_active":
       return new UnprocessableEntityException(generateErrorPayload(errorCode, `${context}: Cannot cast vote`))
   }
 }

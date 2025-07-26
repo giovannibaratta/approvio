@@ -3,7 +3,10 @@ import {
   WorkflowTemplateValidationError,
   WorkflowTemplateSummary,
   ApprovalRule,
-  ApprovalRuleType
+  ApprovalRuleType,
+  WorkflowAction,
+  getMostRecentVersionFromTuples,
+  WorkflowTemplateStatus
 } from "@domain"
 import {DatabaseClient} from "@external/database/database-client"
 import {mapToDomainVersionedWorkflowTemplate, mapWorkflowTemplateToDomain} from "@external/database/shared"
@@ -15,8 +18,6 @@ import {
   WorkflowTemplateGetError,
   WorkflowTemplateRepository,
   WorkflowTemplateUpdateError,
-  WorkflowTemplateDeleteError,
-  WorkflowTemplateUpdateDataRepo,
   ListWorkflowTemplatesRequest,
   ListWorkflowTemplatesResponse
 } from "@services"
@@ -25,12 +26,23 @@ import {UnknownError} from "@services/error"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
+import * as O from "fp-ts/Option"
+import {Option} from "fp-ts/Option"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 import {isPrismaUniqueConstraintError} from "./errors"
+import {Either} from "fp-ts/lib/Either"
 
-interface Identifier {
-  identifier: string
-  type: "id" | "name"
+type Identifier = IdIdentifier | NameVersionIdentifier
+
+interface IdIdentifier {
+  id: string
+  type: "id"
+}
+
+interface NameVersionIdentifier {
+  type: "name_version"
+  name: string
+  version: string
 }
 
 @Injectable()
@@ -59,52 +71,75 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
    * @returns A TaskEither with the versioned workflow template or an error if not found.
    */
   getWorkflowTemplateById(templateId: string): TaskEither<WorkflowTemplateGetError, Versioned<WorkflowTemplate>> {
-    const identifier: Identifier = {type: "id", identifier: templateId}
+    const identifier: Identifier = {type: "id", id: templateId}
     return this.getWorkflowTemplate(identifier)
   }
 
-  /**
-   * Gets a workflow template by its unique name.
-   * @param name The name of the workflow template.
-   * @returns A TaskEither with the versioned workflow template or an error if not found.
-   */
-  getWorkflowTemplateByName(name: string): TaskEither<WorkflowTemplateGetError, Versioned<WorkflowTemplate>> {
-    const identifier: Identifier = {type: "name", identifier: name}
+  getWorkflowTemplateByNameAndVersion(
+    templateName: string,
+    version: string
+  ): TaskEither<WorkflowTemplateGetError, Versioned<WorkflowTemplate>> {
+    const identifier: Identifier = {type: "name_version", name: templateName, version: version.toString()}
     return this.getWorkflowTemplate(identifier)
   }
 
-  updateWorkflowTemplate(
-    templateId: string,
-    data: WorkflowTemplateUpdateDataRepo,
-    occCheck?: bigint
-  ): TaskEither<WorkflowTemplateUpdateError, Versioned<WorkflowTemplate>> {
+  getMostRecentNonActiveWorkflowTemplateByName(
+    templateName: string
+  ): TaskEither<WorkflowTemplateGetError, Option<Versioned<WorkflowTemplate>>> {
     return pipe(
-      {templateId, data, occCheck},
-      TE.right,
-      TE.map(data => ({
-        ...data,
-        data: {...data.data, approvalRule: mapOptionalApprovalRuleToJsonb(data.data.approvalRule)}
-      })),
-      TE.chainW(this.updateWorkflowTemplateTask()),
-      TE.chainEitherKW(mapToDomainVersionedWorkflowTemplate)
+      TE.tryCatch(
+        async () => {
+          const templates = await this.dbClient.workflowTemplate.findMany({
+            where: {
+              name: templateName,
+              status: {not: WorkflowTemplateStatus.ACTIVE}
+            },
+            select: {
+              id: true,
+              version: true
+            }
+          })
+          return templates
+        },
+        error => {
+          Logger.error(
+            `Error while retrieving non-active workflow templates by name ${templateName}. Unknown error`,
+            error
+          )
+          return "unknown_error" as const
+        }
+      ),
+      TE.chainW(templates => {
+        if (templates.length === 0) {
+          return TE.right(O.none)
+        }
+
+        const mostRecentResult = getMostRecentVersionFromTuples(templates)
+        if (mostRecentResult._tag === "Left") {
+          Logger.error(`Error finding most recent version for template ${templateName}: ${mostRecentResult.left}`)
+          return TE.left("unknown_error" as const)
+        }
+
+        return TE.right(O.some(mostRecentResult.right.id))
+      }),
+      TE.chainW(
+        O.fold(
+          () => TE.right(O.none),
+          templateId => pipe(this.getWorkflowTemplateById(templateId), TE.map(O.some))
+        )
+      )
     )
   }
 
-  deleteWorkflowTemplate(templateId: string): TaskEither<WorkflowTemplateDeleteError, void> {
-    return TE.tryCatchK(
-      async () => {
-        await this.dbClient.workflowTemplate.delete({
-          where: {id: templateId}
-        })
-      },
-      error => {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
-          return "workflow_template_not_found"
-        }
-        Logger.error(`Error while deleting workflow template ${templateId}. Unknown error`, error)
-        return "unknown_error"
-      }
-    )()
+  updateWorkflowTemplate(
+    template: Versioned<WorkflowTemplate>
+  ): TaskEither<WorkflowTemplateUpdateError, Versioned<WorkflowTemplate>> {
+    return pipe(
+      template,
+      TE.right,
+      TE.chainW(template => this.updateWorkflowTemplateTask()({data: template, occCheck: template.occ})),
+      TE.chainEitherKW(mapToDomainVersionedWorkflowTemplate)
+    )
   }
 
   listWorkflowTemplates(
@@ -130,6 +165,7 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
         const workflowTemplateSummaries: ReadonlyArray<WorkflowTemplateSummary> = domainTemplates.map(template => ({
           id: template.id,
           name: template.name,
+          version: template.version,
           description: template.description,
           createdAt: template.createdAt,
           updatedAt: template.updatedAt
@@ -151,26 +187,87 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
     )()
   }
 
-  private updateWorkflowTemplateTask(): (data: {
-    templateId: string
-    data: Omit<Prisma.WorkflowTemplateUpdateInput, "id" | "occ">
+  atomicUpdateAndCreate(data: {
+    existingTemplate: Versioned<WorkflowTemplate>
+    newTemplate: WorkflowTemplate
+  }): TaskEither<WorkflowTemplateUpdateError, WorkflowTemplate> {
+    return pipe(
+      data,
+      TE.right,
+      TE.chainW(this.atomicUpdateAndCreateTask()),
+      TE.chainEitherKW(mapWorkflowTemplateToDomain)
+    )
+  }
+
+  private atomicUpdateAndCreateTask(): (data: {
+    existingTemplate: Versioned<WorkflowTemplate>
+    newTemplate: WorkflowTemplate
+  }) => TaskEither<WorkflowTemplateUpdateError | CreateWorkflowTemplateRepoError, PrismaWorkflowTemplate> {
+    return data =>
+      pipe(
+        TE.tryCatchK(
+          () => this.atomicUpdateAndCreateTaskNoErrorHandling(data),
+          error => {
+            if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+              return "concurrency_error" as const
+            }
+            Logger.error(`Error while deprecating old template and creating new one: ${error}`, error)
+            return "unknown_error" as const
+          }
+        )(),
+        TE.chainEitherKW(result => result)
+      )
+  }
+
+  private atomicUpdateAndCreateTaskNoErrorHandling(data: {
+    existingTemplate: Versioned<WorkflowTemplate>
+    newTemplate: WorkflowTemplate
+  }): Promise<Either<WorkflowTemplateUpdateError | CreateWorkflowTemplateRepoError, PrismaWorkflowTemplate>> {
+    const {existingTemplate, newTemplate} = data
+
+    return this.dbClient.$transaction(async tx => {
+      return pipe(
+        TE.Do,
+        TE.bindW("updatedTemplate", () =>
+          this.updateWorkflowTemplateTask(tx)({data: existingTemplate, occCheck: existingTemplate.occ})
+        ),
+        TE.bindW("createdTemplate", () => this.persistWorkflowTemplate(tx)(newTemplate)),
+        TE.map(({createdTemplate}) => createdTemplate)
+      )()
+    })
+  }
+
+  private updateWorkflowTemplateTask(
+    optionalClient?: Prisma.TransactionClient
+  ): (request: {
+    data: WorkflowTemplate
     occCheck?: bigint
   }) => TaskEither<WorkflowTemplateUpdateError, PrismaWorkflowTemplate> {
-    return ({templateId, data, occCheck}) =>
+    const client = optionalClient ?? this.dbClient
+
+    return ({data, occCheck}) =>
       TE.tryCatchK(
         () => {
-          const whereClause = occCheck !== undefined ? {id: templateId, occ: occCheck} : {id: templateId}
+          const prismaData = mapWorkflowTemplateToPrisma(data)
+          const whereClause: Prisma.WorkflowTemplateWhereUniqueInput =
+            occCheck !== undefined ? {id: data.id, occ: occCheck} : {id: data.id}
 
-          return this.dbClient.workflowTemplate.update({
+          return client.workflowTemplate.update({
             where: whereClause,
-            data
+            data: {
+              ...prismaData,
+              occ: {increment: 1}
+            }
           })
         },
         error => {
           if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
             return occCheck !== undefined ? "concurrency_error" : "workflow_template_not_found"
           }
-          Logger.error(`Error while updating workflow template ${templateId}. Unknown error`, error)
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+            return "concurrency_error" as const
+          }
+          Logger.error(`Error while updating workflow template ${data.id}. Unknown error`, error)
           return "unknown_error"
         }
       )()
@@ -193,13 +290,16 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
   ) => TaskEither<WorkflowTemplateGetError, PrismaWorkflowTemplate | null> {
     return identifier =>
       TE.tryCatchK(
-        () =>
-          this.dbClient.workflowTemplate.findUnique({
-            where: {
-              id: identifier.type === "id" ? identifier.identifier : undefined,
-              name: identifier.type === "name" ? identifier.identifier : undefined
-            }
-          }),
+        () => {
+          const where: Prisma.WorkflowTemplateWhereUniqueInput =
+            identifier.type === "id"
+              ? {
+                  id: identifier.id
+                }
+              : {name_version: {name: identifier.name, version: identifier.version}}
+
+          return this.dbClient.workflowTemplate.findUnique({where})
+        },
         error => {
           Logger.error(`Error while retrieving workflow template by ${identifier.type}. Unknown error`, error)
           return "unknown_error" as const
@@ -207,37 +307,36 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
       )()
   }
 
-  private persistWorkflowTemplate(): (
-    data: WorkflowTemplate
-  ) => TaskEither<CreateWorkflowTemplateRepoError, PrismaWorkflowTemplate> {
+  private persistWorkflowTemplate(
+    optionalClient?: Prisma.TransactionClient
+  ): (data: WorkflowTemplate) => TaskEither<CreateWorkflowTemplateRepoError, PrismaWorkflowTemplate> {
+    const client = optionalClient ?? this.dbClient
     return data =>
       TE.tryCatchK(
         () =>
-          this.dbClient.workflowTemplate.create({
+          client.workflowTemplate.create({
             data: {
               id: data.id,
               name: data.name,
+              version: data.version.toString(),
               description: data.description,
               approvalRule: mapApprovalRuleToJsonb(data.approvalRule),
               actions: data.actions,
               defaultExpiresInHours: data.defaultExpiresInHours,
+              status: data.status,
+              allowVotingOnDeprecatedTemplate: data.allowVotingOnDeprecatedTemplate,
               createdAt: data.createdAt,
               updatedAt: data.updatedAt,
               occ: POSTGRES_BIGINT_LOWER_BOUND
             }
           }),
         error => {
-          if (isPrismaUniqueConstraintError(error, ["name"])) return "workflow_template_already_exists"
+          if (isPrismaUniqueConstraintError(error, ["name", "version"])) return "workflow_template_already_exists"
           Logger.error(`Error creating workflow template: ${error}`, error)
           return "unknown_error"
         }
       )()
   }
-}
-
-function mapOptionalApprovalRuleToJsonb(approvalRule?: ApprovalRule): Prisma.InputJsonValue | undefined {
-  if (!approvalRule) return undefined
-  return mapApprovalRuleToJsonb(approvalRule)
 }
 
 function mapApprovalRuleToJsonb(approvalRule: ApprovalRule): Prisma.InputJsonValue {
@@ -258,5 +357,32 @@ function mapApprovalRuleToJsonb(approvalRule: ApprovalRule): Prisma.InputJsonVal
         groupId: approvalRule.groupId,
         minCount: approvalRule.minCount
       }
+  }
+}
+
+function mapActionsToJsonb(actions: WorkflowAction[]): Prisma.InputJsonArray {
+  return actions.map(action => mapActionToJsonb(action))
+}
+
+function mapActionToJsonb(action: WorkflowAction): Prisma.InputJsonValue {
+  return {
+    type: action.type,
+    recipients: [...action.recipients]
+  }
+}
+
+function mapWorkflowTemplateToPrisma(data: WorkflowTemplate): Omit<Prisma.WorkflowTemplateUpdateInput, "occ"> {
+  return {
+    id: data.id,
+    name: data.name,
+    version: data.version.toString(),
+    description: data.description ?? null,
+    approvalRule: mapApprovalRuleToJsonb(data.approvalRule),
+    actions: mapActionsToJsonb([...data.actions]),
+    defaultExpiresInHours: data.defaultExpiresInHours ?? null,
+    status: data.status,
+    allowVotingOnDeprecatedTemplate: data.allowVotingOnDeprecatedTemplate,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt
   }
 }

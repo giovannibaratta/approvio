@@ -656,7 +656,7 @@ describe("Workflows API", () => {
 
         // Expect: a 400 Bad Request status with INVALID_VOTE_TYPE error code
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("VOTE_INVALID_VOTE_TYPE")
+        expect(response.body).toHaveErrorCode("VOTE_TYPE_INVALID")
       })
     })
   })

@@ -23,6 +23,7 @@ import {
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
   InternalServerErrorException,
   Logger,
   NotFoundException
@@ -73,12 +74,11 @@ function mapWorkflowActionToDomain(action: WorkflowActionApi): Either<WorkflowTe
     case WorkflowActionType.EMAIL:
       return right({type: WorkflowActionType.EMAIL, recipients: action.recipients})
   }
-
   return left("workflow_action_type_invalid")
 }
 
 export function updateWorkflowTemplateApiToServiceModel(data: {
-  templateId: string
+  templateName: string
   workflowTemplateData: WorkflowTemplateUpdateApi
   requestor: User
 }): Either<ApprovalRuleValidationError | WorkflowTemplateValidationError, UpdateWorkflowTemplateRequest> {
@@ -90,20 +90,30 @@ export function updateWorkflowTemplateApiToServiceModel(data: {
     approvalRule = eitherApprovalRule.right
   }
 
-  const actions = mapActionsToDomain(data.workflowTemplateData.actions)
-  if (isLeft(actions)) return actions
+  const workflowTemplateData: UpdateWorkflowTemplateRequest["workflowTemplateData"] = {}
 
-  const workflowTemplateData: UpdateWorkflowTemplateRequest["workflowTemplateData"] = {
-    name: data.workflowTemplateData.name,
-    description: data.workflowTemplateData.description,
-    approvalRule,
-    actions: actions.right,
-    defaultExpiresInHours: data.workflowTemplateData.defaultExpiresInHours
+  if (data.workflowTemplateData.description !== undefined) {
+    workflowTemplateData.description = data.workflowTemplateData.description
+  }
+
+  if (approvalRule !== undefined) {
+    workflowTemplateData.approvalRule = approvalRule
+  }
+
+  if (data.workflowTemplateData.actions !== undefined) {
+    const actions = mapActionsToDomain(data.workflowTemplateData.actions)
+    if (isLeft(actions)) return actions
+    workflowTemplateData.actions = actions.right
+  }
+
+  if (data.workflowTemplateData.defaultExpiresInHours !== undefined) {
+    workflowTemplateData.defaultExpiresInHours = data.workflowTemplateData.defaultExpiresInHours
   }
 
   return right({
-    templateId: data.templateId,
+    templateName: data.templateName,
     workflowTemplateData,
+    cancelWorkflows: data.workflowTemplateData.cancelWorkflows,
     requestor: data.requestor
   })
 }
@@ -116,13 +126,16 @@ export function mapWorkflowTemplateToApi(workflowTemplate: WorkflowTemplate): Wo
   return {
     id: workflowTemplate.id,
     name: workflowTemplate.name,
+    version: workflowTemplate.version.toString(),
     description: workflowTemplate.description,
     approvalRule: mapApprovalRuleDataToApi(workflowTemplate.approvalRule),
     metadata: {}, // Metadata are currently not supported
     actions: workflowTemplate.actions.map(mapWorkflowActionToApi),
     defaultExpiresInHours: workflowTemplate.defaultExpiresInHours,
     createdAt: workflowTemplate.createdAt.toISOString(),
-    updatedAt: workflowTemplate.updatedAt.toISOString()
+    updatedAt: workflowTemplate.updatedAt.toISOString(),
+    status: workflowTemplate.status,
+    allowVotingOnDeprecatedTemplate: workflowTemplate.allowVotingOnDeprecatedTemplate
   }
 }
 
@@ -141,6 +154,7 @@ function mapWorkflowTemplateSummaryToApi(workflowTemplateSummary: WorkflowTempla
   return {
     id: workflowTemplateSummary.id,
     name: workflowTemplateSummary.name,
+    version: workflowTemplateSummary.version.toString(),
     description: workflowTemplateSummary.description,
     createdAt: workflowTemplateSummary.createdAt.toISOString(),
     updatedAt: workflowTemplateSummary.updatedAt.toISOString()
@@ -159,7 +173,10 @@ function mapWorkflowActionToApi(action: WorkflowAction): WorkflowActionApi {
 
 type CreateWorkflowTemplateLeft = ExtractLeftFromMethod<typeof WorkflowTemplateService, "createWorkflowTemplate">
 
-export function generateErrorResponseForCreateWorkflowTemplate(error: CreateWorkflowTemplateLeft, context: string) {
+export function generateErrorResponseForCreateWorkflowTemplate(
+  error: CreateWorkflowTemplateLeft,
+  context: string
+): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (error) {
@@ -178,12 +195,17 @@ export function generateErrorResponseForCreateWorkflowTemplate(error: CreateWork
     case "workflow_template_name_empty":
     case "workflow_template_name_invalid_characters":
     case "workflow_template_name_too_long":
+    case "workflow_template_status_invalid":
+    case "workflow_template_version_invalid_format":
+    case "workflow_template_version_invalid_number":
+    case "workflow_template_version_too_long":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
     case "workflow_template_already_exists":
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: Workflow template with this name already exists`)
       )
     case "workflow_template_update_before_create":
+    case "workflow_template_active_is_not_latest":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Found internal data inconsistency`)
@@ -195,7 +217,10 @@ export function generateErrorResponseForCreateWorkflowTemplate(error: CreateWork
 
 type GetWorkflowTemplateLeft = ExtractLeftFromMethod<typeof WorkflowTemplateService, "getWorkflowTemplateById">
 
-export function generateErrorResponseForGetWorkflowTemplate(error: GetWorkflowTemplateLeft, context: string) {
+export function generateErrorResponseForGetWorkflowTemplate(
+  error: GetWorkflowTemplateLeft,
+  context: string
+): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (error) {
@@ -203,16 +228,40 @@ export function generateErrorResponseForGetWorkflowTemplate(error: GetWorkflowTe
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow template not found`))
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
-    default:
+    case "approval_rule_and_rule_must_have_rules":
+    case "approval_rule_group_rule_invalid_group_id":
+    case "approval_rule_group_rule_invalid_min_count":
+    case "approval_rule_invalid_rule_type":
+    case "approval_rule_malformed_content":
+    case "approval_rule_max_rule_nesting_exceeded":
+    case "approval_rule_or_rule_must_have_rules":
+    case "workflow_action_recipients_empty":
+    case "workflow_action_recipients_invalid_email":
+    case "workflow_action_type_invalid":
+    case "workflow_template_description_too_long":
+    case "workflow_template_expires_in_hours_invalid":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_name_too_long":
+    case "workflow_template_status_invalid":
+    case "workflow_template_update_before_create":
+    case "workflow_template_version_invalid_format":
+    case "workflow_template_version_invalid_number":
+    case "workflow_template_version_too_long":
+    case "workflow_template_active_is_not_latest":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
-        generateErrorPayload(errorCode, `${context}: Invalid workflow template data`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
   }
 }
 
 type UpdateWorkflowTemplateLeft = ExtractLeftFromMethod<typeof WorkflowTemplateService, "updateWorkflowTemplate">
 
-export function generateErrorResponseForUpdateWorkflowTemplate(error: UpdateWorkflowTemplateLeft, context: string) {
+export function generateErrorResponseForUpdateWorkflowTemplate(
+  error: UpdateWorkflowTemplateLeft,
+  context: string
+): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (error) {
@@ -237,25 +286,85 @@ export function generateErrorResponseForUpdateWorkflowTemplate(error: UpdateWork
     case "workflow_template_name_empty":
     case "workflow_template_name_invalid_characters":
     case "workflow_template_name_too_long":
+    case "workflow_template_status_invalid":
+    case "workflow_template_version_invalid_format":
+    case "workflow_template_version_invalid_number":
+    case "workflow_template_version_too_long":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
     case "workflow_template_update_before_create":
+    case "workflow_template_active_is_not_latest":
+    case "workflow_template_most_recent_non_active_invalid_status":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Found internal data inconsistency`)
+      )
+    case "workflow_template_already_exists":
+      return new ConflictException(
+        generateErrorPayload(errorCode, `${context}: Workflow template with this name already exists`)
+      )
+    case "workflow_template_not_active":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Workflow template is not active`))
+    case "workflow_template_not_pending_deprecation":
+      return new BadRequestException(
+        generateErrorPayload(errorCode, `${context}: Workflow template is not pending deprecation`)
       )
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
   }
 }
 
-type DeleteWorkflowTemplateLeft = ExtractLeftFromMethod<typeof WorkflowTemplateService, "deleteWorkflowTemplate">
+type DeleteWorkflowTemplateLeft = ExtractLeftFromMethod<typeof WorkflowTemplateService, "deprecateWorkflowTemplate">
 
-export function generateErrorResponseForDeleteWorkflowTemplate(error: DeleteWorkflowTemplateLeft, context: string) {
+export function generateErrorResponseForDeprecateWorkflowTemplate(
+  error: DeleteWorkflowTemplateLeft,
+  context: string
+): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (error) {
     case "workflow_template_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow template not found`))
+    case "workflow_template_not_active":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Workflow template is not active`))
+    case "workflow_template_not_pending_deprecation":
+      return new BadRequestException(
+        generateErrorPayload(errorCode, `${context}: Workflow template is not pending deprecation`)
+      )
+    case "workflow_template_already_exists":
+      return new ConflictException(
+        generateErrorPayload(errorCode, `${context}: Workflow template with this name already exists`)
+      )
+    case "concurrency_error":
+      return new ConflictException(
+        generateErrorPayload(errorCode, `${context}: Workflow template has been updated concurrently`)
+      )
+    case "approval_rule_and_rule_must_have_rules":
+    case "approval_rule_group_rule_invalid_group_id":
+    case "approval_rule_group_rule_invalid_min_count":
+    case "approval_rule_invalid_rule_type":
+    case "approval_rule_malformed_content":
+    case "approval_rule_max_rule_nesting_exceeded":
+    case "approval_rule_or_rule_must_have_rules":
+    case "workflow_action_recipients_empty":
+    case "workflow_action_recipients_invalid_email":
+    case "workflow_action_type_invalid":
+    case "workflow_template_description_too_long":
+    case "workflow_template_expires_in_hours_invalid":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_name_too_long":
+    case "workflow_template_status_invalid":
+    case "workflow_template_update_before_create":
+    case "workflow_template_version_invalid_format":
+    case "workflow_template_version_invalid_number":
+    case "workflow_template_version_too_long":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
+    case "workflow_template_active_is_not_latest":
+    case "workflow_template_most_recent_non_active_invalid_status":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
+      )
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
   }
@@ -263,7 +372,10 @@ export function generateErrorResponseForDeleteWorkflowTemplate(error: DeleteWork
 
 type ListWorkflowTemplatesLeft = ExtractLeftFromMethod<typeof WorkflowTemplateService, "listWorkflowTemplates">
 
-export function generateErrorResponseForListWorkflowTemplates(error: ListWorkflowTemplatesLeft, context: string) {
+export function generateErrorResponseForListWorkflowTemplates(
+  error: ListWorkflowTemplatesLeft,
+  context: string
+): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (error) {
@@ -282,10 +394,16 @@ export function generateErrorResponseForListWorkflowTemplates(error: ListWorkflo
     case "workflow_template_name_empty":
     case "workflow_template_name_invalid_characters":
     case "workflow_template_name_too_long":
+    case "workflow_template_status_invalid":
     case "workflow_template_update_before_create":
+    case "workflow_template_version_invalid_format":
+    case "workflow_template_version_invalid_number":
+    case "workflow_template_version_too_long":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
+    case "workflow_template_active_is_not_latest":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: Found internal data inconsistency`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
       )
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))

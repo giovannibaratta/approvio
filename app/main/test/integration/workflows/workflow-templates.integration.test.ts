@@ -17,7 +17,7 @@ import {createDomainMockUserInDb, createMockWorkflowTemplateInDb, MockConfigProv
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
 import {ApprovalRuleType, OrgRole} from "@domain"
-import {get, post, put, del} from "../shared/requests"
+import {get, post, put} from "../shared/requests"
 import {UserWithToken} from "../shared/types"
 import "expect-more-jest"
 import "@utils/matchers"
@@ -525,7 +525,6 @@ describe("Workflow Templates API", () => {
     })
 
     const updatePayload: WorkflowTemplateUpdate = {
-      name: "Updated Template Name",
       description: "Updated description",
       defaultExpiresInHours: 48
     }
@@ -533,7 +532,7 @@ describe("Workflow Templates API", () => {
     describe("good cases", () => {
       it("should update workflow template and return updated data (as OrgAdmin)", async () => {
         // When
-        const response = await put(app, `${endpoint}/${createdTemplate.id}`)
+        const response = await put(app, `${endpoint}/${createdTemplate.name}`)
           .withToken(orgAdminUser.token)
           .build()
           .send(updatePayload)
@@ -541,28 +540,37 @@ describe("Workflow Templates API", () => {
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.OK)
         const body: WorkflowTemplateApi = response.body
-        expect(body.id).toEqual(createdTemplate.id)
-        expect(body.name).toEqual(updatePayload.name)
+        expect(body.id).not.toEqual(createdTemplate.id)
+        expect(body.name).toEqual(createdTemplate.name) // Name should not change
         expect(body.description).toEqual(updatePayload.description)
         expect(body.defaultExpiresInHours).toEqual(updatePayload.defaultExpiresInHours)
 
         // Validate side effects in DB
-        const updatedTemplate = await prisma.workflowTemplate.findUnique({
+        const originalTemplate = await prisma.workflowTemplate.findUnique({
           where: {id: createdTemplate.id}
         })
-        expect(updatedTemplate?.name).toEqual(updatePayload.name)
-        expect(updatedTemplate?.description).toEqual(updatePayload.description)
-        expect(updatedTemplate?.defaultExpiresInHours).toEqual(updatePayload.defaultExpiresInHours)
+        expect(originalTemplate?.name).toEqual(createdTemplate.name) // Name should not change
+        expect(originalTemplate?.description).toEqual(createdTemplate.description) // Original description should remain
+        expect(originalTemplate?.status).toEqual("PENDING_DEPRECATION") // Original template should be deprecated
+        expect(originalTemplate?.version).toEqual("1") // Original template should now have version 1
+
+        const newTemplate = await prisma.workflowTemplate.findUnique({
+          where: {id: body.id}
+        })
+        expect(newTemplate?.description).toEqual(updatePayload.description)
+        expect(newTemplate?.defaultExpiresInHours).toEqual(updatePayload.defaultExpiresInHours)
+        expect(newTemplate?.status).toEqual("ACTIVE") // New template should be active
+        expect(newTemplate?.version).toEqual("latest") // New template should be latest
       })
 
       it("should update only provided fields", async () => {
         // Given
         const partialUpdate: WorkflowTemplateUpdate = {
-          name: "Partially Updated Name"
+          description: "Partially Updated Description"
         }
 
         // When
-        const response = await put(app, `${endpoint}/${createdTemplate.id}`)
+        const response = await put(app, `${endpoint}/${createdTemplate.name}`)
           .withToken(orgAdminUser.token)
           .build()
           .send(partialUpdate)
@@ -570,15 +578,50 @@ describe("Workflow Templates API", () => {
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.OK)
         const body: WorkflowTemplateApi = response.body
-        expect(body.name).toEqual(partialUpdate.name)
-        expect(body.description).toEqual(createdTemplate.description) // Unchanged
+        expect(body.name).toEqual(createdTemplate.name) // Unchanged
+        expect(body.description).toEqual(partialUpdate.description)
+      })
+
+      it("should create new version and deprecate old version on update", async () => {
+        // Given
+        const updatePayload: WorkflowTemplateUpdate = {
+          description: "New version description"
+        }
+
+        // When
+        const response = await put(app, `${endpoint}/${createdTemplate.name}`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(updatePayload)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: WorkflowTemplateApi = response.body
+        expect(body.id).not.toEqual(createdTemplate.id) // New template should have different ID
+        expect(body.name).toEqual(createdTemplate.name) // Same name
+        expect(body.description).toEqual(updatePayload.description)
+        expect(body.version).toEqual("latest") // New version should be latest
+
+        // Validate that both templates exist in DB
+        const allTemplates = await prisma.workflowTemplate.findMany({
+          where: {name: createdTemplate.name}
+        })
+        expect(allTemplates).toHaveLength(2)
+
+        // Original template should be deprecated
+        const originalTemplate = allTemplates.find(t => t.id === createdTemplate.id)
+        expect(originalTemplate?.status).toEqual("PENDING_DEPRECATION")
+
+        // New template should be active
+        const newTemplate = allTemplates.find(t => t.id === body.id)
+        expect(newTemplate?.status).toEqual("ACTIVE")
       })
     })
 
     describe("bad cases", () => {
       it("should return 401 UNAUTHORIZED if no token is provided", async () => {
         // When
-        const response = await put(app, `${endpoint}/${createdTemplate.id}`).build().send(updatePayload)
+        const response = await put(app, `${endpoint}/${createdTemplate.name}`).build().send(updatePayload)
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
@@ -599,70 +642,21 @@ describe("Workflow Templates API", () => {
         expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_NOT_FOUND")
       })
 
-      it("should return 400 BAD_REQUEST (WORKFLOW_TEMPLATE_NAME_EMPTY) for empty name in update", async () => {
+      it("should return 400 BAD_REQUEST (WORKFLOW_TEMPLATE_DESCRIPTION_TOO_LONG) for very long description in update", async () => {
         // Given
         const invalidUpdate: WorkflowTemplateUpdate = {
-          name: "  " // Whitespace only
+          description: "a".repeat(2049) // Too long
         }
 
         // When
-        const response = await put(app, `${endpoint}/${createdTemplate.id}`)
+        const response = await put(app, `${endpoint}/${createdTemplate.name}`)
           .withToken(orgAdminUser.token)
           .build()
           .send(invalidUpdate)
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_NAME_EMPTY")
-      })
-    })
-  })
-
-  describe("DELETE /workflow-templates/:templateId", () => {
-    let createdTemplate: PrismaWorkflowTemplate
-
-    beforeEach(async () => {
-      createdTemplate = await createMockWorkflowTemplateInDb(prisma, {
-        name: "Delete Template",
-        description: "Template to be deleted"
-      })
-    })
-
-    describe("good cases", () => {
-      it("should delete workflow template and return 204 (as OrgAdmin)", async () => {
-        // When
-        const response = await del(app, `${endpoint}/${createdTemplate.id}`).withToken(orgAdminUser.token).build()
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
-
-        // Validate side effects in DB
-        const deletedTemplate = await prisma.workflowTemplate.findUnique({
-          where: {id: createdTemplate.id}
-        })
-        expect(deletedTemplate).toBeNull()
-      })
-    })
-
-    describe("bad cases", () => {
-      it("should return 401 UNAUTHORIZED if no token is provided", async () => {
-        // When
-        const response = await del(app, `${endpoint}/${createdTemplate.id}`).build()
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
-      })
-
-      it("should return 404 NOT_FOUND for non-existent template", async () => {
-        // Given
-        const nonExistentId = randomUUID()
-
-        // When
-        const response = await del(app, `${endpoint}/${nonExistentId}`).withToken(orgAdminUser.token).build()
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
-        expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_NOT_FOUND")
+        expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_DESCRIPTION_TOO_LONG")
       })
     })
   })

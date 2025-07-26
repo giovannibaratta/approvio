@@ -1,7 +1,12 @@
 import {GetAuthenticatedUser} from "@app/auth"
 import {User} from "@domain"
-import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
-import {WorkflowTemplateService, CreateWorkflowTemplateRequest, UpdateWorkflowTemplateRequest} from "@services"
+import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
+import {
+  WorkflowTemplateService,
+  CreateWorkflowTemplateRequest,
+  UpdateWorkflowTemplateRequest,
+  DeprecateWorkflowTemplateRequest
+} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -12,7 +17,7 @@ import {
   generateErrorResponseForCreateWorkflowTemplate,
   generateErrorResponseForGetWorkflowTemplate,
   generateErrorResponseForUpdateWorkflowTemplate,
-  generateErrorResponseForDeleteWorkflowTemplate,
+  generateErrorResponseForDeprecateWorkflowTemplate,
   generateErrorResponseForListWorkflowTemplates,
   mapWorkflowTemplateToApi,
   mapWorkflowTemplateListToApi
@@ -21,7 +26,8 @@ import {
   WorkflowTemplateCreate,
   WorkflowTemplate as WorkflowTemplateApi,
   ListWorkflowTemplates200Response,
-  WorkflowTemplateUpdate
+  WorkflowTemplateUpdate,
+  WorkflowTemplateDeprecate
 } from "@approvio/api"
 
 export const WORKFLOW_TEMPLATES_ENDPOINT_ROOT = "workflow-templates"
@@ -112,9 +118,9 @@ export class WorkflowTemplatesController {
     return eitherWorkflowTemplate.right
   }
 
-  @Put(":templateId")
+  @Put(":templateName")
   async updateWorkflowTemplate(
-    @Param("templateId") templateId: string,
+    @Param("templateName") templateName: string,
     @Body() request: WorkflowTemplateUpdate,
     @GetAuthenticatedUser() requestor: User
   ): Promise<WorkflowTemplateApi> {
@@ -122,34 +128,48 @@ export class WorkflowTemplatesController {
       this.workflowTemplateService.updateWorkflowTemplate(req)
 
     const eitherWorkflowTemplate = await pipe(
-      {templateId, workflowTemplateData: request, requestor},
+      {templateName, workflowTemplateData: request, requestor},
       updateWorkflowTemplateApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceUpdateWorkflowTemplate),
-      TE.map(versioned => mapWorkflowTemplateToApi(versioned))
+      TE.map(mapWorkflowTemplateToApi)
     )()
 
-    if (isLeft(eitherWorkflowTemplate)) {
+    if (isLeft(eitherWorkflowTemplate))
       throw generateErrorResponseForUpdateWorkflowTemplate(
         eitherWorkflowTemplate.left,
         "Failed to update workflow template"
       )
-    }
 
     return eitherWorkflowTemplate.right
   }
 
-  @Delete(":templateId")
-  @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteWorkflowTemplate(@Param("templateId") templateId: string): Promise<void> {
+  @Post(":templateName/deprecate")
+  @HttpCode(HttpStatus.OK)
+  async deprecateWorkflowTemplate(
+    @Param("templateName") templateName: string,
+    @Body() body: WorkflowTemplateDeprecate,
+    @GetAuthenticatedUser() requestor: User
+  ): Promise<WorkflowTemplateApi> {
+    const request: DeprecateWorkflowTemplateRequest = {
+      templateName,
+      cancelWorkflows: body?.cancelWorkflows || false,
+      requestor
+    }
+
     const eitherResult = await pipe(
-      templateId,
+      request,
       TE.right,
-      TE.chainW(id => this.workflowTemplateService.deleteWorkflowTemplate(id))
+      TE.chainW(req => this.workflowTemplateService.deprecateWorkflowTemplate(req)),
+      TE.map(mapWorkflowTemplateToApi)
     )()
 
-    if (isLeft(eitherResult)) {
-      throw generateErrorResponseForDeleteWorkflowTemplate(eitherResult.left, "Failed to delete workflow template")
-    }
+    if (isLeft(eitherResult))
+      throw generateErrorResponseForDeprecateWorkflowTemplate(
+        eitherResult.left,
+        "Failed to deprecate workflow template"
+      )
+
+    return eitherResult.right
   }
 }

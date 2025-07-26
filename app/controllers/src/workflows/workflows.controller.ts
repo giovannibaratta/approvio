@@ -17,14 +17,10 @@ import {
   createCastVoteApiToServiceModel,
   generateErrorResponseForCanVote,
   generateErrorResponseForCastVote,
-  validateWorkflowCreateRequest
+  validateWorkflowCreateRequest,
+  validateApiRequest
 } from "./workflows.mappers"
-import {
-  Workflow as WorkflowApi,
-  CanVoteResponse as CanVoteResponseApi,
-  WorkflowVoteRequest as WorkflowVoteRequestApi,
-  ListWorkflows200Response
-} from "@approvio/api"
+import {Workflow as WorkflowApi, CanVoteResponse as CanVoteResponseApi, ListWorkflows200Response} from "@approvio/api"
 
 export const WORKFLOWS_ENDPOINT_ROOT = "workflows"
 
@@ -148,16 +144,18 @@ export class WorkflowsController {
   @HttpCode(HttpStatus.ACCEPTED)
   async castVote(
     @Param("workflowId") workflowId: string,
-    @Body() request: WorkflowVoteRequestApi,
+    @Body() request: unknown,
     @GetAuthenticatedUser() requestor: User
   ): Promise<void> {
     const serviceCastVote = (req: CastVoteRequest) => this.voteService.castVote(req)
 
     const eitherVote = await pipe(
-      {workflowId, request, requestor},
-      createCastVoteApiToServiceModel,
-      TE.fromEither,
-      TE.chainW(serviceCastVote)
+      TE.Do,
+      TE.bindW("validatedRequest", () => TE.fromEither(validateApiRequest(request))),
+      TE.bindW("serviceRequest", ({validatedRequest}) =>
+        TE.fromEither(createCastVoteApiToServiceModel({workflowId, request: validatedRequest, requestor}))
+      ),
+      TE.chainW(({serviceRequest}) => serviceCastVote(serviceRequest))
     )()
 
     if (isLeft(eitherVote))

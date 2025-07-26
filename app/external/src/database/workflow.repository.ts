@@ -274,11 +274,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
     pagination: {total: number; page: number; limit: number}
   }> {
     return async request => {
-      const {
-        pagination: {page, limit},
-        include,
-        filters
-      } = request
+      const {pagination, include, filters} = request
 
       const prismaInclude: Prisma.WorkflowInclude = include?.workflowTemplate ? {workflowTemplates: true} : {}
 
@@ -291,8 +287,8 @@ export class WorkflowDbRepository implements WorkflowRepository {
 
       const [workflows, total] = await this.dbClient.$transaction([
         this.dbClient.workflow.findMany({
-          skip: (page - 1) * limit,
-          take: limit,
+          skip: pagination ? (pagination.page - 1) * pagination.limit : undefined,
+          take: pagination ? pagination.limit : undefined,
           include: prismaInclude,
           where
         }),
@@ -301,7 +297,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
 
       return {
         workflows: workflows as PrismaDecoratedWorkflow<PrismaSelectors>[],
-        pagination: {total, page, limit}
+        pagination: {total, page: pagination ? pagination.page : 1, limit: pagination ? pagination.limit : total}
       }
     }
   }

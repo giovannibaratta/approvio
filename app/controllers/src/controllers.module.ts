@@ -6,6 +6,7 @@ import {AuthModule} from "@app/auth"
 import {DebugController} from "./debug"
 import {WorkflowsController} from "./workflows"
 import {WorkflowTemplatesController} from "./workflow-templates"
+import {WorkflowTemplateInternalController} from "./internal"
 
 // List of environments where debug endpoints should be enabled
 const DEBUG_ENVIRONMENTS = ["development", "test"]
@@ -17,6 +18,8 @@ if (DEBUG_ENVIRONMENTS.includes(process.env.ENV as string)) {
   conditionalControllers.push(DebugController)
 }
 
+const internalControllers = [WorkflowTemplateInternalController]
+
 @Module({
   imports: [ServiceModule, AuthModule],
   controllers: [
@@ -24,7 +27,8 @@ if (DEBUG_ENVIRONMENTS.includes(process.env.ENV as string)) {
     UsersController,
     WorkflowsController,
     WorkflowTemplatesController,
-    ...conditionalControllers
+    ...conditionalControllers,
+    ...internalControllers
   ],
   providers: [],
   exports: []

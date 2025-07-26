@@ -4,34 +4,56 @@ import {Either, isLeft, left, right} from "fp-ts/lib/Either"
 import {ApprovalRule, ApprovalRuleFactory, ApprovalRuleValidationError} from "./approval-rules"
 import {WorkflowAction, WorkflowActionValidationError, validateWorkflowActions} from "./workflow-actions"
 import {HumanGroupMembershipRole, MembershipWithGroupRef} from "@domain"
-import {PrefixUnion} from "@utils"
+import {PrefixUnion, getStringAsEnum} from "@utils"
 
 export const WORKFLOW_TEMPLATE_NAME_MAX_LENGTH = 512
 export const WORKFLOW_TEMPLATE_DESCRIPTION_MAX_LENGTH = 2048
 export const MAX_EXPIRES_IN_HOURS = 8760 // 1 year
+
+/**
+ * Workflow template lifecycle status.
+ */
+export enum WorkflowTemplateStatus {
+  /**
+   * Template can be referenced to create new workflows.
+   */
+  ACTIVE = "ACTIVE",
+  /**
+   * Template has been deprecated but there are still active workflows.
+   * Cannot be referenced for new workflows. This intermediate status is used internally
+   * to handle the deprecation asynchronously if the user requested the cancellation of the active
+   * workflows.
+   */
+  PENDING_DEPRECATION = "PENDING_DEPRECATION",
+  /**
+   * Template cannot be referenced for new workflows. Voting may still be allowed
+   * depending on user settings when deprecation was requested.
+   */
+  DEPRECATED = "DEPRECATED"
+}
 
 export type WorkflowTemplate = Readonly<WorkflowTemplateData & WorkflowTemplateLogic>
 
 interface WorkflowTemplateData {
   id: string
   name: string
+  version: number | "latest"
   description?: string
   approvalRule: ApprovalRule
   actions: ReadonlyArray<WorkflowAction>
   defaultExpiresInHours?: number
+  status: WorkflowTemplateStatus
+  allowVotingOnDeprecatedTemplate: boolean
   createdAt: Date
   updatedAt: Date
 }
 
-export interface WorkflowTemplateSummary {
-  id: string
-  name: string
-  description?: string
-  createdAt: Date
-  updatedAt: Date
-}
+export type WorkflowTemplateSummary = Pick<
+  WorkflowTemplateData,
+  "id" | "name" | "version" | "description" | "createdAt" | "updatedAt"
+>
 
-export type WorkflowTemplateCantVoteReason = "user_not_in_required_group"
+export type WorkflowTemplateCantVoteReason = "user_not_in_required_group" | "not_active"
 
 interface WorkflowTemplateLogic {
   canVote(memberships: ReadonlyArray<MembershipWithGroupRef>): Either<WorkflowTemplateCantVoteReason, true>
@@ -49,6 +71,20 @@ type UnprefixedWorkflowTemplateValidationError =
   | "description_too_long"
   | "update_before_create"
   | "expires_in_hours_invalid"
+  | "status_invalid"
+  | "version_invalid_number"
+  | "version_too_long"
+  | "version_invalid_format"
+  | "active_is_not_latest"
+
+export type WorkflowTemplateDeprecationError =
+  | "workflow_template_not_active"
+  | "workflow_template_not_pending_deprecation"
+
+type UserModifiableAttributes = Pick<
+  WorkflowTemplate,
+  "actions" | "approvalRule" | "defaultExpiresInHours" | "description"
+>
 
 export class WorkflowTemplateFactory {
   /**
@@ -58,13 +94,8 @@ export class WorkflowTemplateFactory {
    * @returns Either a validation error or void if valid.
    */
   static validateAttributes(
-    partialData: Partial<Parameters<typeof WorkflowTemplateFactory.createWorkflowTemplate>[0]>
-  ): Either<WorkflowTemplateValidationError, void> {
-    if (partialData.name !== undefined) {
-      const nameValidation = validateWorkflowTemplateName(partialData.name)
-      if (isLeft(nameValidation)) return nameValidation
-    }
-
+    partialData: Partial<UserModifiableAttributes>
+  ): Either<WorkflowTemplateValidationError, Partial<UserModifiableAttributes>> {
     if (partialData.description !== undefined) {
       const descriptionValidation = validateWorkflowTemplateDescription(partialData.description)
       if (isLeft(descriptionValidation)) return descriptionValidation
@@ -85,7 +116,12 @@ export class WorkflowTemplateFactory {
       if (isLeft(expiresValidation)) return expiresValidation
     }
 
-    return right(undefined)
+    return right({
+      ...(partialData.description && {description: partialData.description}),
+      ...(partialData.approvalRule && {approvalRule: partialData.approvalRule}),
+      ...(partialData.actions && {actions: partialData.actions}),
+      ...(partialData.defaultExpiresInHours && {defaultExpiresInHours: partialData.defaultExpiresInHours})
+    })
   }
 
   /**
@@ -106,13 +142,19 @@ export class WorkflowTemplateFactory {
    * @returns Either a validation error or the newly created WorkflowTemplate object.
    */
   static newWorkflowTemplate(
-    data: Omit<Parameters<typeof WorkflowTemplateFactory.validate>[0], "id" | "createdAt" | "updatedAt">
+    data: Omit<
+      Parameters<typeof WorkflowTemplateFactory.validate>[0],
+      "id" | "createdAt" | "updatedAt" | "deletedAt" | "status" | "allowVotingOnDeprecatedTemplate" | "version"
+    >
   ): Either<WorkflowTemplateValidationError, WorkflowTemplate> {
     const uuid = randomUUID()
     const now = new Date()
     const template = {
       ...data,
       id: uuid,
+      version: "latest" as const,
+      status: WorkflowTemplateStatus.ACTIVE,
+      allowVotingOnDeprecatedTemplate: true,
       createdAt: now,
       updatedAt: now
     }
@@ -126,12 +168,14 @@ export class WorkflowTemplateFactory {
    * @returns Either a validation error or the validated WorkflowTemplate object.
    */
   private static createWorkflowTemplate(
-    data: Omit<WorkflowTemplateData, "approvalRule" | "actions"> & {
+    data: Omit<WorkflowTemplateData, "approvalRule" | "actions" | "status"> & {
       approvalRule: unknown
       actions: unknown
+      status: string
     }
   ): Either<WorkflowTemplateValidationError, WorkflowTemplate> {
     const nameValidation = validateWorkflowTemplateName(data.name)
+    const versionValidation = validateWorkflowTemplateVersion(data.version)
     const descriptionValidation = data.description
       ? validateWorkflowTemplateDescription(data.description)
       : right(undefined)
@@ -139,21 +183,30 @@ export class WorkflowTemplateFactory {
     const actionsValidation = validateWorkflowActions(data.actions)
     const expiresValidation =
       data.defaultExpiresInHours !== undefined ? validateExpiresInHours(data.defaultExpiresInHours) : right(undefined)
+    const statusValidation = validateWorkflowTemplateStatus(data.status)
 
     if (isLeft(nameValidation)) return nameValidation
+    if (isLeft(versionValidation)) return versionValidation
     if (isLeft(descriptionValidation)) return descriptionValidation
     if (isLeft(ruleValidation)) return ruleValidation
     if (isLeft(actionsValidation)) return actionsValidation
     if (isLeft(expiresValidation)) return expiresValidation
+    if (isLeft(statusValidation)) return statusValidation
     if (data.createdAt > data.updatedAt) return left("workflow_template_update_before_create")
+    if (statusValidation.right === WorkflowTemplateStatus.ACTIVE && versionValidation.right !== "latest")
+      return left("workflow_template_active_is_not_latest")
+    if (versionValidation.right === "latest" && statusValidation.right !== WorkflowTemplateStatus.ACTIVE)
+      return left("workflow_template_active_is_not_latest")
 
-    const workflowTemplateData = {
+    const workflowTemplateData: WorkflowTemplateData = {
       ...data,
       name: nameValidation.right,
+      version: versionValidation.right,
       description: descriptionValidation.right,
       approvalRule: ruleValidation.right,
       actions: actionsValidation.right,
-      defaultExpiresInHours: expiresValidation.right
+      defaultExpiresInHours: expiresValidation.right,
+      status: statusValidation.right
     }
 
     return right({
@@ -189,6 +242,33 @@ function validateExpiresInHours(hours: unknown): Either<WorkflowTemplateValidati
   return right(hours)
 }
 
+function validateWorkflowTemplateStatus(
+  status: string
+): Either<WorkflowTemplateValidationError, WorkflowTemplateStatus> {
+  const enumStatus = getStringAsEnum(status, WorkflowTemplateStatus)
+  if (enumStatus === undefined) return left("workflow_template_status_invalid")
+  return right(enumStatus)
+}
+
+function validateWorkflowTemplateVersion(
+  version: string | number
+): Either<WorkflowTemplateValidationError, WorkflowTemplate["version"]> {
+  if (version === "latest") return E.right("latest" as const)
+
+  // Version can be either a string representing a number, or a number itself. Other cases are not allowed
+  let value: number
+
+  if (typeof version === "string")
+    try {
+      value = parseInt(version)
+    } catch {
+      return E.left("workflow_template_version_invalid_format")
+    }
+  else value = version
+
+  return value < 0 ? E.left("workflow_template_version_invalid_number") : E.right(value)
+}
+
 const ROLES_ALLOWED_TO_VOTE: HumanGroupMembershipRole[] = [
   HumanGroupMembershipRole.APPROVER,
   HumanGroupMembershipRole.ADMIN,
@@ -199,6 +279,10 @@ function canVote(
   workflowTemplate: WorkflowTemplateData,
   memberships: ReadonlyArray<MembershipWithGroupRef>
 ): Either<WorkflowTemplateCantVoteReason, true> {
+  if (workflowTemplate.status !== WorkflowTemplateStatus.ACTIVE && !workflowTemplate.allowVotingOnDeprecatedTemplate) {
+    return left("not_active")
+  }
+
   const votingGroups = workflowTemplate.approvalRule.getVotingGroupIds()
 
   // Is it possible to vote if at least one of the membership group is listed in approval rules
@@ -210,4 +294,74 @@ function canVote(
   if (!hasValidMembership) return left("user_not_in_required_group")
 
   return right(true)
+}
+
+/**
+ * Marks a template for deprecation by transitioning it to PENDING_DEPRECATION status.
+ * @param template The active workflow template to deprecate
+ * @param newVersion The new version number for the deprecated template.
+ *                   Required because only one template can have "latest" version (ACTIVE status),
+ *                   so the deprecated template must be assigned a specific version number.
+ * @param cancelWorkflows Whether to cancel active workflows using this template.
+ *                        If false, voting remains allowed on deprecated template.
+ * @returns The updated template with PENDING_DEPRECATION status or validation errors
+ */
+export function markTemplateForDeprecation(
+  template: WorkflowTemplate,
+  newVersion: number,
+  cancelWorkflows: boolean
+): Either<WorkflowTemplateValidationError | WorkflowTemplateDeprecationError, WorkflowTemplate> {
+  if (template.status !== WorkflowTemplateStatus.ACTIVE) return E.left("workflow_template_not_active")
+
+  const updatedTemplate: WorkflowTemplate = {
+    ...template,
+    version: newVersion,
+    status: WorkflowTemplateStatus.PENDING_DEPRECATION,
+    allowVotingOnDeprecatedTemplate: !cancelWorkflows,
+    updatedAt: new Date()
+  }
+
+  return WorkflowTemplateFactory.validate(updatedTemplate)
+}
+
+export function markTemplateAsDeprecated(
+  template: WorkflowTemplate
+): Either<WorkflowTemplateValidationError | WorkflowTemplateDeprecationError, WorkflowTemplate> {
+  if (template.status !== WorkflowTemplateStatus.PENDING_DEPRECATION) {
+    return left("workflow_template_not_pending_deprecation")
+  }
+
+  const updatedTemplate = {
+    ...template,
+    status: WorkflowTemplateStatus.DEPRECATED,
+    updatedAt: new Date()
+  }
+
+  return WorkflowTemplateFactory.validate(updatedTemplate)
+}
+
+export function getMostRecentVersionFromTuples<T>(
+  tuples: ReadonlyArray<T & {version: string}>
+): Either<"empty_array" | "invalid_version", T> {
+  if (tuples.length === 0) return left("empty_array")
+
+  try {
+    const mostRecent = tuples.reduce((mostRecent, current) => {
+      if (current.version === "latest") return current
+      if (mostRecent.version === "latest") return mostRecent
+
+      const currentVersionNum = parseInt(current.version, 10)
+      const mostRecentVersionNum = parseInt(mostRecent.version, 10)
+
+      if (isNaN(currentVersionNum) || isNaN(mostRecentVersionNum)) {
+        throw new Error("Invalid version format")
+      }
+
+      return currentVersionNum > mostRecentVersionNum ? current : mostRecent
+    })
+
+    return right(mostRecent)
+  } catch {
+    return left("invalid_version")
+  }
 }

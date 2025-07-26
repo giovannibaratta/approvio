@@ -190,15 +190,20 @@ export function mapWorkflowTemplateToDomain(
   const eitherActions = prismaJsonToJson(dbObject.actions)
   if (E.isLeft(eitherActions)) return eitherActions
 
+  const version: number | "latest" = dbObject.version === "latest" ? "latest" : parseInt(dbObject.version, 10)
+
   const object = {
     createdAt: dbObject.createdAt,
     description: dbObject.description ?? undefined,
     id: dbObject.id,
     name: dbObject.name,
+    version,
     updatedAt: dbObject.updatedAt,
     approvalRule: eitherApprovalRule.right,
     actions: eitherActions.right,
     defaultExpiresInHours: dbObject.defaultExpiresInHours ?? undefined,
+    status: dbObject.status,
+    allowVotingOnDeprecatedTemplate: dbObject.allowVotingOnDeprecatedTemplate,
     occ: dbObject.occ
   }
   return pipe(object, WorkflowTemplateFactory.validate)

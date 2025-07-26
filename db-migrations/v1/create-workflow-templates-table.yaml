@@ -44,11 +44,26 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
+                  name: status
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: varchar(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: allow_voting_on_deprecated_template
+                  type: boolean
+                  constraints:
+                    nullable: false
+              - column:
                   name: occ
                   type: bigint
                   constraints:
                     nullable: false
         - addUniqueConstraint:
             tableName: workflow_templates
-            columnNames: name
-            constraintName: workflow_templates_name_unique
+            columnNames: name, version
+            constraintName: workflow_templates_name_version_unique
