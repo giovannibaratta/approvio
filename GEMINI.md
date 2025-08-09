@@ -226,7 +226,9 @@ If you need to understand which modification have been done to a file, you can u
 </constraints>
 
 ---
+
 ## description: Yarn scripts available in the project
+
 ---
 
 ## Description
