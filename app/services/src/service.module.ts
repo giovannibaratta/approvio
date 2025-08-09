@@ -8,6 +8,8 @@ import {WorkflowService} from "./workflow"
 import {WorkflowTemplateService} from "./workflow-template"
 import {VoteService} from "./vote"
 import {EmailService} from "./email/email.service"
+import {AuthService, PkceService} from "./auth"
+import {ConfigModule} from "@external/config.module"
 
 const services = [
   GroupService,
@@ -17,12 +19,15 @@ const services = [
   WorkflowTemplateService,
   DebugService,
   VoteService,
-  EmailService
+  EmailService,
+  AuthService
 ]
 
+const internalServices = [PkceService]
+
 @Module({
-  imports: [PersistenceModule, ThirdPartyModule],
-  providers: [...services],
+  imports: [PersistenceModule, ThirdPartyModule, ConfigModule],
+  providers: [...internalServices, ...services],
   exports: [...services]
 })
 export class ServiceModule {}

@@ -30,4 +30,5 @@ export interface ConfigProviderInterface {
   dbConnectionUrl: string
   emailProviderConfig: Option<EmailProviderConfig>
   oidcConfig: OidcProviderConfig
+  jwtConfig: JwtConfig
 }

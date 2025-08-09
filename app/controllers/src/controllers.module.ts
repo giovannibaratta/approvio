@@ -7,6 +7,7 @@ import {DebugController} from "./debug"
 import {WorkflowsController} from "./workflows"
 import {WorkflowTemplatesController} from "./workflow-templates"
 import {WorkflowTemplateInternalController} from "./internal"
+import {AuthController} from "./auth"
 
 // List of environments where debug endpoints should be enabled
 const DEBUG_ENVIRONMENTS = ["development", "test"]
@@ -27,6 +28,7 @@ const internalControllers = [WorkflowTemplateInternalController]
     UsersController,
     WorkflowsController,
     WorkflowTemplatesController,
+    AuthController,
     ...conditionalControllers,
     ...internalControllers
   ],

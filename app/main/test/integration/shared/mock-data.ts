@@ -11,7 +11,13 @@ import {mapToDomainVersionedUser} from "@external/database/shared"
 import {isLeft} from "fp-ts/lib/Either"
 // eslint-disable-next-line node/no-unpublished-import
 import {Chance} from "chance"
-import {ConfigProvider, ConfigProviderInterface, EmailProviderConfig, OidcProviderConfig} from "@external/config"
+import {
+  ConfigProvider,
+  ConfigProviderInterface,
+  EmailProviderConfig,
+  JwtConfig,
+  OidcProviderConfig
+} from "@external/config"
 import {Option} from "fp-ts/lib/Option"
 import * as O from "fp-ts/lib/Option"
 
@@ -21,6 +27,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
   dbConnectionUrl: string
   emailProviderConfig: Option<EmailProviderConfig>
   oidcConfig: OidcProviderConfig
+  jwtConfig: JwtConfig
 
   private constructor(
     originalProvider?: ConfigProvider,
@@ -35,6 +42,12 @@ export class MockConfigProvider implements ConfigProviderInterface {
         clientSecret: "integration-test-client-secret",
         redirectUri: "http://localhost:3000/auth/callback",
         allowInsecure: true
+      },
+      jwtConfig: {
+        secret: "test-jwt-secret-for-integration-tests",
+        trustedIssuers: ["idp.test.localhost"],
+        issuer: "idp.test.localhost",
+        audience: "approvio.test.localhost"
       }
     }
 
@@ -42,6 +55,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
     this.emailProviderConfig =
       mocks.emailProviderConfig !== undefined ? O.some(mocks.emailProviderConfig) : provider.emailProviderConfig
     this.oidcConfig = provider.oidcConfig
+    this.jwtConfig = provider.jwtConfig
   }
 
   static fromDbConnectionUrl(dbConnectionUrl: string): MockConfigProvider {
