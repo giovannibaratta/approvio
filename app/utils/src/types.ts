@@ -92,3 +92,8 @@ export function isDecoratedWith<
 ): entity is DecorableEntity<TBase, TAllowed, TSelected & Record<TKey, true>> {
   return options !== undefined && options[key] === true && hasOwnProperty(entity, key)
 }
+
+/** Type guard to validate that an array is non-empty */
+export function isNonEmptyArray<T>(arr: T[]): arr is [T, ...T[]] {
+  return arr.length > 0
+}
