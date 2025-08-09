@@ -12,19 +12,7 @@ export class OidcClient implements OidcProvider {
   constructor(private readonly oidcBootstrapService: OidcBootstrapService) {}
 
   getAuthorizationEndpoint(): TaskEither<OidcError, string> {
-    return TE.tryCatch(
-      async () => {
-        const configuration = this.oidcBootstrapService.getConfiguration()
-        const authorizationEndpoint = configuration.authorization_endpoint
-
-        Logger.log("Retrieved authorization endpoint from discovery", {endpoint: authorizationEndpoint})
-        return authorizationEndpoint
-      },
-      error => {
-        Logger.error("Failed to get authorization endpoint", error)
-        return "oidc_invalid_provider_response" as const
-      }
-    )
+    return TE.right(this.oidcBootstrapService.getConfiguration().authorization_endpoint)
   }
 
   exchangeCodeForTokens(request: OidcTokenRequest): TaskEither<OidcError, OidcTokenResponse> {

@@ -146,3 +146,16 @@ model WorkflowActionsEmailTask {
 
   @@map("workflow_actions_email_task")
 }
+
+model PkceSession {
+  state        String    @id @db.VarChar(255)
+  codeVerifier String    @map("code_verifier") @db.VarChar(255)
+  redirectUri  String    @map("redirect_uri") @db.VarChar(500)
+  oidcState    String    @map("oidc_state") @db.VarChar(255)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  expiresAt    DateTime  @map("expires_at") @db.Timestamp(6)
+  usedAt       DateTime? @map("used_at") @db.Timestamp(6)
+  occ          BigInt
+
+  @@map("pkce_sessions")
+}

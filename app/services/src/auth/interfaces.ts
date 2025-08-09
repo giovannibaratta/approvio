@@ -1,6 +1,48 @@
 import {PrefixUnion} from "@utils/types"
 import {TaskEither} from "fp-ts/lib/TaskEither"
 
+export type PkceError = PrefixUnion<
+  "pkce",
+  | "code_generation_failed"
+  | "code_storage_failed"
+  | "code_verification_failed"
+  | "code_not_found"
+  | "code_expired"
+  | "code_already_used"
+  | "code_concurrency_conflict"
+>
+
+export interface PkceChallenge {
+  codeVerifier: string
+  codeChallenge: string
+  state: string
+}
+
+export interface PkceData {
+  codeVerifier: string
+  redirectUri: string
+  oidcState: string
+}
+
+export interface PkceStorageData extends PkceData {
+  expiresAt: Date
+}
+
+export interface PkceSessionData extends PkceStorageData {
+  state: string
+  occ: bigint
+  usedAt?: Date
+}
+
+export const PKCE_SESSION_REPOSITORY_TOKEN = "PKCE_SESSION_REPOSITORY_TOKEN"
+
+export interface PkceSessionRepository {
+  storePkceData(state: string, data: PkceStorageData): TaskEither<PkceError, void>
+  retrievePkceData(state: string): TaskEither<PkceError, PkceSessionData>
+  deletePkceData(state: string): TaskEither<PkceError, void>
+  updatePkceSession(sessionData: PkceSessionData, occCheck: bigint): TaskEither<PkceError, void>
+}
+
 export type OidcError = PrefixUnion<
   "oidc",
   | "token_exchange_failed"

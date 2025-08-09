@@ -5,7 +5,8 @@ import {
   GroupMembershipDbRepository,
   WorkflowDbRepository,
   WorkflowTemplateDbRepository,
-  VoteDbRepository
+  VoteDbRepository,
+  PkceSessionDbRepository
 } from "./database/"
 import {GroupDbRepository} from "./database"
 import {
@@ -16,6 +17,7 @@ import {
   WORKFLOW_REPOSITORY_TOKEN,
   WORKFLOW_TEMPLATE_REPOSITORY_TOKEN
 } from "@services"
+import {PKCE_SESSION_REPOSITORY_TOKEN} from "@services/auth"
 import {ConfigModule} from "./config.module"
 
 const groupRepository = {
@@ -48,13 +50,19 @@ const voteRepository = {
   useClass: VoteDbRepository
 }
 
+const pkceSessionRepository = {
+  provide: PKCE_SESSION_REPOSITORY_TOKEN,
+  useClass: PkceSessionDbRepository
+}
+
 const repositories = [
   groupRepository,
   userRepository,
   groupMembershipRepository,
   workflowRepository,
   workflowTemplateRepository,
-  voteRepository
+  voteRepository,
+  pkceSessionRepository
 ]
 
 @Module({

@@ -25,6 +25,7 @@ export async function prepareDatabase(): Promise<string> {
 }
 
 export async function cleanDatabase(client: PrismaClient): Promise<void> {
+  await client.pkceSession.deleteMany()
   await client.workflowActionsEmailTask.deleteMany()
   await client.workflow.deleteMany()
   await client.workflowTemplate.deleteMany()
