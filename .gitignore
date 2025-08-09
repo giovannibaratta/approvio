@@ -45,3 +45,6 @@ combined_output.txt
 !.vscode/extensions.json
 
 coverage
+
+# Claude local memory files
+.claude/

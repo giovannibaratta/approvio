@@ -1,4 +1,4 @@
-import {GetAuthenticatedUser} from "@app/auth"
+import {GetAuthenticatedUser} from "@app/auth/get-authenticated-user.decorator"
 import {User, WorkflowDecoratorSelector} from "@domain"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Res, Query} from "@nestjs/common"
 import {CreateWorkflowRequest, WorkflowService, VoteService, CanVoteRequest, CastVoteRequest} from "@services"

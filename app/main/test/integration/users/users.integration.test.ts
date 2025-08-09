@@ -12,6 +12,7 @@ import {createDomainMockUserInDb, createMockUserInDb, MockConfigProvider} from "
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
 import {OrgRole} from "@domain"
+import {TokenPayloadBuilder} from "@controllers"
 import {get, post} from "../shared/requests"
 import {UserWithToken} from "../shared/types"
 import {UserSummary} from "@approvio/api"
@@ -35,7 +36,7 @@ describe("Users API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(new MockConfigProvider(isolatedDb))
+        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
         .compile()
     } catch (error) {
       console.error(error)
@@ -45,14 +46,25 @@ describe("Users API", () => {
     app = module.createNestApplication()
     prisma = module.get(DatabaseClient)
     const jwtService = module.get(JwtService)
+    const configProvider = module.get(ConfigProvider)
 
     const adminUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.ADMIN})
     const memberUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.MEMBER})
-    orgAdminUser = {user: adminUser, token: jwtService.sign({email: adminUser.email, sub: adminUser.id})}
-    orgMemberUser = {user: memberUser, token: jwtService.sign({email: memberUser.email, sub: memberUser.id})}
+
+    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
+      issuer: configProvider.jwtConfig.issuer,
+      audience: [configProvider.jwtConfig.audience]
+    })
+    const memberTokenPayload = TokenPayloadBuilder.fromUser(memberUser, {
+      issuer: configProvider.jwtConfig.issuer,
+      audience: [configProvider.jwtConfig.audience]
+    })
+
+    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
+    orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
 
     await app.init()
-  })
+  }, 20000)
 
   afterEach(async () => {
     cleanDatabase(prisma)
@@ -239,7 +251,7 @@ describe("Users API", () => {
         expect(response.body).toHaveErrorCode("USER_NOT_FOUND")
       })
 
-      it("should return 400 BAD_REQUEST (INVALID_IDENTIFIER) for invalid identifiers", async () => {
+      it("should return 400 BAD_REQUEST (USER_INVALID_IDENTIFIER) for invalid identifiers", async () => {
         // Given
         const invalidId = "not-a-uuid-and-not-an-email"
 
@@ -248,7 +260,7 @@ describe("Users API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("INVALID_IDENTIFIER")
+        expect(response.body).toHaveErrorCode("USER_INVALID_IDENTIFIER")
       })
     })
   })

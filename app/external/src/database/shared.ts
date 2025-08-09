@@ -89,7 +89,8 @@ export function mapUserToDomain(dbObject: PrismaUser): Either<UserValidationErro
     displayName: dbObject.displayName,
     email: dbObject.email,
     createdAt: dbObject.createdAt,
-    orgRole: dbObject.orgRole
+    orgRole: dbObject.orgRole,
+    roles: dbObject.roleAssignments
   }
 
   return pipe(object, UserFactory.validate)

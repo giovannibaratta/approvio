@@ -1,0 +1,90 @@
+@baseUrl = http://localhost:3000
+
+# @name login
+
+POST {{baseUrl}}/debug/login
+Content-Type: application/json
+
+{
+  "email": "{{$guid}}@localhost.com"
+}
+
+###
+
+@token = {{login.response.body.token}}
+
+###
+
+# @name createUser
+POST {{baseUrl}}/users
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "displayName": "I am a user",
+  "email": "{{$guid}}@localhost.com",
+  "orgRole": "member"
+}
+
+###
+
+@userLocation = {{createUser.response.headers.Location}}
+
+
+# @name getUserId
+GET {{userLocation}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+###
+
+@userId = {{getUserId.response.body.$.id}}
+
+# @name createGroup
+POST {{baseUrl}}/groups
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "{{$guid}}",
+  "description": "This is my group"
+}
+
+###
+
+@groupLocation = {{createGroup.response.headers.Location}}
+
+# @name getGroupId
+
+GET {{groupLocation}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+###
+
+@groupId = {{getGroupId.response.body.$.id}}
+
+# @name addUserToGroup
+POST {{baseUrl}}/groups/{{groupId}}/entities
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "entities": [
+    {
+      "entity": {
+        "entityType": "human",
+        "entityId": "8e728d7e-96a2-4195-9061-466263da7f00"
+        //"entityId": "{{userId}}"
+      },
+      "role": "owner"
+    }
+  ]
+}
+
+###
+
+# @name getGroupEntities
+GET {{baseUrl}}/groups/{{groupId}}/entities
+Content-Type: application/json
+Authorization: Bearer {{token}}

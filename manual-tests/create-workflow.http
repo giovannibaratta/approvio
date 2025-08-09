@@ -1,0 +1,77 @@
+@baseUrl = http://localhost:3000
+
+# @name login
+
+POST {{baseUrl}}/debug/login
+Content-Type: application/json
+
+{
+  "email": "{{$guid}}@localhost.com"
+}
+
+###
+
+@token = {{login.response.body.token}}
+
+###
+
+# @name createGroup
+POST {{baseUrl}}/groups
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "{{$guid}}",
+  "description": "This is my group"
+}
+
+###
+
+@groupLocation = {{createGroup.response.headers.Location}}
+
+# @name getGroupId
+
+GET {{groupLocation}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+###
+
+@groupId = {{getGroupId.response.body.$.id}}
+
+###
+
+# @name createWorkflow
+POST {{baseUrl}}/workflows
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "{{$guid}}",
+  "description": "This is my workflow",
+  "approvalRule": {
+    "type": "AND",
+    "rules": [
+      {
+        "type": "GROUP_REQUIREMENT",
+        "groupId": "{{groupId}}",
+        "minCount": 1
+      }
+    ]
+  }
+}
+
+###
+
+@workflowLocation = {{createWorkflow.response.headers.Location}}
+
+# @name getWorkflow
+GET {{workflowLocation}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+###
+
+@workflowId = {{getWorkflow.response.body.$.id}}
+
+###

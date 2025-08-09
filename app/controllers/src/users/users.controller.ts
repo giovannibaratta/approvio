@@ -1,5 +1,5 @@
 import {Pagination as PaginationApi, User as UserApi, UserCreate, UserSummary as UserSummaryApi} from "@approvio/api"
-import {GetAuthenticatedUser} from "@app/auth"
+import {GetAuthenticatedUser} from "@app/auth/get-authenticated-user.decorator"
 import {User} from "@domain"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Res} from "@nestjs/common"
 import {ListUsersRequest, UserService} from "@services"

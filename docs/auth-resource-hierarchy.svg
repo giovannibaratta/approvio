@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="900" height="480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font-family: Arial, sans-serif; font-size: 18px; font-weight: bold; fill: #333; }
+      .header { font-family: Arial, sans-serif; font-size: 14px; font-weight: bold; fill: #333; }
+      .label { font-family: Arial, sans-serif; font-size: 11px; fill: #333; }
+      .small-label { font-family: Arial, sans-serif; font-size: 9px; fill: #666; }
+      .organization { fill: #e3f2fd; stroke: #1976d2; stroke-width: 2; }
+      .space { fill: #f3e5f5; stroke: #7b1fa2; stroke-width: 1.5; }
+      .resource { fill: #e8f5e8; stroke: #388e3c; stroke-width: 1; }
+    </style>
+  </defs>
+
+  <!-- Title -->
+  <text x="450" y="30" text-anchor="middle" class="title">Resource Hierarchy</text>
+  
+  <!-- Organization Container -->
+  <rect x="50" y="60" width="800" height="400" class="organization" rx="12"/>
+  <text x="450" y="85" text-anchor="middle" class="header">Organization</text>
+  
+
+  <!-- Spaces Row -->
+  <text x="450" y="165" text-anchor="middle" class="header">Spaces</text>
+  
+  <!-- Space 1: Development -->
+  <rect x="80" y="180" width="220" height="240" class="space" rx="8"/>
+  <text x="190" y="205" text-anchor="middle" class="header">Development Space</text>
+  
+  <!-- Space 1 Resources -->
+  <rect x="100" y="230" width="180" height="80" class="resource" rx="4"/>
+  <text x="190" y="250" text-anchor="middle" class="label">Workflow Templates</text>
+  <text x="110" y="270" class="small-label">• Code Review Template</text>
+  <text x="110" y="285" class="small-label">• Deployment Template</text>
+  <text x="110" y="300" class="small-label">• Bug Fix Template</text>
+
+  <rect x="100" y="330" width="180" height="80" class="resource" rx="4"/>
+  <text x="190" y="350" text-anchor="middle" class="label">Active Workflows</text>
+  <text x="110" y="370" class="small-label">• Feature X Review</text>
+  <text x="110" y="385" class="small-label">• Production Deploy #123</text>
+  <text x="110" y="400" class="small-label">• Hotfix Approval</text>
+
+
+  <!-- Space 2: Marketing -->
+  <rect x="340" y="180" width="220" height="240" class="space" rx="8"/>
+  <text x="450" y="205" text-anchor="middle" class="header">Marketing Space</text>
+  
+  <!-- Space 2 Resources -->
+  <rect x="360" y="230" width="180" height="80" class="resource" rx="4"/>
+  <text x="450" y="250" text-anchor="middle" class="label">Workflow Templates</text>
+  <text x="370" y="270" class="small-label">• Campaign Approval</text>
+  <text x="370" y="285" class="small-label">• Content Review</text>
+  <text x="370" y="300" class="small-label">• Budget Request</text>
+
+  <rect x="360" y="330" width="180" height="80" class="resource" rx="4"/>
+  <text x="450" y="350" text-anchor="middle" class="label">Active Workflows</text>
+  <text x="370" y="370" class="small-label">• Q4 Campaign</text>
+  <text x="370" y="385" class="small-label">• Website Redesign</text>
+  <text x="370" y="400" class="small-label">• Social Media Plan</text>
+
+
+  <!-- Space 3: Finance -->
+  <rect x="600" y="180" width="220" height="240" class="space" rx="8"/>
+  <text x="710" y="205" text-anchor="middle" class="header">Finance Space</text>
+  
+  <!-- Space 3 Resources -->
+  <rect x="620" y="230" width="180" height="80" class="resource" rx="4"/>
+  <text x="710" y="250" text-anchor="middle" class="label">Workflow Templates</text>
+  <text x="630" y="270" class="small-label">• Expense Approval</text>
+  <text x="630" y="285" class="small-label">• Invoice Processing</text>
+  <text x="630" y="300" class="small-label">• Budget Allocation</text>
+
+  <rect x="620" y="330" width="180" height="80" class="resource" rx="4"/>
+  <text x="710" y="350" text-anchor="middle" class="label">Active Workflows</text>
+  <text x="630" y="370" class="small-label">• Travel Expenses</text>
+  <text x="630" y="385" class="small-label">• Vendor Payment</text>
+  <text x="630" y="400" class="small-label">• Annual Budget</text>
+
+
+</svg>

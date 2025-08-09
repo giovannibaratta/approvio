@@ -35,8 +35,6 @@ function validateWorkflowAction(action: unknown): Either<WorkflowActionValidatio
   switch (actionType) {
     case WorkflowActionType.EMAIL:
       return validateEmailAction(action)
-    default:
-      return left("workflow_action_type_invalid")
   }
 }
 

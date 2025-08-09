@@ -1,0 +1,150 @@
+@baseUrl = http://localhost:3000
+@idpBaseUrl = http://localhost:4010
+
+###
+# OIDC Authentication Flow Test
+# This file demonstrates the complete OIDC authentication flow
+###
+
+# @name createuser
+POST {{idpBaseUrl}}/api/v1/user
+Content-Type: application/json
+
+{
+  "SubjectId": "development-test-user",
+  "Username": "development-test-user",
+  "Password": "development-test-password",
+  "Claims": [
+    {
+      "Type": "name",
+      "Value": "Dev 2 User"
+    },
+    {
+      "Type": "given_name", 
+      "Value": "Dev"
+    },
+    {
+      "Type": "family_name",
+      "Value": "User"
+    },
+    {
+      "Type": "email",
+      "Value": "dev@localhost.com"
+    },
+    {
+      "Type": "email_verified",
+      "Value": "true"
+    }
+  ]
+}
+
+###
+
+# Step 1: Initiate login
+# This will redirect to the OIDC provider (mock server) for authentication
+# @name login
+GET {{baseUrl}}/auth/login
+
+###
+
+# Step 2: OIDC Provider Callback (Simulated)
+# In a real scenario, the OIDC provider would redirect back to this endpoint
+# with an authorization code and state parameter
+# For testing purposes, you would need to:
+# 1. Extract the state from the login redirect URL
+# 2. Simulate the OIDC provider authorization to get an authorization code
+# 3. Call this endpoint with the code and state
+
+# @name callback
+GET {{baseUrl}}/auth/callback?code=mock-authorization-code&state=mock-state
+
+###
+
+# Step 3: Success endpoint
+# This endpoint shows the result of the callback
+# @name success
+GET {{baseUrl}}/auth/success
+
+###
+
+# Step 4: Exchange authorization code for JWT token
+# This is the final step where the frontend exchanges the authorization code
+# for a JWT token that can be used for API authentication
+# 
+# Note: In a real flow, you would need to:
+# 1. Extract the actual code and state from the callback
+# 2. Retrieve the code_verifier that was generated during login (stored locally in browser)
+# 3. Use these values in the request below
+
+# @name token
+POST {{baseUrl}}/auth/token
+Content-Type: application/json
+
+{
+  "code": "mock-authorization-code",
+  "state": "mock-state", 
+  "codeVerifier": "mock-code-verifier"
+}
+
+###
+
+# Error endpoint (for testing error scenarios)
+# @name error
+GET {{baseUrl}}/auth/error
+
+###
+
+# Test error scenarios
+
+# Missing code in callback
+# @name callbackMissingCode
+GET {{baseUrl}}/auth/callback?state=test-state
+
+###
+
+# Missing state in callback  
+# @name callbackMissingState
+GET {{baseUrl}}/auth/callback?code=test-code
+
+###
+
+# Missing parameters in token request
+# @name tokenMissingParams
+POST {{baseUrl}}/auth/token
+Content-Type: application/json
+
+{
+  "code": "test-code"
+}
+
+###
+
+# Complete OIDC Flow Example (Manual Steps Required)
+###
+# To test the complete flow manually:
+#
+# 1. Start the application: yarn start:dev
+# 2. Start dependencies: yarn deps:start (includes OIDC mock server)
+# 3. Call GET /auth/login - this will return a redirect URL
+# 4. Extract the 'state' parameter and 'code_challenge' from the redirect URL
+# 5. Use the OIDC mock server to simulate authorization:
+#    - Go to the redirect URL in a browser OR
+#    - Use the mock server endpoints to get an authorization code
+# 6. Extract the authorization code from the mock server response
+# 7. Retrieve the code_verifier from your PKCE session (stored in database during login)
+# 8. Call POST /auth/token with the code, state, and codeVerifier
+# 9. You should receive a JWT token that can be used for authenticated requests
+#
+# The JWT token can then be used in Authorization headers for protected endpoints:
+# Authorization: Bearer <your-jwt-token>
+###
+
+# Example of using the JWT token for authenticated requests
+# (Uncomment and replace with actual token after completing the flow above)
+
+# @token = {{token.response.body.token}}
+
+# GET {{baseUrl}}/groups
+# Authorization: Bearer {{token}}
+
+###

@@ -1,4 +1,4 @@
-import {GetAuthenticatedUser} from "@app/auth"
+import {GetAuthenticatedUser} from "@app/auth/get-authenticated-user.decorator"
 import {User} from "@domain"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
 import {

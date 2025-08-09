@@ -3,7 +3,7 @@ import {ConfigProvider} from "@external/config"
 import {NestApplication} from "@nestjs/core"
 import {AppModule} from "@app/app.module"
 import {DatabaseClient} from "@external"
-import {WORKFLOW_TEMPLATES_ENDPOINT_ROOT} from "@controllers"
+import {WORKFLOW_TEMPLATES_ENDPOINT_ROOT, TokenPayloadBuilder} from "@controllers"
 import {PrismaClient, WorkflowTemplate as PrismaWorkflowTemplate} from "@prisma/client"
 import {
   WorkflowTemplateCreate,
@@ -40,7 +40,7 @@ describe("Workflow Templates API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(new MockConfigProvider(isolatedDb))
+        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
         .compile()
     } catch (error) {
       console.error(error)
@@ -50,14 +50,24 @@ describe("Workflow Templates API", () => {
     app = module.createNestApplication()
     prisma = module.get(DatabaseClient)
     jwtService = module.get(JwtService)
+    const configProvider = module.get(ConfigProvider)
 
     const adminUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.ADMIN})
     const memberUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.MEMBER})
-    orgAdminUser = {user: adminUser, token: jwtService.sign({email: adminUser.email, sub: adminUser.id})}
-    orgMemberUser = {user: memberUser, token: jwtService.sign({email: memberUser.email, sub: memberUser.id})}
+    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
+      issuer: configProvider.jwtConfig.issuer,
+      audience: [configProvider.jwtConfig.audience]
+    })
+    const memberTokenPayload = TokenPayloadBuilder.fromUser(memberUser, {
+      issuer: configProvider.jwtConfig.issuer,
+      audience: [configProvider.jwtConfig.audience]
+    })
+
+    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
+    orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
 
     await app.init()
-  })
+  }, 20000)
 
   afterEach(async () => {
     await cleanDatabase(prisma)

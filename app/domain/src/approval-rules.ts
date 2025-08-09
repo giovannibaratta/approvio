@@ -79,9 +79,9 @@ export class ApprovalRuleFactory {
         return pipe(this.validateAndRule(data, depth), E.map(this.decorateApprovalRuleData))
       case ApprovalRuleType.OR:
         return pipe(this.validateOrRule(data, depth), E.map(this.decorateApprovalRuleData))
-      default:
-        return left("approval_rule_invalid_rule_type")
     }
+
+    return left("approval_rule_invalid_rule_type")
   }
 
   private static validateGroupRequirementRule(

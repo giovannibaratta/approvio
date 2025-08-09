@@ -5,7 +5,7 @@ import {post} from "../shared/requests"
 import "expect-more-jest"
 import "@utils/matchers"
 import {AppModule} from "@app/app.module"
-import {WORKFLOW_TEMPLATE_INTERNAL_ENDPOINT_ROOT} from "@controllers"
+import {WORKFLOW_TEMPLATE_INTERNAL_ENDPOINT_ROOT, TokenPayloadBuilder} from "@controllers"
 import {OrgRole} from "@domain"
 import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
@@ -32,7 +32,7 @@ describe("Workflow Templates internal API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(new MockConfigProvider(isolatedDb))
+        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
         .compile()
     } catch (error) {
       console.error(error)
@@ -44,10 +44,16 @@ describe("Workflow Templates internal API", () => {
     jwtService = module.get(JwtService)
 
     const adminUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.ADMIN})
-    orgAdminUser = {user: adminUser, token: jwtService.sign({email: adminUser.email, sub: adminUser.id})}
+    const configProvider = module.get(ConfigProvider)
+    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
+      issuer: configProvider.jwtConfig.issuer,
+      audience: [configProvider.jwtConfig.audience]
+    })
+
+    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
 
     await app.init()
-  })
+  }, 20000)
 
   afterEach(async () => {
     await cleanDatabase(prisma)

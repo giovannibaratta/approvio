@@ -3,7 +3,7 @@ import * as E from "fp-ts/Either"
 import {Either, isLeft, left, right} from "fp-ts/lib/Either"
 import {ApprovalRule, ApprovalRuleFactory, ApprovalRuleValidationError} from "./approval-rules"
 import {WorkflowAction, WorkflowActionValidationError, validateWorkflowActions} from "./workflow-actions"
-import {HumanGroupMembershipRole, MembershipWithGroupRef} from "@domain"
+import {MembershipWithGroupRef, BoundRole} from "@domain"
 import {PrefixUnion, getStringAsEnum} from "@utils"
 
 export const WORKFLOW_TEMPLATE_NAME_MAX_LENGTH = 512
@@ -53,10 +53,16 @@ export type WorkflowTemplateSummary = Pick<
   "id" | "name" | "version" | "description" | "createdAt" | "updatedAt"
 >
 
-export type WorkflowTemplateCantVoteReason = "user_not_in_required_group" | "not_active"
+export type WorkflowTemplateCantVoteReason =
+  | "entity_not_in_required_group"
+  | "workflow_template_not_active"
+  | "entity_not_eligible_to_vote"
 
 interface WorkflowTemplateLogic {
-  canVote(memberships: ReadonlyArray<MembershipWithGroupRef>): Either<WorkflowTemplateCantVoteReason, true>
+  canVote(
+    memberships: ReadonlyArray<MembershipWithGroupRef>,
+    entityRoles: ReadonlyArray<BoundRole<string>>
+  ): Either<WorkflowTemplateCantVoteReason, true>
 }
 
 export type WorkflowTemplateValidationError =
@@ -211,7 +217,8 @@ export class WorkflowTemplateFactory {
 
     return right({
       ...workflowTemplateData,
-      canVote: (memberships: ReadonlyArray<MembershipWithGroupRef>) => canVote(workflowTemplateData, memberships)
+      canVote: (memberships: ReadonlyArray<MembershipWithGroupRef>, entityRoles: ReadonlyArray<BoundRole<string>>) =>
+        canVote(workflowTemplateData, memberships, entityRoles)
     })
   }
 }
@@ -269,31 +276,39 @@ function validateWorkflowTemplateVersion(
   return value < 0 ? E.left("workflow_template_version_invalid_number") : E.right(value)
 }
 
-const ROLES_ALLOWED_TO_VOTE: HumanGroupMembershipRole[] = [
-  HumanGroupMembershipRole.APPROVER,
-  HumanGroupMembershipRole.ADMIN,
-  HumanGroupMembershipRole.OWNER
-]
-
 function canVote(
   workflowTemplate: WorkflowTemplateData,
-  memberships: ReadonlyArray<MembershipWithGroupRef>
+  memberships: ReadonlyArray<MembershipWithGroupRef>,
+  entityRoles: ReadonlyArray<BoundRole<string>>
 ): Either<WorkflowTemplateCantVoteReason, true> {
   if (workflowTemplate.status !== WorkflowTemplateStatus.ACTIVE && !workflowTemplate.allowVotingOnDeprecatedTemplate) {
-    return left("not_active")
+    return left("workflow_template_not_active")
   }
+
+  // Check if entity has vote permission for this workflow template
+  const hasVotePermission = hasVotePermissionForWorkflowTemplate(workflowTemplate.id, entityRoles)
+  if (!hasVotePermission) return left("entity_not_eligible_to_vote")
 
   const votingGroups = workflowTemplate.approvalRule.getVotingGroupIds()
 
   // Is it possible to vote if at least one of the membership group is listed in approval rules
-  // and the user has an allowed role in that group
-  const hasValidMembership = memberships.some(
-    membership => votingGroups.includes(membership.groupId) && ROLES_ALLOWED_TO_VOTE.includes(membership.role)
-  )
+  const hasValidMembership = memberships.some(membership => votingGroups.includes(membership.groupId))
 
-  if (!hasValidMembership) return left("user_not_in_required_group")
+  if (!hasValidMembership) return left("entity_not_in_required_group")
 
   return right(true)
+}
+
+function hasVotePermissionForWorkflowTemplate(
+  workflowTemplateId: string,
+  entityRoles: ReadonlyArray<BoundRole<string>>
+): boolean {
+  return entityRoles.some(
+    role =>
+      role.permissions.includes("vote") &&
+      role.scope.type === "workflow_template" &&
+      role.scope.workflowTemplateId === workflowTemplateId
+  )
 }
 
 /**

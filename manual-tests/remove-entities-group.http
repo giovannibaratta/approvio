@@ -1,0 +1,25 @@
+@baseUrl = http://localhost:3000
+
+# PASTE YOUR TOKEN, GROUP ID and ENTITY ID TO REMOVE HERE
+@token =
+@groupId =
+@entityIdToRemove =
+
+###
+
+DELETE {{baseUrl}}/groups/{{groupId}}/entities
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "entities": [
+    {
+      "entity": {
+        "entityId": "{{entityIdToRemove}}",
+        "entityType": "human"
+      }
+    }
+  ]
+}
+
+###

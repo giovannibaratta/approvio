@@ -98,3 +98,105 @@ services:
     depends_on:
       cert-generator-dev:
         condition: service_completed_successfully
+
+  oidc-server-mock-dev:
+    profiles: [dev]
+    image: ghcr.io/soluto/oidc-server-mock:latest
+    ports:
+      - "4010:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      SERVER_OPTIONS_INLINE: |
+        {
+          "AccessTokenJwtType": "JWT",
+          "Discovery": {
+            "ShowKeySet": true
+          },
+          "Authentication": {
+            "CookieSameSiteMode": "Lax"
+          }
+        }
+      USERS_CONFIGURATION_INLINE: |
+        [
+          {
+            "SubjectId": "development-test-user",
+            "Username": "development-test-user",
+            "Password": "development-test-password",
+            "Claims": [
+              {
+                "Type": "name",
+                "Value": "Dev User"
+              },
+              {
+                "Type": "given_name", 
+                "Value": "Dev"
+              },
+              {
+                "Type": "family_name",
+                "Value": "User"
+              },
+              {
+                "Type": "email",
+                "Value": "dev@localhost.com"
+              },
+              {
+                "Type": "email_verified",
+                "Value": "true"
+              }
+            ]
+          }
+        ]
+      CLIENTS_CONFIGURATION_INLINE: |
+        [
+          {
+            "ClientId": "development-client-id",
+            "ClientSecrets": ["development-client-secret"],
+            "Description": "Test Client for development",
+            "AllowedGrantTypes": ["authorization_code"],
+            "RequireConsent": false,
+            "RequirePkce": true,
+            "AllowedScopes": ["openid", "profile", "email"],
+            "RedirectUris": ["*"],
+            "AllowedCorsOrigins": ["http://localhost:3000"],
+            "AllowOfflineAccess": false
+          }
+        ]
+      API_SCOPES_INLINE: |
+        []
+
+  oidc-server-mock-test:
+    profiles: [test]
+    image: ghcr.io/soluto/oidc-server-mock:latest
+    ports:
+      - "4011:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      SERVER_OPTIONS_INLINE: |
+        {
+          "AccessTokenJwtType": "JWT",
+          "Discovery": {
+            "ShowKeySet": true
+          },
+          "Authentication": {
+            "CookieSameSiteMode": "Lax"
+          }
+        }
+      USERS_CONFIGURATION_INLINE: |
+        []
+      CLIENTS_CONFIGURATION_INLINE: |
+        [
+          {
+            "ClientId": "integration-test-client-id",
+            "ClientSecrets": ["integration-test-client-secret"],
+            "Description": "Test Client for Integration Tests",
+            "AllowedGrantTypes": ["authorization_code"],
+            "RequireConsent": false,
+            "RequirePkce": true,
+            "AllowedScopes": ["openid", "profile", "email"],
+            "RedirectUris": ["*"],
+            "AllowedCorsOrigins": ["http://localhost:3000"],
+            "AllowOfflineAccess": false
+          }
+        ]
+      API_SCOPES_INLINE: |
+        []

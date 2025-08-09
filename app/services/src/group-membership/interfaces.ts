@@ -2,12 +2,12 @@ import {
   AddMembershipError,
   Group,
   GroupManagerValidationError,
-  HumanGroupMembershipRole,
   Membership,
   MembershipValidationError,
   MembershipValidationErrorWithGroupRef,
   MembershipWithGroupRef,
-  RemoveMembershipError
+  RemoveMembershipError,
+  UserValidationError
 } from "@domain"
 import {ConcurrentModificationError, UnknownError} from "@services/error"
 import {GetGroupRepoError} from "@services/group/interfaces"
@@ -37,7 +37,6 @@ export type MembershipRemoveError =
 
 export interface UserEntity {
   id: string
-  role: HumanGroupMembershipRole
   addedAt: Date
 }
 
@@ -67,14 +66,17 @@ export type RemoveMembershipResult = GroupMembershipResult
 export interface GroupMembershipRepository {
   getGroupWithMembershipById(
     data: GetGroupWithMembershipRepo
-  ): TaskEither<GetGroupRepoError | MembershipValidationError, GetGroupMembershipResult>
+  ): TaskEither<GetGroupRepoError | UserValidationError | MembershipValidationError, GetGroupMembershipResult>
   addMembershipsToGroup(request: AddMembershipRepoRequest): TaskEither<MembershipAddError, AddMembershipResult>
   removeMembershipFromGroup(
     request: RemoveMembershipRepoRequest
   ): TaskEither<MembershipRemoveError, RemoveMembershipResult>
   getUserMembershipsByUserId(
     userId: string
-  ): TaskEither<MembershipValidationErrorWithGroupRef | UnknownError, ReadonlyArray<MembershipWithGroupRef>>
+  ): TaskEither<
+    MembershipValidationErrorWithGroupRef | UserValidationError | UnknownError,
+    ReadonlyArray<MembershipWithGroupRef>
+  >
 }
 
 export interface GetGroupWithMembershipRepo {

@@ -6,30 +6,76 @@ import {
   Workflow as PrismaWorkflow,
   Group as PrismaGroup
 } from "@prisma/client"
-import {ApprovalRuleType, OrgRole, User, WorkflowStatus} from "@domain"
+import {ApprovalRuleType, BoundRole, OrgRole, User, WorkflowStatus} from "@domain"
 import {mapToDomainVersionedUser} from "@external/database/shared"
 import {isLeft} from "fp-ts/lib/Either"
 // eslint-disable-next-line node/no-unpublished-import
 import {Chance} from "chance"
-import {EmailProviderConfig} from "@external/config"
+import {
+  ConfigProvider,
+  ConfigProviderInterface,
+  EmailProviderConfig,
+  JwtConfig,
+  OidcProviderConfig
+} from "@external/config"
 import {Option} from "fp-ts/lib/Option"
 import * as O from "fp-ts/lib/Option"
 
 const chance = Chance()
 
-export class MockConfigProvider {
+export class MockConfigProvider implements ConfigProviderInterface {
   dbConnectionUrl: string
   emailProviderConfig: Option<EmailProviderConfig>
+  oidcConfig: OidcProviderConfig
+  jwtConfig: JwtConfig
 
-  constructor(dbConnectionUrl: string) {
-    this.dbConnectionUrl = dbConnectionUrl
-    this.emailProviderConfig = O.none
+  private constructor(
+    originalProvider?: ConfigProvider,
+    mocks: {dbConnectionUrl?: string; emailProviderConfig?: EmailProviderConfig} = {}
+  ) {
+    const provider: ConfigProviderInterface = originalProvider ?? {
+      dbConnectionUrl: "postgresql://test:test@localhost:5433/postgres?schema=public",
+      emailProviderConfig: O.none,
+      oidcConfig: {
+        issuerUrl: "http://localhost:4011",
+        clientId: "integration-test-client-id",
+        clientSecret: "integration-test-client-secret",
+        redirectUri: "http://localhost:3000/auth/callback",
+        allowInsecure: true
+      },
+      jwtConfig: {
+        secret: "test-jwt-secret-for-integration-tests",
+        trustedIssuers: ["idp.test.localhost"],
+        issuer: "idp.test.localhost",
+        audience: "approvio.test.localhost"
+      }
+    }
+
+    this.dbConnectionUrl = mocks.dbConnectionUrl || provider.dbConnectionUrl
+    this.emailProviderConfig =
+      mocks.emailProviderConfig !== undefined ? O.some(mocks.emailProviderConfig) : provider.emailProviderConfig
+    this.oidcConfig = provider.oidcConfig
+    this.jwtConfig = provider.jwtConfig
+  }
+
+  static fromDbConnectionUrl(dbConnectionUrl: string): MockConfigProvider {
+    return new MockConfigProvider(undefined, {dbConnectionUrl})
+  }
+
+  static fromOriginalProvider(
+    mocks: {dbConnectionUrl?: string; emailProviderConfig?: EmailProviderConfig} = {}
+  ): MockConfigProvider {
+    const provider = new ConfigProvider()
+    return new MockConfigProvider(provider, mocks)
   }
 }
 
 export async function createMockUserInDb(
   prisma: PrismaClient,
-  overrides?: Partial<Omit<Prisma.UserCreateInput, "orgRole">> & {orgRole?: OrgRole}
+  overrides?: Partial<Omit<Prisma.UserCreateInput, "orgRole">> & {
+    orgRole?: OrgRole
+    roles?: ReadonlyArray<BoundRole<string>>
+  }
 ): Promise<PrismaUser> {
   const randomUser: Prisma.UserCreateInput = {
     id: chance.guid({
@@ -42,9 +88,11 @@ export async function createMockUserInDb(
     orgRole: chance.pickone(Object.values(OrgRole))
   }
 
+  const {roles, ...userOverrides} = overrides || {}
   const data: Prisma.UserCreateInput = {
     ...randomUser,
-    ...overrides
+    ...userOverrides,
+    roleAssignments: roles ? JSON.parse(JSON.stringify(roles)) : null
   }
 
   const user = await prisma.user.create({data})
@@ -53,7 +101,7 @@ export async function createMockUserInDb(
 
 export async function createDomainMockUserInDb(
   prisma: PrismaClient,
-  overrides: Parameters<typeof createMockUserInDb>[1]
+  overrides?: Parameters<typeof createMockUserInDb>[1]
 ): Promise<User> {
   const dbUser = await createMockUserInDb(prisma, overrides)
   const eitherUser = mapToDomainVersionedUser(dbUser)

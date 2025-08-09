@@ -1,0 +1,108 @@
+@baseUrl = http://localhost:3000
+
+# @name login
+
+POST {{baseUrl}}/debug/login
+Content-Type: application/json
+
+{
+  "email": "{{$guid}}@localhost.com"
+}
+
+###
+
+@token = {{login.response.body.token}}
+
+###
+
+# @name createGroup
+POST {{baseUrl}}/groups
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "{{$guid}}",
+  "description": "This is my group"
+}
+
+###
+
+@groupLocation = {{createGroup.response.headers.Location}}
+
+# @name getGroupId
+
+GET {{groupLocation}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+###
+
+@groupId = {{getGroupId.response.body.$.id}}
+
+###
+
+# @name createWorkflowTemplate
+POST {{baseUrl}}/workflow-templates
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "{{$guid}}",
+  "approvalRule": {
+    "type": "GROUP_REQUIREMENT",
+    "groupId": "{{groupId}}",
+    "minCount": 1
+  }
+}
+
+###
+
+@workflowTemplateId = {{createWorkflowTemplate.response.body.$.id}}
+
+###
+
+# @name createWorkflow
+POST {{baseUrl}}/workflows
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "name": "{{$guid}}",
+  "description": "This is my workflow",
+  "workflowTemplateId": "{{workflowTemplateId}}"
+}
+
+###
+
+@workflowLocation = {{createWorkflow.response.headers.Location}}
+
+# @name getWorkflow
+GET {{workflowLocation}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+###
+
+@workflowId = {{getWorkflow.response.body.$.id}}
+
+###
+
+# @name canVote
+
+GET {{baseUrl}}/workflows/{{workflowId}}/canVote
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+###
+
+# @name castVote
+POST {{baseUrl}}/workflows/{{workflowId}}/vote
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "voteType": "APPROVE",
+  "voteMode": {
+    "type": "VOTE_FOR_ALL"
+  }
+}

@@ -1,0 +1,11 @@
+@baseUrl = http://localhost:3000
+
+# PASTE YOUR TOKEN AND GROUP ID HERE
+@token =
+@groupId =
+
+###
+
+GET {{baseUrl}}/groups/{{groupId}}/entities
+Content-Type: application/json
+Authorization: Bearer {{token}} 

@@ -6,7 +6,7 @@ import {
   ListGroups200Response,
   RemoveGroupEntitiesRequest
 } from "@approvio/api"
-import {GetAuthenticatedUser} from "@app/auth"
+import {GetAuthenticatedUser} from "@app/auth/get-authenticated-user.decorator"
 import {
   createGroupApiToServiceModel,
   generateErrorResponseForAddUserToGroup,
@@ -151,8 +151,7 @@ export class GroupsController {
     const addUserRequests: AddMembersToGroupRequest = {
       groupId,
       members: request.entities.map(entity => ({
-        userId: entity.entity.entityId,
-        role: entity.role
+        userId: entity.entity.entityId
       })),
       requestor
     }

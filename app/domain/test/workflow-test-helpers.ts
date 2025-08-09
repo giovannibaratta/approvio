@@ -1,22 +1,32 @@
-import {ApprovalRule, ApprovalRuleType, ApprovalRuleFactory} from "../src/approval-rules"
+import {ApprovalRule, ApprovalRuleType, ApprovalRuleFactory, User, UserFactory} from "../src"
 import {MembershipWithGroupRef} from "../src"
-import {HumanGroupMembershipRole} from "../src/group-membership"
 import * as E from "fp-ts/Either"
 
+// Helper to create a test user
+const createTestUser = (userId = "test-user"): User => {
+  const result = UserFactory.newUser({
+    displayName: "Test User",
+    email: "test@example.com",
+    orgRole: "member"
+  })
+  if (E.isLeft(result)) throw new Error("Failed to create test user")
+
+  // For test purposes, we'll override the ID after validation
+  const user = result.right
+  return {
+    ...user,
+    id: userId
+  }
+}
+
 // Helper to create MembershipWithGroupRef
-export const createMembership = (
-  groupId: string,
-  userId = "test-user",
-  role = HumanGroupMembershipRole.APPROVER
-): MembershipWithGroupRef => ({
-  entity: userId,
+export const createMembership = (groupId: string, userId = "test-user"): MembershipWithGroupRef => ({
+  entity: createTestUser(userId),
   groupId,
-  role,
   createdAt: new Date(),
   updatedAt: new Date(),
-  getEntityId: () => {
-    throw new Error("Not implemented")
-  }
+  getEntityId: () => userId,
+  getEntityType: () => "user"
 })
 
 // Helper to create a GROUP_REQUIREMENT rule

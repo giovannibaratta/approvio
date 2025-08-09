@@ -1,0 +1,110 @@
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no" />
+
+    <title>Duende IdentityServer</title>
+
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" />
+
+    <link rel="stylesheet" href="/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="/lib/bootstrap4-glyphicons/css/bootstrap-glyphicons.min.css" />
+    <link rel="stylesheet" href="/css/site.css" />
+  </head>
+  <body>
+    <div class="nav-page">
+      <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <a href="/" class="navbar-brand">
+          <img src="/duende-logo.svg" class="icon-banner" />
+          Duende IdentityServer
+        </a>
+      </nav>
+    </div>
+
+    <div class="container body-container">
+      <div class="login-page">
+        <div class="lead">
+          <h1>Login</h1>
+          <p>Choose how to login</p>
+        </div>
+
+        <div class="row">
+          <div class="col-sm-6">
+            <div class="card">
+              <div class="card-header">
+                <h2>Local Account</h2>
+              </div>
+
+              <div class="card-body">
+                <form action="/Account/Login" method="post">
+                  <input
+                    type="hidden"
+                    id="Input_ReturnUrl"
+                    name="Input.ReturnUrl"
+                    value="/connect/authorize/callback?response_type=code&amp;client_id=development-client-id&amp;redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback&amp;scope=openid%20profile%20email&amp;state=KfwMH0fHVj_b5PJFG5qQCQ&amp;code_challenge=ZokoF7gQ8yQxrxFLxIXMhSC2w7GWn5DpXRatDMH1whg&amp;code_challenge_method=S256"
+                  />
+
+                  <div class="form-group">
+                    <label for="Input_Username">Username</label>
+                    <input
+                      class="form-control"
+                      placeholder="Username"
+                      autofocus=""
+                      type="text"
+                      data-val="true"
+                      data-val-required="The Username field is required."
+                      id="Input_Username"
+                      name="Input.Username"
+                      value=""
+                    />
+                  </div>
+                  <div class="form-group">
+                    <label for="Input_Password">Password</label>
+                    <input
+                      type="password"
+                      class="form-control"
+                      placeholder="Password"
+                      autocomplete="off"
+                      data-val="true"
+                      data-val-required="The Password field is required."
+                      id="Input_Password"
+                      name="Input.Password"
+                    />
+                  </div>
+
+                  <div class="form-group">
+                    <div class="form-check">
+                      <input
+                        class="form-check-input"
+                        type="checkbox"
+                        data-val="true"
+                        data-val-required="The RememberLogin field is required."
+                        id="Input_RememberLogin"
+                        name="Input.RememberLogin"
+                        value="true"
+                      />
+                      <label class="form-check-label" for="Input_RememberLogin"> Remember My Login </label>
+                    </div>
+                  </div>
+
+                  <button class="btn btn-primary" name="Input.Button" value="login">Login</button>
+                  <button class="btn btn-secondary" name="Input.Button" value="cancel">Cancel</button>
+                  <input
+                    name="__RequestVerificationToken"
+                    type="hidden"
+                    value="CfDJ8F7ZjBATq71GvzDtskbV8isG85jhOaIfZZTtSQo3MIkL3jfo00YykeNOsb8-Kk9bknocGW2CqmuE3M-Yn3ldHiFv_lXiITah1LdaQGMaKV83LFQ-YQndWkU9QCWWWoRYcnbEImeHOGPoZdl_woDH2bo"
+                  /><input name="Input.RememberLogin" type="hidden" value="false" />
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/lib/jquery/dist/jquery.slim.min.js"></script>
+    <script src="/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>

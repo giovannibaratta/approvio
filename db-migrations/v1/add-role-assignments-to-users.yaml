@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: add-role-assignments-to-users
+      author: giovannibaratta
+      changes:
+        - addColumn:
+            tableName: users
+            columns:
+              - column:
+                  name: role_assignments
+                  type: json
+                  constraints:
+                    nullable: true
+                  defaultValue: null

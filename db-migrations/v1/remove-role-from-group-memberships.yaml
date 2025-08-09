@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: remove-role-from-group-memberships
+      author: claude-code
+      changes:
+        - dropColumn:
+            tableName: group_memberships
+            columnName: role

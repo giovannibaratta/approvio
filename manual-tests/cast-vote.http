@@ -1,0 +1,26 @@
+@baseUrl = http://localhost:3000
+
+# To use this file, you need to:
+# 1. Get a valid JWT token for a user that is allowed to vote on the workflow.
+#    You can use the login request from `vote-on-workflow.http` or `create-group.http`.
+# 2. Get the ID of the workflow you want to vote on.
+#
+# Replace the placeholder values below with your actual token and workflow ID.
+
+@token = <YOUR_AUTH_TOKEN>
+@workflowId = <YOUR_WORKFLOW_ID>
+
+###
+
+# @name castVote
+# @prompt "What is your vote?" voteType APPROVE REJECT
+POST {{baseUrl}}/workflows/{{workflowId}}/vote
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "voteType": "{{voteType}}",
+  "voteMode": {
+    "type": "VOTE_FOR_ALL"
+  }
+}

@@ -1,17 +1,28 @@
-import {Group, GroupFactory, GroupWithEntitiesCount, ListFilterFactory} from "@domain"
+import {
+  Group,
+  GroupFactory,
+  GroupWithEntitiesCount,
+  ListFilterFactory,
+  MembershipFactory,
+  User,
+  UserFactory,
+  RoleFactory,
+  UserValidationError,
+  RolePermissionChecker
+} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError} from "@services/error"
 import {MembershipAddError} from "@services/group-membership"
 import {RequestorAwareRequest} from "@services/shared/types"
 import {Versioned} from "@services/shared/utils"
 import {isUUIDv4} from "@utils"
-import * as E from "fp-ts/Either"
+import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
 import {
   CreateGroupRepoError,
-  CreateGroupWithOwnerRepo,
+  CreateGroupWithMembershipAndUpdateUserRepo,
   GetGroupRepoError,
   GROUP_REPOSITORY_TOKEN,
   GroupRepository,
@@ -20,7 +31,7 @@ import {
   ListGroupsResult
 } from "./interfaces"
 
-export type CreateGroupError = CreateGroupRepoError | MembershipAddError
+export type CreateGroupError = CreateGroupRepoError | MembershipAddError | UserValidationError
 export type GetGroupError = GetGroupRepoError | AuthorizationError
 export type ListGroupsError = ListGroupsRepoError | AuthorizationError
 
@@ -30,22 +41,40 @@ export const MAX_LIMIT = 100
 export class GroupService {
   constructor(
     @Inject(GROUP_REPOSITORY_TOKEN)
-    private readonly groupRepo: GroupRepository
+    private readonly groupRepo: GroupRepository,
+    @Inject(USER_REPOSITORY_TOKEN)
+    private readonly userRepo: UserRepository
   ) {}
 
+  /**
+   * Creates a new group and adds the requesting user as a member with manage permissions.
+   * All users are allowed to create groups.
+   */
   createGroup(request: CreateGroupRequest): TaskEither<CreateGroupError, Group> {
-    // Wrap in a lambda to preserve the "this" context
-    const persistGroup = (data: CreateGroupWithOwnerRepo) => this.groupRepo.createGroupWithOwner(data)
-    const validateRequest = (req: CreateGroupRequest) =>
-      pipe(
-        req.groupData,
-        GroupFactory.newGroup,
-        E.map(group => {
-          return {group, requestor: req.requestor}
-        })
-      )
+    const validateGroup = (req: CreateGroupRequest) => pipe(req.groupData, GroupFactory.newGroup, TE.fromEither)
 
-    return pipe(request, validateRequest, TE.fromEither, TE.chainW(persistGroup))
+    const fetchUser = (requestor: User) => this.userRepo.getUserById(requestor.id)
+
+    const createMembership = (user: User) => pipe(MembershipFactory.newMembership({entity: user}), TE.fromEither)
+
+    const addManagePermissions = ({user, group}: {user: Versioned<User>; group: Group}) => {
+      const manageRole = RoleFactory.createGroupManagerRole({type: "group", groupId: group.id})
+      return pipe(UserFactory.addPermissions(user, [manageRole]), TE.fromEither)
+    }
+
+    const persistGroupWithMembershipAndUpdateUser = (data: CreateGroupWithMembershipAndUpdateUserRepo) =>
+      this.groupRepo.createGroupWithMembershipAndUpdateUser(data)
+
+    return pipe(
+      TE.Do,
+      TE.bindW("group", () => validateGroup(request)),
+      TE.bindW("user", () => fetchUser(request.requestor)),
+      TE.bindW("updatedUser", ({user, group}) => addManagePermissions({user, group})),
+      TE.bindW("membership", ({updatedUser}) => createMembership(updatedUser)),
+      TE.chainW(({group, updatedUser, user, membership}) =>
+        persistGroupWithMembershipAndUpdateUser({group, user: updatedUser, userOcc: user.occ, membership})
+      )
+    )
   }
 
   getGroupByIdentifier(
@@ -54,15 +83,32 @@ export class GroupService {
     const {groupIdentifier, requestor} = request
     const isUuid = isUUIDv4(groupIdentifier)
 
-    const onlyIfMember = requestor.orgRole === "admin" ? false : {userId: requestor.id}
+    const resolveGroupId = (identifier: string): TaskEither<GetGroupError, string> => {
+      return isUuid ? TE.right(identifier) : this.groupRepo.getGroupIdByName(identifier)
+    }
 
-    // Wrap in a lambda to preserve the "this" context
-    const repoGetGroup = (value: string) =>
-      isUuid
-        ? this.groupRepo.getGroupById({onlyIfMember, groupId: value})
-        : this.groupRepo.getGroupByName({onlyIfMember, groupName: value})
+    const checkPermissions = (groupId: string): TaskEither<GetGroupError, string> => {
+      const isOrgAdmin = requestor.orgRole === "admin"
+      const hasReadPermission = RolePermissionChecker.hasGroupPermission(
+        requestor.roles,
+        {type: "group", groupId},
+        "read"
+      )
 
-    return pipe(groupIdentifier, TE.right, TE.chainW(repoGetGroup))
+      if (isOrgAdmin || hasReadPermission) return TE.right(groupId)
+      return TE.left("requestor_not_authorized" as AuthorizationError)
+    }
+
+    const fetchGroupData = (groupId: string): TaskEither<GetGroupError, Versioned<GroupWithEntitiesCount>> => {
+      return this.groupRepo.getGroupById({groupId})
+    }
+
+    return pipe(
+      TE.Do,
+      TE.bindW("groupId", () => resolveGroupId(groupIdentifier)),
+      TE.bindW("authorizedGroupId", ({groupId}) => checkPermissions(groupId)),
+      TE.chainW(({authorizedGroupId}) => fetchGroupData(authorizedGroupId))
+    )
   }
 
   listGroups(request: ListGroupsRequest): TaskEither<ListGroupsError, ListGroupsResult> {
