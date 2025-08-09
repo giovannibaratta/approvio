@@ -32,7 +32,7 @@ describe("Workflow Templates internal API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(new MockConfigProvider(isolatedDb))
+        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
         .compile()
     } catch (error) {
       console.error(error)
@@ -47,7 +47,7 @@ describe("Workflow Templates internal API", () => {
     orgAdminUser = {user: adminUser, token: jwtService.sign({email: adminUser.email, sub: adminUser.id})}
 
     await app.init()
-  })
+  }, 30000)
 
   afterEach(async () => {
     await cleanDatabase(prisma)

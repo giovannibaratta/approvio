@@ -1,5 +1,4 @@
 import {Module} from "@nestjs/common"
-import {ConfigProvider} from "./config/config-provider"
 import {
   DatabaseClient,
   UserDbRepository,
@@ -17,6 +16,7 @@ import {
   WORKFLOW_REPOSITORY_TOKEN,
   WORKFLOW_TEMPLATE_REPOSITORY_TOKEN
 } from "@services"
+import {ConfigModule} from "./config.module"
 
 const groupRepository = {
   provide: GROUP_REPOSITORY_TOKEN,
@@ -58,8 +58,8 @@ const repositories = [
 ]
 
 @Module({
-  imports: [],
-  providers: [DatabaseClient, ConfigProvider, ...repositories],
+  imports: [ConfigModule],
+  providers: [DatabaseClient, ...repositories],
   exports: [...repositories]
 })
 export class PersistenceModule {}

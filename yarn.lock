@@ -155,6 +155,7 @@ __metadata:
     fp-ts: "npm:2.16.10"
     jest: "npm:29.7.0"
     nodemailer: "npm:7.0.5"
+    openid-client: "npm:6.6.2"
     passport: "npm:0.7.0"
     passport-jwt: "npm:4.0.1"
     prettier: "npm:3.6.2"
@@ -6184,6 +6185,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"jose@npm:^6.0.11":
+  version: 6.0.12
+  resolution: "jose@npm:6.0.12"
+  checksum: 10/48b7aee43a88e157eb973c7e950f5835175264ecda01a7fcb1750ad6cc02672153e2bd486b65db969841b38c01b1596d86cb71f65e2ccb5311b67127ba4f8549
+  languageName: node
+  linkType: hard
+
 "js-tokens@npm:^4.0.0":
   version: 4.0.0
   resolution: "js-tokens@npm:4.0.0"
@@ -7136,6 +7144,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"oauth4webapi@npm:^3.5.4":
+  version: 3.6.1
+  resolution: "oauth4webapi@npm:3.6.1"
+  checksum: 10/12fcda932796622b2de011ac42961f67ff5b808c0df30163f669dfaf4e0264689008964843e5181250426dba686a338eec0ff3a714d0df0cb626b884b122a4ff
+  languageName: node
+  linkType: hard
+
 "object-assign@npm:^4, object-assign@npm:^4.1.1":
   version: 4.1.1
   resolution: "object-assign@npm:4.1.1"
@@ -7184,6 +7199,16 @@ __metadata:
     is-docker: "npm:^2.0.0"
     is-wsl: "npm:^2.1.1"
   checksum: 10/4fc02ed3368dcd5d7247ad3566433ea2695b0713b041ebc0eeb2f0f9e5d4e29fc2068f5cdd500976b3464e77fe8b61662b1b059c73233ccc601fe8b16d6c1cd6
+  languageName: node
+  linkType: hard
+
+"openid-client@npm:6.6.2":
+  version: 6.6.2
+  resolution: "openid-client@npm:6.6.2"
+  dependencies:
+    jose: "npm:^6.0.11"
+    oauth4webapi: "npm:^3.5.4"
+  checksum: 10/e64966d11bdee9a6c1c6878af943c73d9d2166f6be635db9fe5cb001d416f951067bf243409dc2167983396a02c513e6ffa3d72df56c95a8ee98e0779f164617
   languageName: node
   linkType: hard
 

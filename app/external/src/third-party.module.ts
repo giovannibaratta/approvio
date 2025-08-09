@@ -1,18 +1,25 @@
 import {Module} from "@nestjs/common"
-import {ConfigProvider} from "./config/config-provider"
-import {EMAIL_EXTERNAL_TOKEN} from "@services"
+import {EMAIL_EXTERNAL_TOKEN, OIDC_PROVIDER_TOKEN} from "@services"
 import {NodemailerEmailProvider} from "./email/email.provider"
+import {OidcClient} from "./oidc/oidc.client"
+import {OidcBootstrapService} from "./oidc/oidc-bootstrap.service"
+import {ConfigModule} from "./config.module"
 
 const emailProvider = {
   provide: EMAIL_EXTERNAL_TOKEN,
   useClass: NodemailerEmailProvider
 }
 
-const providers = [emailProvider]
+const oidcProvider = {
+  provide: OIDC_PROVIDER_TOKEN,
+  useClass: OidcClient
+}
+
+const providers = [emailProvider, oidcProvider]
 
 @Module({
-  imports: [],
-  providers: [ConfigProvider, ...providers],
+  imports: [ConfigModule],
+  providers: [...providers, OidcBootstrapService],
   exports: [...providers]
 })
 export class ThirdPartyModule {}

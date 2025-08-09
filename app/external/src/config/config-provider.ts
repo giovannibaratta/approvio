@@ -1,15 +1,18 @@
 import {Injectable} from "@nestjs/common"
 import {Option} from "fp-ts/lib/Option"
 import * as O from "fp-ts/lib/Option"
+import {ConfigProviderInterface, EmailProviderConfig, OidcProviderConfig} from "./interfaces"
 
 @Injectable()
-export class ConfigProvider {
+export class ConfigProvider implements ConfigProviderInterface {
   readonly dbConnectionUrl: string
   readonly emailProviderConfig: Option<EmailProviderConfig>
+  readonly oidcConfig: OidcProviderConfig
 
   constructor() {
     this.dbConnectionUrl = this.validateConnectionUrl()
     this.emailProviderConfig = this.validateEmailProviderConfig()
+    this.oidcConfig = this.validateOidcProviderConfig()
   }
 
   private validateConnectionUrl(): string {
@@ -74,15 +77,52 @@ export class ConfigProvider {
       allowSelfSignedCertificates
     })
   }
-}
 
-export type EmailProviderConfig = GenericEmailProviderConfig
+  private validateOidcProviderConfig(): OidcProviderConfig {
+    const issuerUrl = process.env.OIDC_ISSUER_URL
+    const clientId = process.env.OIDC_CLIENT_ID
+    const clientSecret = process.env.OIDC_CLIENT_SECRET
+    const redirectUri = process.env.OIDC_REDIRECT_URI
 
-export interface GenericEmailProviderConfig {
-  type: "generic"
-  smtpUsername: string
-  smtpPassword: string
-  smtpEndpoint: string
-  smtpPort: number
-  allowSelfSignedCertificates: boolean
+    if (!issuerUrl || !clientId || !clientSecret || !redirectUri) {
+      throw new Error("Incomplete OIDC provider configuration")
+    }
+
+    if (issuerUrl.length === 0 || clientId.length === 0 || clientSecret.length === 0 || redirectUri.length === 0) {
+      throw new Error("OIDC provider configuration values cannot be empty")
+    }
+
+    // Validate URL format
+    try {
+      new URL(issuerUrl)
+    } catch {
+      throw new Error("OIDC_ISSUER_URL must be a valid URL")
+    }
+
+    try {
+      new URL(redirectUri)
+    } catch {
+      throw new Error("OIDC_REDIRECT_URI must be a valid URL")
+    }
+
+    let allowInsecure = false
+
+    if (process.env.OIDC_ALLOW_INSECURE !== undefined) {
+      if (
+        process.env.OIDC_ALLOW_INSECURE.toLowerCase() !== "true" &&
+        process.env.OIDC_ALLOW_INSECURE.toLowerCase() !== "false"
+      ) {
+        throw new Error("OIDC_ALLOW_INSECURE must be 'true' or 'false'")
+      }
+      allowInsecure = process.env.OIDC_ALLOW_INSECURE.toLowerCase() === "true"
+    }
+
+    return {
+      issuerUrl,
+      clientId,
+      clientSecret,
+      redirectUri,
+      allowInsecure
+    }
+  }
 }

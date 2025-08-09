@@ -11,19 +11,48 @@ import {mapToDomainVersionedUser} from "@external/database/shared"
 import {isLeft} from "fp-ts/lib/Either"
 // eslint-disable-next-line node/no-unpublished-import
 import {Chance} from "chance"
-import {EmailProviderConfig} from "@external/config"
+import {ConfigProvider, ConfigProviderInterface, EmailProviderConfig, OidcProviderConfig} from "@external/config"
 import {Option} from "fp-ts/lib/Option"
 import * as O from "fp-ts/lib/Option"
 
 const chance = Chance()
 
-export class MockConfigProvider {
+export class MockConfigProvider implements ConfigProviderInterface {
   dbConnectionUrl: string
   emailProviderConfig: Option<EmailProviderConfig>
+  oidcConfig: OidcProviderConfig
 
-  constructor(dbConnectionUrl: string) {
-    this.dbConnectionUrl = dbConnectionUrl
-    this.emailProviderConfig = O.none
+  private constructor(
+    originalProvider?: ConfigProvider,
+    mocks: {dbConnectionUrl?: string; emailProviderConfig?: EmailProviderConfig} = {}
+  ) {
+    const provider: ConfigProviderInterface = originalProvider ?? {
+      dbConnectionUrl: "postgresql://test:test@localhost:5433/postgres?schema=public",
+      emailProviderConfig: O.none,
+      oidcConfig: {
+        issuerUrl: "http://localhost:4011",
+        clientId: "integration-test-client-id",
+        clientSecret: "integration-test-client-secret",
+        redirectUri: "http://localhost:3000/auth/callback",
+        allowInsecure: true
+      }
+    }
+
+    this.dbConnectionUrl = mocks.dbConnectionUrl || provider.dbConnectionUrl
+    this.emailProviderConfig =
+      mocks.emailProviderConfig !== undefined ? O.some(mocks.emailProviderConfig) : provider.emailProviderConfig
+    this.oidcConfig = provider.oidcConfig
+  }
+
+  static fromDbConnectionUrl(dbConnectionUrl: string): MockConfigProvider {
+    return new MockConfigProvider(undefined, {dbConnectionUrl})
+  }
+
+  static fromOriginalProvider(
+    mocks: {dbConnectionUrl?: string; emailProviderConfig?: EmailProviderConfig} = {}
+  ): MockConfigProvider {
+    const provider = new ConfigProvider()
+    return new MockConfigProvider(provider, mocks)
   }
 }
 
