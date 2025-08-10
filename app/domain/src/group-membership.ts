@@ -1,30 +1,24 @@
 import {Group, User} from "@domain"
-import {getStringAsEnum, isUUIDv4, PrefixUnion} from "@utils"
+import {isUUIDv4, PrefixUnion} from "@utils"
 import * as A from "fp-ts/Array"
 import {Applicative, Do, Either, isLeft, left, right, chain, bindW} from "fp-ts/lib/Either"
 import {pipe} from "fp-ts/lib/function"
-
-export enum HumanGroupMembershipRole {
-  ADMIN = "admin",
-  APPROVER = "approver",
-  AUDITOR = "auditor",
-  OWNER = "owner"
-}
+import {RolePermissionChecker} from "./permission-checker"
+import {GroupScope} from "./role"
 
 export type Membership = Readonly<PrivateMembership>
 export type MembershipWithGroupRef = Readonly<PrivateMembershipWithGroupRef>
 
-type UserReference = string
-type RoleValidationError = "invalid_role"
+type EntityType = "user" | "agent"
 export type MembershipValidationError = PrefixUnion<"membership", UnprefixedMembershipValidationError>
 export type MembershipValidationErrorWithGroupRef = PrefixUnion<
   "membership",
   UnprefixedMembershipValidationErrorWithGroupRef
 >
-type UserValidationReferenceError = "invalid_user_uuid"
+type EntityValidationReferenceError = "invalid_entity_uuid"
 type GroupValidationReferenceError = "invalid_group_uuid"
 
-type UnprefixedMembershipValidationError = RoleValidationError | UserValidationReferenceError | "inconsistent_dates"
+type UnprefixedMembershipValidationError = EntityValidationReferenceError | "inconsistent_dates"
 type UnprefixedMembershipValidationErrorWithGroupRef =
   | UnprefixedMembershipValidationError
   | GroupValidationReferenceError
@@ -34,28 +28,17 @@ interface PrivateMembershipWithGroupRef extends PrivateMembership {
 }
 
 interface PrivateMembership {
-  entity: User | UserReference
-  role: HumanGroupMembershipRole
+  entity: User
   createdAt: Date
   updatedAt: Date
 
   getEntityId(): string
-}
-
-function validateRole(role: string): Either<MembershipValidationError, HumanGroupMembershipRole> {
-  const enumRole = getStringAsEnum(role, HumanGroupMembershipRole)
-  if (enumRole === undefined) return left("membership_invalid_role")
-  return right(enumRole)
+  getEntityType(): EntityType
 }
 
 function validateGroupReference(groupReference: string): Either<MembershipValidationErrorWithGroupRef, string> {
   if (!isUUIDv4(groupReference)) return left("membership_invalid_group_uuid")
   return right(groupReference)
-}
-
-function validateUserReference(userReference: string | User): Either<MembershipValidationError, UserReference | User> {
-  if (typeof userReference === "string" && !isUUIDv4(userReference)) return left("membership_invalid_user_uuid")
-  return right(userReference)
 }
 
 export class MembershipFactory {
@@ -83,43 +66,43 @@ export class MembershipFactory {
     return validatedObject
   }
 
-  static newMembership(data: {user: string; role: string}): Either<MembershipValidationError, Membership> {
+  static newMembership(data: {entity: User}): Either<MembershipValidationError, Membership> {
     const now = new Date()
     return MembershipFactory.semanticValidation({
-      role: data.role,
-      entity: data.user,
+      entity: data.entity,
       createdAt: now,
       updatedAt: now
     })
   }
 
   private static semanticValidation(
-    data: Omit<Membership, "getEntityId" | "role"> & {role: string}
+    data: Omit<Membership, "getEntityId" | "getEntityType">
   ): Either<MembershipValidationError, Membership> {
-    const roleValidation = validateRole(data.role)
-    const userValidation = validateUserReference(data.entity)
-
-    if (isLeft(roleValidation)) return left(roleValidation.left)
-    if (isLeft(userValidation)) return left(userValidation.left)
     if (data.createdAt > data.updatedAt) return left("membership_inconsistent_dates")
 
     return right({
-      entity: userValidation.right,
+      entity: data.entity,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
-      role: roleValidation.right,
-      getEntityId: () => getEntityId(userValidation.right)
+      getEntityId: () => getEntityId(data.entity),
+      getEntityType: () => getEntityType(data.entity)
     })
   }
 }
 
 function getEntityId(entity: PrivateMembership["entity"]): EntityId {
-  return typeof entity === "string" ? entity : entity.id
+  return entity.id
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function getEntityType(entity: PrivateMembership["entity"]): EntityType {
+  // Only users are supported for now
+  return "user"
 }
 
 export type GroupManagerValidationError = PrefixUnion<"membership", "duplicated_membership">
 export type AddMembershipError = PrefixUnion<"membership", "entity_already_in_group">
-export type RemoveMembershipError = PrefixUnion<"membership", "not_found" | "no_owner">
+export type RemoveMembershipError = PrefixUnion<"membership", "not_found" | "no_admin">
 export type UpdateMembershipError = RemoveMembershipError
 
 type EntityId = string
@@ -156,30 +139,28 @@ export class GroupManager {
     return this.memberships.has(entityId)
   }
 
-  isEntityInMembershipWithRole(
-    entityId: EntityId,
-    role: HumanGroupMembershipRole | HumanGroupMembershipRole[]
-  ): boolean {
-    const membership = this.memberships.get(entityId)
-    const admissibleRoles = Array.isArray(role) ? role : [role]
-    return membership !== undefined && admissibleRoles.includes(membership.role)
-  }
-
   removeMembership(entityId: string): Either<RemoveMembershipError, GroupManager> {
     if (!this.isEntityInMembership(entityId)) return left("membership_not_found")
 
-    // Check if removing this member would leave the group without an owner
     const membershipToRemove = this.memberships.get(entityId)
-
     if (membershipToRemove === undefined) return left("membership_not_found")
 
-    if (membershipToRemove.role === HumanGroupMembershipRole.OWNER) {
-      const remainingOwners = Array.from(this.memberships.values()).filter(
-        m => m.role === HumanGroupMembershipRole.OWNER && m.getEntityId() !== entityId
-      )
-      if (remainingOwners.length === 0)
-        // Removing the entity would leave the group without an owner, which is not allowed
-        return left("membership_no_owner")
+    // Check if removing this member would leave the group without any administrators
+    const user = membershipToRemove.entity
+    const groupScope: GroupScope = {
+      type: "group",
+      groupId: this.group.id
+    }
+
+    // If this user has manage permission, check if they're the last admin
+    if (RolePermissionChecker.hasGroupPermission(user.roles, groupScope, "manage")) {
+      const remainingMemberships = Array.from(this.memberships.values()).filter(m => m.getEntityId() !== entityId)
+      const hasOtherAdmins = remainingMemberships.some(membership => {
+        const memberUser = membership.entity
+        return RolePermissionChecker.hasGroupPermission(memberUser.roles, groupScope, "manage")
+      })
+
+      if (!hasOtherAdmins) return left("membership_no_admin")
     }
 
     this.memberships.delete(entityId)
@@ -201,10 +182,15 @@ export class GroupManager {
   }
 
   private canAdministerGroup(requestor: User): boolean {
-    return (
-      requestor.orgRole === "admin" ||
-      this.isEntityInMembershipWithRole(requestor.id, [HumanGroupMembershipRole.OWNER, HumanGroupMembershipRole.ADMIN])
-    )
+    // Organization admins can administer any group
+    if (requestor.orgRole === "admin") return true
+
+    const groupScope: GroupScope = {
+      type: "group",
+      groupId: this.group.id
+    }
+
+    return RolePermissionChecker.hasGroupPermission(requestor.roles, groupScope, "manage")
   }
 
   static createGroupManager(

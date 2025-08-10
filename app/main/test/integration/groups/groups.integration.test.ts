@@ -7,8 +7,8 @@ import {
   Group as GroupApi
 } from "@approvio/api"
 import {AppModule} from "@app/app.module"
-import {EntityType, GROUPS_ENDPOINT_ROOT, Role} from "@controllers"
-import {DESCRIPTION_MAX_LENGTH, OrgRole} from "@domain"
+import {EntityType, GROUPS_ENDPOINT_ROOT} from "@controllers"
+import {DESCRIPTION_MAX_LENGTH} from "@domain"
 import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
@@ -21,7 +21,7 @@ import {cleanDatabase, prepareDatabase} from "../database"
 import {createDomainMockUserInDb, createMockUserInDb, MockConfigProvider} from "../shared/mock-data"
 import {get, post, del} from "../shared/requests"
 import {UserWithToken} from "../shared/types"
-import {MAX_LIMIT} from "@services"
+import {MAX_LIMIT, TokenPayloadBuilder} from "@services"
 
 async function createTestGroup(prisma: PrismaClient, name: string, description?: string): Promise<PrismaGroup> {
   const group = await prisma.group.create({
@@ -43,6 +43,7 @@ describe("Groups API", () => {
   let orgAdminUser: UserWithToken
   let orgMemberUser: UserWithToken
   let jwtService: JwtService
+  let configProvider: ConfigProvider
 
   const endpoint = `/${GROUPS_ENDPOINT_ROOT}`
 
@@ -66,12 +67,21 @@ describe("Groups API", () => {
 
     prisma = module.get(DatabaseClient)
     jwtService = module.get(JwtService)
+    configProvider = module.get(ConfigProvider)
 
-    const adminUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.ADMIN})
-    const memberUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.MEMBER})
+    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
+    const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
+    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
+      issuer: configProvider.jwtConfig.issuer,
+      audience: [configProvider.jwtConfig.audience]
+    })
+    const memberTokenPayload = TokenPayloadBuilder.fromUser(memberUser, {
+      issuer: configProvider.jwtConfig.issuer,
+      audience: [configProvider.jwtConfig.audience]
+    })
 
-    orgAdminUser = {user: adminUser, token: jwtService.sign({email: adminUser.email, sub: adminUser.id})}
-    orgMemberUser = {user: memberUser, token: jwtService.sign({email: memberUser.email, sub: memberUser.id})}
+    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
+    orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
 
     await app.init()
   }, 30000)
@@ -86,7 +96,7 @@ describe("Groups API", () => {
     expect(app).toBeDefined()
   })
 
-  describe(`POST ${endpoint}`, () => {
+  describe("POST /groups", () => {
     describe("good cases", () => {
       it("should create a group and return 201 with location header (as OrgAdmin)", async () => {
         // Given
@@ -118,7 +128,6 @@ describe("Groups API", () => {
           where: {groupId_userId: {groupId: responseUuid, userId: orgAdminUser.user.id}}
         })
         expect(ownerMembership).toBeDefined()
-        expect(ownerMembership?.role).toEqual(Role.OWNER)
       })
 
       it("should create a group with null description if not provided (as OrgAdmin)", async () => {
@@ -248,7 +257,7 @@ describe("Groups API", () => {
     })
   })
 
-  describe(`GET ${endpoint}`, () => {
+  describe("GET /groups", () => {
     describe("good cases", () => {
       it("should return an empty list and default pagination when no groups exist (as OrgAdmin)", async () => {
         // When
@@ -329,7 +338,6 @@ describe("Groups API", () => {
           data: {
             groupId: group2.id,
             userId: orgMemberUser.user.id,
-            role: Role.APPROVER, // Role doesn't matter for listing
             createdAt: new Date(),
             updatedAt: new Date()
           }
@@ -421,28 +429,76 @@ describe("Groups API", () => {
         expect(response.body.entitiesCount).toEqual(0)
       })
 
-      it("should return group details if OrgMember is a member of the group (fetching by ID)", async () => {
+      it("should return group details if OrgMember has read permissions on the group", async () => {
         // Given
-        const createdGroup = await createTestGroup(prisma, "Member-Group")
-        // Add OrgMember to the group
-        await prisma.groupMembership.create({
-          data: {
-            groupId: createdGroup.id,
-            userId: orgMemberUser.user.id,
-            role: Role.ADMIN,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          }
+        const createdGroup = await createTestGroup(prisma, "Read-Accessible-Group")
+
+        // Create user with read permission on this specific group
+        const userWithReadPermission = await createDomainMockUserInDb(prisma, {
+          orgAdmin: false,
+          roles: [
+            {
+              name: "GroupReadOnly",
+              permissions: ["read"],
+              scope: {type: "group", groupId: createdGroup.id}
+            }
+          ]
         })
 
+        const tokenPayload = TokenPayloadBuilder.fromUserData({
+          sub: userWithReadPermission.id,
+          entityType: "user",
+          displayName: userWithReadPermission.displayName,
+          email: userWithReadPermission.email,
+          issuer: configProvider.jwtConfig.issuer,
+          audience: [configProvider.jwtConfig.audience]
+        })
+        const userToken = jwtService.sign(tokenPayload)
+
         // When
-        const response = await get(app, `${endpoint}/${createdGroup.id}`).withToken(orgMemberUser.token).build()
+        const response = await get(app, `${endpoint}/${createdGroup.id}`).withToken(userToken).build()
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.OK)
         expect(response.body.id).toEqual(createdGroup.id)
         expect(response.body.name).toEqual(createdGroup.name)
-        expect(response.body.entitiesCount).toEqual(1) // Includes the member
+        expect(response.body.entitiesCount).toEqual(0) // No members added
+      })
+
+      it("should return group details when fetching by name if user has read permissions", async () => {
+        // Given
+        const groupName = "Read-By-Name-Group"
+        const createdGroup = await createTestGroup(prisma, groupName)
+
+        // Create user with read permission on this specific group
+        const userWithReadPermission = await createDomainMockUserInDb(prisma, {
+          orgAdmin: false,
+          roles: [
+            {
+              name: "GroupReadOnly",
+              permissions: ["read"],
+              scope: {type: "group", groupId: createdGroup.id}
+            }
+          ]
+        })
+
+        const tokenPayload = TokenPayloadBuilder.fromUserData({
+          sub: userWithReadPermission.id,
+          entityType: "user",
+          displayName: userWithReadPermission.displayName,
+          email: userWithReadPermission.email,
+          issuer: configProvider.jwtConfig.issuer,
+          audience: [configProvider.jwtConfig.audience]
+        })
+        const userToken = jwtService.sign(tokenPayload)
+
+        // When
+        const response = await get(app, `${endpoint}/${groupName}`).withToken(userToken).build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        expect(response.body.id).toEqual(createdGroup.id)
+        expect(response.body.name).toEqual(createdGroup.name)
       })
     })
 
@@ -453,16 +509,16 @@ describe("Groups API", () => {
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
       })
 
-      it("should return 404 NOT_FOUND if OrgMember tries to fetch group they are not part of", async () => {
-        // Given:  OrgMember is NOT part of the group
+      it("should return 403 FORBIDDEN if OrgMember tries to fetch group without read permissions", async () => {
+        // Given: OrgMember has no specific permissions on the group
         const createdGroup = await createTestGroup(prisma, "Other-Group")
 
         // When
         const response = await get(app, `${endpoint}/${createdGroup.id}`).withToken(orgMemberUser.token).build()
 
         // Expect
-        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
-        expect(response.body).toHaveErrorCode("GROUP_NOT_FOUND")
+        expect(response).toHaveStatusCode(HttpStatus.FORBIDDEN)
+        expect(response.body).toHaveErrorCode("REQUESTOR_NOT_AUTHORIZED")
       })
 
       it("should return 404 NOT_FOUND (GROUP_NOT_FOUND) when fetching non-existent ID (as OrgAdmin)", async () => {
@@ -501,14 +557,13 @@ describe("Groups API", () => {
       // Create common resources for membership tests
       group = await createTestGroup(prisma, "Membership-Test-Group")
       // User1 is admin, User2 is member for auth tests
-      user1 = await createMockUserInDb(prisma, {orgRole: OrgRole.ADMIN})
-      user2 = await createMockUserInDb(prisma, {orgRole: OrgRole.MEMBER})
+      user1 = await createMockUserInDb(prisma, {orgAdmin: true})
+      user2 = await createMockUserInDb(prisma, {orgAdmin: false})
 
       await prisma.groupMembership.create({
         data: {
           groupId: group.id,
           userId: user1.id,
-          role: Role.ADMIN,
           createdAt: new Date(),
           updatedAt: new Date()
         }
@@ -518,7 +573,6 @@ describe("Groups API", () => {
         data: {
           groupId: group.id,
           userId: orgMemberUser.user.id,
-          role: Role.APPROVER,
           createdAt: new Date(),
           updatedAt: new Date()
         }
@@ -530,7 +584,7 @@ describe("Groups API", () => {
         it("should add multiple users to a group and return updated group details (as OrgAdmin)", async () => {
           // Given
           const requestBody: AddGroupEntitiesRequest = {
-            entities: [{entity: {entityId: user2.id, entityType: EntityType.HUMAN}, role: Role.AUDITOR}]
+            entities: [{entity: {entityId: user2.id, entityType: EntityType.HUMAN}}]
           }
 
           // When
@@ -547,7 +601,7 @@ describe("Groups API", () => {
           // Verify DB state AFTER request
           const memberships = await prisma.groupMembership.findMany({
             where: {groupId: group.id},
-            orderBy: {role: "asc"}
+            orderBy: {createdAt: "asc"}
           })
           expect(memberships).toHaveLength(3)
           expect(memberships.map(m => m.userId)).toEqual(
@@ -557,9 +611,17 @@ describe("Groups API", () => {
 
         it("should allow a Group Admin (user1) to add members", async () => {
           // Given
-          const groupAdminToken = jwtService.sign({email: user1.email, sub: user1.id})
+          const groupAdminTokenPayload = TokenPayloadBuilder.fromUserData({
+            sub: user1.id,
+            entityType: "user",
+            displayName: user1.displayName,
+            email: user1.email,
+            issuer: configProvider.jwtConfig.issuer,
+            audience: [configProvider.jwtConfig.audience]
+          })
+          const groupAdminToken = jwtService.sign(groupAdminTokenPayload)
           const requestBody: AddGroupEntitiesRequest = {
-            entities: [{entity: {entityId: user2.id, entityType: EntityType.HUMAN}, role: Role.AUDITOR}]
+            entities: [{entity: {entityId: user2.id, entityType: EntityType.HUMAN}}]
           }
 
           // When
@@ -583,7 +645,7 @@ describe("Groups API", () => {
 
         it("should return 403 FORBIDDEN if requestor is only an Approver (user2/orgMemberUser)", async () => {
           const requestBody: AddGroupEntitiesRequest = {
-            entities: [{entity: {entityId: user2.id, entityType: EntityType.HUMAN}, role: Role.AUDITOR}]
+            entities: [{entity: {entityId: user2.id, entityType: EntityType.HUMAN}}]
           }
           const response = await post(app, entitiesEndpoint(group.id))
             .withToken(orgMemberUser.token)
@@ -598,7 +660,7 @@ describe("Groups API", () => {
           // Given
           const nonExistentGroupId = randomUUID()
           const requestBody: AddGroupEntitiesRequest = {
-            entities: [{entity: {entityId: user1.id, entityType: EntityType.HUMAN}, role: Role.ADMIN}]
+            entities: [{entity: {entityId: user1.id, entityType: EntityType.HUMAN}}]
           }
 
           // When
@@ -616,7 +678,7 @@ describe("Groups API", () => {
           // Given
           const nonExistentUserId = randomUUID()
           const requestBody: AddGroupEntitiesRequest = {
-            entities: [{entity: {entityId: nonExistentUserId, entityType: EntityType.HUMAN}, role: Role.ADMIN}]
+            entities: [{entity: {entityId: nonExistentUserId, entityType: EntityType.HUMAN}}]
           }
 
           // When
@@ -627,30 +689,13 @@ describe("Groups API", () => {
 
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-          expect(response.body).toHaveErrorCode("MEMBERSHIP_USER_NOT_FOUND")
-        })
-
-        it("should return 400 BAD_REQUEST (INVALID_ROLE) if role is invalid (as OrgAdmin)", async () => {
-          // Given
-          const requestBody: AddGroupEntitiesRequest = {
-            entities: [{entity: {entityId: user1.id, entityType: EntityType.HUMAN}, role: "invalid-role"}]
-          }
-
-          // When
-          const response = await post(app, entitiesEndpoint(group.id))
-            .withToken(orgAdminUser.token)
-            .build()
-            .send(requestBody)
-
-          // Expect
-          expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-          expect(response.body).toHaveErrorCode("MEMBERSHIP_INVALID_ROLE")
+          expect(response.body).toHaveErrorCode("USER_NOT_FOUND")
         })
 
         it("should return 409 CONFLICT (ENTITY_ALREADY_IN_GROUP) if user is already a member (as OrgAdmin)", async () => {
           // Given user1 is already a member (Group Admin)
           const requestBody: AddGroupEntitiesRequest = {
-            entities: [{entity: {entityId: user1.id, entityType: EntityType.HUMAN}, role: Role.APPROVER}] // Try adding again
+            entities: [{entity: {entityId: user1.id, entityType: EntityType.HUMAN}}] // Try adding again
           }
 
           // When
@@ -667,7 +712,7 @@ describe("Groups API", () => {
         it("should return 400 BAD_REQUEST (INVALID_UUID) if groupId is not a UUID (as OrgAdmin)", async () => {
           // Given
           const requestBody: AddGroupEntitiesRequest = {
-            entities: [{entity: {entityId: user1.id, entityType: EntityType.HUMAN}, role: Role.ADMIN}]
+            entities: [{entity: {entityId: user1.id, entityType: EntityType.HUMAN}}]
           }
 
           // When
@@ -683,7 +728,7 @@ describe("Groups API", () => {
 
         it("should return 400 BAD_REQUEST (INVALID_UUID) if entityId is not a UUID in body (as OrgAdmin)", async () => {
           const requestBody: AddGroupEntitiesRequest = {
-            entities: [{entity: {entityId: "not-a-uuid", entityType: EntityType.HUMAN}, role: Role.ADMIN}]
+            entities: [{entity: {entityId: "not-a-uuid", entityType: EntityType.HUMAN}}]
           }
           const response = await post(app, entitiesEndpoint(group.id))
             .withToken(orgAdminUser.token)
@@ -707,11 +752,8 @@ describe("Groups API", () => {
           expect(body.pagination).toEqual({total: 2, page: 1, limit: 20})
           expect(body.entities).toEqual(
             expect.arrayContaining([
-              expect.objectContaining({entity: {entityId: user1.id, entityType: EntityType.HUMAN}, role: Role.ADMIN}),
-              expect.objectContaining({
-                entity: {entityId: orgMemberUser.user.id, entityType: EntityType.HUMAN},
-                role: Role.APPROVER
-              })
+              expect.objectContaining({entity: {entityId: user1.id, entityType: EntityType.HUMAN}}),
+              expect.objectContaining({entity: {entityId: orgMemberUser.user.id, entityType: EntityType.HUMAN}})
             ])
           )
         })
@@ -732,7 +774,6 @@ describe("Groups API", () => {
             data: {
               groupId: group.id,
               userId: user2.id,
-              role: Role.AUDITOR,
               createdAt: new Date(2023, 0, 3),
               updatedAt: new Date(2023, 0, 3)
             }
@@ -835,7 +876,15 @@ describe("Groups API", () => {
 
         it("should allow Group Admin (user1) to remove members (user2)", async () => {
           // Given
-          const groupAdminToken = jwtService.sign({email: user1.email, sub: user1.id})
+          const groupAdminTokenPayload = TokenPayloadBuilder.fromUserData({
+            sub: user1.id,
+            entityType: "user",
+            displayName: user1.displayName,
+            email: user1.email,
+            issuer: configProvider.jwtConfig.issuer,
+            audience: [configProvider.jwtConfig.audience]
+          })
+          const groupAdminToken = jwtService.sign(groupAdminTokenPayload)
           const requestBody: RemoveGroupEntitiesRequest = {
             entities: [{entity: {entityId: orgMemberUser.user.id, entityType: EntityType.HUMAN}}]
           }
@@ -961,15 +1010,13 @@ describe("Groups API", () => {
           expect(response.body).toHaveErrorCode("REQUEST_INVALID_USER_UUID")
         })
 
-        it("should return 400 BAD_REQUEST (membership_no_owner) if attempting to remove the last owner", async () => {
-          // Given: group has one owner (user1) and one other member (orgMemberUser)
-          // Ensure user1 is the only owner and orgMemberUser is not an owner.
+        it("should allow removing users from group (new role system no longer enforces owner constraints)", async () => {
+          // Given: group has members
           await prisma.groupMembership.deleteMany({where: {groupId: group.id}})
           await prisma.groupMembership.create({
             data: {
               groupId: group.id,
               userId: user1.id,
-              role: Role.OWNER,
               createdAt: new Date(),
               updatedAt: new Date()
             }
@@ -978,7 +1025,6 @@ describe("Groups API", () => {
             data: {
               groupId: group.id,
               userId: orgMemberUser.user.id,
-              role: Role.APPROVER,
               createdAt: new Date(),
               updatedAt: new Date()
             }
@@ -994,19 +1040,18 @@ describe("Groups API", () => {
             .build()
             .send(requestBody)
 
-          // Expect
-          expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-          expect(response.body).toHaveErrorCode("MEMBERSHIP_NO_OWNER")
+          // Expect - should succeed as role system changed
+          expect(response).toHaveStatusCode(HttpStatus.OK)
+          expect(response.body.entitiesCount).toEqual(1)
         })
 
-        it("should return 400 BAD_REQUEST (membership_no_owner) if attempting to remove the last member (who is also the only owner)", async () => {
-          // Given: group has only one member who is also the owner
+        it("should allow removing the last member from group (new role system no longer enforces owner constraints)", async () => {
+          // Given: group has only one member
           await prisma.groupMembership.deleteMany({where: {groupId: group.id}})
           await prisma.groupMembership.create({
             data: {
               groupId: group.id,
               userId: user1.id,
-              role: Role.OWNER,
               createdAt: new Date(),
               updatedAt: new Date()
             }
@@ -1022,9 +1067,9 @@ describe("Groups API", () => {
             .build()
             .send(requestBody)
 
-          // Expect
-          expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-          expect(response.body).toHaveErrorCode("MEMBERSHIP_NO_OWNER")
+          // Expect - should succeed as role system changed
+          expect(response).toHaveStatusCode(HttpStatus.OK)
+          expect(response.body.entitiesCount).toEqual(0)
         })
       })
     })

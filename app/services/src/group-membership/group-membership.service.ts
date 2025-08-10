@@ -1,8 +1,10 @@
-import {Group, GroupManager, Membership, MembershipFactory, MembershipValidationError} from "@domain"
+import {Group, GroupManager, Membership, MembershipFactory, UserValidationError} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
-import {AuthorizationError, GetGroupError} from "@services"
+import {AuthorizationError} from "@services"
+import {GetGroupRepoError} from "@services/group/interfaces"
 import {RequestorAwareRequest} from "@services/shared/types"
 import {Versioned} from "@services/shared/utils"
+import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
 import {isUUIDv4} from "@utils"
 import * as A from "fp-ts/Array"
 import * as E from "fp-ts/Either"
@@ -22,7 +24,7 @@ import {
 
 export interface AddMembersToGroupRequest extends RequestorAwareRequest {
   groupId: string
-  members: ReadonlyArray<{userId: string; role: string}>
+  members: ReadonlyArray<{userId: string}>
 }
 
 export interface RemoveMembersFromGroupRequest extends RequestorAwareRequest {
@@ -34,12 +36,21 @@ export interface RemoveMembersFromGroupRequest extends RequestorAwareRequest {
 export class GroupMembershipService {
   constructor(
     @Inject(GROUP_MEMBERSHIP_REPOSITORY_TOKEN)
-    private readonly groupMembershipRepo: GroupMembershipRepository
+    private readonly groupMembershipRepo: GroupMembershipRepository,
+    @Inject(USER_REPOSITORY_TOKEN)
+    private readonly userRepo: UserRepository
   ) {}
 
   getGroupByIdentifierWithMembership(
     request: GetGroupWithMembershipRequest
-  ): TaskEither<"request_invalid_group_uuid" | GetGroupError | MembershipValidationError, GetGroupMembershipResult> {
+  ): TaskEither<
+    | "request_invalid_group_uuid"
+    | GetGroupRepoError
+    | UserValidationError
+    | "membership_invalid_entity_uuid"
+    | "membership_inconsistent_dates",
+    GetGroupMembershipResult
+  > {
     const {requestor} = request
     const onlyIfMember = requestor.orgRole === "admin" ? false : {userId: requestor.id}
 
@@ -69,16 +80,21 @@ export class GroupMembershipService {
   > {
     const {requestor} = request
 
-    const validateMembershipsToAdd = (req: AddMembersToGroupRequest) =>
+    const fetchUsersAndCreateMemberships = (req: AddMembersToGroupRequest) =>
       pipe(
         [...req.members],
-        A.traverse(E.Applicative)(member =>
-          MembershipFactory.newMembership({
-            user: member.userId,
-            role: member.role
-          })
-        ),
-        TE.fromEither
+        A.traverse(TE.ApplicativeSeq)(member => this.userRepo.getUserById(member.userId)),
+        TE.chainW(versionedUsers =>
+          pipe(
+            versionedUsers,
+            A.traverse(E.Applicative)(user =>
+              MembershipFactory.newMembership({
+                entity: user
+              })
+            ),
+            TE.fromEither
+          )
+        )
       )
 
     const validateRequest = (
@@ -119,7 +135,7 @@ export class GroupMembershipService {
       TE.Do,
       TE.bindW("request", () => TE.right(request)),
       TE.bindW("validatedRequest", ({request}) => validateRequest(request)),
-      TE.bindW("membershipsToAdd", ({request}) => validateMembershipsToAdd(request)),
+      TE.bindW("membershipsToAdd", ({request}) => fetchUsersAndCreateMemberships(request)),
       TE.bindW("groupMembershipData", ({request}) => fetchGroupMembershipData(request)),
       TE.bindW("group", ({groupMembershipData, membershipsToAdd}) =>
         simulateAddMemberships(groupMembershipData, membershipsToAdd)

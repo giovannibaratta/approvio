@@ -2,11 +2,12 @@ import {
   Prisma,
   PrismaClient,
   User as PrismaUser,
+  OrganizationAdmin as PrismaOrganizationAdmin,
   WorkflowTemplate as PrismaWorkflowTemplate,
   Workflow as PrismaWorkflow,
   Group as PrismaGroup
 } from "@prisma/client"
-import {ApprovalRuleType, OrgRole, User, WorkflowStatus} from "@domain"
+import {ApprovalRuleType, BoundRole, User, WorkflowStatus} from "@domain"
 import {mapToDomainVersionedUser} from "@external/database/shared"
 import {isLeft} from "fp-ts/lib/Either"
 // eslint-disable-next-line node/no-unpublished-import
@@ -70,10 +71,17 @@ export class MockConfigProvider implements ConfigProviderInterface {
   }
 }
 
+type PrismaUserWithOrgAdmin = PrismaUser & {
+  organizationAdmins: PrismaOrganizationAdmin | null
+}
+
 export async function createMockUserInDb(
   prisma: PrismaClient,
-  overrides?: Partial<Omit<Prisma.UserCreateInput, "orgRole">> & {orgRole?: OrgRole}
-): Promise<PrismaUser> {
+  overrides?: Partial<Omit<Prisma.UserCreateInput, "roles">> & {
+    orgAdmin?: boolean
+    roles?: ReadonlyArray<BoundRole<string>>
+  }
+): Promise<PrismaUserWithOrgAdmin> {
   const randomUser: Prisma.UserCreateInput = {
     id: chance.guid({
       version: 4
@@ -81,22 +89,43 @@ export async function createMockUserInDb(
     displayName: chance.name(),
     email: chance.email(),
     occ: 0,
-    createdAt: new Date(),
-    orgRole: chance.pickone(Object.values(OrgRole))
+    createdAt: new Date()
   }
 
+  const {roles, orgAdmin, ...userOverrides} = overrides || {}
   const data: Prisma.UserCreateInput = {
     ...randomUser,
-    ...overrides
+    ...userOverrides,
+    roles: roles ? JSON.parse(JSON.stringify(roles)) : null
   }
 
   const user = await prisma.user.create({data})
-  return user
+  if (orgAdmin !== undefined && orgAdmin) {
+    await prisma.organizationAdmin.create({
+      data: {
+        createdAt: new Date(),
+        email: user.email,
+        id: chance.guid()
+      }
+    })
+  }
+
+  // Return user with organizationAdmin relationship included
+  const userWithOrgAdmin = await prisma.user.findUnique({
+    where: {id: user.id},
+    include: {organizationAdmins: true}
+  })
+
+  if (!userWithOrgAdmin) {
+    throw new Error("Unable to fetch created user")
+  }
+
+  return userWithOrgAdmin
 }
 
 export async function createDomainMockUserInDb(
   prisma: PrismaClient,
-  overrides: Parameters<typeof createMockUserInDb>[1]
+  overrides?: Parameters<typeof createMockUserInDb>[1]
 ): Promise<User> {
   const dbUser = await createMockUserInDb(prisma, overrides)
   const eitherUser = mapToDomainVersionedUser(dbUser)

@@ -1,10 +1,9 @@
 import {Group as GroupApi, GroupCreate, ListGroupEntities200Response, ListGroups200Response} from "@approvio/api"
-import {EntityType, Role} from "@controllers/shared/types"
+import {EntityType} from "@controllers/shared/types"
 import {
   DESCRIPTION_MAX_LENGTH,
   Group as GroupDomain,
   GroupWithEntitiesCount,
-  HumanGroupMembershipRole,
   Membership,
   NAME_MAX_LENGTH,
   User
@@ -122,6 +121,8 @@ export function generateErrorResponseForCreateGroup(error: CreateGroupError, con
       return new BadRequestException(
         generateErrorPayload(errorCode, `${context}: group name contains invalid characters`)
       )
+    case "request_invalid_user_identifier":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
     case "group_entities_count_invalid":
     case "group_update_before_create":
     case "user_org_role_invalid":
@@ -140,19 +141,30 @@ export function generateErrorResponseForCreateGroup(error: CreateGroupError, con
     case "unknown_error":
     case "membership_duplicated_membership":
     case "group_not_found":
-    case "not_a_member":
-    case "invalid_identifier":
     case "user_display_name_empty":
     case "user_display_name_too_long":
     case "user_email_empty":
     case "user_email_too_long":
     case "user_email_invalid":
-    case "membership_invalid_role":
     case "membership_inconsistent_dates":
-    case "membership_invalid_user_uuid":
+    case "membership_invalid_entity_uuid":
     case "concurrent_modification_error":
     case "membership_group_not_found":
     case "membership_user_not_found":
+    case "concurrency_error":
+    case "user_role_assignments_invalid_format":
+    case "role_invalid_uuid":
+    case "role_name_empty":
+    case "role_name_too_long":
+    case "role_name_invalid_characters":
+    case "role_permissions_empty":
+    case "role_permission_invalid":
+    case "role_invalid_scope":
+    case "role_invalid_structure":
+    case "role_resource_id_invalid":
+    case "role_resource_required_for_scope":
+    case "role_resource_not_allowed_for_scope":
+    case "user_duplicate_roles":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
@@ -181,7 +193,6 @@ export function generateErrorResponseForGetGroup(
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
-    case "not_a_member":
     case "unknown_error":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
@@ -229,47 +240,59 @@ export function generateErrorResponseForAddUserToGroup(
   switch (error) {
     case "group_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: group not found`))
-    case "membership_invalid_role":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid role provided`))
     case "requestor_not_authorized":
       return new ForbiddenException(
         generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
       )
-    case "invalid_identifier":
     case "request_invalid_group_uuid":
     case "request_invalid_user_uuid":
-    case "membership_user_not_found":
+    case "request_invalid_user_identifier":
     case "user_invalid_uuid":
     case "user_not_found":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
-    case "user_display_name_empty":
-    case "user_email_invalid":
+    case "membership_entity_already_in_group":
+      return new ConflictException(generateErrorPayload(errorCode, `${context}: Entity already in group`))
+    case "concurrent_modification_error":
+      return new ConflictException(generateErrorPayload(errorCode, context))
+    case "membership_duplicated_membership":
+      return new ConflictException(generateErrorPayload(errorCode, `${context}: Duplicated membership`))
     case "group_name_empty":
     case "group_name_too_long":
     case "group_name_invalid_characters":
-    case "group_update_before_create":
     case "group_description_too_long":
-    case "user_display_name_too_long":
     case "group_entities_count_invalid":
+    case "group_update_before_create":
+    case "user_display_name_empty":
+    case "user_display_name_too_long":
     case "user_email_empty":
     case "user_email_too_long":
+    case "user_email_invalid":
     case "user_org_role_invalid":
+    case "user_role_assignments_invalid_format":
+    case "role_invalid_uuid":
+    case "role_name_empty":
+    case "role_name_too_long":
+    case "role_name_invalid_characters":
+    case "role_permissions_empty":
+    case "role_permission_invalid":
+    case "role_invalid_scope":
+    case "role_resource_id_invalid":
+    case "role_resource_required_for_scope":
+    case "role_resource_not_allowed_for_scope":
+    case "role_invalid_structure":
+    case "user_duplicate_roles":
     case "membership_inconsistent_dates":
-    case "membership_invalid_user_uuid":
+    case "membership_invalid_entity_uuid":
     case "membership_group_not_found":
-    case "membership_duplicated_membership":
+    case "membership_user_not_found":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
-    case "not_a_member":
     case "unknown_error":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: An unexpected error occurred`)
       )
-    case "concurrent_modification_error":
-    case "membership_entity_already_in_group":
-      return new ConflictException(generateErrorPayload(errorCode, context))
   }
 }
 
@@ -291,41 +314,53 @@ export function generateErrorResponseForRemoveUserFromGroup(
       return new ForbiddenException(
         generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
       )
-    case "membership_no_owner":
+    case "membership_no_admin":
       return new BadRequestException(
-        generateErrorPayload(errorCode, `${context}: Cannot remove the last owner from a group`)
+        generateErrorPayload(errorCode, `${context}: Cannot remove the last admin from a group`)
       )
-    case "user_invalid_uuid":
-    case "invalid_identifier":
     case "request_invalid_group_uuid":
     case "request_invalid_user_uuid":
+    case "request_invalid_user_identifier":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
+    case "concurrent_modification_error":
+      return new ConflictException(generateErrorPayload(errorCode, context))
+    case "group_name_empty":
+    case "group_name_too_long":
+    case "group_name_invalid_characters":
     case "group_description_too_long":
     case "group_entities_count_invalid":
-    case "group_name_empty":
-    case "group_name_invalid_characters":
-    case "group_name_too_long":
     case "group_update_before_create":
-    case "membership_inconsistent_dates":
-    case "membership_invalid_user_uuid":
-    case "membership_invalid_role":
     case "user_display_name_empty":
     case "user_display_name_too_long":
     case "user_email_empty":
     case "user_email_invalid":
     case "user_email_too_long":
     case "user_org_role_invalid":
+    case "user_role_assignments_invalid_format":
+    case "role_invalid_uuid":
+    case "role_name_empty":
+    case "role_name_too_long":
+    case "role_name_invalid_characters":
+    case "role_permissions_empty":
+    case "role_permission_invalid":
+    case "role_invalid_scope":
+    case "role_resource_id_invalid":
+    case "role_resource_required_for_scope":
+    case "role_resource_not_allowed_for_scope":
+    case "role_invalid_structure":
+    case "user_duplicate_roles":
+    case "membership_inconsistent_dates":
+    case "membership_invalid_entity_uuid":
     case "membership_duplicated_membership":
+    case "user_invalid_uuid":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
-        generateErrorPayload(errorCode, `${context}: Internal data inconsistency`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
     case "unknown_error":
-    case "not_a_member":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: An unexpected error occurred`)
       )
-    case "concurrent_modification_error":
-      return new ConflictException(generateErrorPayload(errorCode, context))
   }
 }
 
@@ -346,24 +381,46 @@ export function generateErrorResponseForListUsersInGroup(
       return new ForbiddenException(
         generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
       )
+    case "invalid_page":
+    case "invalid_limit":
+    case "request_invalid_group_uuid":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
     case "group_name_empty":
     case "group_name_too_long":
     case "group_name_invalid_characters":
-    case "group_update_before_create":
     case "group_description_too_long":
     case "group_entities_count_invalid":
-    case "not_a_member":
+    case "group_update_before_create":
+    case "user_invalid_uuid":
+    case "user_display_name_empty":
+    case "user_display_name_too_long":
+    case "user_email_empty":
+    case "user_email_too_long":
+    case "user_email_invalid":
+    case "user_org_role_invalid":
+    case "user_role_assignments_invalid_format":
+    case "role_invalid_uuid":
+    case "role_name_empty":
+    case "role_name_too_long":
+    case "role_name_invalid_characters":
+    case "role_permissions_empty":
+    case "role_permission_invalid":
+    case "role_invalid_scope":
+    case "role_resource_id_invalid":
+    case "role_resource_required_for_scope":
+    case "role_resource_not_allowed_for_scope":
+    case "role_invalid_structure":
+    case "user_duplicate_roles":
     case "membership_inconsistent_dates":
-    case "membership_invalid_user_uuid":
-    case "membership_invalid_role":
+    case "membership_invalid_entity_uuid":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
+      )
     case "unknown_error":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: An unexpected error occurred`)
       )
-    case "invalid_page":
-    case "request_invalid_group_uuid":
-    case "invalid_limit":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
   }
 }
 
@@ -373,20 +430,6 @@ function mapMembershipToListEntitiesItemApi(membership: Membership): ListGroupEn
       entityId: membership.getEntityId(),
       entityType: EntityType.HUMAN
     },
-    role: mapDomainRoleToApiRole(membership.role),
     addedAt: membership.createdAt.toISOString()
-  }
-}
-
-function mapDomainRoleToApiRole(role: HumanGroupMembershipRole): Role {
-  switch (role) {
-    case HumanGroupMembershipRole.ADMIN:
-      return Role.ADMIN
-    case HumanGroupMembershipRole.APPROVER:
-      return Role.APPROVER
-    case HumanGroupMembershipRole.AUDITOR:
-      return Role.AUDITOR
-    case HumanGroupMembershipRole.OWNER:
-      return Role.OWNER
   }
 }

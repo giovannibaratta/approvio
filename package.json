@@ -24,12 +24,12 @@
     "prisma:generate": "yarn prisma generate",
     "build": "nest build",
     "test:setup": "yarn deps:start:test && yarn prisma:generate && yarn liquibase:update:test",
-    "test": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest app/**/*.test.ts",
-    "test:single": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest "
+    "test": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest",
+    "test:all": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest app/**/*.test.ts"
   },
   "packageManager": "yarn@4.7.0",
   "dependencies": {
-    "@approvio/api": "0.0.8",
+    "@approvio/api": "0.0.9",
     "@nestjs/common": "11.1.5",
     "@nestjs/core": "11.1.5",
     "@nestjs/jwt": "11.0.0",

@@ -111,6 +111,9 @@ describe("OIDC Flow Integration", () => {
     const uniqueId = Date.now().toString()
     // Generate a proper UUID v4 format
     const uuid = crypto.randomUUID()
+    const userEmail = `test-${uniqueId}@localhost.com`
+    const displayName = "Test User"
+
     testUser = {
       SubjectId: uuid,
       Username: `testuser-${uniqueId}`,
@@ -118,11 +121,11 @@ describe("OIDC Flow Integration", () => {
       Claims: [
         {
           Type: "name",
-          Value: "Test User"
+          Value: displayName
         },
         {
           Type: "email",
-          Value: `test-${uniqueId}@localhost.com`
+          Value: userEmail
         }
       ]
     }
@@ -144,11 +147,10 @@ describe("OIDC Flow Integration", () => {
     prisma = module.get(DatabaseClient)
     configProvider = module.get(ConfigProvider)
 
-    // Create database user that matches OIDC user SubjectId
+    // Create database user with email that matches OIDC user claims
     await createMockUserInDb(prisma, {
-      id: testUser.SubjectId,
-      displayName: testUser.Claims.find(c => c.Type === "name")?.Value || "Test User",
-      email: testUser.Claims.find(c => c.Type === "email")?.Value || "test@localhost.com"
+      displayName,
+      email: userEmail
     })
 
     await app.init()
@@ -217,6 +219,15 @@ describe("OIDC Flow Integration", () => {
       expect(tokenResponse.body).toHaveProperty("token")
       expect(typeof tokenResponse.body.token).toBe("string")
       expect(tokenResponse.body.token.length).toBeGreaterThan(0)
+
+      // When: Use JWT token to access /auth/info endpoint
+      const infoResponse = await request(app.getHttpServer())
+        .get("/auth/info")
+        .set("Authorization", `Bearer ${tokenResponse.body.token}`)
+
+      // Expect: User info endpoint returns entity type
+      expect(infoResponse.status).toBe(200)
+      expect(infoResponse.body).toEqual({entityType: "user"})
     }, 20000)
   })
 })

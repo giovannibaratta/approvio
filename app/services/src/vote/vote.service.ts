@@ -1,4 +1,11 @@
-import {MembershipValidationErrorWithGroupRef, Vote, VoteFactory, CantVoteReason, canVoteOnWorkflow} from "@domain"
+import {
+  MembershipValidationErrorWithGroupRef,
+  Vote,
+  VoteFactory,
+  CantVoteReason,
+  canVoteOnWorkflow,
+  UserValidationError
+} from "@domain"
 import {Inject, Injectable, Logger} from "@nestjs/common"
 import {UnknownError} from "@services/error"
 import {RequestorAwareRequest} from "@services/shared/types"
@@ -41,7 +48,8 @@ export class VoteService {
       TE.map(scope => {
         const {workflowWithTemplate, vote, userMemberships} = scope
         const status = this.getVoteStatus(vote)
-        const canVoteResult = canVoteOnWorkflow(workflowWithTemplate, userMemberships)
+        const entityRoles = request.requestor.roles
+        const canVoteResult = canVoteOnWorkflow(workflowWithTemplate, userMemberships, entityRoles)
         const canVote = isRight(canVoteResult) ? true : {reason: canVoteResult.left}
 
         return {canVote, status}
@@ -106,6 +114,7 @@ export type CanVoteError =
   | "concurrency_error"
   | WorkflowGetError
   | MembershipValidationErrorWithGroupRef
+  | UserValidationError
   | GetLatestVoteError
   | UnknownError
 
@@ -114,7 +123,6 @@ export type CastVoteRequest = RequestorAwareRequest & DistributiveOmit<Vote, "id
 export type CastVoteServiceError =
   | "workflow_not_found"
   | "user_not_found"
-  | "user_not_eligible_to_vote"
   | CantVoteReason
   | PersistVoteError
   | CanVoteError

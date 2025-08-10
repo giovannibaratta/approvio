@@ -14,11 +14,11 @@ import {
   WorkflowTemplateFactory,
   WorkflowTemplateValidationError,
   DecoratedWorkflow,
-  WorkflowDecoratorSelector
+  WorkflowDecoratorSelector,
+  OrgRole
 } from "@domain"
 import {
   Group as PrismaGroup,
-  User as PrismaUser,
   Workflow as PrismaWorkflow,
   WorkflowTemplate as PrismaWorkflowTemplate
 } from "@prisma/client"
@@ -28,7 +28,7 @@ import {Either} from "fp-ts/lib/Either"
 import {pipe} from "fp-ts/lib/function"
 import {PrismaGroupWithCount} from "./group.repository"
 import {Prisma} from "@prisma/client"
-import {UserSummaryRepo} from "./user.repository"
+import {PrismaUserWithOrgAdmin, UserSummaryRepo} from "./user.repository"
 import {UserSummaryValidationError} from "@domain"
 import {iPrismaDecoratedWorkflow, PrismaDecoratedWorkflow, PrismaWorkflowDecoratorSelector} from "./workflow.repository"
 
@@ -75,7 +75,9 @@ export function mapToDomainVersionedGroupWithEntities(
   )
 }
 
-export function mapToDomainVersionedUser(dbObject: PrismaUser): Either<UserValidationError, Versioned<User>> {
+export function mapToDomainVersionedUser(
+  dbObject: PrismaUserWithOrgAdmin
+): Either<UserValidationError, Versioned<User>> {
   return pipe(
     dbObject,
     mapUserToDomain,
@@ -83,13 +85,14 @@ export function mapToDomainVersionedUser(dbObject: PrismaUser): Either<UserValid
   )
 }
 
-export function mapUserToDomain(dbObject: PrismaUser): Either<UserValidationError, User> {
+export function mapUserToDomain(dbObject: PrismaUserWithOrgAdmin): Either<UserValidationError, User> {
   const object = {
     id: dbObject.id,
     displayName: dbObject.displayName,
     email: dbObject.email,
     createdAt: dbObject.createdAt,
-    orgRole: dbObject.orgRole
+    orgRole: dbObject.organizationAdmins ? OrgRole.ADMIN : OrgRole.MEMBER,
+    roles: dbObject.roles
   }
 
   return pipe(object, UserFactory.validate)

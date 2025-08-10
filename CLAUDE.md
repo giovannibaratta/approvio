@@ -98,8 +98,8 @@ In order to update the prima schema after the liquibase migration files has been
 | `prisma:generate` | `yarn prisma:generate` | Generates the Prisma client based on the current `prisma/schema.prisma` file. | Prisma CLI output indicating the status of client generation. | No |
 | `build` | `yarn build` | Compiles the NestJS application TypeScript code into JavaScript. | Build process logs. Output artifacts are typically placed in a `dist` directory. | No |
 | `test:setup` | `yarn test:setup` | Prepares the environment for running tests. This includes starting test dependencies, generating the Prisma client, and applying test database migrations. | Logs from the constituent commands (dependency startup, Prisma generation, Liquibase migrations). | No |
-| `test` | `yarn test` | Runs all unit and integration tests (files matching `app/**/*.test.ts`) after performing `test:setup`. Uses environment variables from `.env.test`. | Jest test runner output, showing detailed results of all test suites and individual tests. | No |
-| `test:single` | `yarn test:single <file_path>` | Runs a specific test file or pattern after performing `test:setup`. Uses `.env.test`. The path to the test file/pattern must be appended to the command. | Jest test runner output for the specified test(s). | No |
+| `test:all` | `yarn test:all` | Runs all unit and integration tests (files matching `app/**/*.test.ts`) after performing `test:setup`. Uses environment variables from `.env.test`. | Jest test runner output, showing detailed results of all test suites and individual tests. | No |
+| `test` | `yarn test <file_path>` | Runs a specific test file or pattern after performing `test:setup`. Uses `.env.test`. The path to the test file/pattern must be appended to the command. | Jest test runner output for the specified test(s). | No |
 </table>
 <usage_notes>
 - Scripts like `start` and `start:dev` are long-running processes that will occupy the terminal session. They are intended for active development and application serving.

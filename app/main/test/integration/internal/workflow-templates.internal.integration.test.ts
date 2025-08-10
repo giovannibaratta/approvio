@@ -6,7 +6,6 @@ import "expect-more-jest"
 import "@utils/matchers"
 import {AppModule} from "@app/app.module"
 import {WORKFLOW_TEMPLATE_INTERNAL_ENDPOINT_ROOT} from "@controllers"
-import {OrgRole} from "@domain"
 import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
 import {NestApplication} from "@nestjs/core"
@@ -14,6 +13,7 @@ import {JwtService} from "@nestjs/jwt"
 import {TestingModule, Test} from "@nestjs/testing"
 import {prepareDatabase, cleanDatabase} from "../database"
 import {UserWithToken} from "../shared/types"
+import {TokenPayloadBuilder} from "@services"
 
 describe("Workflow Templates internal API", () => {
   let app: NestApplication
@@ -43,8 +43,14 @@ describe("Workflow Templates internal API", () => {
     prisma = module.get(DatabaseClient)
     jwtService = module.get(JwtService)
 
-    const adminUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.ADMIN})
-    orgAdminUser = {user: adminUser, token: jwtService.sign({email: adminUser.email, sub: adminUser.id})}
+    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
+    const configProvider = module.get(ConfigProvider)
+    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
+      issuer: configProvider.jwtConfig.issuer,
+      audience: [configProvider.jwtConfig.audience]
+    })
+
+    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
 
     await app.init()
   }, 30000)

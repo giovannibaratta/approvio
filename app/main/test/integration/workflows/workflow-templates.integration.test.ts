@@ -16,11 +16,12 @@ import {cleanDatabase, prepareDatabase} from "../database"
 import {createDomainMockUserInDb, createMockWorkflowTemplateInDb, MockConfigProvider} from "../shared/mock-data"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
-import {ApprovalRuleType, OrgRole} from "@domain"
+import {ApprovalRuleType} from "@domain"
 import {get, post, put} from "../shared/requests"
 import {UserWithToken} from "../shared/types"
 import "expect-more-jest"
 import "@utils/matchers"
+import {TokenPayloadBuilder} from "@services"
 
 describe("Workflow Templates API", () => {
   let app: NestApplication
@@ -50,11 +51,21 @@ describe("Workflow Templates API", () => {
     app = module.createNestApplication()
     prisma = module.get(DatabaseClient)
     jwtService = module.get(JwtService)
+    const configProvider = module.get(ConfigProvider)
 
-    const adminUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.ADMIN})
-    const memberUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.MEMBER})
-    orgAdminUser = {user: adminUser, token: jwtService.sign({email: adminUser.email, sub: adminUser.id})}
-    orgMemberUser = {user: memberUser, token: jwtService.sign({email: memberUser.email, sub: memberUser.id})}
+    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
+    const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
+    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
+      issuer: configProvider.jwtConfig.issuer,
+      audience: [configProvider.jwtConfig.audience]
+    })
+    const memberTokenPayload = TokenPayloadBuilder.fromUser(memberUser, {
+      issuer: configProvider.jwtConfig.issuer,
+      audience: [configProvider.jwtConfig.audience]
+    })
+
+    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
+    orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
 
     await app.init()
   }, 30000)

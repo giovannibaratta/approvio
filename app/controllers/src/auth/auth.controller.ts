@@ -147,4 +147,9 @@ export class AuthController {
   async error(): Promise<AuthMessageResponse> {
     return {message: "Authentication failed. Please try again."}
   }
+
+  @Get("info")
+  async getUserInfo(): Promise<{entityType: string}> {
+    return {entityType: "user"}
+  }
 }

@@ -318,10 +318,12 @@ function mapCantVoteReasonToApi(response: CanVoteResponse): string | undefined {
       return "WORKFLOW_CANCELED"
     case "workflow_already_approved":
       return "WORKFLOW_APPROVED"
-    case "user_not_in_required_group":
-      return "NOT_ELIGIBLE_TO_VOTE"
-    case "not_active":
+    case "entity_not_in_required_group":
+      return "ENTITY_NOT_IN_GROUP"
+    case "workflow_template_not_active":
       return "WORKFLOW_TEMPLATE_NOT_ACTIVE"
+    case "entity_not_eligible_to_vote":
+      return "NO_PERMISSIONS"
   }
 }
 
@@ -449,8 +451,7 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "approval_rule_or_rule_must_have_rules":
     case "membership_inconsistent_dates":
     case "membership_invalid_group_uuid":
-    case "membership_invalid_role":
-    case "membership_invalid_user_uuid":
+    case "membership_invalid_entity_uuid":
     case "vote_invalid_group_id":
     case "vote_invalid_user_id":
     case "vote_invalid_vote_type":
@@ -479,6 +480,26 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
     case "workflow_template_active_is_not_latest":
+    case "user_invalid_uuid":
+    case "user_display_name_empty":
+    case "user_display_name_too_long":
+    case "user_email_empty":
+    case "user_email_too_long":
+    case "user_email_invalid":
+    case "user_org_role_invalid":
+    case "user_role_assignments_invalid_format":
+    case "role_name_empty":
+    case "role_name_too_long":
+    case "role_name_invalid_characters":
+    case "role_permissions_empty":
+    case "role_permission_invalid":
+    case "role_invalid_scope":
+    case "role_resource_id_invalid":
+    case "role_resource_required_for_scope":
+    case "role_resource_not_allowed_for_scope":
+    case "role_invalid_uuid":
+    case "role_invalid_structure":
+    case "user_duplicate_roles":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -496,7 +517,7 @@ export function generateErrorResponseForCastVote(
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Workflow not found`))
     case "user_not_found":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: User not found`))
-    case "user_not_eligible_to_vote":
+    case "entity_not_eligible_to_vote":
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: User is not eligible to vote`))
     case "unknown_error":
       return new InternalServerErrorException(
@@ -530,8 +551,7 @@ export function generateErrorResponseForCastVote(
     case "approval_rule_or_rule_must_have_rules":
     case "membership_inconsistent_dates":
     case "membership_invalid_group_uuid":
-    case "membership_invalid_role":
-    case "membership_invalid_user_uuid":
+    case "membership_invalid_entity_uuid":
     case "workflow_action_recipients_empty":
     case "workflow_action_recipients_invalid_email":
     case "workflow_action_type_invalid":
@@ -554,6 +574,26 @@ export function generateErrorResponseForCastVote(
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
     case "workflow_template_active_is_not_latest":
+    case "user_invalid_uuid":
+    case "user_display_name_empty":
+    case "user_display_name_too_long":
+    case "user_email_empty":
+    case "user_email_too_long":
+    case "user_email_invalid":
+    case "user_org_role_invalid":
+    case "user_role_assignments_invalid_format":
+    case "role_name_empty":
+    case "role_name_too_long":
+    case "role_name_invalid_characters":
+    case "role_permissions_empty":
+    case "role_permission_invalid":
+    case "role_invalid_scope":
+    case "role_resource_id_invalid":
+    case "role_resource_required_for_scope":
+    case "role_resource_not_allowed_for_scope":
+    case "role_invalid_uuid":
+    case "user_duplicate_roles":
+    case "role_invalid_structure":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
@@ -561,8 +601,8 @@ export function generateErrorResponseForCastVote(
     case "workflow_already_approved":
     case "workflow_cancelled":
     case "workflow_expired":
-    case "user_not_in_required_group":
-    case "not_active":
+    case "entity_not_in_required_group":
+    case "workflow_template_not_active":
       return new UnprocessableEntityException(generateErrorPayload(errorCode, `${context}: Cannot cast vote`))
   }
 }

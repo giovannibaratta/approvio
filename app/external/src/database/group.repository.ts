@@ -1,10 +1,10 @@
-import {Group, GroupWithEntitiesCount, HumanGroupMembershipRole, ListGroupsFilter} from "@domain"
+import {Group, GroupWithEntitiesCount, ListGroupsFilter, BoundRole} from "@domain"
 import {isPrismaForeignKeyConstraintError, isPrismaUniqueConstraintError} from "@external/database/errors"
 import {Injectable, Logger} from "@nestjs/common"
 import {Prisma, Group as PrismaGroup} from "@prisma/client"
 import {
   CreateGroupRepoError,
-  CreateGroupWithOwnerRepo,
+  CreateGroupWithMembershipAndUpdateUserRepo,
   GetGroupByIdRepo,
   GetGroupByNameRepo,
   GetGroupRepoError,
@@ -45,17 +45,19 @@ export type PrismaGroupWithCount = PrismaGroup & {
 export class GroupDbRepository implements GroupRepository {
   constructor(private readonly dbClient: DatabaseClient) {}
 
-  createGroupWithOwner(data: CreateGroupWithOwnerRepo): TaskEither<CreateGroupRepoError, Group> {
+  createGroupWithMembershipAndUpdateUser(
+    data: CreateGroupWithMembershipAndUpdateUserRepo
+  ): TaskEither<CreateGroupRepoError, Group> {
     return pipe(
       data,
       TE.right,
-      TE.chainW(this.persistNewGroupWithOwnerTask()),
+      TE.chainW(this.persistNewGroupWithMembershipAndUpdateUserTask()),
       TE.chainEitherKW(mapToDomainVersionedGroupWithEntities)
     )
   }
 
-  private persistNewGroupWithOwnerTask(): (
-    data: CreateGroupWithOwnerRepo
+  private persistNewGroupWithMembershipAndUpdateUserTask(): (
+    data: CreateGroupWithMembershipAndUpdateUserRepo
   ) => TaskEither<CreateGroupRepoError, PrismaGroupWithCount> {
     // Wrap in a lambda to preserve the "this" context
     return data =>
@@ -82,14 +84,30 @@ export class GroupDbRepository implements GroupRepository {
               }
             })
 
-            // 2. Add owner membership
+            // 2. Add membership using provided data
             await tx.groupMembership.create({
               data: {
                 groupId: createdGroup.id,
-                userId: data.requestor.id,
-                role: HumanGroupMembershipRole.OWNER,
-                createdAt: data.group.createdAt,
-                updatedAt: data.group.updatedAt
+                userId: data.membership.getEntityId(),
+                createdAt: data.membership.createdAt,
+                updatedAt: data.membership.updatedAt
+              }
+            })
+
+            // 3. Update user with all data using OCC check
+            await tx.user.update({
+              where: {
+                id: data.user.id,
+                occ: data.userOcc
+              },
+              data: {
+                displayName: data.user.displayName,
+                email: data.user.email,
+                roles: mapRolesToJsonValue(data.user.roles),
+                createdAt: data.user.createdAt,
+                occ: {
+                  increment: 1
+                }
               }
             })
 
@@ -99,6 +117,11 @@ export class GroupDbRepository implements GroupRepository {
           if (isPrismaUniqueConstraintError(error, ["name"])) return "group_already_exists"
           if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_user")) return "user_not_found"
 
+          // Handle OCC conflicts - P2025 means record not found (likely due to OCC mismatch)
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+            return "concurrency_error"
+          }
+
           Logger.error("Error while creating group. Unknown error", error)
           return "unknown_error"
         }
@@ -107,12 +130,32 @@ export class GroupDbRepository implements GroupRepository {
 
   getGroupById(data: GetGroupByIdRepo): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
     const identifier: Identifier = {type: "id", identifier: data.groupId}
-    return this.getGroup({identifier, onlyIfMember: data.onlyIfMember})
+    return this.getGroup({identifier})
   }
 
   getGroupByName(data: GetGroupByNameRepo): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
     const identifier: Identifier = {type: "name", identifier: data.groupName}
-    return this.getGroup({identifier, onlyIfMember: data.onlyIfMember})
+    return this.getGroup({identifier})
+  }
+
+  getGroupIdByName(groupName: string): TaskEither<GetGroupRepoError, string> {
+    return pipe(
+      TE.tryCatchK(
+        () =>
+          this.dbClient.group.findUnique({
+            where: {name: groupName},
+            select: {id: true}
+          }),
+        error => {
+          Logger.error("Error while retrieving group ID by name. Unknown error", error)
+          return "unknown_error" as const
+        }
+      )(),
+      TE.chainW(result => {
+        if (result === null) return TE.left("group_not_found" as const)
+        return TE.right(result.id)
+      })
+    )
   }
 
   private getGroup(request: GetObjectTaskRequest): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
@@ -163,29 +206,9 @@ export class GroupDbRepository implements GroupRepository {
   }
 
   private buildWhereClauseGetObjectTask(request: GetObjectTaskRequest): Prisma.GroupWhereUniqueInput {
-    const idClause =
-      request.identifier.type === "id"
-        ? {
-            id: request.identifier.identifier
-          }
-        : {
-            name: request.identifier.identifier
-          }
-
-    let groupMembershipClause: Prisma.GroupWhereUniqueInput["groupMemberships"] = undefined
-
-    if (request.onlyIfMember) {
-      groupMembershipClause = {
-        some: {
-          userId: request.onlyIfMember.userId
-        }
-      }
-    }
-
-    return {
-      ...idClause,
-      groupMemberships: groupMembershipClause
-    }
+    return request.identifier.type === "id"
+      ? {id: request.identifier.identifier}
+      : {name: request.identifier.identifier}
   }
 
   private getObjectTask(): (
@@ -265,7 +288,19 @@ export class GroupDbRepository implements GroupRepository {
   }
 }
 
+function mapRolesToJsonValue(roles: ReadonlyArray<BoundRole<string>>): Prisma.InputJsonValue {
+  return roles.map(role => ({
+    name: role.name,
+    permissions: [...role.permissions],
+    scope: {
+      type: role.scope.type,
+      ...(role.scope.type === "space" && {spaceId: role.scope.spaceId}),
+      ...(role.scope.type === "group" && {groupId: role.scope.groupId}),
+      ...(role.scope.type === "workflow_template" && {workflowTemplateId: role.scope.workflowTemplateId})
+    }
+  }))
+}
+
 interface GetObjectTaskRequest {
   identifier: Identifier
-  onlyIfMember: GetGroupByIdRepo["onlyIfMember"] | GetGroupByNameRepo["onlyIfMember"]
 }

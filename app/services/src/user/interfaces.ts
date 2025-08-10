@@ -4,7 +4,7 @@ import {Versioned} from "@services/shared/utils"
 import {TaskEither} from "fp-ts/TaskEither"
 
 export type UserCreateError = "user_already_exists" | AuthorizationError | UserValidationError | UnknownError
-export type UserGetError = "user_not_found" | "invalid_identifier" | UserValidationError | UnknownError
+export type UserGetError = "user_not_found" | "request_invalid_user_identifier" | UserValidationError | UnknownError
 
 export type UserListValidationError =
   | "invalid_page_number"

@@ -17,3 +17,5 @@ databaseChangeLog:
       file: v1/create-workflow-actions-email-task-table.yaml
   - include:
       file: v1/create-pkce-sessions-table.yaml
+  - include:
+      file: v1/create-organization-admins-table.yaml

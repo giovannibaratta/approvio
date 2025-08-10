@@ -151,8 +151,7 @@ export class GroupsController {
     const addUserRequests: AddMembersToGroupRequest = {
       groupId,
       members: request.entities.map(entity => ({
-        userId: entity.entity.entityId,
-        role: entity.role
+        userId: entity.entity.entityId
       })),
       requestor
     }

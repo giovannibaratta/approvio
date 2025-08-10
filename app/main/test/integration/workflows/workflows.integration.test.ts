@@ -7,14 +7,8 @@ import {
 } from "@approvio/api"
 import {AppModule} from "@app/app.module"
 import {WORKFLOWS_ENDPOINT_ROOT} from "@controllers"
-import {
-  ApprovalRuleType,
-  HumanGroupMembershipRole,
-  OrgRole,
-  WORKFLOW_DESCRIPTION_MAX_LENGTH,
-  WORKFLOW_NAME_MAX_LENGTH,
-  WorkflowStatus
-} from "@domain"
+import {RoleFactory} from "@domain"
+import {ApprovalRuleType, WORKFLOW_DESCRIPTION_MAX_LENGTH, WORKFLOW_NAME_MAX_LENGTH, WorkflowStatus} from "@domain"
 import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
@@ -32,6 +26,7 @@ import {
 } from "../shared/mock-data"
 import {get, post} from "../shared/requests"
 import {UserWithToken} from "../shared/types"
+import {TokenPayloadBuilder} from "@services"
 
 // Helper function to create a mock group for tests
 async function createTestGroup(prisma: PrismaClient, name: string): Promise<{id: string}> {
@@ -47,17 +42,20 @@ async function createTestGroup(prisma: PrismaClient, name: string): Promise<{id:
   return group
 }
 
-async function addUserToGroup(
-  prisma: PrismaClient,
-  groupId: string,
-  userId: string,
-  role: HumanGroupMembershipRole
-): Promise<void> {
-  await prisma.groupMembership.create({
-    data: {
+async function addUserToGroup(prisma: PrismaClient, groupId: string, userId: string): Promise<void> {
+  await prisma.groupMembership.upsert({
+    where: {
+      groupId_userId: {
+        groupId: groupId,
+        userId: userId
+      }
+    },
+    update: {
+      updatedAt: new Date()
+    },
+    create: {
       groupId: groupId,
       userId: userId,
-      role: role,
       createdAt: new Date(),
       updatedAt: new Date()
     }
@@ -70,6 +68,7 @@ describe("Workflows API", () => {
   let orgAdminUser: UserWithToken
   let orgMemberUser: UserWithToken
   let jwtService: JwtService
+  let configProvider: ConfigProvider
   let mockGroupId1: string
   let mockWorkflowTemplate: PrismaWorkflowTemplate
 
@@ -96,12 +95,22 @@ describe("Workflows API", () => {
     prisma = module.get(DatabaseClient)
     jwtService = module.get(JwtService)
 
-    const adminUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.ADMIN})
-    const memberUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.MEMBER})
+    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
+    const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
     const testGroup1 = await createTestGroup(prisma, "Test-Approver-Group-1")
 
-    orgAdminUser = {user: adminUser, token: jwtService.sign({email: adminUser.email, sub: adminUser.id})}
-    orgMemberUser = {user: memberUser, token: jwtService.sign({email: memberUser.email, sub: memberUser.id})}
+    configProvider = module.get(ConfigProvider)
+    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
+      issuer: configProvider.jwtConfig.issuer,
+      audience: [configProvider.jwtConfig.audience]
+    })
+    const memberTokenPayload = TokenPayloadBuilder.fromUser(memberUser, {
+      issuer: configProvider.jwtConfig.issuer,
+      audience: [configProvider.jwtConfig.audience]
+    })
+
+    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
+    orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
     mockGroupId1 = testGroup1.id
 
     mockWorkflowTemplate = await createMockWorkflowTemplateInDb(prisma, {
@@ -352,10 +361,11 @@ describe("Workflows API", () => {
   describe("GET /workflows/:workflowId/canVote", () => {
     let testWorkflow: PrismaWorkflow
     let workflowRequiringGroup1: PrismaWorkflow
+    let template: PrismaWorkflowTemplate
 
     beforeEach(async () => {
       // Given: a workflow that requires a specific group for voting and a user added to that group
-      const template = await createMockWorkflowTemplateInDb(prisma, {
+      template = await createMockWorkflowTemplateInDb(prisma, {
         approvalRule: {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
           groupId: mockGroupId1,
@@ -369,7 +379,24 @@ describe("Workflows API", () => {
         status: WorkflowStatus.EVALUATION_IN_PROGRESS,
         workflowTemplateId: template.id
       })
-      await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id, HumanGroupMembershipRole.APPROVER)
+      await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id)
+      await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id)
+
+      // Add voter roles for this workflow template
+      const voterRole = RoleFactory.createWorkflowTemplateVoterRole({
+        type: "workflow_template",
+        workflowTemplateId: template.id
+      })
+      const roleForDb = JSON.parse(JSON.stringify(voterRole))
+
+      await prisma.user.update({
+        where: {id: orgMemberUser.user.id},
+        data: {roles: [roleForDb]}
+      })
+      await prisma.user.update({
+        where: {id: orgAdminUser.user.id},
+        data: {roles: [roleForDb]}
+      })
 
       // Given: a generic workflow for other tests (e.g., admin access)
       testWorkflow = await createMockWorkflowInDb(prisma, {
@@ -394,7 +421,7 @@ describe("Workflows API", () => {
 
       it("should return 200 OK with canVote:true for OrgAdmin if they are part of a group", async () => {
         // Given: OrgAdmin is added to the required group
-        await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id, HumanGroupMembershipRole.APPROVER)
+        await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id)
 
         // When: a request is sent to check voting eligibility with an OrgAdmin token
         const response = await get(app, `${endpoint}/${workflowRequiringGroup1.id}/canVote`)
@@ -410,9 +437,20 @@ describe("Workflows API", () => {
       })
 
       it("should return 200 OK with canVote:false if user is not in the required group", async () => {
-        // Given: a new user not in any group related to this workflow
-        const nonMemberUser = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.MEMBER})
-        const nonMemberToken = jwtService.sign({email: nonMemberUser.email, sub: nonMemberUser.id})
+        // Given: a new user with voter role but not in any group related to this workflow
+        const voterRole = RoleFactory.createWorkflowTemplateVoterRole({
+          type: "workflow_template",
+          workflowTemplateId: template.id
+        })
+        const nonMemberUser = await createDomainMockUserInDb(prisma, {
+          orgAdmin: false,
+          roles: [voterRole]
+        })
+        const nonMemberTokenPayload = TokenPayloadBuilder.fromUser(nonMemberUser, {
+          issuer: configProvider.jwtConfig.issuer,
+          audience: [configProvider.jwtConfig.audience]
+        })
+        const nonMemberToken = jwtService.sign(nonMemberTokenPayload)
 
         // When: a request is sent to check voting eligibility with the non-member user's token
         const response = await get(app, `${endpoint}/${workflowRequiringGroup1.id}/canVote`)
@@ -423,7 +461,7 @@ describe("Workflows API", () => {
         expect(response).toHaveStatusCode(HttpStatus.OK)
         const body: CanVoteResponseApi = response.body
         expect(body.canVote).toBe(false)
-        expect(body.cantVoteReason).toEqual("NOT_ELIGIBLE_TO_VOTE")
+        expect(body.cantVoteReason).toEqual("ENTITY_NOT_IN_GROUP")
       })
 
       it("should return 200 OK with canVote:false if workflow has expired", async () => {
@@ -495,8 +533,27 @@ describe("Workflows API", () => {
           workflowTemplateId: workflowTemplate.id,
           expiresAt: "active"
         })
-        await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id, HumanGroupMembershipRole.APPROVER)
-        await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id, HumanGroupMembershipRole.APPROVER)
+        await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id)
+        await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id)
+
+        // Add voter roles for the workflow template
+        const voterRole = RoleFactory.createWorkflowTemplateVoterRole({
+          type: "workflow_template",
+          workflowTemplateId: workflowTemplate.id
+        })
+
+        // Convert role to JSON-serializable format
+        const roleForDb = JSON.parse(JSON.stringify(voterRole))
+
+        // Update users with voter roles
+        await prisma.user.update({
+          where: {id: orgMemberUser.user.id},
+          data: {roles: [roleForDb]}
+        })
+        await prisma.user.update({
+          where: {id: orgAdminUser.user.id},
+          data: {roles: [roleForDb]}
+        })
       })
 
       it("should allow OrgMember in the group to APPROVE a workflow and return 200 OK", async () => {
@@ -610,7 +667,7 @@ describe("Workflows API", () => {
         expect(response.body).toHaveErrorCode("WORKFLOW_NOT_FOUND")
       })
 
-      it("should return 422 UNPROCESSABLE_ENTITY if user is not eligible to vote (e.g., not in group)", async () => {
+      it("should return 422 UNPROCESSABLE_ENTITY if user is not eligible to vote (not in group)", async () => {
         const workflow = await createMockWorkflowInDb(prisma, {
           name: "Workflow-For-Actual-Voting",
           description: "Voting Test",
@@ -619,9 +676,20 @@ describe("Workflows API", () => {
           expiresAt: "active"
         })
 
-        // Given: a new user not in any group related to this workflow and a vote request body
-        const nonVoter = await createDomainMockUserInDb(prisma, {orgRole: OrgRole.MEMBER})
-        const nonVoterToken = jwtService.sign({email: nonVoter.email, sub: nonVoter.id})
+        // Given: a new user not in any group related to this workflow
+        const voterRole = RoleFactory.createWorkflowTemplateVoterRole({
+          type: "workflow_template",
+          workflowTemplateId: workflowTemplate.id
+        })
+        const nonVoter = await createDomainMockUserInDb(prisma, {
+          orgAdmin: false,
+          roles: [voterRole]
+        })
+        const nonVoterTokenPayload = TokenPayloadBuilder.fromUser(nonVoter, {
+          issuer: configProvider.jwtConfig.issuer,
+          audience: [configProvider.jwtConfig.audience]
+        })
+        const nonVoterToken = jwtService.sign(nonVoterTokenPayload)
         const requestBody: WorkflowVoteRequestApi = {
           voteType: {
             type: "APPROVE",
@@ -635,9 +703,8 @@ describe("Workflows API", () => {
           .build()
           .send(requestBody)
 
-        // Expect: a 422 UNPROCESSABLE_ENTITY status with USER_NOT_IN_REQUIRED_GROUP error code
         expect(response).toHaveStatusCode(HttpStatus.UNPROCESSABLE_ENTITY)
-        expect(response.body).toHaveErrorCode("USER_NOT_IN_REQUIRED_GROUP")
+        expect(response.body).toHaveErrorCode("ENTITY_NOT_IN_REQUIRED_GROUP")
       })
 
       it("should return 400 BAD_REQUEST for invalid voteType", async () => {

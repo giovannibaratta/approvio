@@ -5,19 +5,9 @@ import {JwtAuthGuard} from "./jwt.authguard"
 import {JwtStrategy} from "./jwt.strategy"
 import {ServiceModule} from "@services/service.module"
 import {ConfigModule} from "@external/config.module"
-import {JwtModule} from "@nestjs/jwt"
 
 @Module({
-  imports: [
-    ServiceModule,
-    PassportModule,
-    ConfigModule,
-    JwtModule.register({
-      global: true,
-      secret: process.env.JWT_SECRET,
-      signOptions: {expiresIn: "60s"}
-    })
-  ],
+  imports: [ServiceModule, PassportModule, ConfigModule],
   providers: [
     JwtStrategy,
     {

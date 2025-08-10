@@ -37,7 +37,8 @@ export function mapUserToApi(user: UserDomain): UserApi {
     id: user.id,
     displayName: user.displayName,
     email: user.email,
-    createdAt: user.createdAt.toISOString()
+    createdAt: user.createdAt.toISOString(),
+    orgRole: user.orgRole
   }
 }
 
@@ -66,6 +67,19 @@ export function generateErrorResponseForCreateUser(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
     case "user_org_role_invalid":
+    case "role_name_empty":
+    case "role_name_too_long":
+    case "role_name_invalid_characters":
+    case "role_permissions_empty":
+    case "role_permission_invalid":
+    case "role_invalid_scope":
+    case "role_resource_id_invalid":
+    case "role_resource_required_for_scope":
+    case "role_resource_not_allowed_for_scope":
+    case "role_invalid_uuid":
+    case "user_role_assignments_invalid_format":
+    case "user_duplicate_roles":
+    case "role_invalid_structure":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: Internal data inconsistency`)
       )
@@ -78,7 +92,7 @@ export function generateErrorResponseForGetUser(error: UserGetError, context: st
   switch (error) {
     case "user_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: User not found`))
-    case "invalid_identifier":
+    case "request_invalid_user_identifier":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid identifier`))
     case "user_invalid_uuid":
     case "user_display_name_empty":
@@ -87,6 +101,19 @@ export function generateErrorResponseForGetUser(error: UserGetError, context: st
     case "user_email_too_long":
     case "user_email_invalid":
     case "user_org_role_invalid":
+    case "role_name_empty":
+    case "role_name_too_long":
+    case "role_name_invalid_characters":
+    case "role_permissions_empty":
+    case "role_permission_invalid":
+    case "role_invalid_scope":
+    case "role_resource_id_invalid":
+    case "role_resource_required_for_scope":
+    case "role_resource_not_allowed_for_scope":
+    case "role_invalid_uuid":
+    case "role_invalid_structure":
+    case "user_role_assignments_invalid_format":
+    case "user_duplicate_roles":
     case "unknown_error":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)

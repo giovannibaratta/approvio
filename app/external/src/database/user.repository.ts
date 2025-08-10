@@ -1,7 +1,7 @@
 import {User} from "@domain"
 import {isPrismaUniqueConstraintError} from "@external/database/errors"
 import {Injectable, Logger} from "@nestjs/common"
-import {Prisma, User as PrismaUser} from "@prisma/client"
+import {Prisma, User as PrismaUser, OrganizationAdmin as PrismaOrganizationAdmin} from "@prisma/client"
 import {
   UserCreateError,
   UserGetError,
@@ -27,6 +27,9 @@ interface Identifier {
 }
 
 export type UserSummaryRepo = Pick<PrismaUser, "id" | "displayName" | "email">
+export type PrismaUserWithOrgAdmin = PrismaUser & {
+  organizationAdmins: PrismaOrganizationAdmin | null
+}
 
 @Injectable()
 export class UserDbRepository implements UserRepository {
@@ -82,7 +85,7 @@ export class UserDbRepository implements UserRepository {
     )
   }
 
-  private persistObjectTask(): (user: User) => TaskEither<UserCreateError, PrismaUser> {
+  private persistObjectTask(): (user: User) => TaskEither<UserCreateError, PrismaUserWithOrgAdmin> {
     return user =>
       TE.tryCatchK(
         () =>
@@ -92,8 +95,10 @@ export class UserDbRepository implements UserRepository {
               displayName: user.displayName,
               email: user.email,
               createdAt: user.createdAt,
-              occ: POSTGRES_BIGINT_LOWER_BOUND,
-              orgRole: user.orgRole
+              occ: POSTGRES_BIGINT_LOWER_BOUND
+            },
+            include: {
+              organizationAdmins: true
             }
           }),
         error => {
@@ -105,7 +110,7 @@ export class UserDbRepository implements UserRepository {
       )()
   }
 
-  private getObjectTask(): (identifier: Identifier) => TaskEither<UserGetError, PrismaUser | null> {
+  private getObjectTask(): (identifier: Identifier) => TaskEither<UserGetError, PrismaUserWithOrgAdmin | null> {
     // Wrap in a lambda to preserve the "this" context
     return identifier =>
       TE.tryCatchK(
@@ -114,6 +119,9 @@ export class UserDbRepository implements UserRepository {
             where: {
               id: identifier.type === "id" ? identifier.identifier : undefined,
               email: identifier.type === "email" ? identifier.identifier : undefined
+            },
+            include: {
+              organizationAdmins: true
             }
           }),
         error => {

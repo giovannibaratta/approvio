@@ -8,6 +8,8 @@ import {TaskEither} from "fp-ts/TaskEither"
 import {UserGetError} from "../user/interfaces"
 import {PrefixUnion} from "@utils"
 import {ConfigProvider} from "@external/config/config-provider"
+import {User} from "@domain"
+import {Versioned} from "../shared/utils"
 import {
   OIDC_PROVIDER_TOKEN,
   OidcProvider,
@@ -22,13 +24,19 @@ import {
 import {TokenPayloadBuilder} from "./auth-token"
 
 export interface OidcUser {
-  id: string
-  email?: string
+  oidcSubjectId: string
+  email: string
   displayName?: string
 }
 
 export type AuthError =
-  | PrefixUnion<"auth", "user_not_found_in_system" | "token_generation_failed" | "authorization_url_generation_failed">
+  | PrefixUnion<
+      "auth",
+      | "user_not_found_in_system"
+      | "token_generation_failed"
+      | "authorization_url_generation_failed"
+      | "missing_email_from_oidc_provider"
+    >
   | UserGetError
   | OidcError
   | PkceError
@@ -53,21 +61,17 @@ export class AuthService {
   }
 
   generateJwtToken(oidcUser: OidcUser): TaskEither<AuthError, string> {
-    const generateTokenFromUser = (user: {id: string; displayName: string; email: string}) => {
+    const generateTokenFromUser = (versionedUser: Versioned<User>) => {
       return TE.tryCatch(
         async () => {
-          const tokenPayload = TokenPayloadBuilder.fromUserData({
-            sub: user.id,
-            entityType: "user",
-            displayName: user.displayName,
-            email: user.email,
+          const tokenPayload = TokenPayloadBuilder.fromUser(versionedUser, {
             issuer: this.issuer,
             audience: [this.audience],
             expiresInSeconds: 60 * 60 // 1 hour
           })
 
           const token = this.jwtService.sign(tokenPayload)
-          Logger.log(`JWT token generated for user: ${user.id}`)
+          Logger.log(`JWT token generated for user: ${versionedUser.id}`)
           return token
         },
         error => {
@@ -78,10 +82,10 @@ export class AuthService {
     }
 
     return pipe(
-      this.userService.getUserByIdentifier(oidcUser.id),
+      this.userService.getUserByIdentifier(oidcUser.email),
       TE.mapLeft((error: UserGetError): AuthError => {
         if (error === "user_not_found") {
-          Logger.warn(`User with OIDC ID ${oidcUser.id} not found in system`)
+          Logger.warn(`User with email ${oidcUser.email} not found in system`)
           return "auth_user_not_found_in_system" as const
         }
         return error
@@ -90,7 +94,7 @@ export class AuthService {
     )
   }
 
-  exchangeCodeForTokens(code: string, pkceData: PkceData): TaskEither<AuthError, OidcTokenResponse> {
+  private exchangeCodeForTokens(code: string, pkceData: PkceData): TaskEither<AuthError, OidcTokenResponse> {
     const tokenRequest: OidcTokenRequest = {
       grant_type: "authorization_code",
       code,
@@ -112,16 +116,25 @@ export class AuthService {
   }
 
   private authenticateWithOidc(code: string, pkceData: PkceData): TaskEither<AuthError, string> {
-    const mapUserInfoToOidcUser = (userInfo: OidcUserInfo): OidcUser => ({
-      id: userInfo.sub,
-      email: userInfo.email,
-      displayName: userInfo.name || userInfo.preferred_username || userInfo.email
-    })
+    const mapUserInfoToOidcUser = (userInfo: OidcUserInfo): TE.TaskEither<AuthError, OidcUser> => {
+      if (!userInfo.email) {
+        Logger.warn("OIDC provider did not return email claim")
+        return TE.left("auth_missing_email_from_oidc_provider" as const)
+      }
+
+      const oidcUser: OidcUser = {
+        oidcSubjectId: userInfo.sub,
+        email: userInfo.email,
+        displayName: userInfo.name || userInfo.preferred_username || userInfo.email
+      }
+
+      return TE.right(oidcUser)
+    }
 
     return pipe(
       this.exchangeCodeForTokens(code, pkceData),
       TE.chainW(tokenResponse => this.getUserInfoFromProvider(tokenResponse.access_token)),
-      TE.map(mapUserInfoToOidcUser),
+      TE.chainW(mapUserInfoToOidcUser),
       TE.chainW(oidcUser => this.generateJwtToken(oidcUser))
     )
   }

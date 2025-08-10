@@ -2,7 +2,7 @@ import {randomUUID} from "crypto"
 import * as E from "fp-ts/Either"
 import {Either, isLeft, left, right} from "fp-ts/lib/Either"
 import {DecorableEntity, getStringAsEnum, isDecoratedWith, isUUIDv4, PrefixUnion} from "@utils"
-import {MembershipWithGroupRef, Vote, consolidateVotes, doesVotesCoverApprovalRules} from "@domain"
+import {MembershipWithGroupRef, Vote, consolidateVotes, doesVotesCoverApprovalRules, BoundRole} from "@domain"
 import {WorkflowTemplate, WorkflowTemplateCantVoteReason} from "./workflow-templates"
 
 export const WORKFLOW_NAME_MAX_LENGTH = 512
@@ -122,7 +122,8 @@ export const WORKFLOW_TERMINAL_STATUSES = [WorkflowStatus.APPROVED, WorkflowStat
 
 export function canVoteOnWorkflow(
   workflow: DecoratedWorkflow<{workflowTemplate: true}>,
-  memberships: ReadonlyArray<MembershipWithGroupRef>
+  memberships: ReadonlyArray<MembershipWithGroupRef>,
+  entityRoles: ReadonlyArray<BoundRole<string>>
 ): Either<CantVoteReason, true> {
   if (WORKFLOW_TERMINAL_STATUSES.includes(workflow.status))
     return left(generateCantVoteReasonForTerminalStatus(workflow.status))
@@ -131,7 +132,7 @@ export function canVoteOnWorkflow(
   const now = new Date(Date.now())
   if (workflow.expiresAt < now) return left("workflow_expired")
 
-  const templateCanVoteResult = workflow.workflowTemplate.canVote(memberships)
+  const templateCanVoteResult = workflow.workflowTemplate.canVote(memberships, entityRoles)
   if (isLeft(templateCanVoteResult)) return templateCanVoteResult
 
   return right(true)

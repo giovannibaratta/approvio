@@ -2,15 +2,13 @@ import {
   Group,
   GroupFactory,
   GroupManager,
-  HumanGroupMembershipRole,
   Membership,
   MembershipFactory,
-  MembershipValidationError,
   OrgRole,
   User,
-  UserFactory
+  UserFactory,
+  RoleFactory
 } from "@domain"
-import {randomUUID} from "crypto"
 
 import {Either, isLeft, isRight} from "fp-ts/lib/Either"
 
@@ -20,16 +18,14 @@ const unwrapRight = <L, R>(either: Either<L, R>): R => {
   return either.right
 }
 
-const unwrapLeft = <L, R>(either: Either<L, R>): L => {
-  if (isRight(either)) throw new Error(`Failed to unwrap Either left: Either is right ${either.right}`)
-  return either.left
-}
-
 describe("MembershipFactory", () => {
   describe("good cases", () => {
-    it("should return right with a Membership object for valid user and role", () => {
+    it("should return right with a Membership object for valid user", () => {
       // Given
-      const data = {user: randomUUID(), role: HumanGroupMembershipRole.ADMIN.toString()}
+      const user = unwrapRight(
+        UserFactory.newUser({displayName: "test", email: "test@test.com", orgRole: OrgRole.MEMBER})
+      )
+      const data = {entity: user}
 
       // When
       const result = MembershipFactory.newMembership(data)
@@ -37,107 +33,79 @@ describe("MembershipFactory", () => {
       // Expect
       expect(isRight(result)).toBe(true)
       const membership = unwrapRight(result)
-      expect(membership.entity).toBe(data.user)
-      expect(membership.role).toBe(HumanGroupMembershipRole.ADMIN)
+      expect(membership.entity).toBe(data.entity)
       expect(membership.createdAt).toBeInstanceOf(Date)
       expect(membership.updatedAt).toBeInstanceOf(Date)
-      expect(membership.getEntityId()).toBe(data.user)
+      expect(membership.getEntityId()).toBe(user.id)
     })
   })
 
   describe("bad cases", () => {
-    it("should return left with 'membership_invalid_uuid' for an invalid user string", () => {
-      // Given
-      const data = {user: "invalid-uuid", role: HumanGroupMembershipRole.ADMIN.toString()}
-
-      // When
-      const result = MembershipFactory.newMembership(data)
-
-      // Expect
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<MembershipValidationError>("membership_invalid_user_uuid")
-    })
-
-    it("should return left with 'membership_invalid_role' for an invalid role string", () => {
-      // Given
-      const data = {user: randomUUID(), role: "invalid_role_string"}
-
-      // When
-      const result = MembershipFactory.newMembership(data)
-
-      // Expect
-      expect(isLeft(result)).toBe(true)
-      expect(unwrapLeft(result)).toBe<MembershipValidationError>("membership_invalid_role")
-    })
-
-    it("should return an error when user reference is not a valid UUID", () => {
-      // Given: user reference is not a valid UUID
-      const data = {entity: "invalid-uuid", role: "admin", createdAt: new Date(), updatedAt: new Date()}
+    it("should return an error when dates are inconsistent", () => {
+      // Given: createdAt is after updatedAt
+      const user = unwrapRight(
+        UserFactory.newUser({displayName: "test", email: "test@test.com", orgRole: OrgRole.MEMBER})
+      )
+      const now = new Date()
+      const earlier = new Date(now.getTime() - 1000)
+      const data = {entity: user, createdAt: now, updatedAt: earlier}
 
       // When
       const result = MembershipFactory.validate(data)
 
       // Expect
-      expect(result).toBeLeftOf("membership_invalid_user_uuid")
-    })
-
-    it("should return an error when role is not valid", () => {
-      // Given: role is not valid
-      const data = {entity: randomUUID(), role: "invalid", createdAt: new Date(), updatedAt: new Date()}
-
-      // When
-      const result = MembershipFactory.validate(data)
-
-      // Expect
-      expect(result).toBeLeftOf("membership_invalid_role")
+      expect(result).toBeLeftOf("membership_inconsistent_dates")
     })
   })
 })
 
 describe("GroupManager", () => {
   let group: Group
-  let owner: User
+  let groupManager: User
   let member: User
-  let admin: User
   let orgAdmin: User
-  let ownerMembership: Membership
+  let groupManagerMembership: Membership
   let memberMembership: Membership
-  let adminMembership: Membership
 
   beforeEach(() => {
     group = unwrapRight(GroupFactory.newGroup({name: "Test-Group", description: "Test-Description"}))
-    owner = unwrapRight(UserFactory.newUser({displayName: "owner", email: "owner@test.com", orgRole: OrgRole.MEMBER}))
+
+    // Create group scope for role assignment
+    const groupScope = {type: "group" as const, groupId: group.id}
+
+    // Create users with appropriate roles
+    groupManager = unwrapRight(
+      UserFactory.newUser({displayName: "groupmanager", email: "groupmanager@test.com", orgRole: OrgRole.MEMBER})
+    )
+    // Add group manager role to groupManager
+    groupManager = {
+      ...groupManager,
+      roles: [RoleFactory.createGroupManagerRole(groupScope)]
+    }
+
     member = unwrapRight(
       UserFactory.newUser({displayName: "member", email: "member@test.com", orgRole: OrgRole.MEMBER})
     )
-    admin = unwrapRight(UserFactory.newUser({displayName: "admin", email: "admin@test.com", orgRole: OrgRole.MEMBER}))
+
     orgAdmin = unwrapRight(
       UserFactory.newUser({displayName: "orgadmin", email: "orgadmin@test.com", orgRole: OrgRole.ADMIN})
     )
 
-    ownerMembership = unwrapRight(
+    groupManagerMembership = unwrapRight(
       MembershipFactory.newMembership({
-        user: owner.id,
-        role: "owner"
+        entity: groupManager
       })
     )
     memberMembership = unwrapRight(
       MembershipFactory.newMembership({
-        user: member.id,
-        role: "approver"
-      })
-    )
-    adminMembership = unwrapRight(
-      MembershipFactory.newMembership({
-        user: admin.id,
-        role: "admin"
+        entity: member
       })
     )
   })
 
   describe("createGroupManager", () => {
     it("should create a group manager successfully", () => {
-      const result = GroupManager.createGroupManager(group, [ownerMembership])
+      const result = GroupManager.createGroupManager(group, [groupManagerMembership])
       expect(result).toBeRight()
     })
 
@@ -145,8 +113,7 @@ describe("GroupManager", () => {
       // Given
       const duplicateMembership = unwrapRight(
         MembershipFactory.newMembership({
-          user: owner.id,
-          role: "owner"
+          entity: groupManager
         })
       )
       const memberships = [duplicateMembership, duplicateMembership]
@@ -162,10 +129,10 @@ describe("GroupManager", () => {
   describe("addMembership", () => {
     it("should fail to add a duplicate membership", () => {
       // Given: a group manager with existing memberships
-      const manager = unwrapRight(GroupManager.createGroupManager(group, [ownerMembership]))
+      const manager = unwrapRight(GroupManager.createGroupManager(group, [groupManagerMembership]))
 
       // When: trying to add the same membership again
-      const result = manager.addMembership(ownerMembership)
+      const result = manager.addMembership(groupManagerMembership)
 
       // Expect
       expect(result).toBeLeftOf("membership_entity_already_in_group")
@@ -174,15 +141,15 @@ describe("GroupManager", () => {
 
   describe("removeMembership", () => {
     it("should fail to remove a non-existent membership", () => {
-      const manager = unwrapRight(GroupManager.createGroupManager(group, [ownerMembership]))
+      const manager = unwrapRight(GroupManager.createGroupManager(group, [groupManagerMembership]))
       const result = manager.removeMembership(member.id)
       expect(result).toBeLeftOf("membership_not_found")
     })
 
-    it("should fail to remove the last owner", () => {
-      const manager = unwrapRight(GroupManager.createGroupManager(group, [ownerMembership]))
-      const result = manager.removeMembership(owner.id)
-      expect(result).toBeLeftOf("membership_no_owner")
+    it("should fail to remove the last admin", () => {
+      const manager = unwrapRight(GroupManager.createGroupManager(group, [groupManagerMembership]))
+      const result = manager.removeMembership(groupManager.id)
+      expect(result).toBeLeftOf("membership_no_admin")
     })
   })
 
@@ -190,21 +157,15 @@ describe("GroupManager", () => {
     let manager: GroupManager
 
     beforeEach(() => {
-      manager = unwrapRight(
-        GroupManager.createGroupManager(group, [ownerMembership, adminMembership, memberMembership])
-      )
+      manager = unwrapRight(GroupManager.createGroupManager(group, [groupManagerMembership, memberMembership]))
     })
 
     it("should return true for an org admin", () => {
       expect(manager.canUpdateMembership(orgAdmin)).toBe(true)
     })
 
-    it("should return true for a group owner", () => {
-      expect(manager.canUpdateMembership(owner)).toBe(true)
-    })
-
-    it("should return true for a group admin", () => {
-      expect(manager.canUpdateMembership(admin)).toBe(true)
+    it("should return true for a user with group manage permission", () => {
+      expect(manager.canUpdateMembership(groupManager)).toBe(true)
     })
 
     it("should return false for a regular member", () => {

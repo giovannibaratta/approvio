@@ -4,7 +4,8 @@ import {
   MembershipFactory,
   MembershipValidationError,
   MembershipValidationErrorWithGroupRef,
-  MembershipWithGroupRef
+  MembershipWithGroupRef,
+  UserValidationError
 } from "@domain"
 import {
   isPrismaForeignKeyConstraintError,
@@ -34,10 +35,13 @@ import * as TE from "fp-ts/lib/TaskEither"
 import {TaskEither} from "fp-ts/lib/TaskEither"
 import {pipe} from "fp-ts/lib/function"
 import {DatabaseClient} from "./database-client"
-import {mapToDomainVersionedGroup} from "./shared"
+import {mapToDomainVersionedGroup, mapUserToDomain} from "./shared"
 import {chainNullableToLeft} from "./utils"
+import {PrismaUserWithOrgAdmin} from "./user.repository"
 
-type GroupWithMemberships = PrismaGroup & {groupMemberships: PrismaGroupMembership[]}
+type GroupWithMemberships = PrismaGroup & {
+  groupMemberships: (PrismaGroupMembership & {users: PrismaUserWithOrgAdmin})[]
+}
 
 @Injectable()
 export class GroupMembershipDbRepository implements GroupMembershipRepository {
@@ -45,7 +49,7 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
 
   getGroupWithMembershipById(
     data: GetGroupWithMembershipRepo
-  ): TaskEither<GetGroupRepoError | MembershipValidationError, GetGroupMembershipResult> {
+  ): TaskEither<GetGroupRepoError | UserValidationError | MembershipValidationError, GetGroupMembershipResult> {
     return pipe(
       data,
       TE.right,
@@ -77,7 +81,10 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
 
   getUserMembershipsByUserId(
     userId: string
-  ): TaskEither<MembershipValidationErrorWithGroupRef | UnknownError, ReadonlyArray<MembershipWithGroupRef>> {
+  ): TaskEither<
+    MembershipValidationErrorWithGroupRef | UserValidationError | UnknownError,
+    ReadonlyArray<MembershipWithGroupRef>
+  > {
     return pipe(
       userId,
       TE.right,
@@ -96,7 +103,15 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
           this.dbClient.group.findUnique({
             where: this.buildWhereClauseGetObjectTask(data),
             include: {
-              groupMemberships: true
+              groupMemberships: {
+                include: {
+                  users: {
+                    include: {
+                      organizationAdmins: true
+                    }
+                  }
+                }
+              }
             }
           }),
         error => {
@@ -160,7 +175,6 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
         data: data.memberships.map(m => ({
           groupId: data.group.id,
           userId: m.getEntityId(),
-          role: m.role,
           createdAt: m.createdAt,
           updatedAt: m.updatedAt
         }))
@@ -169,7 +183,17 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
       const updatedGroup = await tx.group.update({
         where: {id: data.group.id, occ: data.group.occ},
         data: {updatedAt: new Date()},
-        include: {groupMemberships: true}
+        include: {
+          groupMemberships: {
+            include: {
+              users: {
+                include: {
+                  organizationAdmins: true
+                }
+              }
+            }
+          }
+        }
       })
 
       if (!updatedGroup) throw new ConcurrentModificationError("Group not found or version mismatch")
@@ -190,7 +214,17 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
       const updatedGroup = await tx.group.update({
         where: {id: data.groupId},
         data: {updatedAt: new Date()},
-        include: {groupMemberships: true}
+        include: {
+          groupMemberships: {
+            include: {
+              users: {
+                include: {
+                  organizationAdmins: true
+                }
+              }
+            }
+          }
+        }
       })
 
       if (!updatedGroup) throw new ConcurrentModificationError("Group not found or version mismatch")
@@ -201,10 +235,14 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
 
   private getUserMembershipsByUserIdTask(): (
     userId: string
-  ) => TaskEither<UnknownError, ReadonlyArray<PrismaGroupMembership>> {
+  ) => TaskEither<UnknownError, ReadonlyArray<PrismaGroupMembership & {users: PrismaUserWithOrgAdmin}>> {
     return userId =>
       TE.tryCatchK(
-        () => this.dbClient.groupMembership.findMany({where: {userId}}),
+        () =>
+          this.dbClient.groupMembership.findMany({
+            where: {userId},
+            include: {users: {include: {organizationAdmins: true}}}
+          }),
         error => {
           Logger.error("Error while retrieving user memberships. Unknown error", error)
           return "unknown_error" as const
@@ -213,17 +251,26 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
   }
 }
 
-function mapMembershipToDomain(dbObject: PrismaGroupMembership): Either<MembershipValidationError, Membership> {
+function mapMembershipToDomain(
+  dbObject: PrismaGroupMembership & {users: PrismaUserWithOrgAdmin}
+): Either<MembershipValidationError | UserValidationError, Membership> {
   return pipe(
-    dbObject,
-    data => ({entity: data.userId, role: data.role, createdAt: data.createdAt, updatedAt: data.updatedAt}),
-    MembershipFactory.validate
+    E.Do,
+    E.bindW("user", () => mapUserToDomain(dbObject.users)),
+    E.bindW("data", ({user}) => {
+      return E.right({
+        entity: user,
+        createdAt: dbObject.createdAt,
+        updatedAt: dbObject.updatedAt
+      })
+    }),
+    E.chainW(({data}) => MembershipFactory.validate(data))
   )
 }
 
 function mapToVersionedDomainWithMembership(
   dbObject: GroupWithMemberships
-): Either<GroupValidationError | MembershipValidationError, GetGroupMembershipResult> {
+): Either<GroupValidationError | UserValidationError | MembershipValidationError, GetGroupMembershipResult> {
   const eitherGroup = mapToDomainVersionedGroup(dbObject)
   // Map all the memberships to domain and return an error if any of them fail
   const eitherMemberships = pipe(dbObject.groupMemberships, A.traverse(E.Applicative)(mapMembershipToDomain))
@@ -237,24 +284,24 @@ function mapToVersionedDomainWithMembership(
 }
 
 function mapToDomainMembershipWithGroupRefs(
-  dbObject: ReadonlyArray<PrismaGroupMembership>
-): Either<MembershipValidationErrorWithGroupRef, ReadonlyArray<MembershipWithGroupRef>> {
+  dbObject: ReadonlyArray<PrismaGroupMembership & {users: PrismaUserWithOrgAdmin}>
+): Either<MembershipValidationErrorWithGroupRef | UserValidationError, ReadonlyArray<MembershipWithGroupRef>> {
   return pipe([...dbObject], A.traverse(E.Applicative)(mapToDomainMembershipWithGroupRef))
 }
 
 function mapToDomainMembershipWithGroupRef(
-  dbObject: Readonly<PrismaGroupMembership>
-): Either<MembershipValidationErrorWithGroupRef, MembershipWithGroupRef> {
+  dbObject: Readonly<PrismaGroupMembership & {users: PrismaUserWithOrgAdmin}>
+): Either<MembershipValidationErrorWithGroupRef | UserValidationError, MembershipWithGroupRef> {
   return pipe(
-    dbObject,
-    data => ({
-      entity: data.userId,
-      role: data.role,
-      createdAt: data.createdAt,
-      updatedAt: data.updatedAt,
-      groupId: data.groupId
+    E.Do,
+    E.bindW("membership", () => mapMembershipToDomain(dbObject)),
+    E.bindW("data", ({membership}) => {
+      return E.right({
+        ...membership,
+        groupId: dbObject.groupId
+      })
     }),
-    MembershipFactory.validateWithGroupRef
+    E.chainW(({data}) => MembershipFactory.validateWithGroupRef(data))
   )
 }
 

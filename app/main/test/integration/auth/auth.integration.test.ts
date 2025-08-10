@@ -113,4 +113,20 @@ describe("Auth Integration", () => {
       expect(response.status).toBe(401)
     })
   })
+
+  describe("GET /auth/info", () => {
+    it("should return unauthorized without authentication token", async () => {
+      const response = await request(app.getHttpServer()).get("/auth/info")
+
+      expect(response.status).toBe(401)
+    })
+
+    it("should return unauthorized with invalid authentication token", async () => {
+      const response = await request(app.getHttpServer())
+        .get("/auth/info")
+        .set("Authorization", "Bearer invalid-jwt-token")
+
+      expect(response.status).toBe(401)
+    })
+  })
 })

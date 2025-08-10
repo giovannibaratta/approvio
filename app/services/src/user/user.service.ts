@@ -39,7 +39,7 @@ export class UserService {
     const isUuid = isUUIDv4(userIdentifier)
     const isValidEmail = isEmail(userIdentifier)
 
-    if (!isUuid && !isValidEmail) return TE.left("invalid_identifier")
+    if (!isUuid && !isValidEmail) return TE.left("request_invalid_user_identifier")
 
     // Wrap in a lambda to preserve the "this" context
     const repoGetUser = (value: string) =>
