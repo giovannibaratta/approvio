@@ -3,6 +3,9 @@ import {
   GroupFactory,
   GroupValidationError,
   GroupWithEntitiesCount,
+  OrganizationAdmin,
+  OrganizationAdminFactory,
+  OrganizationAdminValidationError,
   User,
   UserFactory,
   UserSummary,
@@ -19,6 +22,7 @@ import {
 } from "@domain"
 import {
   Group as PrismaGroup,
+  OrganizationAdmin as PrismaOrganizationAdmin,
   Workflow as PrismaWorkflow,
   WorkflowTemplate as PrismaWorkflowTemplate
 } from "@prisma/client"
@@ -223,4 +227,16 @@ export function mapToDomainVersionedWorkflowTemplate(
       occ: dbObject.occ
     }))
   )
+}
+
+export function mapOrganizationAdminToDomain(
+  dbObject: PrismaOrganizationAdmin
+): Either<OrganizationAdminValidationError, OrganizationAdmin> {
+  const object: OrganizationAdmin = {
+    id: dbObject.id,
+    email: dbObject.email,
+    createdAt: dbObject.createdAt
+  }
+
+  return pipe(object, OrganizationAdminFactory.validate)
 }

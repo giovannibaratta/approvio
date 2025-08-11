@@ -1,6 +1,7 @@
 export * from "./group"
 export * from "./user"
 export * from "./group-membership"
+export * from "./organization-admin"
 export * from "./role"
 export * from "./permission-checker"
 export * from "./approval-rules"

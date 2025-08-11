@@ -3,6 +3,7 @@ import {
   DatabaseClient,
   UserDbRepository,
   GroupMembershipDbRepository,
+  OrganizationAdminDbRepository,
   WorkflowDbRepository,
   WorkflowTemplateDbRepository,
   VoteDbRepository,
@@ -12,6 +13,7 @@ import {GroupDbRepository} from "./database"
 import {
   GROUP_MEMBERSHIP_REPOSITORY_TOKEN,
   GROUP_REPOSITORY_TOKEN,
+  ORGANIZATION_ADMIN_REPOSITORY_TOKEN,
   USER_REPOSITORY_TOKEN,
   VOTE_REPOSITORY_TOKEN,
   WORKFLOW_REPOSITORY_TOKEN,
@@ -33,6 +35,11 @@ const userRepository = {
 const groupMembershipRepository = {
   provide: GROUP_MEMBERSHIP_REPOSITORY_TOKEN,
   useClass: GroupMembershipDbRepository
+}
+
+const organizationAdminRepository = {
+  provide: ORGANIZATION_ADMIN_REPOSITORY_TOKEN,
+  useClass: OrganizationAdminDbRepository
 }
 
 const workflowRepository = {
@@ -59,6 +66,7 @@ const repositories = [
   groupRepository,
   userRepository,
   groupMembershipRepository,
+  organizationAdminRepository,
   workflowRepository,
   workflowTemplateRepository,
   voteRepository,

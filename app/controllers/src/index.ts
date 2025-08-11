@@ -1,5 +1,6 @@
 export * from "./groups/"
 export * from "./users/"
+export * from "./organization-admin/"
 export * from "./controllers.module"
 export * from "./shared/types"
 export * from "./workflows/"
