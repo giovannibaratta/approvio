@@ -13,7 +13,7 @@ Each application layer has its own CLAUDE.md file with specific guidance:
 - app/domain/CLAUDE.md - Domain entities and validation
 - app/external/CLAUDE.md - Database and external integrations
 - app/main/CLAUDE.md - Application bootstrap and authentication
-- app/utils/CLAUDE.md - Shared utilities and types
+- app/utils/CLAUDE.md - Shared utilities and types. It provides functionalities like advanced typescript types, custom jest matchers to handle fp-ts types, and more.
   </project_context>
 
 <style_guide>
@@ -47,6 +47,7 @@ Each application layer has its own CLAUDE.md file with specific guidance:
 6.  **Implement Service Logic.**
 7.  **Implement Controller Logic.**
 8.  **Write Controller Integration Tests.**
+  -  Take a look at the content of 'app/utils/CLAUDE.md' before writing test files to find useful matchers.
 </steps>
 
 <validation>

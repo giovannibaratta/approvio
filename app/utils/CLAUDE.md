@@ -44,3 +44,4 @@ Contains shared utility functions, type definitions, validation helpers, and com
 - `app/utils/src/either.ts`: Functional programming utilities (Either/Option)
 - `app/utils/src/date.ts`: Date manipulation and formatting
 - `app/utils/src/enum.ts`: Enum utilities and helpers
+- `app/utils/src/matchers.ts`: Customer Jest matchers for testing
