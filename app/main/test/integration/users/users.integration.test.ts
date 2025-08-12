@@ -66,7 +66,7 @@ describe("Users API", () => {
   }, 30000)
 
   afterEach(async () => {
-    cleanDatabase(prisma)
+    await cleanDatabase(prisma)
     await prisma.$disconnect()
     await app.close()
   })
