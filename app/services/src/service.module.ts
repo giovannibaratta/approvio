@@ -3,6 +3,7 @@ import {GroupService} from "./group"
 import {OrganizationAdminService} from "./organization-admin"
 import {PersistenceModule, ThirdPartyModule} from "@external"
 import {GroupMembershipService} from "./group-membership"
+import {SpaceService} from "./space"
 import {UserService} from "./user"
 import {WorkflowService} from "./workflow"
 import {WorkflowTemplateService} from "./workflow-template"
@@ -17,6 +18,7 @@ const services = [
   GroupService,
   GroupMembershipService,
   OrganizationAdminService,
+  SpaceService,
   UserService,
   WorkflowService,
   WorkflowTemplateService,

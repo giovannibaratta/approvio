@@ -6,6 +6,9 @@ import {
   OrganizationAdmin,
   OrganizationAdminFactory,
   OrganizationAdminValidationError,
+  Space,
+  SpaceFactory,
+  SpaceValidationError,
   User,
   UserFactory,
   UserSummary,
@@ -23,6 +26,7 @@ import {
 import {
   Group as PrismaGroup,
   OrganizationAdmin as PrismaOrganizationAdmin,
+  Space as PrismaSpace,
   Workflow as PrismaWorkflow,
   WorkflowTemplate as PrismaWorkflowTemplate
 } from "@prisma/client"
@@ -239,4 +243,20 @@ export function mapOrganizationAdminToDomain(
   }
 
   return pipe(object, OrganizationAdminFactory.validate)
+}
+
+export function mapToDomainVersionedSpace(dbObject: PrismaSpace): Either<SpaceValidationError, Versioned<Space>> {
+  const object: Space = {
+    createdAt: dbObject.createdAt,
+    description: dbObject.description ?? undefined,
+    id: dbObject.id,
+    name: dbObject.name,
+    updatedAt: dbObject.updatedAt
+  }
+
+  return pipe(
+    object,
+    SpaceFactory.validate,
+    E.map(space => ({...space, occ: dbObject.occ}))
+  )
 }

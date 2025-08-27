@@ -5,7 +5,8 @@ import {
   OrganizationAdmin as PrismaOrganizationAdmin,
   WorkflowTemplate as PrismaWorkflowTemplate,
   Workflow as PrismaWorkflow,
-  Group as PrismaGroup
+  Group as PrismaGroup,
+  Space as PrismaSpace
 } from "@prisma/client"
 import {ApprovalRuleType, BoundRole, User, WorkflowStatus} from "@domain"
 import {mapToDomainVersionedUser} from "@external/database/shared"
@@ -290,4 +291,26 @@ export async function createMockGroupInDb(
 
   const group = await prisma.group.create({data})
   return group
+}
+
+export async function createMockSpaceInDb(
+  prisma: PrismaClient,
+  overrides?: Partial<Omit<Prisma.SpaceCreateInput, "id" | "occ">>
+): Promise<PrismaSpace> {
+  const randomSpace: Prisma.SpaceCreateInput = {
+    id: chance.guid({version: 4}),
+    name: chance.company(),
+    description: chance.sentence(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    occ: 1n
+  }
+
+  const data: Prisma.SpaceCreateInput = {
+    ...randomSpace,
+    ...overrides
+  }
+
+  const space = await prisma.space.create({data})
+  return space
 }

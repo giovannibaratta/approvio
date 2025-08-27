@@ -1,6 +1,7 @@
 import {Module} from "@nestjs/common"
 import {GroupsController} from "./groups"
 import {OrganizationAdminController} from "./organization-admin"
+import {SpacesController} from "./spaces"
 import {UsersController} from "./users"
 import {ServiceModule} from "@services/service.module"
 import {AuthModule} from "@app/auth"
@@ -16,6 +17,7 @@ const internalControllers = [WorkflowTemplateInternalController]
   controllers: [
     GroupsController,
     OrganizationAdminController,
+    SpacesController,
     UsersController,
     WorkflowsController,
     WorkflowTemplatesController,

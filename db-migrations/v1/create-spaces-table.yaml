@@ -1,0 +1,42 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-spaces-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: spaces
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: name
+                  type: varchar(255)
+                  constraints:
+                    nullable: false
+
+              - column:
+                  name: description
+                  type: varchar(2048)
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: spaces
+            columnNames: name
+            constraintName: spaces_name_unique

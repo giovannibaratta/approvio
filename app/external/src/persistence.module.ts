@@ -4,6 +4,7 @@ import {
   UserDbRepository,
   GroupMembershipDbRepository,
   OrganizationAdminDbRepository,
+  SpaceDbRepository,
   WorkflowDbRepository,
   WorkflowTemplateDbRepository,
   VoteDbRepository,
@@ -14,6 +15,7 @@ import {
   GROUP_MEMBERSHIP_REPOSITORY_TOKEN,
   GROUP_REPOSITORY_TOKEN,
   ORGANIZATION_ADMIN_REPOSITORY_TOKEN,
+  SPACE_REPOSITORY_TOKEN,
   USER_REPOSITORY_TOKEN,
   VOTE_REPOSITORY_TOKEN,
   WORKFLOW_REPOSITORY_TOKEN,
@@ -42,6 +44,11 @@ const organizationAdminRepository = {
   useClass: OrganizationAdminDbRepository
 }
 
+const spaceRepository = {
+  provide: SPACE_REPOSITORY_TOKEN,
+  useClass: SpaceDbRepository
+}
+
 const workflowRepository = {
   provide: WORKFLOW_REPOSITORY_TOKEN,
   useClass: WorkflowDbRepository
@@ -67,6 +74,7 @@ const repositories = [
   userRepository,
   groupMembershipRepository,
   organizationAdminRepository,
+  spaceRepository,
   workflowRepository,
   workflowTemplateRepository,
   voteRepository,

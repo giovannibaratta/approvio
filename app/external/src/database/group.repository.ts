@@ -1,4 +1,4 @@
-import {Group, GroupWithEntitiesCount, ListGroupsFilter, BoundRole} from "@domain"
+import {Group, GroupWithEntitiesCount, ListGroupsFilter} from "@domain"
 import {isPrismaForeignKeyConstraintError, isPrismaUniqueConstraintError} from "@external/database/errors"
 import {Injectable, Logger} from "@nestjs/common"
 import {Prisma, Group as PrismaGroup} from "@prisma/client"
@@ -22,6 +22,7 @@ import {pipe} from "fp-ts/lib/function"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 import {DatabaseClient} from "./database-client"
 import {mapToDomainVersionedGroupWithEntities} from "./shared"
+import {persistExistingUserRaceConditionFree} from "./shared/user-operations"
 import {areAllRights, chainNullableToLeft} from "./utils"
 
 interface Identifier {
@@ -94,21 +95,14 @@ export class GroupDbRepository implements GroupRepository {
               }
             })
 
-            // 3. Update user with all data using OCC check
-            await tx.user.update({
-              where: {
-                id: data.user.id,
-                occ: data.userOcc
-              },
-              data: {
-                displayName: data.user.displayName,
-                email: data.user.email,
-                roles: mapRolesToJsonValue(data.user.roles),
-                createdAt: data.user.createdAt,
-                occ: {
-                  increment: 1
-                }
-              }
+            // 3. Update user with all data using shared function
+            await persistExistingUserRaceConditionFree(tx, {
+              userId: data.user.id,
+              userOcc: data.userOcc,
+              displayName: data.user.displayName,
+              email: data.user.email,
+              roles: data.user.roles,
+              createdAt: data.user.createdAt
             })
 
             return createdGroup
@@ -286,19 +280,6 @@ export class GroupDbRepository implements GroupRepository {
         }
     }
   }
-}
-
-function mapRolesToJsonValue(roles: ReadonlyArray<BoundRole<string>>): Prisma.InputJsonValue {
-  return roles.map(role => ({
-    name: role.name,
-    permissions: [...role.permissions],
-    scope: {
-      type: role.scope.type,
-      ...(role.scope.type === "space" && {spaceId: role.scope.spaceId}),
-      ...(role.scope.type === "group" && {groupId: role.scope.groupId}),
-      ...(role.scope.type === "workflow_template" && {workflowTemplateId: role.scope.workflowTemplateId})
-    }
-  }))
 }
 
 interface GetObjectTaskRequest {
