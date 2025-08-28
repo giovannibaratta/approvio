@@ -9,6 +9,7 @@ import {ConfigProvider} from "@external/config"
 import {MockConfigProvider, createMockUserInDb} from "../shared/mock-data"
 import {PrismaClient} from "@prisma/client"
 import axios from "axios"
+import "@utils/matchers"
 
 interface OidcMockUser {
   SubjectId: string
@@ -215,7 +216,7 @@ describe("OIDC Flow Integration", () => {
       })
 
       // Expect: Valid JWT token is returned
-      expect(tokenResponse.status).toBe(201)
+      expect(tokenResponse).toHaveStatusCode(201)
       expect(tokenResponse.body).toHaveProperty("token")
       expect(typeof tokenResponse.body.token).toBe("string")
       expect(tokenResponse.body.token.length).toBeGreaterThan(0)
@@ -226,7 +227,7 @@ describe("OIDC Flow Integration", () => {
         .set("Authorization", `Bearer ${tokenResponse.body.token}`)
 
       // Expect: User info endpoint returns entity type
-      expect(infoResponse.status).toBe(200)
+      expect(infoResponse).toHaveStatusCode(200)
       expect(infoResponse.body).toEqual({entityType: "user"})
     }, 20000)
   })

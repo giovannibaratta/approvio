@@ -44,7 +44,7 @@ describe("Auth Integration", () => {
     it("should redirect to OIDC provider with PKCE parameters", async () => {
       const response = await request(app.getHttpServer()).get("/auth/login")
 
-      expect(response.status).toBe(302)
+      expect(response).toHaveStatusCode(302)
       const location = response.headers.location
       expect(location).toContain("response_type=code")
       expect(location).toContain("code_challenge=")
@@ -62,14 +62,14 @@ describe("Auth Integration", () => {
         .get("/auth/callback")
         .query({code: testCode, state: testState})
 
-      expect(response.status).toBe(302)
+      expect(response).toHaveStatusCode(302)
       expect(response.headers.location).toBe(`/auth/success?code=${testCode}&state=${testState}`)
     })
 
     it("should redirect to error if missing code or state", async () => {
       const response = await request(app.getHttpServer()).get("/auth/callback")
 
-      expect(response.status).toBe(302)
+      expect(response).toHaveStatusCode(302)
       expect(response.headers.location).toBe("/auth/error")
     })
   })
@@ -78,7 +78,7 @@ describe("Auth Integration", () => {
     it("should return success message for stateless flow", async () => {
       const response = await request(app.getHttpServer()).get("/auth/success")
 
-      expect(response.status).toBe(200)
+      expect(response).toHaveStatusCode(200)
       expect(response.body).toEqual({
         message: "Authentication successful. Use the code and state to generate a JWT token."
       })
@@ -89,7 +89,7 @@ describe("Auth Integration", () => {
     it("should return error message", async () => {
       const response = await request(app.getHttpServer()).get("/auth/error")
 
-      expect(response.status).toBe(200)
+      expect(response).toHaveStatusCode(200)
       expect(response.body).toEqual({
         message: "Authentication failed. Please try again."
       })
@@ -100,7 +100,7 @@ describe("Auth Integration", () => {
     it("should return unauthorized without required parameters", async () => {
       const response = await request(app.getHttpServer()).post("/auth/token")
 
-      expect(response.status).toBe(401)
+      expect(response).toHaveStatusCode(401)
     })
 
     it("should return unauthorized with invalid PKCE verification", async () => {
@@ -110,7 +110,7 @@ describe("Auth Integration", () => {
         codeVerifier: "invalid-verifier"
       })
 
-      expect(response.status).toBe(401)
+      expect(response).toHaveStatusCode(401)
     })
   })
 
@@ -118,7 +118,7 @@ describe("Auth Integration", () => {
     it("should return unauthorized without authentication token", async () => {
       const response = await request(app.getHttpServer()).get("/auth/info")
 
-      expect(response.status).toBe(401)
+      expect(response).toHaveStatusCode(401)
     })
 
     it("should return unauthorized with invalid authentication token", async () => {
@@ -126,7 +126,7 @@ describe("Auth Integration", () => {
         .get("/auth/info")
         .set("Authorization", "Bearer invalid-jwt-token")
 
-      expect(response.status).toBe(401)
+      expect(response).toHaveStatusCode(401)
     })
   })
 })
