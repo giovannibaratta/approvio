@@ -1,5 +1,6 @@
 import {Module} from "@nestjs/common"
 import {
+  AgentDbRepository,
   DatabaseClient,
   UserDbRepository,
   GroupMembershipDbRepository,
@@ -12,6 +13,7 @@ import {
 } from "./database/"
 import {GroupDbRepository} from "./database"
 import {
+  AGENT_REPOSITORY_TOKEN,
   GROUP_MEMBERSHIP_REPOSITORY_TOKEN,
   GROUP_REPOSITORY_TOKEN,
   ORGANIZATION_ADMIN_REPOSITORY_TOKEN,
@@ -23,6 +25,11 @@ import {
 } from "@services"
 import {PKCE_SESSION_REPOSITORY_TOKEN} from "@services/auth"
 import {ConfigModule} from "./config.module"
+
+const agentRepository = {
+  provide: AGENT_REPOSITORY_TOKEN,
+  useClass: AgentDbRepository
+}
 
 const groupRepository = {
   provide: GROUP_REPOSITORY_TOKEN,
@@ -70,6 +77,7 @@ const pkceSessionRepository = {
 }
 
 const repositories = [
+  agentRepository,
   groupRepository,
   userRepository,
   groupMembershipRepository,

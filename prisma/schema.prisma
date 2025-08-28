@@ -180,3 +180,13 @@ model Space {
 
   @@map("spaces")
 }
+
+model Agent {
+  id              String   @id @db.Uuid
+  agentName       String   @unique(map: "agents_agent_name_unique") @map("agent_name")
+  base64PublicKey String   @map("base64_public_key")
+  createdAt       DateTime @map("created_at") @db.Timestamp(6)
+  occ             BigInt
+
+  @@map("agents")
+}

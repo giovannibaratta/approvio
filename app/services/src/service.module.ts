@@ -1,4 +1,5 @@
 import {Module} from "@nestjs/common"
+import {AgentService} from "./agent"
 import {GroupService} from "./group"
 import {OrganizationAdminService} from "./organization-admin"
 import {PersistenceModule, ThirdPartyModule} from "@external"
@@ -15,6 +16,7 @@ import {ConfigProvider} from "@external/config"
 import {JwtModule} from "@nestjs/jwt"
 
 const services = [
+  AgentService,
   GroupService,
   GroupMembershipService,
   OrganizationAdminService,

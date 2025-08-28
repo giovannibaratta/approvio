@@ -21,3 +21,5 @@ databaseChangeLog:
       file: v1/create-organization-admins-table.yaml
   - include:
       file: v1/create-spaces-table.yaml
+  - include:
+      file: v1/create-agents-table.yaml

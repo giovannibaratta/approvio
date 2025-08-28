@@ -1,4 +1,5 @@
 // Do NOT add the service module to avoid circular dependency issue
+export * from "./agent"
 export * from "./group"
 export * from "./user"
 export * from "./error"

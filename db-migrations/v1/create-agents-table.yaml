@@ -1,10 +1,10 @@
 databaseChangeLog:
   - changeSet:
-      id: create-spaces-table
+      id: create-agents-table
       author: giovannibaratta
       changes:
         - createTable:
-            tableName: spaces
+            tableName: agents
             columns:
               - column:
                   name: id
@@ -13,21 +13,17 @@ databaseChangeLog:
                     primaryKey: true
                     nullable: false
               - column:
-                  name: name
-                  type: varchar(255)
+                  name: agent_name
+                  type: text
                   constraints:
                     nullable: false
-
               - column:
-                  name: description
-                  type: varchar(2048)
+                  name: base64_public_key
+                  type: text
+                  constraints:
+                    nullable: false
               - column:
                   name: created_at
-                  type: timestamp
-                  constraints:
-                    nullable: false
-              - column:
-                  name: updated_at
                   type: timestamp
                   constraints:
                     nullable: false
@@ -37,6 +33,6 @@ databaseChangeLog:
                   constraints:
                     nullable: false
         - addUniqueConstraint:
-            tableName: spaces
-            columnNames: name
-            constraintName: spaces_name_unique
+            tableName: agents
+            columnNames: agent_name
+            constraintName: agents_agent_name_unique
