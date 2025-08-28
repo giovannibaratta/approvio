@@ -310,7 +310,7 @@ describe("Spaces API", () => {
           ]
         })
 
-        const tokenPayload = TokenPayloadBuilder.fromUserData({
+        const tokenPayload = TokenPayloadBuilder.from({
           sub: userWithReadPermission.id,
           entityType: "user",
           displayName: userWithReadPermission.displayName,
@@ -396,7 +396,7 @@ describe("Spaces API", () => {
           ]
         })
 
-        const tokenPayload = TokenPayloadBuilder.fromUserData({
+        const tokenPayload = TokenPayloadBuilder.from({
           sub: userWithManagePermission.id,
           entityType: "user",
           displayName: userWithManagePermission.displayName,

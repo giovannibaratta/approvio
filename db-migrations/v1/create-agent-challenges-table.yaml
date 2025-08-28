@@ -1,0 +1,56 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-agent-challenges-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: agent_challenges
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: agent_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: nonce
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: expires_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: used_at
+                  type: timestamp
+                  constraints:
+                    nullable: true
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: agent_challenges
+            baseColumnNames: agent_id
+            constraintName: fk_agent_challenges_agent
+            referencedTableName: agents
+            referencedColumnNames: id
+            onDelete: CASCADE
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: agent_challenges
+            columnNames: nonce
+            constraintName: agent_challenges_nonce_unique

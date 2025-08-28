@@ -445,7 +445,7 @@ describe("Groups API", () => {
           ]
         })
 
-        const tokenPayload = TokenPayloadBuilder.fromUserData({
+        const tokenPayload = TokenPayloadBuilder.from({
           sub: userWithReadPermission.id,
           entityType: "user",
           displayName: userWithReadPermission.displayName,
@@ -482,7 +482,7 @@ describe("Groups API", () => {
           ]
         })
 
-        const tokenPayload = TokenPayloadBuilder.fromUserData({
+        const tokenPayload = TokenPayloadBuilder.from({
           sub: userWithReadPermission.id,
           entityType: "user",
           displayName: userWithReadPermission.displayName,
@@ -611,7 +611,7 @@ describe("Groups API", () => {
 
         it("should allow a Group Admin (user1) to add members", async () => {
           // Given
-          const groupAdminTokenPayload = TokenPayloadBuilder.fromUserData({
+          const groupAdminTokenPayload = TokenPayloadBuilder.from({
             sub: user1.id,
             entityType: "user",
             displayName: user1.displayName,
@@ -876,7 +876,7 @@ describe("Groups API", () => {
 
         it("should allow Group Admin (user1) to remove members (user2)", async () => {
           // Given
-          const groupAdminTokenPayload = TokenPayloadBuilder.fromUserData({
+          const groupAdminTokenPayload = TokenPayloadBuilder.from({
             sub: user1.id,
             entityType: "user",
             displayName: user1.displayName,

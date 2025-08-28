@@ -26,6 +26,7 @@ export async function prepareDatabase(): Promise<string> {
 
 export async function cleanDatabase(client: PrismaClient): Promise<void> {
   // Clean in dependency order (children before parents)
+  await client.agentChallenge.deleteMany()
   await client.organizationAdmin.deleteMany()
   await client.pkceSession.deleteMany()
   await client.workflowActionsEmailTask.deleteMany()

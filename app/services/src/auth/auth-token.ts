@@ -1,4 +1,4 @@
-import {User, OrgRole} from "@domain"
+import {User, Agent, OrgRole} from "@domain"
 
 const CLOCK_SKEW_TOLERANCE_IN_SECONDS = 60
 
@@ -110,7 +110,7 @@ export class TokenPayloadBuilder {
    * @param data The base data to create token from
    * @returns A TokenPayloadForSigning
    */
-  static fromUserData(data: {
+  static from(data: {
     sub: string
     entityType: "user" | "agent"
     displayName: string
@@ -154,12 +154,39 @@ export class TokenPayloadBuilder {
       notBeforeSeconds?: number
     }
   ): TokenPayloadForSigning {
-    return TokenPayloadBuilder.fromUserData({
+    return TokenPayloadBuilder.from({
       sub: user.id,
       entityType: "user",
       displayName: user.displayName,
       email: user.email,
       orgRole: user.orgRole,
+      issuer: options.issuer,
+      audience: options.audience,
+      expiresInSeconds: options?.expiresInSeconds,
+      notBeforeSeconds: options?.notBeforeSeconds
+    })
+  }
+
+  /**
+   * Creates token payload data ready for JWT signing from an Agent domain object
+   * @param agent The Agent domain object
+   * @param options Optional configuration for token generation
+   * @returns A TokenPayloadForSigning
+   */
+  static fromAgent(
+    agent: Agent,
+    options: {
+      issuer: string
+      audience: string[]
+      expiresInSeconds?: number
+      notBeforeSeconds?: number
+    }
+  ): TokenPayloadForSigning {
+    return TokenPayloadBuilder.from({
+      sub: agent.id,
+      entityType: "agent",
+      displayName: agent.agentName,
+      // Agents don't have email
       issuer: options.issuer,
       audience: options.audience,
       expiresInSeconds: options?.expiresInSeconds,

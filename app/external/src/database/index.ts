@@ -1,4 +1,5 @@
 export * from "./agent.repository"
+export * from "./agent-challenge.repository"
 export * from "./database-client"
 export * from "./group.repository"
 export * from "./errors"

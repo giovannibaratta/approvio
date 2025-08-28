@@ -1,4 +1,5 @@
 export * from "./agent"
+export * from "./agent-challenge"
 export * from "./group"
 export * from "./user"
 export * from "./group-membership"

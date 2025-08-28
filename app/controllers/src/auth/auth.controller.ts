@@ -1,9 +1,28 @@
-import {Controller, Get, Post, Res, Logger, UnauthorizedException, Query, Body} from "@nestjs/common"
+import {Controller, Get, Post, Res, Logger, UnauthorizedException, Query, Body, HttpCode} from "@nestjs/common"
 import {Response} from "express"
-import {AuthService} from "@services"
+import {AuthService, GenerateChallengeRequest} from "@services"
 import {isLeft} from "fp-ts/lib/Either"
+import * as TE from "fp-ts/TaskEither"
 import {PublicRoute} from "../../../main/src/auth/jwt.authguard"
-import {TokenRequest, TokenResponse, AuthMessageResponse} from "@approvio/api"
+import {
+  TokenRequest,
+  TokenResponse,
+  AuthMessageResponse,
+  AgentChallengeRequest,
+  AgentChallengeResponse,
+  AgentTokenResponse
+} from "@approvio/api"
+
+import {
+  mapAgentChallengeRequestToService,
+  mapChallengeToApiResponse,
+  mapTokenToApiResponse,
+  generateErrorResponseForChallengeRequest,
+  generateErrorResponseForAgentTokenExchange,
+  JwtAssertionTokenRequest,
+  validateJwtAssertionTokenRequest
+} from "./agent-auth.mappers"
+import {pipe} from "fp-ts/lib/function"
 
 /**
  * ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -151,5 +170,46 @@ export class AuthController {
   @Get("info")
   async getUserInfo(): Promise<{entityType: string}> {
     return {entityType: "user"}
+  }
+
+  @PublicRoute()
+  @Post("agents/challenge")
+  @HttpCode(200)
+  async generateAgentChallenge(@Body() request: AgentChallengeRequest): Promise<AgentChallengeResponse> {
+    const mapRequest = (req: AgentChallengeRequest) => mapAgentChallengeRequestToService(req)
+    const generateChallenge = (req: GenerateChallengeRequest) => this.authService.generateAgentChallenge(req)
+
+    const result = await pipe(
+      request,
+      TE.right,
+      TE.chainW(r => TE.fromEither(mapRequest(r))),
+      TE.chainW(r => generateChallenge(r))
+    )()
+
+    if (isLeft(result)) throw generateErrorResponseForChallengeRequest(result.left, "Failed to generate challenge")
+
+    return mapChallengeToApiResponse(result.right)
+  }
+
+  @PublicRoute()
+  @Post("agents/token")
+  @HttpCode(200)
+  async exchangeAgentToken(@Body() request: unknown): Promise<AgentTokenResponse> {
+    const validateRequest = (req: unknown) => validateJwtAssertionTokenRequest(req)
+    const extractAssertion = (validatedReq: JwtAssertionTokenRequest) => validatedReq.client_assertion
+    const exchangeToken = (assertion: string) => this.authService.exchangeJwtAssertionForToken(assertion)
+
+    const result = await pipe(
+      request,
+      validateRequest,
+      TE.fromEither,
+      TE.map(extractAssertion),
+      TE.chainW(exchangeToken)
+    )()
+
+    if (isLeft(result))
+      throw generateErrorResponseForAgentTokenExchange(result.left, "Failed to exchange JWT assertion for token")
+
+    return mapTokenToApiResponse(result.right)
   }
 }

@@ -57,7 +57,7 @@ export type PrefixUnion<TPrefix extends string, TUnion extends string> = `${TPre
  * e.g.  we can have a base entity user that we can decorate with properties like age, name, etc.
  * We can dynamically request and build the user type with the properties we need.
  */
-type DynamicDecorators<
+export type DynamicDecorators<
   AllowedDecorators extends object,
   SelectedDecorators extends Partial<Record<keyof AllowedDecorators, boolean>>
 > = {

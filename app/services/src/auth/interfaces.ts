@@ -1,3 +1,14 @@
+import {
+  AgentChallenge,
+  AgentChallengeCreationError,
+  AgentChallengeDecoratedValidationError,
+  AgentChallengeEncryptionError,
+  AgentChallengeJwtValidationError,
+  AgentChallengeProcessingError,
+  AgentChallengeValidationError,
+  DecoratedAgentChallenge
+} from "@domain"
+import {AgentGetError, UnknownError} from "@services"
 import {PrefixUnion} from "@utils/types"
 import {TaskEither} from "fp-ts/lib/TaskEither"
 
@@ -87,9 +98,45 @@ export interface OidcTokenRequest {
 }
 
 export const OIDC_PROVIDER_TOKEN = "OIDC_PROVIDER_TOKEN"
+export const AGENT_CHALLENGE_REPOSITORY_TOKEN = "AGENT_CHALLENGE_REPOSITORY_TOKEN"
+
+export type AgentChallengeGetError = "agent_challenge_not_found" | UnknownError
+export type AgentChallengeUpdateError =
+  | "agent_challenge_update_failed"
+  | "agent_challenge_concurrent_update"
+  | UnknownError
+
+export type AgentTokenError =
+  | "agent_token_generation_failed"
+  | AgentGetError
+  | AgentChallengeGetError
+  | AgentChallengeJwtValidationError
+  | AgentChallengeProcessingError
+  | AgentChallengeUpdateError
+  | GetChallengeByNonceError
+  | UnknownError
+
+export type AgentChallengeCreateError =
+  | "agent_challenge_storage_error"
+  | AgentChallengeCreationError
+  | AgentChallengeValidationError
+  | AgentChallengeEncryptionError
+  | AgentGetError
+  | UnknownError
 
 export interface OidcProvider {
   getAuthorizationEndpoint(): TaskEither<OidcError, string>
   exchangeCodeForTokens(request: OidcTokenRequest): TaskEither<OidcError, OidcTokenResponse>
   getUserInfo(accessToken: string): TaskEither<OidcError, OidcUserInfo>
+}
+
+export type GetChallengeByNonceError =
+  | "agent_challenge_not_found"
+  | AgentChallengeDecoratedValidationError
+  | UnknownError
+
+export interface AgentChallengeRepository {
+  persistChallenge(challenge: AgentChallenge): TaskEither<AgentChallengeCreateError, AgentChallenge>
+  getChallengeByNonce(nonce: string): TaskEither<GetChallengeByNonceError, DecoratedAgentChallenge<{occ: true}>>
+  updateChallenge(challenge: DecoratedAgentChallenge<{occ: true}>): TaskEither<AgentChallengeUpdateError, void>
 }
