@@ -1,7 +1,7 @@
 {
   "extends": "./tsconfig-google.json",
   "compilerOptions": {
-    "outDir": "./build",
+    "outDir": "./dist",
     "baseUrl": "./",
     "types": ["jest", "node"],
     "emitDecoratorMetadata": true,
@@ -24,5 +24,5 @@
       "@prisma/client": ["generated/prisma/client.ts"]
     }
   },
-  "exclude": ["node_modules", "build"]
+  "exclude": ["node_modules", "dist"]
 }

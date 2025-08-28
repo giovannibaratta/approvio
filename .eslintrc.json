@@ -2,7 +2,7 @@
 {
   "extends": ["eslint:recommended", "plugin:node/recommended", "prettier"],
   "plugins": ["node", "prettier"],
-  "ignorePatterns": ["build/**", "generated/**"],
+  "ignorePatterns": ["build/**", "generated/**", "dist/**"],
   "rules": {
     "prettier/prettier": "error",
     "block-scoped-var": "error",

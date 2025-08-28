@@ -22,7 +22,7 @@
     "format:prettier": "yarn prettier --config .prettierrc . --write",
     "prisma:pull": "yarn prisma db pull && prisma-case-format --file prisma/schema.prisma -p --table-case pascal,singular --field-case camel",
     "prisma:generate": "yarn prisma generate",
-    "build": "nest build",
+    "build": "nest build core",
     "test:setup": "yarn deps:start:test && yarn prisma:generate && yarn liquibase:update:test",
     "test": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest",
     "test:all": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest app/**/*.test.ts"
@@ -69,6 +69,7 @@
     "eslint-plugin-prettier": "5.5.3",
     "expect-more-jest": "5.5.0",
     "jest": "29.7.0",
+    "node-loader": "^2.1.0",
     "prettier": "3.6.2",
     "pretty-format": "30.0.5",
     "prisma": "6.13.0",
@@ -76,7 +77,9 @@
     "rxjs": "7.8.2",
     "supertest": "7.1.4",
     "ts-jest": "29.4.0",
+    "ts-loader": "9.5.4",
     "ts-node": "10.9.2",
-    "typescript": "5.8.3"
+    "typescript": "5.8.3",
+    "webpack": "5.101.3"
   }
 }

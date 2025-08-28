@@ -1,7 +1,7 @@
 {
   "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "outDir": "../../build/utils"
+    "outDir": "../../dist/utils"
   },
   "include": ["./src/**/*.ts", "./tests/**/*.ts"]
 }
