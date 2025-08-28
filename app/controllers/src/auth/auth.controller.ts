@@ -100,8 +100,6 @@ import {pipe} from "fp-ts/lib/function"
  */
 @Controller("auth")
 export class AuthController {
-  private readonly logger = new Logger(AuthController.name)
-
   constructor(private readonly authService: AuthService) {}
 
   @PublicRoute()
@@ -110,7 +108,7 @@ export class AuthController {
     const result = await this.authService.initiateOidcLogin()()
 
     if (isLeft(result)) {
-      this.logger.error("Failed to initiate OIDC login", result.left)
+      Logger.error("Failed to initiate OIDC login", result.left)
       res.redirect("/auth/error")
       return
     }
@@ -123,7 +121,7 @@ export class AuthController {
   @Get("callback")
   async callback(@Query("code") code: string, @Query("state") state: string, @Res() res: Response): Promise<void> {
     if (!code || !state) {
-      this.logger.error("Missing code or state in OIDC callback")
+      Logger.error("Missing code or state in OIDC callback")
       res.redirect("/auth/error")
       return
     }
@@ -148,7 +146,7 @@ export class AuthController {
     const result = await this.authService.completeOidcLogin(code, state)()
 
     if (isLeft(result)) {
-      this.logger.error("OIDC login completion failed", result.left)
+      Logger.error("OIDC login completion failed", result.left)
       throw new UnauthorizedException("Failed to generate token")
     }
 
