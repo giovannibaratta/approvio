@@ -5,7 +5,8 @@ import {
   CastVoteRequest,
   CastVoteServiceError,
   CanVoteError,
-  ListWorkflowsResponse
+  ListWorkflowsResponse,
+  AuthenticatedEntity
 } from "@services"
 import {ExtractLeftFromMethod} from "@utils"
 import {Either, right, left} from "fp-ts/Either"
@@ -31,7 +32,6 @@ import {
   ApprovalRuleValidationError,
   DecoratedWorkflow,
   isDecoratedWorkflow,
-  User,
   VoteValidationError,
   WorkflowDecoratorSelector
 } from "@domain"
@@ -78,7 +78,7 @@ function isValidMetadata(metadata: unknown): metadata is Record<string, string> 
 
 export function createWorkflowApiToServiceModel(data: {
   workflowData: WorkflowCreateApi
-  requestor: User
+  requestor: AuthenticatedEntity
 }): Either<ApprovalRuleValidationError, CreateWorkflowRequest> {
   const workflowData: CreateWorkflowRequest["workflowData"] = {
     name: data.workflowData.name,
@@ -399,7 +399,7 @@ export function validateApiRequest(request: unknown): Either<VoteApiValidationEr
 export function createCastVoteApiToServiceModel(data: {
   workflowId: string
   request: WorkflowVoteRequestApi
-  requestor: User
+  requestor: AuthenticatedEntity
 }): Either<VoteValidationError, CastVoteRequest> {
   switch (data.request.voteType.type) {
     case "APPROVE":
@@ -504,6 +504,13 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
+    case "requestor_not_authorized":
+      throw new ForbiddenException(
+        generateErrorPayload(
+          errorCode,
+          `${context}: entity does not have sufficient permissions to perform this operation`
+        )
+      )
   }
 }
 
@@ -513,6 +520,13 @@ export function generateErrorResponseForCastVote(
 ): HttpException {
   const errorCode = error.toUpperCase()
   switch (error) {
+    case "requestor_not_authorized":
+      throw new ForbiddenException(
+        generateErrorPayload(
+          errorCode,
+          `${context}: entity does not have sufficient permissions to perform this operation`
+        )
+      )
     case "workflow_not_found":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Workflow not found`))
     case "user_not_found":

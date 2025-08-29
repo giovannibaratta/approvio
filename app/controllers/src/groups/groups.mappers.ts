@@ -5,8 +5,7 @@ import {
   Group as GroupDomain,
   GroupWithEntitiesCount,
   Membership,
-  NAME_MAX_LENGTH,
-  User
+  NAME_MAX_LENGTH
 } from "@domain"
 import {
   BadRequestException,
@@ -25,7 +24,8 @@ import {
   ListGroupsResult,
   AuthorizationError,
   CreateGroupRequest,
-  GroupMembershipService
+  GroupMembershipService,
+  AuthenticatedEntity
 } from "@services"
 import {Either, right} from "fp-ts/Either"
 import {generateErrorPayload} from "../error"
@@ -35,7 +35,7 @@ export type CreateGroupRequestValidationError = never
 
 export function createGroupApiToServiceModel(data: {
   request: GroupCreate
-  requestor: User
+  requestor: AuthenticatedEntity
 }): Either<CreateGroupRequestValidationError, CreateGroupRequest> {
   return right({
     groupData: {description: data.request.description ?? null, name: data.request.name},
@@ -104,6 +104,13 @@ export function mapListGroupMembersResultToApi(
 export function generateErrorResponseForCreateGroup(error: CreateGroupError, context: string): HttpException {
   const errorCode = error.toUpperCase()
   switch (error) {
+    case "requestor_not_authorized":
+      throw new ForbiddenException(
+        generateErrorPayload(
+          errorCode,
+          `${context}: entity does not have sufficient permissions to perform this operation`
+        )
+      )
     case "group_description_too_long":
       return new BadRequestException(
         generateErrorPayload(

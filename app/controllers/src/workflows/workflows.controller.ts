@@ -1,7 +1,14 @@
-import {GetAuthenticatedUser} from "@app/auth"
-import {User, WorkflowDecoratorSelector} from "@domain"
+import {GetAuthenticatedEntity} from "@app/auth"
+import {WorkflowDecoratorSelector} from "@domain"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Res, Query} from "@nestjs/common"
-import {CreateWorkflowRequest, WorkflowService, VoteService, CanVoteRequest, CastVoteRequest} from "@services"
+import {
+  CreateWorkflowRequest,
+  WorkflowService,
+  VoteService,
+  CanVoteRequest,
+  CastVoteRequest,
+  AuthenticatedEntity
+} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -36,7 +43,7 @@ export class WorkflowsController {
   async createWorkflow(
     @Body() request: unknown,
     @Res({passthrough: true}) response: Response,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<void> {
     // Wrap service call in lambda to preserve context and pass requestor
     const serviceCreateWorkflow = (req: CreateWorkflowRequest) => this.workflowService.createWorkflow(req)
@@ -86,7 +93,7 @@ export class WorkflowsController {
   async listWorkflows(
     @Query("page") page: string = "1",
     @Query("limit") limit: string = "20",
-    @GetAuthenticatedUser() requestor: User,
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
     @Query("include") include?: string,
     @Query("include-only-non-terminal-state") includeOnlyNonTerminalState?: string
   ): Promise<ListWorkflows200Response> {
@@ -120,7 +127,7 @@ export class WorkflowsController {
   @HttpCode(HttpStatus.OK)
   async canVote(
     @Param("workflowId") workflowId: string,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<CanVoteResponseApi> {
     const serviceCanVote = (request: CanVoteRequest) => this.voteService.canVote(request)
 
@@ -145,7 +152,7 @@ export class WorkflowsController {
   async castVote(
     @Param("workflowId") workflowId: string,
     @Body() request: unknown,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<void> {
     const serviceCastVote = (req: CastVoteRequest) => this.voteService.castVote(req)
 

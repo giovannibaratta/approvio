@@ -388,6 +388,14 @@ describe("Agent Authentication Integration", () => {
           })
           expect(storedChallenge).not.toBeNull()
           expect(storedChallenge?.usedAt).not.toBeNull()
+
+          // Verify token can be used to authenticate
+          const infoResponse = await supertest(app.getHttpServer())
+            .get("/auth/info")
+            .set("Authorization", `Bearer ${response.body.token}`)
+
+          expect(infoResponse).toHaveStatusCode(200)
+          expect(infoResponse.body).toHaveProperty("entityType", "agent")
         })
 
         it("should work by extracting agent name from JWT issuer claim", async () => {

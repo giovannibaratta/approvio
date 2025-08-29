@@ -7,8 +7,8 @@ import {
   UserValidationError
 } from "@domain"
 import {Inject, Injectable, Logger} from "@nestjs/common"
-import {UnknownError} from "@services/error"
-import {RequestorAwareRequest} from "@services/shared/types"
+import {UnknownError, AuthorizationError} from "@services/error"
+import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 import {WorkflowGetError, WorkflowUpdateError} from "../workflow/interfaces"
 import {WorkflowService} from "../workflow/workflow.service"
 import {pipe} from "fp-ts/function"
@@ -38,17 +38,22 @@ export class VoteService {
    */
   canVote(request: CanVoteRequest): TaskEither<CanVoteError, CanVoteResponse> {
     return pipe(
-      sequenceS(TE.ApplicativePar)({
-        workflowWithTemplate: this.workflowService.getWorkflowByIdentifier(request.workflowId, {
-          workflowTemplate: true
-        }),
-        vote: this.voteRepo.getOptionalLatestVoteByWorkflowAndUser(request.workflowId, request.requestor.id),
-        userMemberships: this.groupMembershipRepo.getUserMembershipsByUserId(request.requestor.id)
-      }),
-      TE.map(scope => {
+      TE.Do,
+      TE.bindW("workflowId", () => TE.right(request.workflowId)),
+      TE.bindW("validatedRequestor", () => TE.fromEither(validateUserEntity(request.requestor))),
+      TE.bindW("scope", ({workflowId, validatedRequestor}) =>
+        sequenceS(TE.ApplicativePar)({
+          workflowWithTemplate: this.workflowService.getWorkflowByIdentifier(workflowId, {
+            workflowTemplate: true
+          }),
+          vote: this.voteRepo.getOptionalLatestVoteByWorkflowAndUser(workflowId, validatedRequestor.id),
+          userMemberships: this.groupMembershipRepo.getUserMembershipsByUserId(validatedRequestor.id)
+        })
+      ),
+      TE.map(({scope, validatedRequestor}) => {
         const {workflowWithTemplate, vote, userMemberships} = scope
         const status = this.getVoteStatus(vote)
-        const entityRoles = request.requestor.roles
+        const entityRoles = validatedRequestor.roles
         const canVoteResult = canVoteOnWorkflow(workflowWithTemplate, userMemberships, entityRoles)
         const canVote = isRight(canVoteResult) ? true : {reason: canVoteResult.left}
 
@@ -70,6 +75,8 @@ export class VoteService {
    * @returns A TaskEither with the persisted vote or an error.
    */
   castVote(request: CastVoteRequest): TaskEither<CastVoteServiceError, Vote> {
+    const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
+
     // This implementation is based on an optimistic approach
     // If there's a race condition (e.g., user eligibility changes between canVote check and the persist action),
     // the vote is registered anyway. Conformity evaluation happens elsewhere.
@@ -78,16 +85,17 @@ export class VoteService {
     // but we are aware this check itself is subject to race conditions.
     return pipe(
       TE.Do,
+      TE.bindW("requestor", () => validateRequestor()),
       TE.bind("canVoteCheck", () => this.canVote({workflowId: request.workflowId, requestor: request.requestor})),
-      TE.chainW(({canVoteCheck}) => {
+      TE.chainW(({requestor, canVoteCheck}) => {
         if (canVoteCheck.canVote !== true) {
           Logger.error(
-            `User ${request.requestor.id} cannot vote for workflow ${request.workflowId}: ${canVoteCheck.canVote.reason}`
+            `User ${requestor.id} cannot vote for workflow ${request.workflowId}: ${canVoteCheck.canVote.reason}`
           )
           return TE.left(canVoteCheck.canVote.reason)
         }
         return pipe(
-          VoteFactory.newVote({...request, userId: request.requestor.id}),
+          VoteFactory.newVote({...request, userId: requestor.id}),
           TE.fromEither,
           TE.chainW(vote => this.voteRepo.persistVoteAndMarkWorkflowRecalculation(vote))
         )
@@ -117,6 +125,7 @@ export type CanVoteError =
   | UserValidationError
   | GetLatestVoteError
   | UnknownError
+  | AuthorizationError
 
 export type CastVoteRequest = RequestorAwareRequest & DistributiveOmit<Vote, "id" | "castedAt" | "userId">
 
@@ -128,3 +137,4 @@ export type CastVoteServiceError =
   | CanVoteError
   | UnknownError
   | WorkflowUpdateError
+  | AuthorizationError

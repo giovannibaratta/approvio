@@ -4,10 +4,8 @@ import {
   OrganizationAdminRemove,
   Pagination as PaginationApi
 } from "@approvio/api"
-import {GetAuthenticatedUser} from "@app/auth"
-import {User} from "@domain"
 import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query, Res} from "@nestjs/common"
-import {OrganizationAdminService} from "@services"
+import {AuthenticatedEntity, OrganizationAdminService} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -21,6 +19,7 @@ import {
   generateErrorResponseForListOrganizationAdmins,
   generateErrorResponseForRemoveOrganizationAdmin
 } from "./organization-admin.mappers"
+import {GetAuthenticatedEntity} from "@app/auth"
 
 export const ORGANIZATION_ADMIN_ENDPOINT_ROOT = "organization"
 
@@ -34,7 +33,7 @@ export class OrganizationAdminController {
     @Param("organizationName") organizationName: string,
     @Body() request: OrganizationAdminCreate,
     @Res({passthrough: true}) response: Response,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<void> {
     // Wrap service call in lambda to preserve "this" context
     const serviceAddAdmin = (req: Parameters<OrganizationAdminService["addOrganizationAdmin"]>[0]) =>
@@ -84,7 +83,7 @@ export class OrganizationAdminController {
   async removeOrganizationAdmin(
     @Param("organizationName") organizationName: string,
     @Body() request: OrganizationAdminRemove,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<void> {
     // Wrap service call in lambda to preserve "this" context
     const serviceRemoveAdmin = (req: Parameters<OrganizationAdminService["removeOrganizationAdmin"]>[0]) =>

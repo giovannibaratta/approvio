@@ -1,8 +1,7 @@
 import {Pagination as PaginationApi, User as UserApi, UserCreate, UserSummary as UserSummaryApi} from "@approvio/api"
-import {GetAuthenticatedUser} from "@app/auth"
-import {User} from "@domain"
+import {GetAuthenticatedEntity} from "@app/auth"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Res} from "@nestjs/common"
-import {ListUsersRequest, UserService} from "@services"
+import {AuthenticatedEntity, ListUsersRequest, UserService} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -28,7 +27,7 @@ export class UsersController {
   async createUser(
     @Body() request: UserCreate,
     @Res({passthrough: true}) response: Response,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<void> {
     // Wrap service call in lambda
     const serviceCreateUser = (req: Parameters<UserService["createUser"]>[0]) => this.userService.createUser(req)

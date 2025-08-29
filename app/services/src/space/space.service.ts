@@ -29,18 +29,20 @@ import {
   SpaceRepository,
   SPACE_REPOSITORY_TOKEN
 } from "./interfaces"
+import {validateUserEntity} from "@services/shared/types"
 
 export type CreateSpaceError =
   | CreateSpaceRepoError
   | SpaceValidationError
   | UserValidationError
   | RoleValidationError
+  | AuthorizationError
   | "user_not_found"
   | "user_not_found_in_db"
   | "user_invalid_uuid"
   | "request_invalid_user_identifier"
 export type GetSpaceError = GetSpaceRepoError | AuthorizationError
-export type ListSpacesError = ListSpacesRepoError
+export type ListSpacesError = ListSpacesRepoError | AuthorizationError
 export type DeleteSpaceError = DeleteSpaceRepoError | AuthorizationError
 
 export const SPACE_MAX_LIMIT = 100
@@ -59,6 +61,8 @@ export class SpaceService {
    * Only users (not agents/systems) can create spaces.
    */
   createSpace(request: CreateSpaceRequest): TaskEither<CreateSpaceError, Space> {
+    const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
+
     const validateSpace = (req: CreateSpaceRequest) => pipe(req.spaceData, SpaceFactory.newSpace, TE.fromEither)
 
     const fetchUser = (requestor: User) => this.userRepo.getUserById(requestor.id)
@@ -77,8 +81,9 @@ export class SpaceService {
 
     return pipe(
       TE.Do,
+      TE.bindW("requestor", () => validateRequestor()),
       TE.bindW("space", () => validateSpace(request)),
-      TE.bindW("user", () => fetchUser(request.requestor)),
+      TE.bindW("user", ({requestor}) => fetchUser(requestor)),
       TE.bindW("updatedUser", ({user, space}) => addManagePermissions({user, space})),
       TE.chainW(({space, updatedUser, user}) =>
         persistSpaceWithUserPermissions({space, updatedUser, userOcc: user.occ})
@@ -90,10 +95,12 @@ export class SpaceService {
    * Retrieves a space by ID. Requires read permission on the space OR org admin status.
    */
   getSpace(request: GetSpaceRequest): TaskEither<GetSpaceError, Versioned<Space>> {
-    const checkPermissions = (spaceId: string): TaskEither<GetSpaceError, string> => {
-      const isOrgAdmin = request.requestor.orgRole === "admin"
+    const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
+
+    const checkPermissions = (requestor: User, spaceId: string): TaskEither<GetSpaceError, string> => {
+      const isOrgAdmin = requestor.orgRole === "admin"
       const hasReadPermission = RolePermissionChecker.hasSpacePermission(
-        request.requestor.roles,
+        requestor.roles,
         {type: "space", spaceId},
         "read"
       )
@@ -108,7 +115,8 @@ export class SpaceService {
 
     return pipe(
       TE.Do,
-      TE.bindW("authorizedSpaceId", () => checkPermissions(request.spaceId)),
+      TE.bindW("requestor", () => validateRequestor()),
+      TE.bindW("authorizedSpaceId", ({requestor}) => checkPermissions(requestor, request.spaceId)),
       TE.chainW(({authorizedSpaceId}) => fetchSpaceData(authorizedSpaceId))
     )
   }
@@ -127,17 +135,23 @@ export class SpaceService {
     if (limit <= 0) return TE.left("invalid_limit")
     if (limit > 100) limit = SPACE_MAX_LIMIT
 
-    return this.spaceRepo.listSpaces({page, limit})
+    return pipe(
+      validateUserEntity(request.requestor),
+      TE.fromEither,
+      TE.chainW(() => this.spaceRepo.listSpaces({page, limit}))
+    )
   }
 
   /**
    * Deletes a space. Requires manage permission on the space OR org admin status.
    */
   deleteSpace(request: DeleteSpaceRequest): TaskEither<DeleteSpaceError, void> {
-    const checkPermissions = (spaceId: string): TaskEither<DeleteSpaceError, string> => {
-      const isOrgAdmin = request.requestor.orgRole === "admin"
+    const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
+
+    const checkPermissions = (requestor: User, spaceId: string): TaskEither<DeleteSpaceError, string> => {
+      const isOrgAdmin = requestor.orgRole === "admin"
       const hasManagePermission = RolePermissionChecker.hasSpacePermission(
-        request.requestor.roles,
+        requestor.roles,
         {type: "space", spaceId},
         "manage"
       )
@@ -152,7 +166,8 @@ export class SpaceService {
 
     return pipe(
       TE.Do,
-      TE.bindW("authorizedSpaceId", () => checkPermissions(request.spaceId)),
+      TE.bindW("requestor", () => validateRequestor()),
+      TE.bindW("authorizedSpaceId", ({requestor}) => checkPermissions(requestor, request.spaceId)),
       TE.chainW(({authorizedSpaceId}) => deleteSpaceData(authorizedSpaceId))
     )
   }

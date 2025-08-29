@@ -1,11 +1,11 @@
-import {GetAuthenticatedUser} from "@app/auth"
-import {User} from "@domain"
+import {GetAuthenticatedEntity} from "@app/auth"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
 import {
   WorkflowTemplateService,
   CreateWorkflowTemplateRequest,
   UpdateWorkflowTemplateRequest,
-  DeprecateWorkflowTemplateRequest
+  DeprecateWorkflowTemplateRequest,
+  AuthenticatedEntity
 } from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
@@ -41,7 +41,7 @@ export class WorkflowTemplatesController {
   async createWorkflowTemplate(
     @Body() request: WorkflowTemplateCreate,
     @Res({passthrough: true}) response: Response,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<WorkflowTemplateApi> {
     const serviceCreateWorkflowTemplate = (req: CreateWorkflowTemplateRequest) =>
       this.workflowTemplateService.createWorkflowTemplate(req)
@@ -73,7 +73,7 @@ export class WorkflowTemplatesController {
   async listWorkflowTemplates(
     @Query("page") page: string = "1",
     @Query("limit") limit: string = "20",
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<ListWorkflowTemplates200Response> {
     const pageNum = parseInt(page, 10) || 1
     const limitNum = parseInt(limit, 10) || 20
@@ -122,7 +122,7 @@ export class WorkflowTemplatesController {
   async updateWorkflowTemplate(
     @Param("templateName") templateName: string,
     @Body() request: WorkflowTemplateUpdate,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<WorkflowTemplateApi> {
     const serviceUpdateWorkflowTemplate = (req: UpdateWorkflowTemplateRequest) =>
       this.workflowTemplateService.updateWorkflowTemplate(req)
@@ -149,7 +149,7 @@ export class WorkflowTemplatesController {
   async deprecateWorkflowTemplate(
     @Param("templateName") templateName: string,
     @Body() body: WorkflowTemplateDeprecate,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<WorkflowTemplateApi> {
     const request: DeprecateWorkflowTemplateRequest = {
       templateName,

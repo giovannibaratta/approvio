@@ -1,9 +1,10 @@
 import {Controller, Get, Post, Res, Logger, UnauthorizedException, Query, Body, HttpCode} from "@nestjs/common"
 import {Response} from "express"
-import {AuthService, GenerateChallengeRequest} from "@services"
+import {AuthenticatedEntity, AuthService, GenerateChallengeRequest} from "@services"
 import {isLeft} from "fp-ts/lib/Either"
 import * as TE from "fp-ts/TaskEither"
 import {PublicRoute} from "../../../main/src/auth/jwt.authguard"
+import {GetAuthenticatedEntity} from "../../../main/src/auth"
 import {
   TokenRequest,
   TokenResponse,
@@ -166,8 +167,8 @@ export class AuthController {
   }
 
   @Get("info")
-  async getUserInfo(): Promise<{entityType: string}> {
-    return {entityType: "user"}
+  async getUserInfo(@GetAuthenticatedEntity() authenticatedEntity: AuthenticatedEntity): Promise<{entityType: string}> {
+    return {entityType: authenticatedEntity.entityType}
   }
 
   @PublicRoute()

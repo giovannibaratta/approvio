@@ -1,19 +1,20 @@
 import {AgentRegistrationRequest, AgentRegistrationResponse} from "@approvio/api"
-import {AgentWithPrivateKey, User} from "@domain"
+import {AgentWithPrivateKey} from "@domain"
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   InternalServerErrorException,
   Logger
 } from "@nestjs/common"
-import {RegisterAgentRequest, AgentRegistrationError} from "@services"
+import {RegisterAgentRequest, AgentRegistrationError, AuthenticatedEntity} from "@services"
 import {Either, right} from "fp-ts/Either"
 import {generateErrorPayload} from "../error"
 
 export function agentRegistrationApiToServiceModel(data: {
   agentData: AgentRegistrationRequest
-  requestor: User
+  requestor: AuthenticatedEntity
 }): Either<never, RegisterAgentRequest> {
   return right({
     agentName: data.agentData.agentName,
@@ -54,5 +55,7 @@ export function generateErrorResponseForRegisterAgent(error: AgentRegistrationEr
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
+    case "requestor_not_authorized":
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Requestor not authorized`))
   }
 }

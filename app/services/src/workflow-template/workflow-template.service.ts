@@ -1,4 +1,5 @@
 import {Inject, Injectable} from "@nestjs/common"
+import {AuthorizationError} from "@services/error"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
@@ -34,6 +35,7 @@ import {
 import {UnknownError} from "@services/error"
 import {Versioned} from "@services/shared/utils"
 import * as E from "fp-ts/Either"
+import {validateUserEntity} from "@services/shared/types"
 
 @Injectable()
 export class WorkflowTemplateService {
@@ -46,17 +48,20 @@ export class WorkflowTemplateService {
 
   createWorkflowTemplate(
     request: CreateWorkflowTemplateRequest
-  ): TaskEither<CreateWorkflowTemplateError, WorkflowTemplate> {
+  ): TaskEither<CreateWorkflowTemplateError | AuthorizationError, WorkflowTemplate> {
     return pipe(
-      WorkflowTemplateFactory.newWorkflowTemplate({
-        name: request.workflowTemplateData.name,
-        description: request.workflowTemplateData.description,
-        approvalRule: request.workflowTemplateData.approvalRule,
-        actions: request.workflowTemplateData.actions || [],
-        defaultExpiresInHours: request.workflowTemplateData.defaultExpiresInHours
-      }),
+      validateUserEntity(request.requestor),
+      E.chainW(() =>
+        WorkflowTemplateFactory.newWorkflowTemplate({
+          name: request.workflowTemplateData.name,
+          description: request.workflowTemplateData.description,
+          approvalRule: request.workflowTemplateData.approvalRule,
+          actions: request.workflowTemplateData.actions || [],
+          defaultExpiresInHours: request.workflowTemplateData.defaultExpiresInHours
+        })
+      ),
       TE.fromEither,
-      TE.chain(workflowTemplate => this.workflowTemplateRepository.createWorkflowTemplate(workflowTemplate))
+      TE.chainW(workflowTemplate => this.workflowTemplateRepository.createWorkflowTemplate(workflowTemplate))
     )
   }
 
@@ -76,14 +81,17 @@ export class WorkflowTemplateService {
     | "workflow_template_most_recent_non_active_invalid_status"
     | WorkflowTemplateUpdateError
     | WorkflowTemplateDeprecationError
-    | CreateWorkflowTemplateError,
+    | CreateWorkflowTemplateError
+    | AuthorizationError,
     WorkflowTemplate
   > {
+    const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
     const validateAttributes = () =>
       TE.fromEither(WorkflowTemplateFactory.validateAttributes(request.workflowTemplateData))
 
     return pipe(
       TE.Do,
+      TE.bindW("requestor", () => validateRequestor()),
       TE.bindW("validatedAttributes", validateAttributes),
       TE.bindW("latestTemplate", () => this.getLatestWorkflowTemplateByName(request.templateName)),
       TE.bindW("mostRecentNonActive", () =>
@@ -218,11 +226,13 @@ export class WorkflowTemplateService {
   deprecateWorkflowTemplate(
     request: DeprecateWorkflowTemplateRequest
   ): TaskEither<
-    "workflow_template_most_recent_non_active_invalid_status" | WorkflowTemplateDeprecateError,
+    "workflow_template_most_recent_non_active_invalid_status" | WorkflowTemplateDeprecateError | AuthorizationError,
     Versioned<WorkflowTemplate>
   > {
+    const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
     return pipe(
       TE.Do,
+      TE.bindW("requestor", () => validateRequestor()),
       TE.bindW("latestTemplate", () => this.getLatestWorkflowTemplateByName(request.templateName)),
       TE.bindW("mostRecentNonActive", () =>
         this.workflowTemplateRepository.getMostRecentNonActiveWorkflowTemplateByName(request.templateName)
@@ -260,7 +270,11 @@ export class WorkflowTemplateService {
 
   listWorkflowTemplates(
     request: ListWorkflowTemplatesRequest
-  ): TaskEither<WorkflowTemplateValidationError | UnknownError, ListWorkflowTemplatesResponse> {
-    return this.workflowTemplateRepository.listWorkflowTemplates(request)
+  ): TaskEither<WorkflowTemplateValidationError | UnknownError | AuthorizationError, ListWorkflowTemplatesResponse> {
+    return pipe(
+      validateUserEntity(request.requestor),
+      TE.fromEither,
+      TE.chainW(() => this.workflowTemplateRepository.listWorkflowTemplates(request))
+    )
   }
 }

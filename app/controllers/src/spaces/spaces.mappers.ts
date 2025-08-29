@@ -1,6 +1,7 @@
 import {Space as SpaceApi, SpaceCreate, ListSpaces200Response} from "@approvio/api"
-import {Space, SpaceValidationError, User} from "@domain"
+import {Space, SpaceValidationError} from "@domain"
 import {
+  AuthenticatedEntity,
   CreateSpaceError,
   CreateSpaceRequest,
   DeleteSpaceError,
@@ -23,7 +24,7 @@ import {generateErrorPayload} from "@controllers/error"
 
 export function createSpaceApiToServiceModel(data: {
   request: SpaceCreate
-  requestor: User
+  requestor: AuthenticatedEntity
 }): Either<SpaceValidationError, CreateSpaceRequest> {
   const spaceData = {
     name: data.request.name,
@@ -58,31 +59,31 @@ export function mapListSpacesResultToApi(result: ListSpacesResult): ListSpaces20
 }
 
 export function generateErrorResponseForCreateSpace(error: CreateSpaceError, context: string): HttpException {
+  const errorCode = error.toUpperCase()
+
   switch (error) {
     case "space_name_empty":
-      return new BadRequestException(generateErrorPayload("SPACE_NAME_EMPTY", `${context}: space name cannot be empty`))
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: space name cannot be empty`))
     case "space_name_too_long":
-      return new BadRequestException(generateErrorPayload("SPACE_NAME_TOO_LONG", `${context}: space name is too long`))
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: space name is too long`))
     case "space_name_invalid_characters":
       return new BadRequestException(
-        generateErrorPayload("SPACE_NAME_INVALID_CHARACTERS", `${context}: space name contains invalid characters`)
+        generateErrorPayload(errorCode, `${context}: space name contains invalid characters`)
       )
     case "space_description_too_long":
-      return new BadRequestException(
-        generateErrorPayload("SPACE_DESCRIPTION_TOO_LONG", `${context}: space description is too long`)
-      )
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: space description is too long`))
     case "space_invalid_uuid":
     case "space_update_before_create":
-      return new BadRequestException(generateErrorPayload("SPACE_INVALID_REQUEST", `${context}: invalid request`))
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
     case "space_already_exists":
-      return new ConflictException(generateErrorPayload("SPACE_ALREADY_EXISTS", `${context}: space already exists`))
+      return new ConflictException(generateErrorPayload(errorCode, `${context}: space already exists`))
     case "concurrency_error":
       return new InternalServerErrorException(
-        generateErrorPayload("CONCURRENCY_ERROR", `${context}: concurrent modification detected`)
+        generateErrorPayload(errorCode, `${context}: concurrent modification detected`)
       )
     case "unknown_error":
       return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: an unexpected error occurred`)
+        generateErrorPayload(errorCode, `${context}: an unexpected error occurred`)
       )
     case "user_invalid_uuid":
     case "user_display_name_empty":
@@ -109,16 +110,20 @@ export function generateErrorResponseForCreateSpace(error: CreateSpaceError, con
     case "request_invalid_user_identifier":
       Logger.error(`Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", "Internal data inconsistency"))
+    case "requestor_not_authorized":
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Requestor not authorized`))
   }
 }
 
 export function generateErrorResponseForGetSpace(error: GetSpaceError, context: string): HttpException {
+  const errorCode = error.toUpperCase()
+
   switch (error) {
     case "space_not_found":
-      return new NotFoundException(generateErrorPayload("SPACE_NOT_FOUND", `${context}: space not found`))
+      return new NotFoundException(generateErrorPayload(errorCode, `${context}: space not found`))
     case "requestor_not_authorized":
       return new ForbiddenException(
-        generateErrorPayload("REQUESTOR_NOT_AUTHORIZED", `${context}: you are not authorized to perform this action`)
+        generateErrorPayload(errorCode, `${context}: you are not authorized to perform this action`)
       )
     case "unknown_error":
       return new InternalServerErrorException(
@@ -138,14 +143,16 @@ export function generateErrorResponseForGetSpace(error: GetSpaceError, context: 
 }
 
 export function generateErrorResponseForListSpaces(error: ListSpacesError, context: string): HttpException {
+  const errorCode = error.toUpperCase()
+
   switch (error) {
     case "invalid_page":
-      return new BadRequestException(generateErrorPayload("INVALID_PAGE", `${context}: invalid page parameter`))
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid page parameter`))
     case "invalid_limit":
-      return new BadRequestException(generateErrorPayload("INVALID_LIMIT", `${context}: invalid limit parameter`))
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid limit parameter`))
     case "unknown_error":
       return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: an unexpected error occurred`)
+        generateErrorPayload(errorCode, `${context}: an unexpected error occurred`)
       )
     case "space_name_empty":
     case "space_name_too_long":
@@ -157,16 +164,20 @@ export function generateErrorResponseForListSpaces(error: ListSpacesError, conte
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
+    case "requestor_not_authorized":
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Requestor not authorized`))
   }
 }
 
 export function generateErrorResponseForDeleteSpace(error: DeleteSpaceError, context: string): HttpException {
+  const errorCode = error.toUpperCase()
+
   switch (error) {
     case "space_not_found":
-      return new NotFoundException(generateErrorPayload("SPACE_NOT_FOUND", `${context}: space not found`))
+      return new NotFoundException(generateErrorPayload(errorCode, `${context}: space not found`))
     case "requestor_not_authorized":
       return new ForbiddenException(
-        generateErrorPayload("REQUESTOR_NOT_AUTHORIZED", `${context}: you are not authorized to perform this action`)
+        generateErrorPayload(errorCode, `${context}: you are not authorized to perform this action`)
       )
     case "unknown_error":
       return new InternalServerErrorException(

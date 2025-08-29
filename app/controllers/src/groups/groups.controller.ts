@@ -6,7 +6,7 @@ import {
   ListGroups200Response,
   RemoveGroupEntitiesRequest
 } from "@approvio/api"
-import {GetAuthenticatedUser} from "@app/auth"
+import {GetAuthenticatedEntity} from "@app/auth"
 import {
   createGroupApiToServiceModel,
   generateErrorResponseForAddUserToGroup,
@@ -20,7 +20,6 @@ import {
   mapListGroupMembersResultToApi,
   mapListGroupsResultToApi
 } from "@controllers/groups/groups.mappers"
-import {User} from "@domain"
 import {
   Body,
   Controller,
@@ -37,6 +36,7 @@ import {
 } from "@nestjs/common"
 import {
   AddMembersToGroupRequest,
+  AuthenticatedEntity,
   CreateGroupRequest,
   GetGroupByIdentifierRequest,
   GetGroupWithMembershipRequest,
@@ -65,7 +65,7 @@ export class GroupsController {
   async createGroup(
     @Body() request: GroupCreate,
     @Res({passthrough: true}) response: Response,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<void> {
     // Wrap service call in lambda, passing the creatorId
     const serviceCreateGroup = (req: CreateGroupRequest) => this.groupService.createGroup(req)
@@ -88,7 +88,7 @@ export class GroupsController {
   async listGroups(
     @Query("page", new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query("limit", new DefaultValuePipe(20), ParseIntPipe) limit: number,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<ListGroups200Response> {
     // Wrap in a lambda to preserve the "this" context
     const serviceListGroups = (request: ListGroupsRequest) => this.groupService.listGroups(request)
@@ -101,7 +101,7 @@ export class GroupsController {
   @HttpCode(HttpStatus.OK)
   async getGroup(
     @Param("groupIdentifier") groupIdentifier: string,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<GroupApi> {
     const serviceGetGroup = (request: GetGroupByIdentifierRequest) => this.groupService.getGroupByIdentifier(request)
     const eitherGroup = await pipe({groupIdentifier, requestor}, TE.right, TE.chainW(serviceGetGroup))()
@@ -116,7 +116,7 @@ export class GroupsController {
     @Param("groupId") groupId: string,
     @Query("page", new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query("limit", new DefaultValuePipe(20), ParseIntPipe) limit: number,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<ListGroupEntities200Response> {
     // This should be moved to the service layer once the pagination will be implemented
     if (page <= 0)
@@ -146,7 +146,7 @@ export class GroupsController {
   async addGroupEntities(
     @Param("groupId") groupId: string,
     @Body() request: AddGroupEntitiesRequest,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<GroupApi> {
     const addUserRequests: AddMembersToGroupRequest = {
       groupId,
@@ -177,7 +177,7 @@ export class GroupsController {
   async removeEntitiesFromGroup(
     @Param("groupId") groupId: string,
     @Body() request: RemoveGroupEntitiesRequest,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<GroupApi> {
     const removeUserRequests: RemoveMembersFromGroupRequest = {
       groupId,

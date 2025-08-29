@@ -1,4 +1,5 @@
 import {
+  Agent,
   AgentChallenge,
   AgentChallengeCreationError,
   AgentChallengeDecoratedValidationError,
@@ -6,9 +7,11 @@ import {
   AgentChallengeJwtValidationError,
   AgentChallengeProcessingError,
   AgentChallengeValidationError,
-  DecoratedAgentChallenge
+  DecoratedAgentChallenge,
+  User
 } from "@domain"
 import {AgentGetError, UnknownError} from "@services"
+import {Versioned} from "@services/shared/utils"
 import {PrefixUnion} from "@utils/types"
 import {TaskEither} from "fp-ts/lib/TaskEither"
 
@@ -139,4 +142,16 @@ export interface AgentChallengeRepository {
   persistChallenge(challenge: AgentChallenge): TaskEither<AgentChallengeCreateError, AgentChallenge>
   getChallengeByNonce(nonce: string): TaskEither<GetChallengeByNonceError, DecoratedAgentChallenge<{occ: true}>>
   updateChallenge(challenge: DecoratedAgentChallenge<{occ: true}>): TaskEither<AgentChallengeUpdateError, void>
+}
+
+export type AuthenticatedEntity = AuthenticatedAgent | AuthenticatedUser
+
+export type AuthenticatedAgent = {
+  entityType: "agent"
+  agent: Agent
+}
+
+export type AuthenticatedUser = {
+  entityType: "user"
+  user: Versioned<User>
 }

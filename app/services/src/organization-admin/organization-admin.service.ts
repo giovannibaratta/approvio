@@ -1,5 +1,7 @@
 import {OrganizationAdmin, OrganizationAdminFactory} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
+import {AuthorizationError} from "@services/error"
+import {User} from "@domain"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
@@ -13,7 +15,7 @@ import {
   OrganizationAdminRepository,
   PaginatedOrganizationAdminsList
 } from "./interfaces"
-import {RequestorAwareRequest} from "@services/shared/types"
+import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 
 const MIN_PAGE = 1
 const MIN_LIMIT = 1
@@ -31,18 +33,23 @@ export class OrganizationAdminService {
 
   addOrganizationAdmin(
     request: AddOrganizationAdminRequest
-  ): TaskEither<OrganizationAdminCreateError, OrganizationAdmin> {
+  ): TaskEither<OrganizationAdminCreateError | AuthorizationError, OrganizationAdmin> {
     // Wrap repository call in a lambda to preserve "this" context
     const persistAdmin = (admin: OrganizationAdmin) => this.orgAdminRepo.createOrganizationAdmin(admin)
 
-    const validateRequest = (req: AddOrganizationAdminRequest) => {
-      if (req.requestor.orgRole !== "admin") return E.left("requestor_not_authorized" as const)
+    const validateRequest = (req: AddOrganizationAdminRequest, requestor: User) => {
+      if (requestor.orgRole !== "admin") return E.left("requestor_not_authorized" as const)
       if (req.organizationName !== SUPPORTED_ORGANIZATION) return E.left("organization_not_found" as const)
 
       return OrganizationAdminFactory.newOrganizationAdmin({email: req.email})
     }
 
-    return pipe(request, validateRequest, TE.fromEither, TE.chainW(persistAdmin))
+    return pipe(
+      validateUserEntity(request.requestor),
+      E.chainW(requestor => validateRequest(request, requestor)),
+      TE.fromEither,
+      TE.chainW(persistAdmin)
+    )
   }
 
   listOrganizationAdmins(
@@ -70,9 +77,11 @@ export class OrganizationAdminService {
     return pipe(request, validateRequest, TE.fromEither, TE.chainW(fetchAdmins))
   }
 
-  removeOrganizationAdmin(request: RemoveOrganizationAdminRequest): TaskEither<OrganizationAdminRemoveError, void> {
-    const validateRequest = (req: RemoveOrganizationAdminRequest) => {
-      if (req.requestor.orgRole !== "admin") return E.left("requestor_not_authorized" as const)
+  removeOrganizationAdmin(
+    request: RemoveOrganizationAdminRequest
+  ): TaskEither<OrganizationAdminRemoveError | AuthorizationError, void> {
+    const validateRequest = (req: RemoveOrganizationAdminRequest, requestor: User) => {
+      if (requestor.orgRole !== "admin") return E.left("requestor_not_authorized" as const)
       if (req.organizationName !== SUPPORTED_ORGANIZATION) return E.left("organization_not_found" as const)
 
       return E.right(req)
@@ -87,7 +96,12 @@ export class OrganizationAdminService {
       return TE.left("invalid_identifier_format" as const)
     }
 
-    return pipe(request, validateRequest, TE.fromEither, TE.chainW(removeAdmin))
+    return pipe(
+      validateUserEntity(request.requestor),
+      E.chainW(requestor => validateRequest(request, requestor)),
+      TE.fromEither,
+      TE.chainW(() => removeAdmin(request))
+    )
   }
 }
 

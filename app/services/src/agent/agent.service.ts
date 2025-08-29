@@ -1,10 +1,12 @@
-import {Agent, AgentFactory, User, AgentWithPrivateKey} from "@domain"
+import {Agent, AgentFactory, AgentWithPrivateKey} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
 import {TaskEither} from "fp-ts/TaskEither"
 import {AGENT_REPOSITORY_TOKEN, AgentRepository, AgentRegistrationError, AgentGetError} from "./interfaces"
+import {AuthenticatedEntity} from "@services/auth"
+import {AuthorizationError} from "@services/error"
 
 @Injectable()
 export class AgentService {
@@ -18,7 +20,9 @@ export class AgentService {
 
     const validateAndCreateAgent = (
       req: RegisterAgentRequest
-    ): E.Either<AgentRegistrationError, AgentWithPrivateKey> => {
+    ): E.Either<AgentRegistrationError | AuthorizationError, AgentWithPrivateKey> => {
+      if (req.requestor.entityType !== "user") return E.left("requestor_not_authorized")
+
       return AgentFactory.create({
         agentName: req.agentName
       })
@@ -38,5 +42,5 @@ export class AgentService {
 
 export interface RegisterAgentRequest {
   readonly agentName: string
-  readonly requestor: User
+  readonly requestor: AuthenticatedEntity
 }

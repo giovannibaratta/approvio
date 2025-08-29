@@ -4,7 +4,7 @@ import {
   OrganizationAdminRemove,
   Pagination as PaginationApi
 } from "@approvio/api"
-import {OrganizationAdmin, User} from "@domain"
+import {OrganizationAdmin} from "@domain"
 import {
   BadRequestException,
   ConflictException,
@@ -22,7 +22,8 @@ import {
   PaginatedOrganizationAdminsList,
   OrganizationAdminCreateError,
   OrganizationAdminListError,
-  OrganizationAdminRemoveError
+  OrganizationAdminRemoveError,
+  AuthenticatedEntity
 } from "@services"
 import {Either, right, left, bindW, map} from "fp-ts/Either"
 import {Do} from "fp-ts/Either"
@@ -32,7 +33,7 @@ import {generateErrorPayload} from "../error"
 export function addOrganizationAdminApiToServiceModel(data: {
   organizationName: string
   adminData: OrganizationAdminCreate
-  requestor: User
+  requestor: AuthenticatedEntity
 }): Either<never, AddOrganizationAdminRequest> {
   return right({
     organizationName: data.organizationName,
@@ -65,7 +66,7 @@ export function listOrganizationAdminsApiToServiceModel(data: {
 export function removeOrganizationAdminApiToServiceModel(data: {
   organizationName: string
   removeData: OrganizationAdminRemove
-  requestor: User
+  requestor: AuthenticatedEntity
 }): Either<never, RemoveOrganizationAdminRequest> {
   return right({
     organizationName: data.organizationName,

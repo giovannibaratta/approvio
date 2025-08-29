@@ -1,5 +1,5 @@
 import {ListUsers200Response, User as UserApi, UserCreate} from "@approvio/api"
-import {User, User as UserDomain} from "@domain"
+import {User as UserDomain} from "@domain"
 import {
   BadRequestException,
   ConflictException,
@@ -9,6 +9,7 @@ import {
   NotFoundException
 } from "@nestjs/common"
 import {
+  AuthenticatedEntity,
   AuthorizationError,
   CreateUserRequest,
   ListUsersRequest,
@@ -24,7 +25,7 @@ import * as O from "fp-ts/Option"
 import {Option} from "fp-ts/Option"
 export function createUserApiToServiceModel(data: {
   userData: UserCreate
-  requestor: User
+  requestor: AuthenticatedEntity
 }): Either<never, CreateUserRequest> {
   return right({
     userData: data.userData,

@@ -13,7 +13,7 @@ import {
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError} from "@services/error"
 import {MembershipAddError} from "@services/group-membership"
-import {RequestorAwareRequest} from "@services/shared/types"
+import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 import {Versioned} from "@services/shared/utils"
 import {isUUIDv4} from "@utils"
 import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
@@ -31,7 +31,7 @@ import {
   ListGroupsResult
 } from "./interfaces"
 
-export type CreateGroupError = CreateGroupRepoError | MembershipAddError | UserValidationError
+export type CreateGroupError = CreateGroupRepoError | MembershipAddError | UserValidationError | AuthorizationError
 export type GetGroupError = GetGroupRepoError | AuthorizationError
 export type ListGroupsError = ListGroupsRepoError | AuthorizationError
 
@@ -51,6 +51,8 @@ export class GroupService {
    * All users are allowed to create groups.
    */
   createGroup(request: CreateGroupRequest): TaskEither<CreateGroupError, Group> {
+    const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
+
     const validateGroup = (req: CreateGroupRequest) => pipe(req.groupData, GroupFactory.newGroup, TE.fromEither)
 
     const fetchUser = (requestor: User) => this.userRepo.getUserById(requestor.id)
@@ -67,8 +69,9 @@ export class GroupService {
 
     return pipe(
       TE.Do,
+      TE.bindW("requestor", () => validateRequestor()),
       TE.bindW("group", () => validateGroup(request)),
-      TE.bindW("user", () => fetchUser(request.requestor)),
+      TE.bindW("user", ({requestor}) => fetchUser(requestor)),
       TE.bindW("updatedUser", ({user, group}) => addManagePermissions({user, group})),
       TE.bindW("membership", ({updatedUser}) => createMembership(updatedUser)),
       TE.chainW(({group, updatedUser, user, membership}) =>
@@ -80,14 +83,16 @@ export class GroupService {
   getGroupByIdentifier(
     request: GetGroupByIdentifierRequest
   ): TaskEither<GetGroupError, Versioned<GroupWithEntitiesCount>> {
-    const {groupIdentifier, requestor} = request
+    const {groupIdentifier} = request
     const isUuid = isUUIDv4(groupIdentifier)
+
+    const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
 
     const resolveGroupId = (identifier: string): TaskEither<GetGroupError, string> => {
       return isUuid ? TE.right(identifier) : this.groupRepo.getGroupIdByName(identifier)
     }
 
-    const checkPermissions = (groupId: string): TaskEither<GetGroupError, string> => {
+    const checkPermissions = (requestor: User, groupId: string): TaskEither<GetGroupError, string> => {
       const isOrgAdmin = requestor.orgRole === "admin"
       const hasReadPermission = RolePermissionChecker.hasGroupPermission(
         requestor.roles,
@@ -105,8 +110,9 @@ export class GroupService {
 
     return pipe(
       TE.Do,
+      TE.bindW("requestor", () => validateRequestor()),
       TE.bindW("groupId", () => resolveGroupId(groupIdentifier)),
-      TE.bindW("authorizedGroupId", ({groupId}) => checkPermissions(groupId)),
+      TE.bindW("authorizedGroupId", ({requestor, groupId}) => checkPermissions(requestor, groupId)),
       TE.chainW(({authorizedGroupId}) => fetchGroupData(authorizedGroupId))
     )
   }
@@ -120,13 +126,20 @@ export class GroupService {
     if (limit > 100) limit = MAX_LIMIT
 
     const repoListGroups = (data: ListGroupsRepo) => this.groupRepo.listGroups(data)
+    const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
 
-    const buildRepoRequest = (req: ListGroupsRequest) => {
-      const filter = ListFilterFactory.generateListFiltersForRequestor(req.requestor)
+    const buildRepoRequest = (requestor: User) => {
+      const filter = ListFilterFactory.generateListFiltersForRequestor(requestor)
       return {page, limit, filter}
     }
 
-    return pipe(request, buildRepoRequest, TE.right, TE.chainW(repoListGroups))
+    return pipe(
+      TE.Do,
+      TE.bindW("request", () => TE.right(request)),
+      TE.bindW("validatedRequestor", validateRequestor),
+      TE.map(({validatedRequestor}) => buildRepoRequest(validatedRequestor)),
+      TE.chainW(repoListGroups)
+    )
   }
 }
 

@@ -1,5 +1,5 @@
 import {Space as SpaceApi, SpaceCreate, ListSpaces200Response} from "@approvio/api"
-import {GetAuthenticatedUser} from "@app/auth"
+import {GetAuthenticatedEntity} from "@app/auth"
 import {
   createSpaceApiToServiceModel,
   generateErrorResponseForCreateSpace,
@@ -9,9 +9,15 @@ import {
   mapListSpacesResultToApi,
   mapSpaceToApi
 } from "@controllers/spaces/spaces.mappers"
-import {User} from "@domain"
 import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query, Res} from "@nestjs/common"
-import {CreateSpaceRequest, DeleteSpaceRequest, GetSpaceRequest, ListSpacesRequest, SpaceService} from "@services"
+import {
+  AuthenticatedEntity,
+  CreateSpaceRequest,
+  DeleteSpaceRequest,
+  GetSpaceRequest,
+  ListSpacesRequest,
+  SpaceService
+} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -28,7 +34,7 @@ export class SpacesController {
   async createSpace(
     @Body() request: SpaceCreate,
     @Res({passthrough: true}) response: Response,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<void> {
     const serviceCreateSpace = (req: CreateSpaceRequest) => this.spaceService.createSpace(req)
 
@@ -51,7 +57,7 @@ export class SpacesController {
   async listSpaces(
     @Query("page") pageQuery: string,
     @Query("limit") limitQuery: string,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<ListSpaces200Response> {
     const validateAndParseParams = (pageStr?: string, limitStr?: string) => {
       const page = pageStr ? parseInt(pageStr, 10) : undefined
@@ -73,7 +79,10 @@ export class SpacesController {
 
   @Get(":spaceId")
   @HttpCode(HttpStatus.OK)
-  async getSpace(@Param("spaceId") spaceId: string, @GetAuthenticatedUser() requestor: User): Promise<SpaceApi> {
+  async getSpace(
+    @Param("spaceId") spaceId: string,
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+  ): Promise<SpaceApi> {
     const serviceGetSpace = (request: GetSpaceRequest) => this.spaceService.getSpace(request)
 
     const eitherSpace = await pipe({spaceId, requestor}, TE.right, TE.chainW(serviceGetSpace))()
@@ -85,7 +94,10 @@ export class SpacesController {
 
   @Delete(":spaceId")
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteSpace(@Param("spaceId") spaceId: string, @GetAuthenticatedUser() requestor: User): Promise<void> {
+  async deleteSpace(
+    @Param("spaceId") spaceId: string,
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+  ): Promise<void> {
     const serviceDeleteSpace = (request: DeleteSpaceRequest) => this.spaceService.deleteSpace(request)
 
     const eitherResult = await pipe({spaceId, requestor}, TE.right, TE.chainW(serviceDeleteSpace))()

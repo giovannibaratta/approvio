@@ -1,8 +1,7 @@
 import {AgentRegistrationRequest, AgentRegistrationResponse} from "@approvio/api"
-import {GetAuthenticatedUser} from "@app/auth"
-import {User} from "@domain"
+import {GetAuthenticatedEntity} from "@app/auth"
 import {Body, Controller, HttpCode, HttpStatus, Post, Res} from "@nestjs/common"
-import {AgentService, RegisterAgentRequest} from "@services"
+import {AgentService, AuthenticatedEntity, RegisterAgentRequest} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -24,12 +23,12 @@ export class AgentsController {
   async registerAgent(
     @Body() request: AgentRegistrationRequest,
     @Res({passthrough: true}) response: Response,
-    @GetAuthenticatedUser() requestor: User
+    @GetAuthenticatedEntity() entity: AuthenticatedEntity
   ): Promise<AgentRegistrationResponse> {
     const serviceRegisterAgent = (req: RegisterAgentRequest) => this.agentService.registerAgent(req)
 
     const eitherAgent = await pipe(
-      {agentData: request, requestor},
+      {agentData: request, requestor: entity},
       agentRegistrationApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceRegisterAgent)

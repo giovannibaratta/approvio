@@ -15,7 +15,6 @@ import {
   ApprovalRule,
   ApprovalRuleValidationError,
   ApprovalRuleFactory,
-  User,
   WorkflowAction,
   WorkflowActionType,
   WorkflowTemplateSummary
@@ -23,12 +22,14 @@ import {
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   InternalServerErrorException,
   Logger,
   NotFoundException
 } from "@nestjs/common"
 import {
+  AuthenticatedEntity,
   CreateWorkflowTemplateRequest,
   ListWorkflowTemplatesResponse,
   UpdateWorkflowTemplateRequest,
@@ -39,7 +40,7 @@ import {Either, isLeft, left, right, traverseArray} from "fp-ts/Either"
 
 export function createWorkflowTemplateApiToServiceModel(data: {
   workflowTemplateData: WorkflowTemplateCreateApi
-  requestor: User
+  requestor: AuthenticatedEntity
 }): Either<ApprovalRuleValidationError | WorkflowTemplateValidationError, CreateWorkflowTemplateRequest> {
   const eitherApprovalRule = mapApprovalRuleToDomain(data.workflowTemplateData.approvalRule)
   if (isLeft(eitherApprovalRule)) return eitherApprovalRule
@@ -80,7 +81,7 @@ function mapWorkflowActionToDomain(action: WorkflowActionApi): Either<WorkflowTe
 export function updateWorkflowTemplateApiToServiceModel(data: {
   templateName: string
   workflowTemplateData: WorkflowTemplateUpdateApi
-  requestor: User
+  requestor: AuthenticatedEntity
 }): Either<ApprovalRuleValidationError | WorkflowTemplateValidationError, UpdateWorkflowTemplateRequest> {
   let approvalRule: ApprovalRule | undefined = undefined
 
@@ -180,6 +181,13 @@ export function generateErrorResponseForCreateWorkflowTemplate(
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "requestor_not_authorized":
+      throw new ForbiddenException(
+        generateErrorPayload(
+          errorCode,
+          `${context}: entity does not have sufficient permissions to perform this operation`
+        )
+      )
     case "approval_rule_and_rule_must_have_rules":
     case "approval_rule_group_rule_invalid_group_id":
     case "approval_rule_group_rule_invalid_min_count":
@@ -265,6 +273,13 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "requestor_not_authorized":
+      throw new ForbiddenException(
+        generateErrorPayload(
+          errorCode,
+          `${context}: entity does not have sufficient permissions to perform this operation`
+        )
+      )
     case "workflow_template_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow template not found`))
     case "concurrency_error":
@@ -322,6 +337,13 @@ export function generateErrorResponseForDeprecateWorkflowTemplate(
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "requestor_not_authorized":
+      throw new ForbiddenException(
+        generateErrorPayload(
+          errorCode,
+          `${context}: entity does not have sufficient permissions to perform this operation`
+        )
+      )
     case "workflow_template_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow template not found`))
     case "workflow_template_not_active":
@@ -379,6 +401,13 @@ export function generateErrorResponseForListWorkflowTemplates(
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "requestor_not_authorized":
+      throw new ForbiddenException(
+        generateErrorPayload(
+          errorCode,
+          `${context}: entity does not have sufficient permissions to perform this operation`
+        )
+      )
     case "approval_rule_and_rule_must_have_rules":
     case "approval_rule_group_rule_invalid_group_id":
     case "approval_rule_group_rule_invalid_min_count":
