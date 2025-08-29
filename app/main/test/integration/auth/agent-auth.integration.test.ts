@@ -375,7 +375,7 @@ describe("Agent Authentication Integration", () => {
 
           // Verify JWT token content
           const decodedToken = jwtService.decode(response.body.token) as Record<string, unknown>
-          expect(decodedToken).toHaveProperty("sub", testAgent.id)
+          expect(decodedToken).toHaveProperty("sub", testAgent.agentName)
           expect(decodedToken).toHaveProperty("entityType", "agent")
           expect(decodedToken).toHaveProperty("name", testAgent.agentName)
           expect(decodedToken).toHaveProperty("iss", configProvider.jwtConfig.issuer)

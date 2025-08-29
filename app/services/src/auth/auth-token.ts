@@ -183,7 +183,7 @@ export class TokenPayloadBuilder {
     }
   ): TokenPayloadForSigning {
     return TokenPayloadBuilder.from({
-      sub: agent.id,
+      sub: agent.agentName,
       entityType: "agent",
       displayName: agent.agentName,
       // Agents don't have email
