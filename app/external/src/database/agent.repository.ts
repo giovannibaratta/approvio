@@ -2,21 +2,21 @@ import {Agent} from "@domain"
 import {isPrismaUniqueConstraintError} from "@external/database/errors"
 import {Injectable} from "@nestjs/common"
 import {Agent as PrismaAgent} from "@prisma/client"
-import {AgentRepository, AgentCreateError, AgentGetError, AgentKeyDecodeError} from "@services"
+import {AgentRepository, AgentCreateError, AgentGetError} from "@services"
 import * as TE from "fp-ts/lib/TaskEither"
 import {TaskEither} from "fp-ts/lib/TaskEither"
 import {pipe} from "fp-ts/lib/function"
 import {DatabaseClient} from "./database-client"
-import * as E from "fp-ts/lib/Either"
 import {chainNullableToLeft} from "./utils"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
+import {mapAgentToDomain} from "./shared"
 
 @Injectable()
 export class AgentDbRepository implements AgentRepository {
   constructor(private readonly dbClient: DatabaseClient) {}
 
   persistAgent(agent: Agent): TaskEither<AgentCreateError, Agent> {
-    return pipe(agent, TE.right, TE.chainW(this.persistAgentTask()), TE.chainEitherKW(this.mapPrismaAgentToDomain))
+    return pipe(agent, TE.right, TE.chainW(this.persistAgentTask()), TE.chainEitherKW(mapAgentToDomain))
   }
 
   getAgentByName(agentName: string): TaskEither<AgentGetError, Agent> {
@@ -29,7 +29,7 @@ export class AgentDbRepository implements AgentRepository {
         this.mapGetError
       ),
       chainNullableToLeft("agent_not_found" as const),
-      TE.chainEitherKW(this.mapPrismaAgentToDomain)
+      TE.chainEitherKW(mapAgentToDomain)
     )
   }
 
@@ -43,7 +43,7 @@ export class AgentDbRepository implements AgentRepository {
         this.mapGetError
       ),
       chainNullableToLeft("agent_not_found" as const),
-      TE.chainEitherKW(this.mapPrismaAgentToDomain)
+      TE.chainEitherKW(mapAgentToDomain)
     )
   }
 
@@ -66,26 +66,6 @@ export class AgentDbRepository implements AgentRepository {
       createdAt: agent.createdAt,
       occ: POSTGRES_BIGINT_LOWER_BOUND
     }
-  }
-
-  private mapPrismaAgentToDomain(prismaAgent: PrismaAgent): E.Either<AgentKeyDecodeError, Agent> {
-    const decodePublicKey = E.tryCatch(
-      () => Buffer.from(prismaAgent.base64PublicKey, "base64").toString("utf8"),
-      () => "agent_key_decode_error" as const
-    )
-
-    return pipe(
-      decodePublicKey,
-      E.map(decodedPublicKey => {
-        const agent: Agent = {
-          id: prismaAgent.id,
-          agentName: prismaAgent.agentName,
-          publicKey: decodedPublicKey,
-          createdAt: prismaAgent.createdAt
-        }
-        return agent
-      })
-    )
   }
 
   private mapCreateError = (error: unknown): AgentCreateError => {

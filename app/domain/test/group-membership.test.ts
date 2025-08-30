@@ -7,7 +7,8 @@ import {
   OrgRole,
   User,
   UserFactory,
-  RoleFactory
+  RoleFactory,
+  createUserMembershipEntity
 } from "@domain"
 
 import {Either, isLeft, isRight} from "fp-ts/lib/Either"
@@ -25,7 +26,7 @@ describe("MembershipFactory", () => {
       const user = unwrapRight(
         UserFactory.newUser({displayName: "test", email: "test@test.com", orgRole: OrgRole.MEMBER})
       )
-      const data = {entity: user}
+      const data = {entity: createUserMembershipEntity(user)}
 
       // When
       const result = MembershipFactory.newMembership(data)
@@ -48,7 +49,7 @@ describe("MembershipFactory", () => {
       )
       const now = new Date()
       const earlier = new Date(now.getTime() - 1000)
-      const data = {entity: user, createdAt: now, updatedAt: earlier}
+      const data = {entity: createUserMembershipEntity(user), createdAt: now, updatedAt: earlier}
 
       // When
       const result = MembershipFactory.validate(data)
@@ -93,12 +94,12 @@ describe("GroupManager", () => {
 
     groupManagerMembership = unwrapRight(
       MembershipFactory.newMembership({
-        entity: groupManager
+        entity: createUserMembershipEntity(groupManager)
       })
     )
     memberMembership = unwrapRight(
       MembershipFactory.newMembership({
-        entity: member
+        entity: createUserMembershipEntity(member)
       })
     )
   })
@@ -113,7 +114,7 @@ describe("GroupManager", () => {
       // Given
       const duplicateMembership = unwrapRight(
         MembershipFactory.newMembership({
-          entity: groupManager
+          entity: createUserMembershipEntity(groupManager)
         })
       )
       const memberships = [duplicateMembership, duplicateMembership]
@@ -142,13 +143,13 @@ describe("GroupManager", () => {
   describe("removeMembership", () => {
     it("should fail to remove a non-existent membership", () => {
       const manager = unwrapRight(GroupManager.createGroupManager(group, [groupManagerMembership]))
-      const result = manager.removeMembership(member.id)
+      const result = manager.removeMembership(createUserMembershipEntity(member))
       expect(result).toBeLeftOf("membership_not_found")
     })
 
     it("should fail to remove the last admin", () => {
       const manager = unwrapRight(GroupManager.createGroupManager(group, [groupManagerMembership]))
-      const result = manager.removeMembership(groupManager.id)
+      const result = manager.removeMembership(groupManagerMembership.entity)
       expect(result).toBeLeftOf("membership_no_admin")
     })
   })

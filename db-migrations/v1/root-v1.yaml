@@ -25,3 +25,5 @@ databaseChangeLog:
       file: v1/create-agents-table.yaml
   - include:
       file: v1/create-agent-challenges-table.yaml
+  - include:
+      file: v1/create-agent-group-memberships-table.yaml

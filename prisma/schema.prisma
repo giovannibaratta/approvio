@@ -39,13 +39,14 @@ model Databasechangeloglock {
 }
 
 model Group {
-  id               String            @id @db.Uuid
-  name             String            @unique(map: "groups_name_unique") @db.VarChar
-  description      String?           @db.VarChar
-  createdAt        DateTime          @map("created_at") @db.Timestamp(6)
-  updatedAt        DateTime          @map("updated_at") @db.Timestamp(6)
-  occ              BigInt
-  groupMemberships GroupMembership[]
+  id                    String                 @id @db.Uuid
+  name                  String                 @unique(map: "groups_name_unique") @db.VarChar
+  description           String?                @db.VarChar
+  createdAt             DateTime               @map("created_at") @db.Timestamp(6)
+  updatedAt             DateTime               @map("updated_at") @db.Timestamp(6)
+  occ                   BigInt
+  agentGroupMemberships AgentGroupMembership[]
+  groupMemberships      GroupMembership[]
 
   @@map("groups")
 }
@@ -182,12 +183,13 @@ model Space {
 }
 
 model Agent {
-  id              String           @id @db.Uuid
-  agentName       String           @unique(map: "agents_agent_name_unique") @map("agent_name")
-  base64PublicKey String           @map("base64_public_key")
-  createdAt       DateTime         @map("created_at") @db.Timestamp(6)
-  occ             BigInt
-  agentChallenges AgentChallenge[]
+  id                    String                 @id @db.Uuid
+  agentName             String                 @unique(map: "agents_agent_name_unique") @map("agent_name")
+  base64PublicKey       String                 @map("base64_public_key")
+  createdAt             DateTime               @map("created_at") @db.Timestamp(6)
+  occ                   BigInt
+  agentChallenges       AgentChallenge[]
+  agentGroupMemberships AgentGroupMembership[]
 
   @@map("agents")
 }
@@ -203,4 +205,18 @@ model AgentChallenge {
   agents    Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_agent_challenges_agent")
 
   @@map("agent_challenges")
+}
+
+model AgentGroupMembership {
+  groupId   String   @map("group_id") @db.Uuid
+  agentId   String   @map("agent_id") @db.Uuid
+  createdAt DateTime @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @map("updated_at") @db.Timestamp(6)
+  agents    Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_agent_group_memberships_agent")
+  groups    Group    @relation(fields: [groupId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_agent_group_memberships_group")
+
+  @@id([groupId, agentId], map: "pk_agent_group_memberships")
+  @@index([agentId], map: "idx_agent_group_memberships_agent_id")
+  @@index([groupId], map: "idx_agent_group_memberships_group_id")
+  @@map("agent_group_memberships")
 }

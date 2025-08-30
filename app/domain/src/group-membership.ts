@@ -1,4 +1,12 @@
-import {Group, User} from "@domain"
+import {
+  Group,
+  User,
+  MembershipEntity,
+  getMembershipEntityId,
+  getMembershipEntityType,
+  getNormalizedId,
+  MembershipEntityReference
+} from "@domain"
 import {isUUIDv4, PrefixUnion} from "@utils"
 import * as A from "fp-ts/Array"
 import {Applicative, Do, Either, isLeft, left, right, chain, bindW} from "fp-ts/lib/Either"
@@ -28,7 +36,7 @@ interface PrivateMembershipWithGroupRef extends PrivateMembership {
 }
 
 interface PrivateMembership {
-  entity: User
+  entity: MembershipEntity
   createdAt: Date
   updatedAt: Date
 
@@ -66,7 +74,7 @@ export class MembershipFactory {
     return validatedObject
   }
 
-  static newMembership(data: {entity: User}): Either<MembershipValidationError, Membership> {
+  static newMembership(data: {entity: MembershipEntity}): Either<MembershipValidationError, Membership> {
     const now = new Date()
     return MembershipFactory.semanticValidation({
       entity: data.entity,
@@ -84,20 +92,10 @@ export class MembershipFactory {
       entity: data.entity,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
-      getEntityId: () => getEntityId(data.entity),
-      getEntityType: () => getEntityType(data.entity)
+      getEntityId: () => getMembershipEntityId(data.entity),
+      getEntityType: () => getMembershipEntityType(data.entity)
     })
   }
-}
-
-function getEntityId(entity: PrivateMembership["entity"]): EntityId {
-  return entity.id
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function getEntityType(entity: PrivateMembership["entity"]): EntityType {
-  // Only users are supported for now
-  return "user"
 }
 
 export type GroupManagerValidationError = PrefixUnion<"membership", "duplicated_membership">
@@ -105,16 +103,16 @@ export type AddMembershipError = PrefixUnion<"membership", "entity_already_in_gr
 export type RemoveMembershipError = PrefixUnion<"membership", "not_found" | "no_admin">
 export type UpdateMembershipError = RemoveMembershipError
 
-type EntityId = string
+type NormalizedEntityId = string
 
 export class GroupManager {
-  private readonly memberships: Map<EntityId, Membership> = new Map()
+  private readonly memberships: Map<NormalizedEntityId, Membership> = new Map()
 
   private constructor(
     readonly group: Group,
     memberships: ReadonlyArray<Membership>
   ) {
-    memberships.forEach(m => this.memberships.set(m.getEntityId(), m))
+    memberships.forEach(m => this.memberships.set(getNormalizedId(m.entity), m))
   }
 
   getMemberships(): ReadonlyArray<Membership> {
@@ -122,10 +120,10 @@ export class GroupManager {
   }
 
   addMembership(membershipToAdd: Membership): Either<AddMembershipError, GroupManager> {
-    const entityId = membershipToAdd.getEntityId()
-    if (this.isEntityInMembership(entityId)) return left("membership_entity_already_in_group")
+    const normalizedId = getNormalizedId(membershipToAdd.entity)
+    if (this.isEntityInMembership(normalizedId)) return left("membership_entity_already_in_group")
 
-    this.memberships.set(entityId, membershipToAdd)
+    this.memberships.set(normalizedId, membershipToAdd)
     return right(this)
   }
 
@@ -135,35 +133,44 @@ export class GroupManager {
     return right(this)
   }
 
-  isEntityInMembership(entityId: EntityId): boolean {
-    return this.memberships.has(entityId)
+  isEntityInMembership(normalizedId: NormalizedEntityId): boolean {
+    return this.memberships.has(normalizedId)
   }
 
-  removeMembership(entityId: string): Either<RemoveMembershipError, GroupManager> {
-    if (!this.isEntityInMembership(entityId)) return left("membership_not_found")
+  removeMembership(
+    entityRef: MembershipEntity | MembershipEntityReference
+  ): Either<RemoveMembershipError, GroupManager> {
+    const normalizedId = getNormalizedId(entityRef)
+    if (!this.isEntityInMembership(normalizedId)) return left("membership_not_found")
 
-    const membershipToRemove = this.memberships.get(entityId)
+    const membershipToRemove = this.memberships.get(normalizedId)
     if (membershipToRemove === undefined) return left("membership_not_found")
 
     // Check if removing this member would leave the group without any administrators
-    const user = membershipToRemove.entity
+    // Only users can be administrators, agents cannot
+    const entity = membershipToRemove.entity
     const groupScope: GroupScope = {
       type: "group",
       groupId: this.group.id
     }
 
-    // If this user has manage permission, check if they're the last admin
-    if (RolePermissionChecker.hasGroupPermission(user.roles, groupScope, "manage")) {
-      const remainingMemberships = Array.from(this.memberships.values()).filter(m => m.getEntityId() !== entityId)
+    // If this entity is a user with manage permission, check if they're the last admin
+    if (entity.type === "user" && RolePermissionChecker.hasGroupPermission(entity.user.roles, groupScope, "manage")) {
+      const remainingMemberships = Array.from(this.memberships.values()).filter(
+        m => getNormalizedId(m.entity) !== normalizedId
+      )
       const hasOtherAdmins = remainingMemberships.some(membership => {
-        const memberUser = membership.entity
-        return RolePermissionChecker.hasGroupPermission(memberUser.roles, groupScope, "manage")
+        const memberEntity = membership.entity
+        return (
+          memberEntity.type === "user" &&
+          RolePermissionChecker.hasGroupPermission(memberEntity.user.roles, groupScope, "manage")
+        )
       })
 
       if (!hasOtherAdmins) return left("membership_no_admin")
     }
 
-    this.memberships.delete(entityId)
+    this.memberships.delete(normalizedId)
     return right(this)
   }
 
@@ -197,8 +204,8 @@ export class GroupManager {
     group: Group,
     memberships: ReadonlyArray<Membership>
   ): Either<GroupManagerValidationError, GroupManager> {
-    // Validate that an entity does not appear twice in the memberships
-    const uniqueEntities = new Set(memberships.map(m => m.getEntityId()))
+    // Validate that an entity does not appear twice in the memberships using normalized IDs
+    const uniqueEntities = new Set(memberships.map(m => getNormalizedId(m.entity)))
 
     if (uniqueEntities.size !== memberships.length) {
       return left("membership_duplicated_membership")

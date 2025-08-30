@@ -1,5 +1,6 @@
 import {
   AddMembershipError,
+  MembershipEntityReference,
   Group,
   GroupManagerValidationError,
   Membership,
@@ -13,6 +14,7 @@ import {ConcurrentModificationError, UnknownError} from "@services/error"
 import {GetGroupRepoError} from "@services/group/interfaces"
 import {Versioned} from "@services/shared/utils"
 import {UserGetError} from "@services/user/interfaces"
+import {AgentGetError, AgentKeyDecodeError} from "@services/agent/interfaces"
 import {TaskEither} from "fp-ts/TaskEither"
 
 export type MembershipAddError =
@@ -20,11 +22,13 @@ export type MembershipAddError =
   | AddMembershipError
   | GetGroupRepoError
   | UserGetError
+  | AgentGetError
   | MembershipValidationError
   | UnknownError
   | ConcurrentModificationError
   | "membership_group_not_found"
   | "membership_user_not_found"
+  | "membership_agent_not_found"
 
 export type MembershipRemoveError =
   | GroupManagerValidationError
@@ -32,13 +36,9 @@ export type MembershipRemoveError =
   | UserGetError
   | MembershipValidationError
   | RemoveMembershipError
+  | AgentKeyDecodeError
   | UnknownError
   | ConcurrentModificationError
-
-export interface UserEntity {
-  id: string
-  addedAt: Date
-}
 
 export const GROUP_MEMBERSHIP_REPOSITORY_TOKEN = "GROUP_MEMBERSHIP_REPOSITORY_TOKEN"
 
@@ -47,11 +47,9 @@ export interface AddMembershipRepoRequest {
   readonly memberships: ReadonlyArray<Membership>
 }
 
-type UserReference = string
-
 export interface RemoveMembershipRepoRequest {
   readonly groupId: string
-  readonly membershipReferences: ReadonlyArray<UserReference>
+  readonly entityReferences: ReadonlyArray<MembershipEntityReference>
 }
 
 interface GroupMembershipResult {
@@ -66,7 +64,10 @@ export type RemoveMembershipResult = GroupMembershipResult
 export interface GroupMembershipRepository {
   getGroupWithMembershipById(
     data: GetGroupWithMembershipRepo
-  ): TaskEither<GetGroupRepoError | UserValidationError | MembershipValidationError, GetGroupMembershipResult>
+  ): TaskEither<
+    GetGroupRepoError | UserValidationError | MembershipValidationError | AgentKeyDecodeError,
+    GetGroupMembershipResult
+  >
   addMembershipsToGroup(request: AddMembershipRepoRequest): TaskEither<MembershipAddError, AddMembershipResult>
   removeMembershipFromGroup(
     request: RemoveMembershipRepoRequest

@@ -1,4 +1,13 @@
-import {Group, GroupManager, Membership, MembershipFactory, UserValidationError} from "@domain"
+import {
+  Group,
+  GroupManager,
+  Membership,
+  MembershipFactory,
+  UserValidationError,
+  createUserMembershipEntity,
+  createAgentMembershipEntity,
+  MembershipEntityReference
+} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError} from "@services"
 import {User} from "@domain"
@@ -6,9 +15,9 @@ import {GetGroupRepoError} from "@services/group/interfaces"
 import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 import {Versioned} from "@services/shared/utils"
 import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
+import {AgentRepository, AGENT_REPOSITORY_TOKEN} from "@services/agent/interfaces"
 import {isUUIDv4} from "@utils"
 import * as A from "fp-ts/Array"
-import * as E from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 import {isLeft} from "fp-ts/lib/Either"
 import * as TE from "fp-ts/TaskEither"
@@ -22,15 +31,16 @@ import {
   MembershipRemoveError,
   RemoveMembershipRepoRequest
 } from "./interfaces"
+import {AgentKeyDecodeError} from "@services/agent/interfaces"
 
 export interface AddMembersToGroupRequest extends RequestorAwareRequest {
   groupId: string
-  members: ReadonlyArray<{userId: string}>
+  members: ReadonlyArray<MembershipEntityReference>
 }
 
 export interface RemoveMembersFromGroupRequest extends RequestorAwareRequest {
   groupId: string
-  members: ReadonlyArray<{userId: string}>
+  members: ReadonlyArray<MembershipEntityReference>
 }
 
 @Injectable()
@@ -39,7 +49,9 @@ export class GroupMembershipService {
     @Inject(GROUP_MEMBERSHIP_REPOSITORY_TOKEN)
     private readonly groupMembershipRepo: GroupMembershipRepository,
     @Inject(USER_REPOSITORY_TOKEN)
-    private readonly userRepo: UserRepository
+    private readonly userRepo: UserRepository,
+    @Inject(AGENT_REPOSITORY_TOKEN)
+    private readonly agentRepo: AgentRepository
   ) {}
 
   getGroupByIdentifierWithMembership(
@@ -50,6 +62,7 @@ export class GroupMembershipService {
     | UserValidationError
     | "membership_invalid_entity_uuid"
     | "membership_inconsistent_dates"
+    | AgentKeyDecodeError
     | AuthorizationError,
     GetGroupMembershipResult
   > {
@@ -85,31 +98,14 @@ export class GroupMembershipService {
   addMembersToGroup(
     request: AddMembersToGroupRequest
   ): TaskEither<
-    "request_invalid_group_uuid" | "request_invalid_user_uuid" | MembershipAddError | AuthorizationError,
+    "request_invalid_group_uuid" | "request_invalid_entity_uuid" | MembershipAddError | AuthorizationError,
     GetGroupMembershipResult
   > {
-    const fetchUsersAndCreateMemberships = (req: AddMembersToGroupRequest) =>
-      pipe(
-        [...req.members],
-        A.traverse(TE.ApplicativeSeq)(member => this.userRepo.getUserById(member.userId)),
-        TE.chainW(versionedUsers =>
-          pipe(
-            versionedUsers,
-            A.traverse(E.Applicative)(user =>
-              MembershipFactory.newMembership({
-                entity: user
-              })
-            ),
-            TE.fromEither
-          )
-        )
-      )
-
     const validateRequest = (
       req: AddMembersToGroupRequest
-    ): TE.TaskEither<"request_invalid_group_uuid" | "request_invalid_user_uuid", AddMembersToGroupRequest> => {
+    ): TE.TaskEither<"request_invalid_group_uuid" | "request_invalid_entity_uuid", AddMembersToGroupRequest> => {
       if (!isUUIDv4(req.groupId)) return TE.left("request_invalid_group_uuid" as const)
-      if (req.members.some(m => !isUUIDv4(m.userId))) return TE.left("request_invalid_user_uuid" as const)
+      if (req.members.some(m => !isUUIDv4(m.entityId))) return TE.left("request_invalid_entity_uuid")
       return TE.right(req)
     }
 
@@ -119,7 +115,7 @@ export class GroupMembershipService {
     const simulateAddMemberships = (
       requestor: User,
       data: GetGroupMembershipResult,
-      membershipsToAdd: Readonly<Membership>[]
+      membershipsToAdd: readonly Readonly<Membership>[]
     ) => {
       const groupManagerEither = GroupManager.createGroupManager(data.group, data.memberships)
 
@@ -137,7 +133,7 @@ export class GroupMembershipService {
       return TE.right(data.group)
     }
 
-    const persistMemberships = (group: Versioned<Group>, membershipsToAdd: Readonly<Membership>[]) =>
+    const persistMemberships = (group: Versioned<Group>, membershipsToAdd: readonly Readonly<Membership>[]) =>
       this.groupMembershipRepo.addMembershipsToGroup({
         group,
         memberships: membershipsToAdd
@@ -148,7 +144,7 @@ export class GroupMembershipService {
       TE.bindW("request", () => TE.right(request)),
       TE.bindW("validatedRequest", ({request}) => validateRequest(request)),
       TE.bindW("validatedRequestor", () => TE.fromEither(validateUserEntity(request.requestor))),
-      TE.bindW("membershipsToAdd", ({request}) => fetchUsersAndCreateMemberships(request)),
+      TE.bindW("membershipsToAdd", ({request}) => this.fetchEntitiesAndCreateMemberships(request.members)),
       TE.bindW("groupMembershipData", ({request}) => fetchGroupMembershipData(request)),
       TE.bindW("group", ({validatedRequestor, groupMembershipData, membershipsToAdd}) =>
         simulateAddMemberships(validatedRequestor, groupMembershipData, membershipsToAdd)
@@ -160,14 +156,14 @@ export class GroupMembershipService {
   removeEntitiesFromGroup(
     request: RemoveMembersFromGroupRequest
   ): TaskEither<
-    "request_invalid_group_uuid" | "request_invalid_user_uuid" | MembershipRemoveError | AuthorizationError,
+    "request_invalid_group_uuid" | "request_invalid_entity_uuid" | MembershipRemoveError | AuthorizationError,
     GetGroupMembershipResult
   > {
     const validateRequest = (
       req: RemoveMembersFromGroupRequest
-    ): TE.TaskEither<"request_invalid_group_uuid" | "request_invalid_user_uuid", RemoveMembersFromGroupRequest> => {
+    ): TE.TaskEither<"request_invalid_group_uuid" | "request_invalid_entity_uuid", RemoveMembersFromGroupRequest> => {
       if (!isUUIDv4(req.groupId)) return TE.left("request_invalid_group_uuid" as const)
-      if (req.members.some(m => !isUUIDv4(m.userId))) return TE.left("request_invalid_user_uuid" as const)
+      if (req.members.some(m => !isUUIDv4(m.entityId))) return TE.left("request_invalid_entity_uuid")
       return TE.right(req)
     }
 
@@ -188,7 +184,7 @@ export class GroupMembershipService {
 
       // Simulate removing each member
       for (const member of request.members) {
-        const removeResult = groupManager.removeMembership(member.userId)
+        const removeResult = groupManager.removeMembership(member)
         if (isLeft(removeResult)) return TE.left(removeResult.left)
       }
 
@@ -198,7 +194,7 @@ export class GroupMembershipService {
     const removeMemberships = (data: GetGroupMembershipResult) => {
       const removeRequest: RemoveMembershipRepoRequest = {
         groupId: data.group.id,
-        membershipReferences: request.members.map(member => member.userId)
+        entityReferences: request.members
       }
       return this.groupMembershipRepo.removeMembershipFromGroup(removeRequest)
     }
@@ -211,6 +207,44 @@ export class GroupMembershipService {
         simulateRemoveMemberships(validatedRequestor, membershipData)
       ),
       TE.chainW(removeMemberships)
+    )
+  }
+
+  private fetchEntitiesAndCreateMemberships(
+    members: ReadonlyArray<MembershipEntityReference>
+  ): TaskEither<MembershipAddError, ReadonlyArray<Membership>> {
+    const fetchUserAndCreateMembership = (entityId: string) =>
+      pipe(
+        this.userRepo.getUserById(entityId),
+        TE.map(createUserMembershipEntity),
+        TE.chainEitherKW(entity =>
+          MembershipFactory.newMembership({
+            entity
+          })
+        )
+      )
+
+    const fetchAgentAndCreateMembership = (entityId: string) =>
+      pipe(
+        this.agentRepo.getAgentById(entityId),
+        TE.map(createAgentMembershipEntity),
+        TE.chainEitherKW(entity =>
+          MembershipFactory.newMembership({
+            entity
+          })
+        )
+      )
+
+    return pipe(
+      [...members],
+      A.traverse(TE.ApplicativeSeq)(member => {
+        switch (member.entityType) {
+          case "user":
+            return fetchUserAndCreateMembership(member.entityId)
+          case "agent":
+            return fetchAgentAndCreateMembership(member.entityId)
+        }
+      })
     )
   }
 }

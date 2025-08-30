@@ -1,4 +1,5 @@
 import {
+  Agent,
   Group,
   GroupFactory,
   GroupValidationError,
@@ -24,6 +25,7 @@ import {
   OrgRole
 } from "@domain"
 import {
+  Agent as PrismaAgent,
   Group as PrismaGroup,
   OrganizationAdmin as PrismaOrganizationAdmin,
   Space as PrismaSpace,
@@ -38,6 +40,7 @@ import {PrismaGroupWithCount} from "./group.repository"
 import {Prisma} from "@prisma/client"
 import {PrismaUserWithOrgAdmin, UserSummaryRepo} from "./user.repository"
 import {UserSummaryValidationError} from "@domain"
+import {AgentKeyDecodeError} from "@services"
 import {iPrismaDecoratedWorkflow, PrismaDecoratedWorkflow, PrismaWorkflowDecoratorSelector} from "./workflow.repository"
 
 export type PrismaWorkflowWithTemplate = PrismaWorkflow & {
@@ -258,5 +261,25 @@ export function mapToDomainVersionedSpace(dbObject: PrismaSpace): Either<SpaceVa
     object,
     SpaceFactory.validate,
     E.map(space => ({...space, occ: dbObject.occ}))
+  )
+}
+
+export function mapAgentToDomain(dbObject: PrismaAgent): Either<AgentKeyDecodeError, Agent> {
+  const decodePublicKey = E.tryCatch(
+    () => Buffer.from(dbObject.base64PublicKey, "base64").toString("utf8"),
+    () => "agent_key_decode_error" as const
+  )
+
+  return pipe(
+    decodePublicKey,
+    E.map(decodedPublicKey => {
+      const agent: Agent = {
+        id: dbObject.id,
+        agentName: dbObject.agentName,
+        publicKey: decodedPublicKey,
+        createdAt: dbObject.createdAt
+      }
+      return agent
+    })
   )
 }

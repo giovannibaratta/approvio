@@ -735,7 +735,7 @@ describe("Groups API", () => {
             .build()
             .send(requestBody)
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-          expect(response.body).toHaveErrorCode("REQUEST_INVALID_USER_UUID")
+          expect(response.body).toHaveErrorCode("REQUEST_INVALID_ENTITY_UUID")
         })
       })
     })
@@ -1007,7 +1007,7 @@ describe("Groups API", () => {
 
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-          expect(response.body).toHaveErrorCode("REQUEST_INVALID_USER_UUID")
+          expect(response.body).toHaveErrorCode("REQUEST_INVALID_ENTITY_UUID")
         })
 
         it("should allow removing users from group (new role system no longer enforces owner constraints)", async () => {

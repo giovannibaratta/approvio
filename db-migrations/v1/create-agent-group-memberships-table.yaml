@@ -1,0 +1,50 @@
+databaseChangeLog:
+  - changeSet:
+      id: create-agent-group-memberships-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: agent_group_memberships
+            columns:
+              - column:
+                  name: group_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_agent_group_memberships_group
+                    references: groups(id)
+                    deleteCascade: true
+              - column:
+                  name: agent_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_agent_group_memberships_agent
+                    references: agents(id)
+                    deleteCascade: true
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            tableName: agent_group_memberships
+            columnNames: group_id, agent_id
+            constraintName: pk_agent_group_memberships
+        - createIndex:
+            tableName: agent_group_memberships
+            indexName: idx_agent_group_memberships_group_id
+            columns:
+              - column:
+                  name: group_id
+        - createIndex:
+            tableName: agent_group_memberships
+            indexName: idx_agent_group_memberships_agent_id
+            columns:
+              - column:
+                  name: agent_id

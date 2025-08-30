@@ -5,7 +5,9 @@ import {
   MembershipValidationError,
   MembershipValidationErrorWithGroupRef,
   MembershipWithGroupRef,
-  UserValidationError
+  UserValidationError,
+  createUserMembershipEntity,
+  createAgentMembershipEntity
 } from "@domain"
 import {
   isPrismaForeignKeyConstraintError,
@@ -13,7 +15,13 @@ import {
   isPrismaUniqueConstraintError
 } from "@external/database/errors"
 import {Injectable, Logger} from "@nestjs/common"
-import {Prisma, Group as PrismaGroup, GroupMembership as PrismaGroupMembership} from "@prisma/client"
+import {
+  Prisma,
+  Group as PrismaGroup,
+  GroupMembership as PrismaGroupMembership,
+  Agent as PrismaAgent,
+  AgentGroupMembership as PrismaAgentGroupMembership
+} from "@prisma/client"
 import {
   AddMembershipRepoRequest,
   AddMembershipResult,
@@ -25,22 +33,23 @@ import {
   MembershipRemoveError,
   RemoveMembershipRepoRequest,
   RemoveMembershipResult,
-  UnknownError
+  UnknownError,
+  AgentKeyDecodeError
 } from "@services"
 import * as A from "fp-ts/Array"
-import {sequenceS} from "fp-ts/lib/Apply"
 import * as E from "fp-ts/lib/Either"
 import {Either} from "fp-ts/lib/Either"
 import * as TE from "fp-ts/lib/TaskEither"
 import {TaskEither} from "fp-ts/lib/TaskEither"
 import {pipe} from "fp-ts/lib/function"
 import {DatabaseClient} from "./database-client"
-import {mapToDomainVersionedGroup, mapUserToDomain} from "./shared"
+import {mapToDomainVersionedGroup, mapUserToDomain, mapAgentToDomain} from "./shared"
 import {chainNullableToLeft} from "./utils"
 import {PrismaUserWithOrgAdmin} from "./user.repository"
 
 type GroupWithMemberships = PrismaGroup & {
   groupMemberships: (PrismaGroupMembership & {users: PrismaUserWithOrgAdmin})[]
+  agentGroupMemberships: (PrismaAgentGroupMembership & {agents: PrismaAgent})[]
 }
 
 @Injectable()
@@ -49,7 +58,10 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
 
   getGroupWithMembershipById(
     data: GetGroupWithMembershipRepo
-  ): TaskEither<GetGroupRepoError | UserValidationError | MembershipValidationError, GetGroupMembershipResult> {
+  ): TaskEither<
+    GetGroupRepoError | UserValidationError | MembershipValidationError | AgentKeyDecodeError,
+    GetGroupMembershipResult
+  > {
     return pipe(
       data,
       TE.right,
@@ -102,17 +114,7 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
         () =>
           this.dbClient.group.findUnique({
             where: this.buildWhereClauseGetObjectTask(data),
-            include: {
-              groupMemberships: {
-                include: {
-                  users: {
-                    include: {
-                      organizationAdmins: true
-                    }
-                  }
-                }
-              }
-            }
+            include: GroupMembershipDbRepository.GROUP_WITH_MEMBERSHIPS_INCLUDE
           }),
         error => {
           Logger.error("Error while retrieving group. Unknown error", error)
@@ -145,7 +147,7 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
       TE.tryCatchK(
         () => this.createMembershipWithOccCheck(data),
         error => {
-          if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_group)"))
+          if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_group"))
             return "membership_group_not_found"
           if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_user")) return "membership_user_not_found"
           if (isPrismaUniqueConstraintError(error, ["group_id", "user_id"])) return "membership_entity_already_in_group"
@@ -170,30 +172,34 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
   }
 
   private async createMembershipWithOccCheck(data: AddMembershipRepoRequest): Promise<GroupWithMemberships> {
-    return this.dbClient.$transaction(async tx => {
-      await tx.groupMembership.createMany({
-        data: data.memberships.map(m => ({
+    // Compute data blocks outside transaction for better performance
+    const {userMemberships, agentMemberships} = data.memberships.reduce(
+      (acc, m) => {
+        const membershipData = {
           groupId: data.group.id,
-          userId: m.getEntityId(),
           createdAt: m.createdAt,
           updatedAt: m.updatedAt
-        }))
-      })
+        }
+
+        if (m.getEntityType() === "user") acc.userMemberships.push({...membershipData, userId: m.getEntityId()})
+        else acc.agentMemberships.push({...membershipData, agentId: m.getEntityId()})
+
+        return acc
+      },
+      {
+        userMemberships: [] as Array<Prisma.GroupMembershipCreateManyInput>,
+        agentMemberships: [] as Array<Prisma.AgentGroupMembershipCreateManyInput>
+      }
+    )
+
+    return this.dbClient.$transaction(async tx => {
+      if (userMemberships.length > 0) await tx.groupMembership.createMany({data: userMemberships})
+      if (agentMemberships.length > 0) await tx.agentGroupMembership.createMany({data: agentMemberships})
 
       const updatedGroup = await tx.group.update({
         where: {id: data.group.id, occ: data.group.occ},
         data: {updatedAt: new Date()},
-        include: {
-          groupMemberships: {
-            include: {
-              users: {
-                include: {
-                  organizationAdmins: true
-                }
-              }
-            }
-          }
-        }
+        include: GroupMembershipDbRepository.GROUP_WITH_MEMBERSHIPS_INCLUDE
       })
 
       if (!updatedGroup) throw new ConcurrentModificationError("Group not found or version mismatch")
@@ -203,28 +209,37 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
   }
 
   private async deleteMembershipAndUpdateGroup(data: RemoveMembershipRepoRequest): Promise<GroupWithMemberships> {
+    // Compute ID arrays outside transaction for better performance - single iteration using fold
+    const {userIds, agentIds} = data.entityReferences.reduce(
+      (acc, ref) => {
+        if (ref.entityType === "user") acc.userIds.push(ref.entityId)
+        else acc.agentIds.push(ref.entityId)
+        return acc
+      },
+      {userIds: [] as string[], agentIds: [] as string[]}
+    )
+
     return this.dbClient.$transaction(async tx => {
-      await tx.groupMembership.deleteMany({
-        where: {
-          groupId: data.groupId,
-          userId: {in: [...data.membershipReferences]}
-        }
-      })
+      if (userIds.length > 0)
+        await tx.groupMembership.deleteMany({
+          where: {
+            groupId: data.groupId,
+            userId: {in: userIds}
+          }
+        })
+
+      if (agentIds.length > 0)
+        await tx.agentGroupMembership.deleteMany({
+          where: {
+            groupId: data.groupId,
+            agentId: {in: agentIds}
+          }
+        })
 
       const updatedGroup = await tx.group.update({
         where: {id: data.groupId},
         data: {updatedAt: new Date()},
-        include: {
-          groupMemberships: {
-            include: {
-              users: {
-                include: {
-                  organizationAdmins: true
-                }
-              }
-            }
-          }
-        }
+        include: GroupMembershipDbRepository.GROUP_WITH_MEMBERSHIPS_INCLUDE
       })
 
       if (!updatedGroup) throw new ConcurrentModificationError("Group not found or version mismatch")
@@ -249,9 +264,26 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
         }
       )()
   }
+
+  private static readonly GROUP_WITH_MEMBERSHIPS_INCLUDE = {
+    groupMemberships: {
+      include: {
+        users: {
+          include: {
+            organizationAdmins: true
+          }
+        }
+      }
+    },
+    agentGroupMemberships: {
+      include: {
+        agents: true
+      }
+    }
+  } as const
 }
 
-function mapMembershipToDomain(
+function mapUserMembershipToDomain(
   dbObject: PrismaGroupMembership & {users: PrismaUserWithOrgAdmin}
 ): Either<MembershipValidationError | UserValidationError, Membership> {
   return pipe(
@@ -259,7 +291,24 @@ function mapMembershipToDomain(
     E.bindW("user", () => mapUserToDomain(dbObject.users)),
     E.bindW("data", ({user}) => {
       return E.right({
-        entity: user,
+        entity: createUserMembershipEntity(user),
+        createdAt: dbObject.createdAt,
+        updatedAt: dbObject.updatedAt
+      })
+    }),
+    E.chainW(({data}) => MembershipFactory.validate(data))
+  )
+}
+
+function mapAgentMembershipToDomain(
+  dbObject: PrismaAgentGroupMembership & {agents: PrismaAgent}
+): Either<MembershipValidationError | AgentKeyDecodeError, Membership> {
+  return pipe(
+    E.Do,
+    E.bindW("agent", () => mapAgentToDomain(dbObject.agents)),
+    E.bindW("data", ({agent}) => {
+      return E.right({
+        entity: createAgentMembershipEntity(agent),
         createdAt: dbObject.createdAt,
         updatedAt: dbObject.updatedAt
       })
@@ -270,16 +319,23 @@ function mapMembershipToDomain(
 
 function mapToVersionedDomainWithMembership(
   dbObject: GroupWithMemberships
-): Either<GroupValidationError | UserValidationError | MembershipValidationError, GetGroupMembershipResult> {
-  const eitherGroup = mapToDomainVersionedGroup(dbObject)
-  // Map all the memberships to domain and return an error if any of them fail
-  const eitherMemberships = pipe(dbObject.groupMemberships, A.traverse(E.Applicative)(mapMembershipToDomain))
-
+): Either<
+  GroupValidationError | UserValidationError | MembershipValidationError | AgentKeyDecodeError,
+  GetGroupMembershipResult
+> {
   return pipe(
-    sequenceS(E.Monad)({
-      group: eitherGroup,
-      memberships: eitherMemberships
-    })
+    E.Do,
+    E.bindW("group", () => mapToDomainVersionedGroup(dbObject)),
+    E.bindW("userMemberships", () =>
+      pipe(dbObject.groupMemberships, A.traverse(E.Applicative)(mapUserMembershipToDomain))
+    ),
+    E.bindW("agentMemberships", () =>
+      pipe(dbObject.agentGroupMemberships, A.traverse(E.Applicative)(mapAgentMembershipToDomain))
+    ),
+    E.map(({group, userMemberships, agentMemberships}) => ({
+      group,
+      memberships: [...userMemberships, ...agentMemberships]
+    }))
   )
 }
 
@@ -294,7 +350,7 @@ function mapToDomainMembershipWithGroupRef(
 ): Either<MembershipValidationErrorWithGroupRef | UserValidationError, MembershipWithGroupRef> {
   return pipe(
     E.Do,
-    E.bindW("membership", () => mapMembershipToDomain(dbObject)),
+    E.bindW("membership", () => mapUserMembershipToDomain(dbObject)),
     E.bindW("data", ({membership}) => {
       return E.right({
         ...membership,

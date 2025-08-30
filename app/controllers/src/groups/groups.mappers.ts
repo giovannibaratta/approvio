@@ -140,7 +140,8 @@ export function generateErrorResponseForCreateGroup(error: CreateGroupError, con
     case "group_already_exists":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: group already exists`))
     case "user_not_found":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Creator user not found`))
+    case "agent_not_found":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Creator entity not found`))
     case "user_invalid_uuid":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid UUID provided`))
     case "membership_entity_already_in_group":
@@ -158,6 +159,7 @@ export function generateErrorResponseForCreateGroup(error: CreateGroupError, con
     case "concurrent_modification_error":
     case "membership_group_not_found":
     case "membership_user_not_found":
+    case "membership_agent_not_found":
     case "concurrency_error":
     case "user_role_assignments_invalid_format":
     case "role_invalid_uuid":
@@ -172,6 +174,10 @@ export function generateErrorResponseForCreateGroup(error: CreateGroupError, con
     case "role_resource_required_for_scope":
     case "role_resource_not_allowed_for_scope":
     case "user_duplicate_roles":
+    case "agent_key_decode_error":
+    case "agent_invalid_uuid":
+    case "agent_name_empty":
+    case "agent_name_too_long":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
@@ -237,10 +243,10 @@ export function generateErrorResponseForListGroups(
   }
 }
 
-type AddUserToGroupServiceError = ExtractLeftFromMethod<typeof GroupMembershipService, "addMembersToGroup">
+type AddMembersToGroupServiceError = ExtractLeftFromMethod<typeof GroupMembershipService, "addMembersToGroup">
 
-export function generateErrorResponseForAddUserToGroup(
-  error: AddUserToGroupServiceError | AuthorizationError,
+export function generateErrorResponseForAddMembersToGroup(
+  error: AddMembersToGroupServiceError | AuthorizationError,
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
@@ -252,10 +258,11 @@ export function generateErrorResponseForAddUserToGroup(
         generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
       )
     case "request_invalid_group_uuid":
-    case "request_invalid_user_uuid":
+    case "request_invalid_entity_uuid":
     case "request_invalid_user_identifier":
     case "user_invalid_uuid":
     case "user_not_found":
+    case "agent_not_found":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
     case "membership_entity_already_in_group":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: Entity already in group`))
@@ -292,6 +299,11 @@ export function generateErrorResponseForAddUserToGroup(
     case "membership_invalid_entity_uuid":
     case "membership_group_not_found":
     case "membership_user_not_found":
+    case "membership_agent_not_found":
+    case "agent_key_decode_error":
+    case "agent_invalid_uuid":
+    case "agent_name_empty":
+    case "agent_name_too_long":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -303,10 +315,13 @@ export function generateErrorResponseForAddUserToGroup(
   }
 }
 
-type RemoveUserFromGroupServiceError = ExtractLeftFromMethod<typeof GroupMembershipService, "removeEntitiesFromGroup">
+type RemoveMembersFromGroupServiceError = ExtractLeftFromMethod<
+  typeof GroupMembershipService,
+  "removeEntitiesFromGroup"
+>
 
-export function generateErrorResponseForRemoveUserFromGroup(
-  error: RemoveUserFromGroupServiceError | AuthorizationError,
+export function generateErrorResponseForRemoveMembersFromGroup(
+  error: RemoveMembersFromGroupServiceError | AuthorizationError,
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
@@ -326,7 +341,7 @@ export function generateErrorResponseForRemoveUserFromGroup(
         generateErrorPayload(errorCode, `${context}: Cannot remove the last admin from a group`)
       )
     case "request_invalid_group_uuid":
-    case "request_invalid_user_uuid":
+    case "request_invalid_entity_uuid":
     case "request_invalid_user_identifier":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
     case "concurrent_modification_error":
@@ -359,6 +374,7 @@ export function generateErrorResponseForRemoveUserFromGroup(
     case "membership_inconsistent_dates":
     case "membership_invalid_entity_uuid":
     case "membership_duplicated_membership":
+    case "agent_key_decode_error":
     case "user_invalid_uuid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
@@ -376,7 +392,7 @@ type ListUsersInGroupServiceError = ExtractLeftFromMethod<
   "getGroupByIdentifierWithMembership"
 >
 
-export function generateErrorResponseForListUsersInGroup(
+export function generateErrorResponseForListMembersInGroup(
   error: "invalid_page" | "invalid_limit" | ListUsersInGroupServiceError | AuthorizationError,
   context: string
 ): HttpException {
@@ -420,6 +436,7 @@ export function generateErrorResponseForListUsersInGroup(
     case "user_duplicate_roles":
     case "membership_inconsistent_dates":
     case "membership_invalid_entity_uuid":
+    case "agent_key_decode_error":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -435,7 +452,7 @@ function mapMembershipToListEntitiesItemApi(membership: Membership): ListGroupEn
   return {
     entity: {
       entityId: membership.getEntityId(),
-      entityType: EntityType.HUMAN
+      entityType: membership.entity.type === "user" ? EntityType.HUMAN : EntityType.SYSTEM
     },
     addedAt: membership.createdAt.toISOString()
   }

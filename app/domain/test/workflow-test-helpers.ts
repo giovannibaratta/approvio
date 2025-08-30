@@ -1,4 +1,11 @@
-import {ApprovalRule, ApprovalRuleType, ApprovalRuleFactory, User, UserFactory} from "../src"
+import {
+  ApprovalRule,
+  ApprovalRuleType,
+  ApprovalRuleFactory,
+  User,
+  UserFactory,
+  createUserMembershipEntity
+} from "@domain"
 import {MembershipWithGroupRef} from "../src"
 import * as E from "fp-ts/Either"
 
@@ -21,7 +28,7 @@ const createTestUser = (userId = "test-user"): User => {
 
 // Helper to create MembershipWithGroupRef
 export const createMembership = (groupId: string, userId = "test-user"): MembershipWithGroupRef => ({
-  entity: createTestUser(userId),
+  entity: createUserMembershipEntity(createTestUser(userId)),
   groupId,
   createdAt: new Date(),
   updatedAt: new Date(),

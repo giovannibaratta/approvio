@@ -8,6 +8,7 @@ import {
   UserFactory,
   RoleFactory,
   UserValidationError,
+  createUserMembershipEntity,
   RolePermissionChecker
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
@@ -57,7 +58,8 @@ export class GroupService {
 
     const fetchUser = (requestor: User) => this.userRepo.getUserById(requestor.id)
 
-    const createMembership = (user: User) => pipe(MembershipFactory.newMembership({entity: user}), TE.fromEither)
+    const createMembership = (user: User) =>
+      pipe(MembershipFactory.newMembership({entity: createUserMembershipEntity(user)}), TE.fromEither)
 
     const addManagePermissions = ({user, group}: {user: Versioned<User>; group: Group}) => {
       const manageRole = RoleFactory.createGroupManagerRole({type: "group", groupId: group.id})

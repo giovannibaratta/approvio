@@ -9,12 +9,12 @@ import {
 import {GetAuthenticatedEntity} from "@app/auth"
 import {
   createGroupApiToServiceModel,
-  generateErrorResponseForAddUserToGroup,
+  generateErrorResponseForAddMembersToGroup,
   generateErrorResponseForCreateGroup,
   generateErrorResponseForGetGroup,
   generateErrorResponseForListGroups,
-  generateErrorResponseForListUsersInGroup,
-  generateErrorResponseForRemoveUserFromGroup,
+  generateErrorResponseForListMembersInGroup,
+  generateErrorResponseForRemoveMembersFromGroup,
   mapGroupWithEntitiesCountToApi,
   mapGroupWithMembershipToApi,
   mapListGroupMembersResultToApi,
@@ -112,7 +112,7 @@ export class GroupsController {
 
   @Get(":groupId/entities")
   @HttpCode(HttpStatus.OK)
-  async listUsersInGroup(
+  async listMembersInGroup(
     @Param("groupId") groupId: string,
     @Query("page", new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query("limit", new DefaultValuePipe(20), ParseIntPipe) limit: number,
@@ -120,9 +120,9 @@ export class GroupsController {
   ): Promise<ListGroupEntities200Response> {
     // This should be moved to the service layer once the pagination will be implemented
     if (page <= 0)
-      throw generateErrorResponseForListUsersInGroup("invalid_page", `Failed to list members for group ${groupId}`)
+      throw generateErrorResponseForListMembersInGroup("invalid_page", `Failed to list members for group ${groupId}`)
     if (limit <= 0)
-      throw generateErrorResponseForListUsersInGroup("invalid_limit", `Failed to list members for group ${groupId}`)
+      throw generateErrorResponseForListMembersInGroup("invalid_limit", `Failed to list members for group ${groupId}`)
     if (limit > 100) limit = MAX_LIMIT
 
     const serviceListUsers = (request: GetGroupWithMembershipRequest) =>
@@ -136,7 +136,7 @@ export class GroupsController {
     )()
 
     if (isLeft(eitherResult))
-      throw generateErrorResponseForListUsersInGroup(eitherResult.left, `Failed to list members for group ${groupId}`)
+      throw generateErrorResponseForListMembersInGroup(eitherResult.left, `Failed to list members for group ${groupId}`)
 
     return eitherResult.right
   }
@@ -151,7 +151,8 @@ export class GroupsController {
     const addUserRequests: AddMembersToGroupRequest = {
       groupId,
       members: request.entities.map(entity => ({
-        userId: entity.entity.entityId
+        entityId: entity.entity.entityId,
+        entityType: entity.entity.entityType === "human" ? "user" : "agent"
       })),
       requestor
     }
@@ -166,7 +167,7 @@ export class GroupsController {
     )()
 
     if (isLeft(eitherResult)) {
-      throw generateErrorResponseForAddUserToGroup(eitherResult.left, `Failed to add members to group ${groupId}`)
+      throw generateErrorResponseForAddMembersToGroup(eitherResult.left, `Failed to add members to group ${groupId}`)
     }
 
     return eitherResult.right
@@ -179,26 +180,27 @@ export class GroupsController {
     @Body() request: RemoveGroupEntitiesRequest,
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<GroupApi> {
-    const removeUserRequests: RemoveMembersFromGroupRequest = {
+    const removeMembersRequest: RemoveMembersFromGroupRequest = {
       groupId,
       members: request.entities.map(entity => ({
-        userId: entity.entity.entityId
+        entityId: entity.entity.entityId,
+        entityType: entity.entity.entityType === "human" ? "user" : "agent"
       })),
       requestor
     }
 
-    const serviceRemoveUser = (req: RemoveMembersFromGroupRequest) =>
+    const serviceRemoveMembers = (req: RemoveMembersFromGroupRequest) =>
       this.groupMembershipService.removeEntitiesFromGroup(req)
 
     const eitherResult = await pipe(
-      removeUserRequests,
+      removeMembersRequest,
       TE.right,
-      TE.chainW(serviceRemoveUser),
+      TE.chainW(serviceRemoveMembers),
       TE.map(mapGroupWithMembershipToApi)
     )()
 
     if (isLeft(eitherResult)) {
-      throw generateErrorResponseForRemoveUserFromGroup(
+      throw generateErrorResponseForRemoveMembersFromGroup(
         eitherResult.left,
         `Failed to remove entities from group ${groupId}`
       )

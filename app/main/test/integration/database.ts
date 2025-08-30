@@ -32,6 +32,7 @@ export async function cleanDatabase(client: PrismaClient): Promise<void> {
   await client.workflowActionsEmailTask.deleteMany()
   await client.workflow.deleteMany()
   await client.workflowTemplate.deleteMany()
+  await client.agentGroupMembership.deleteMany()
   await client.groupMembership.deleteMany()
   await client.group.deleteMany()
   await client.space.deleteMany()
