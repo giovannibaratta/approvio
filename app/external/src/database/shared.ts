@@ -1,5 +1,6 @@
 import {
   Agent,
+  BoundRole,
   Group,
   GroupFactory,
   GroupValidationError,
@@ -32,7 +33,7 @@ import {
   Workflow as PrismaWorkflow,
   WorkflowTemplate as PrismaWorkflowTemplate
 } from "@prisma/client"
-import {Versioned} from "@services/shared/utils"
+import {Versioned} from "@domain"
 import * as E from "fp-ts/lib/Either"
 import {Either} from "fp-ts/lib/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -277,7 +278,8 @@ export function mapAgentToDomain(dbObject: PrismaAgent): Either<AgentKeyDecodeEr
         id: dbObject.id,
         agentName: dbObject.agentName,
         publicKey: decodedPublicKey,
-        createdAt: dbObject.createdAt
+        createdAt: dbObject.createdAt,
+        roles: Array.isArray(dbObject.roles) ? (dbObject.roles as unknown as ReadonlyArray<BoundRole<string>>) : [] // Parse roles from JSON field
       }
       return agent
     })

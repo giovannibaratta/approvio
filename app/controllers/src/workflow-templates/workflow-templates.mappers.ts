@@ -17,7 +17,8 @@ import {
   ApprovalRuleFactory,
   WorkflowAction,
   WorkflowActionType,
-  WorkflowTemplateSummary
+  WorkflowTemplateSummary,
+  AuthenticatedEntity
 } from "@domain"
 import {
   BadRequestException,
@@ -29,7 +30,6 @@ import {
   NotFoundException
 } from "@nestjs/common"
 import {
-  AuthenticatedEntity,
   CreateWorkflowTemplateRequest,
   ListWorkflowTemplatesResponse,
   UpdateWorkflowTemplateRequest,

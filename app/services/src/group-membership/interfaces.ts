@@ -1,6 +1,6 @@
 import {
   AddMembershipError,
-  MembershipEntityReference,
+  EntityReference,
   Group,
   GroupManagerValidationError,
   Membership,
@@ -12,7 +12,7 @@ import {
 } from "@domain"
 import {ConcurrentModificationError, UnknownError} from "@services/error"
 import {GetGroupRepoError} from "@services/group/interfaces"
-import {Versioned} from "@services/shared/utils"
+import {Versioned} from "@domain"
 import {UserGetError} from "@services/user/interfaces"
 import {AgentGetError, AgentKeyDecodeError} from "@services/agent/interfaces"
 import {TaskEither} from "fp-ts/TaskEither"
@@ -49,7 +49,7 @@ export interface AddMembershipRepoRequest {
 
 export interface RemoveMembershipRepoRequest {
   readonly groupId: string
-  readonly entityReferences: ReadonlyArray<MembershipEntityReference>
+  readonly entityReferences: ReadonlyArray<EntityReference>
 }
 
 interface GroupMembershipResult {
@@ -76,6 +76,13 @@ export interface GroupMembershipRepository {
     userId: string
   ): TaskEither<
     MembershipValidationErrorWithGroupRef | UserValidationError | UnknownError,
+    ReadonlyArray<MembershipWithGroupRef>
+  >
+
+  getAgentMembershipsByAgentId(
+    agentId: string
+  ): TaskEither<
+    MembershipValidationErrorWithGroupRef | AgentKeyDecodeError | UnknownError,
     ReadonlyArray<MembershipWithGroupRef>
   >
 }

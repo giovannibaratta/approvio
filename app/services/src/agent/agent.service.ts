@@ -5,7 +5,7 @@ import * as TE from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
 import {TaskEither} from "fp-ts/TaskEither"
 import {AGENT_REPOSITORY_TOKEN, AgentRepository, AgentRegistrationError, AgentGetError} from "./interfaces"
-import {AuthenticatedEntity} from "@services/auth"
+import {AuthenticatedEntity} from "@domain"
 import {AuthorizationError} from "@services/error"
 
 @Injectable()

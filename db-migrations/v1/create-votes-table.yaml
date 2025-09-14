@@ -24,9 +24,18 @@ databaseChangeLog:
                   name: user_id
                   type: UUID
                   constraints:
-                    nullable: false
+                    nullable: true
                     foreignKeyName: fk_votes_user
                     references: users(id)
+                    deleteCascade: true
+
+              - column:
+                  name: agent_id
+                  type: uuid
+                  constraints:
+                    nullable: true
+                    foreignKeyName: fk_votes_agent
+                    references: agents(id)
                     deleteCascade: true
               - column:
                   name: vote_type
@@ -56,6 +65,8 @@ databaseChangeLog:
                   name: workflow_id
               - column:
                   name: user_id
+              - column:
+                  name: agent_id
               - column:
                   name: created_at
                   descending: true # To get the most recent vote easily

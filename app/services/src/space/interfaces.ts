@@ -1,6 +1,6 @@
 import {Space, SpaceValidationError, User} from "@domain"
 import {RequestorAwareRequest} from "@services/shared/types"
-import {Versioned} from "@services/shared/utils"
+import {Versioned} from "@domain"
 import {TaskEither} from "fp-ts/lib/TaskEither"
 
 // Repository interfaces

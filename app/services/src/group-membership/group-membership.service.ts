@@ -6,14 +6,14 @@ import {
   UserValidationError,
   createUserMembershipEntity,
   createAgentMembershipEntity,
-  MembershipEntityReference
+  EntityReference
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError} from "@services"
 import {User} from "@domain"
 import {GetGroupRepoError} from "@services/group/interfaces"
 import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
-import {Versioned} from "@services/shared/utils"
+import {Versioned} from "@domain"
 import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
 import {AgentRepository, AGENT_REPOSITORY_TOKEN} from "@services/agent/interfaces"
 import {isUUIDv4} from "@utils"
@@ -35,12 +35,12 @@ import {AgentKeyDecodeError} from "@services/agent/interfaces"
 
 export interface AddMembersToGroupRequest extends RequestorAwareRequest {
   groupId: string
-  members: ReadonlyArray<MembershipEntityReference>
+  members: ReadonlyArray<EntityReference>
 }
 
 export interface RemoveMembersFromGroupRequest extends RequestorAwareRequest {
   groupId: string
-  members: ReadonlyArray<MembershipEntityReference>
+  members: ReadonlyArray<EntityReference>
 }
 
 @Injectable()
@@ -211,7 +211,7 @@ export class GroupMembershipService {
   }
 
   private fetchEntitiesAndCreateMemberships(
-    members: ReadonlyArray<MembershipEntityReference>
+    members: ReadonlyArray<EntityReference>
   ): TaskEither<MembershipAddError, ReadonlyArray<Membership>> {
     const fetchUserAndCreateMembership = (entityId: string) =>
       pipe(

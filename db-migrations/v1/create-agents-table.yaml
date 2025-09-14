@@ -28,6 +28,11 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
+                  name: roles
+                  type: json
+                  constraints:
+                    nullable: true
+              - column:
                   name: occ
                   type: bigint
                   constraints:

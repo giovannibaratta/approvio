@@ -33,7 +33,7 @@ import {
   WorkflowGetError
 } from "../workflow/interfaces"
 import {UnknownError} from "@services/error"
-import {Versioned} from "@services/shared/utils"
+import {Versioned} from "@domain"
 import * as E from "fp-ts/Either"
 import {validateUserEntity} from "@services/shared/types"
 

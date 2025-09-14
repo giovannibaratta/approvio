@@ -1,7 +1,7 @@
 import {Group, GroupValidationError, GroupWithEntitiesCount, ListGroupsFilter, User, Membership} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 import {PaginationError, UnknownError} from "@services/error"
-import {Versioned} from "@services/shared/utils"
+import {Versioned} from "@domain"
 import {MembershipAddError} from "@services/group-membership/interfaces"
 
 export type CreateGroupRepoError =

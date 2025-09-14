@@ -1,7 +1,7 @@
 import {AgentRegistrationRequest, AgentRegistrationResponse} from "@approvio/api"
 import {GetAuthenticatedEntity} from "@app/auth"
 import {Body, Controller, HttpCode, HttpStatus, Post, Res} from "@nestjs/common"
-import {AgentService, AuthenticatedEntity, RegisterAgentRequest} from "@services"
+import {AgentService, RegisterAgentRequest} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -11,6 +11,7 @@ import {
   generateErrorResponseForRegisterAgent,
   mapAgentToRegistrationResponse
 } from "./agents.mappers"
+import {AuthenticatedEntity} from "@domain"
 
 export const AGENTS_ENDPOINT_ROOT = "agents"
 

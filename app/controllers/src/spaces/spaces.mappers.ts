@@ -1,7 +1,6 @@
 import {Space as SpaceApi, SpaceCreate, ListSpaces200Response} from "@approvio/api"
-import {Space, SpaceValidationError} from "@domain"
+import {AuthenticatedEntity, Space, SpaceValidationError} from "@domain"
 import {
-  AuthenticatedEntity,
   CreateSpaceError,
   CreateSpaceRequest,
   DeleteSpaceError,
@@ -9,7 +8,7 @@ import {
   ListSpacesError,
   ListSpacesResult
 } from "@services"
-import {Versioned} from "@services/shared/utils"
+import {Versioned} from "@domain"
 import {
   BadRequestException,
   ConflictException,

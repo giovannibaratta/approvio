@@ -1,5 +1,5 @@
 import {AgentRegistrationRequest, AgentRegistrationResponse} from "@approvio/api"
-import {AgentWithPrivateKey} from "@domain"
+import {AgentWithPrivateKey, AuthenticatedEntity} from "@domain"
 import {
   BadRequestException,
   ConflictException,
@@ -8,7 +8,7 @@ import {
   InternalServerErrorException,
   Logger
 } from "@nestjs/common"
-import {RegisterAgentRequest, AgentRegistrationError, AuthenticatedEntity} from "@services"
+import {RegisterAgentRequest, AgentRegistrationError} from "@services"
 import {Either, right} from "fp-ts/Either"
 import {generateErrorPayload} from "../error"
 

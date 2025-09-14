@@ -120,15 +120,17 @@ model WorkflowTemplate {
 model Vote {
   id             String   @id @db.Uuid
   workflowId     String   @map("workflow_id") @db.Uuid
-  userId         String   @map("user_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  agentId        String?  @map("agent_id") @db.Uuid
   voteType       String   @map("vote_type") @db.VarChar(255)
   reason         String?
   votedForGroups String[] @map("voted_for_groups") @db.VarChar
   createdAt      DateTime @map("created_at") @db.Timestamp(6)
-  users          User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_votes_user")
+  agents         Agent?   @relation(fields: [agentId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_votes_agent")
+  users          User?    @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_votes_user")
   workflows      Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_votes_workflow")
 
-  @@index([workflowId, userId, createdAt(sort: Desc)], map: "idx_votes_workflow_user_created")
+  @@index([workflowId, userId, agentId, createdAt(sort: Desc)], map: "idx_votes_workflow_user_created")
   @@map("votes")
 }
 
@@ -187,9 +189,11 @@ model Agent {
   agentName             String                 @unique(map: "agents_agent_name_unique") @map("agent_name")
   base64PublicKey       String                 @map("base64_public_key")
   createdAt             DateTime               @map("created_at") @db.Timestamp(6)
+  roles                 Json?                  @db.Json
   occ                   BigInt
   agentChallenges       AgentChallenge[]
   agentGroupMemberships AgentGroupMembership[]
+  votes                 Vote[]
 
   @@map("agents")
 }

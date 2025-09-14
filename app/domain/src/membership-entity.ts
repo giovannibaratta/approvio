@@ -1,4 +1,4 @@
-import {User, Agent} from "@domain"
+import {User, Agent, EntityReference} from "@domain"
 
 export type MembershipEntity = UserEntity | AgentEntity
 
@@ -10,11 +10,6 @@ type UserEntity = {
 type AgentEntity = {
   type: "agent"
   agent: Agent
-}
-
-export interface MembershipEntityReference {
-  entityId: string
-  entityType: "user" | "agent"
 }
 
 export function createUserMembershipEntity(user: User): MembershipEntity {
@@ -34,7 +29,7 @@ export function getMembershipEntityId(entity: MembershipEntity): string {
   }
 }
 
-export function getMembershipEntityType(entity: MembershipEntity): "user" | "agent" {
+export function getMembershipEntityType(entity: MembershipEntity): MembershipEntity["type"] {
   return entity.type
 }
 
@@ -46,7 +41,7 @@ export function getMembershipEntityType(entity: MembershipEntity): "user" | "age
  * @param entity The membership entity (user or agent)
  * @returns A unique string identifier in the format "user:uuid" or "agent:uuid"
  */
-export function getNormalizedId(entity: MembershipEntity | MembershipEntityReference): string {
+export function getNormalizedId(entity: MembershipEntity | EntityReference): string {
   if ("entityId" in entity) return `${entity.entityType}:${entity.entityId}`
   return `${entity.type}:${getMembershipEntityId(entity)}`
 }

@@ -5,7 +5,7 @@ import {
   getMembershipEntityId,
   getMembershipEntityType,
   getNormalizedId,
-  MembershipEntityReference
+  EntityReference
 } from "@domain"
 import {isUUIDv4, PrefixUnion} from "@utils"
 import * as A from "fp-ts/Array"
@@ -17,7 +17,6 @@ import {GroupScope} from "./role"
 export type Membership = Readonly<PrivateMembership>
 export type MembershipWithGroupRef = Readonly<PrivateMembershipWithGroupRef>
 
-type EntityType = "user" | "agent"
 export type MembershipValidationError = PrefixUnion<"membership", UnprefixedMembershipValidationError>
 export type MembershipValidationErrorWithGroupRef = PrefixUnion<
   "membership",
@@ -41,7 +40,7 @@ interface PrivateMembership {
   updatedAt: Date
 
   getEntityId(): string
-  getEntityType(): EntityType
+  getEntityType(): MembershipEntity["type"]
 }
 
 function validateGroupReference(groupReference: string): Either<MembershipValidationErrorWithGroupRef, string> {
@@ -137,9 +136,7 @@ export class GroupManager {
     return this.memberships.has(normalizedId)
   }
 
-  removeMembership(
-    entityRef: MembershipEntity | MembershipEntityReference
-  ): Either<RemoveMembershipError, GroupManager> {
+  removeMembership(entityRef: MembershipEntity | EntityReference): Either<RemoveMembershipError, GroupManager> {
     const normalizedId = getNormalizedId(entityRef)
     if (!this.isEntityInMembership(normalizedId)) return left("membership_not_found")
 

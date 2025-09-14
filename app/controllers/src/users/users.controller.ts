@@ -1,7 +1,7 @@
 import {Pagination as PaginationApi, User as UserApi, UserCreate, UserSummary as UserSummaryApi} from "@approvio/api"
 import {GetAuthenticatedEntity} from "@app/auth"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Res} from "@nestjs/common"
-import {AuthenticatedEntity, ListUsersRequest, UserService} from "@services"
+import {ListUsersRequest, UserService} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -15,6 +15,7 @@ import {
   mapUserToApi,
   mapUsersToApi
 } from "./users.mappers"
+import {AuthenticatedEntity} from "@domain"
 
 export const USERS_ENDPOINT_ROOT = "users"
 

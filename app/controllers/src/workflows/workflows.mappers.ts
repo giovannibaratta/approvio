@@ -5,8 +5,7 @@ import {
   CastVoteRequest,
   CastVoteServiceError,
   CanVoteError,
-  ListWorkflowsResponse,
-  AuthenticatedEntity
+  ListWorkflowsResponse
 } from "@services"
 import {ExtractLeftFromMethod} from "@utils"
 import {Either, right, left} from "fp-ts/Either"
@@ -30,6 +29,7 @@ import {
 import {generateErrorPayload} from "@controllers/error"
 import {
   ApprovalRuleValidationError,
+  AuthenticatedEntity,
   DecoratedWorkflow,
   isDecoratedWorkflow,
   VoteValidationError,
@@ -175,8 +175,11 @@ export function generateErrorResponseForGetWorkflow(error: GetWorkflowLeft, cont
     case "approval_rule_max_rule_nesting_exceeded":
     case "approval_rule_or_rule_must_have_rules":
     case "vote_invalid_group_id":
-    case "vote_invalid_user_id":
+    case "vote_invalid_voter_id":
+    case "vote_invalid_voter_type":
     case "vote_invalid_vote_type":
+    case "vote_missing_voter_entity":
+    case "vote_conflicting_voter_entities":
     case "vote_invalid_workflow_id":
     case "vote_reason_too_long":
     case "vote_voted_for_groups_required":
@@ -453,8 +456,11 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "membership_invalid_group_uuid":
     case "membership_invalid_entity_uuid":
     case "vote_invalid_group_id":
-    case "vote_invalid_user_id":
+    case "vote_invalid_voter_id":
+    case "vote_invalid_voter_type":
     case "vote_invalid_vote_type":
+    case "vote_missing_voter_entity":
+    case "vote_conflicting_voter_entities":
     case "vote_invalid_workflow_id":
     case "vote_reason_too_long":
     case "vote_voted_for_groups_required":
@@ -500,6 +506,10 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "role_invalid_uuid":
     case "role_invalid_structure":
     case "user_duplicate_roles":
+    case "agent_invalid_uuid":
+    case "agent_name_empty":
+    case "agent_name_too_long":
+    case "agent_key_decode_error":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -545,9 +555,13 @@ export function generateErrorResponseForCastVote(
     case "voted_for_groups_invalid":
     case "reason_invalid":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request format`))
+    case "voter_not_found":
     case "vote_invalid_group_id":
-    case "vote_invalid_user_id":
+    case "vote_invalid_voter_id":
+    case "vote_invalid_voter_type":
     case "vote_invalid_vote_type":
+    case "vote_missing_voter_entity":
+    case "vote_conflicting_voter_entities":
     case "vote_invalid_workflow_id":
     case "vote_reason_too_long":
     case "vote_voted_for_groups_required":
@@ -608,6 +622,10 @@ export function generateErrorResponseForCastVote(
     case "role_invalid_uuid":
     case "user_duplicate_roles":
     case "role_invalid_structure":
+    case "agent_invalid_uuid":
+    case "agent_name_empty":
+    case "agent_name_too_long":
+    case "agent_key_decode_error":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)

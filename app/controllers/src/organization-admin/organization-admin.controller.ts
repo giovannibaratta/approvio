@@ -5,7 +5,7 @@ import {
   Pagination as PaginationApi
 } from "@approvio/api"
 import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query, Res} from "@nestjs/common"
-import {AuthenticatedEntity, OrganizationAdminService} from "@services"
+import {OrganizationAdminService} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -20,6 +20,7 @@ import {
   generateErrorResponseForRemoveOrganizationAdmin
 } from "./organization-admin.mappers"
 import {GetAuthenticatedEntity} from "@app/auth"
+import {AuthenticatedEntity} from "@domain"
 
 export const ORGANIZATION_ADMIN_ENDPOINT_ROOT = "organization"
 

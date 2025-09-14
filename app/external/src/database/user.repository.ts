@@ -10,7 +10,7 @@ import {
   PaginatedUsersList,
   ListUsersRepoRequest
 } from "@services"
-import {Versioned} from "@services/shared/utils"
+import {Versioned} from "@domain"
 import * as TE from "fp-ts/lib/TaskEither"
 import {TaskEither} from "fp-ts/lib/TaskEither"
 import {pipe} from "fp-ts/lib/function"

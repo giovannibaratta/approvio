@@ -1,6 +1,6 @@
 import {generateErrorPayload} from "@controllers/error"
 import {createParamDecorator, ExecutionContext, InternalServerErrorException} from "@nestjs/common"
-import {AuthenticatedEntity} from "@services/auth"
+import {AuthenticatedEntity} from "@domain"
 
 /**
  * Parameter decorator to extract the authenticated entity from the request

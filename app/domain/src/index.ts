@@ -1,5 +1,7 @@
 export * from "./agent"
 export * from "./agent-challenge"
+export * from "./authenticated-entity"
+export * from "./shared"
 export * from "./group"
 export * from "./user"
 export * from "./membership-entity"

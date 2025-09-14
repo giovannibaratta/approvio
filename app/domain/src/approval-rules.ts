@@ -3,7 +3,7 @@ import * as E from "fp-ts/Either"
 import {Either, left, right} from "fp-ts/lib/Either"
 import {pipe} from "fp-ts/lib/function"
 import * as A from "fp-ts/Array"
-import {ApproveVote} from "@domain"
+import {ApproveVote, getNormalizedEntityId} from "@domain"
 
 export enum ApprovalRuleType {
   AND = "AND",
@@ -159,8 +159,8 @@ export function doesVotesCoverApprovalRules(rule: ApprovalRuleData, votes: Reado
 
 function doesVotesCoverGroupRequirementRule(rule: GroupRequirementRule, votes: ReadonlyArray<ApproveVote>): boolean {
   const votesForGroup = votes.filter(vote => vote.votedForGroups.includes(rule.groupId))
-  const uniqueUsersWhoVotedForGroup = new Set(votesForGroup.map(vote => vote.userId))
-  return uniqueUsersWhoVotedForGroup.size >= rule.minCount
+  const uniqueVotersWhoVotedForGroup = new Set(votesForGroup.map(vote => getNormalizedEntityId(vote.voter)))
+  return uniqueVotersWhoVotedForGroup.size >= rule.minCount
 }
 
 function getVotingGroupIds(rule: ApprovalRuleData): ReadonlyArray<string> {

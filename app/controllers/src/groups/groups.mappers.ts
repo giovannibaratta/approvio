@@ -1,6 +1,7 @@
 import {Group as GroupApi, GroupCreate, ListGroupEntities200Response, ListGroups200Response} from "@approvio/api"
 import {EntityType} from "@controllers/shared/types"
 import {
+  AuthenticatedEntity,
   DESCRIPTION_MAX_LENGTH,
   Group as GroupDomain,
   GroupWithEntitiesCount,
@@ -24,8 +25,7 @@ import {
   ListGroupsResult,
   AuthorizationError,
   CreateGroupRequest,
-  GroupMembershipService,
-  AuthenticatedEntity
+  GroupMembershipService
 } from "@services"
 import {Either, right} from "fp-ts/Either"
 import {generateErrorPayload} from "../error"

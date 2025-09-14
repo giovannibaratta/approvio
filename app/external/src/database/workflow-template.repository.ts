@@ -21,7 +21,7 @@ import {
   ListWorkflowTemplatesRequest,
   ListWorkflowTemplatesResponse
 } from "@services"
-import {Versioned} from "@services/shared/utils"
+import {Versioned} from "@domain"
 import {UnknownError} from "@services/error"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"

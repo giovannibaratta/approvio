@@ -1,14 +1,20 @@
 import {
   MembershipValidationErrorWithGroupRef,
+  MembershipWithGroupRef,
   Vote,
   VoteFactory,
   CantVoteReason,
   canVoteOnWorkflow,
-  UserValidationError
+  UserValidationError,
+  AgentValidationError,
+  AuthenticatedEntity,
+  createEntityReference,
+  getEntityRoles
 } from "@domain"
 import {Inject, Injectable, Logger} from "@nestjs/common"
 import {UnknownError, AuthorizationError} from "@services/error"
-import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
+import {RequestorAwareRequest} from "@services/shared/types"
+import {AgentKeyDecodeError} from "@services/agent/interfaces"
 import {WorkflowGetError, WorkflowUpdateError} from "../workflow/interfaces"
 import {WorkflowService} from "../workflow/workflow.service"
 import {pipe} from "fp-ts/function"
@@ -40,21 +46,20 @@ export class VoteService {
     return pipe(
       TE.Do,
       TE.bindW("workflowId", () => TE.right(request.workflowId)),
-      TE.bindW("validatedRequestor", () => TE.fromEither(validateUserEntity(request.requestor))),
-      TE.bindW("scope", ({workflowId, validatedRequestor}) =>
+      TE.bindW("scope", ({workflowId}) =>
         sequenceS(TE.ApplicativePar)({
           workflowWithTemplate: this.workflowService.getWorkflowByIdentifier(workflowId, {
             workflowTemplate: true
           }),
-          vote: this.voteRepo.getOptionalLatestVoteByWorkflowAndUser(workflowId, validatedRequestor.id),
-          userMemberships: this.groupMembershipRepo.getUserMembershipsByUserId(validatedRequestor.id)
+          vote: this.getLatestVoteByWorkflowAndEntity(workflowId, request.requestor),
+          entityMemberships: this.getEntityMemberships(request.requestor)
         })
       ),
-      TE.map(({scope, validatedRequestor}) => {
-        const {workflowWithTemplate, vote, userMemberships} = scope
+      TE.map(({scope}) => {
+        const {workflowWithTemplate, vote, entityMemberships} = scope
         const status = this.getVoteStatus(vote)
-        const entityRoles = validatedRequestor.roles
-        const canVoteResult = canVoteOnWorkflow(workflowWithTemplate, userMemberships, entityRoles)
+        const entityRoles = getEntityRoles(request.requestor)
+        const canVoteResult = canVoteOnWorkflow(workflowWithTemplate, entityMemberships, entityRoles)
         const canVote = isRight(canVoteResult) ? true : {reason: canVoteResult.left}
 
         return {canVote, status}
@@ -67,6 +72,26 @@ export class VoteService {
     return VoteStatus.ALREADY_VOTED
   }
 
+  private getLatestVoteByWorkflowAndEntity(
+    workflowId: string,
+    entity: AuthenticatedEntity
+  ): TaskEither<GetLatestVoteError, Option<Vote>> {
+    const voter = createEntityReference(entity)
+    return this.voteRepo.getOptionalLatestVoteByWorkflowAndVoter(workflowId, voter)
+  }
+
+  private getEntityMemberships(
+    entity: AuthenticatedEntity
+  ): TaskEither<GetLatestVoteError | CanVoteError, ReadonlyArray<MembershipWithGroupRef>> {
+    const entityRef = createEntityReference(entity)
+    switch (entity.entityType) {
+      case "user":
+        return this.groupMembershipRepo.getUserMembershipsByUserId(entityRef.entityId)
+      case "agent":
+        return this.groupMembershipRepo.getAgentMembershipsByAgentId(entityRef.entityId)
+    }
+  }
+
   /**
    * Casts a vote on a workflow.
    * This action is optimistic and may be subject to race conditions.
@@ -75,27 +100,30 @@ export class VoteService {
    * @returns A TaskEither with the persisted vote or an error.
    */
   castVote(request: CastVoteRequest): TaskEither<CastVoteServiceError, Vote> {
-    const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
-
     // This implementation is based on an optimistic approach
-    // If there's a race condition (e.g., user eligibility changes between canVote check and the persist action),
+    // If there's a race condition (e.g., entity eligibility changes between canVote check and the persist action),
     // the vote is registered anyway. Conformity evaluation happens elsewhere.
 
     // We still perform a canVote check here to prevent obviously invalid votes,
     // but we are aware this check itself is subject to race conditions.
     return pipe(
       TE.Do,
-      TE.bindW("requestor", () => validateRequestor()),
       TE.bind("canVoteCheck", () => this.canVote({workflowId: request.workflowId, requestor: request.requestor})),
-      TE.chainW(({requestor, canVoteCheck}) => {
+      TE.chainW(({canVoteCheck}) => {
         if (canVoteCheck.canVote !== true) {
+          const entityRef = createEntityReference(request.requestor)
           Logger.error(
-            `User ${requestor.id} cannot vote for workflow ${request.workflowId}: ${canVoteCheck.canVote.reason}`
+            `${entityRef.entityType} ${entityRef.entityId} cannot vote for workflow ${request.workflowId}: ${canVoteCheck.canVote.reason}`
           )
           return TE.left(canVoteCheck.canVote.reason)
         }
+
+        // Create vote with voter object
+        const voter = createEntityReference(request.requestor)
+        const voteData = {...request, voter}
+
         return pipe(
-          VoteFactory.newVote({...request, userId: requestor.id}),
+          VoteFactory.newVote(voteData),
           TE.fromEither,
           TE.chainW(vote => this.voteRepo.persistVoteAndMarkWorkflowRecalculation(vote))
         )
@@ -123,11 +151,13 @@ export type CanVoteError =
   | WorkflowGetError
   | MembershipValidationErrorWithGroupRef
   | UserValidationError
+  | AgentValidationError
+  | AgentKeyDecodeError
   | GetLatestVoteError
   | UnknownError
   | AuthorizationError
 
-export type CastVoteRequest = RequestorAwareRequest & DistributiveOmit<Vote, "id" | "castedAt" | "userId">
+export type CastVoteRequest = RequestorAwareRequest & DistributiveOmit<Vote, "id" | "castedAt" | "voter">
 
 export type CastVoteServiceError =
   | "workflow_not_found"

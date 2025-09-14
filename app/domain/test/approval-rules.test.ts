@@ -208,7 +208,10 @@ describe("doesVotesCoverApprovalRules", () => {
   const createApproveVote = (votedForGroups: string[], userId?: string): ApproveVote => ({
     id: randomUUID(),
     workflowId: randomUUID(),
-    userId: userId || randomUUID(),
+    voter: {
+      entityId: userId || randomUUID(),
+      entityType: "user"
+    },
     type: "APPROVE",
     votedForGroups,
     castedAt: new Date()

@@ -1,6 +1,6 @@
 import {Controller, Get, Post, Res, Logger, UnauthorizedException, Query, Body, HttpCode} from "@nestjs/common"
 import {Response} from "express"
-import {AuthenticatedEntity, AuthService, GenerateChallengeRequest} from "@services"
+import {AuthService, GenerateChallengeRequest} from "@services"
 import {isLeft} from "fp-ts/lib/Either"
 import * as TE from "fp-ts/TaskEither"
 import {PublicRoute} from "../../../main/src/auth/jwt.authguard"
@@ -24,6 +24,7 @@ import {
   validateJwtAssertionTokenRequest
 } from "./agent-auth.mappers"
 import {pipe} from "fp-ts/lib/function"
+import {AuthenticatedEntity} from "@domain"
 
 /**
  * ┌─────────────────────────────────────────────────────────────────────────────────────────┐

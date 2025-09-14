@@ -4,8 +4,7 @@ import {
   WorkflowTemplateService,
   CreateWorkflowTemplateRequest,
   UpdateWorkflowTemplateRequest,
-  DeprecateWorkflowTemplateRequest,
-  AuthenticatedEntity
+  DeprecateWorkflowTemplateRequest
 } from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
@@ -29,6 +28,7 @@ import {
   WorkflowTemplateUpdate,
   WorkflowTemplateDeprecate
 } from "@approvio/api"
+import {AuthenticatedEntity} from "@domain"
 
 export const WORKFLOW_TEMPLATES_ENDPOINT_ROOT = "workflow-templates"
 

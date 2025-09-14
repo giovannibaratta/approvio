@@ -105,6 +105,20 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
     )
   }
 
+  getAgentMembershipsByAgentId(
+    agentId: string
+  ): TaskEither<
+    MembershipValidationErrorWithGroupRef | AgentKeyDecodeError | UnknownError,
+    ReadonlyArray<MembershipWithGroupRef>
+  > {
+    return pipe(
+      agentId,
+      TE.right,
+      TE.chainW(this.getAgentMembershipsByAgentIdTask()),
+      TE.chainEitherKW(mapToDomainAgentMembershipWithGroupRefs)
+    )
+  }
+
   private getObjectTask(): (
     data: GetGroupWithMembershipRepo
   ) => TaskEither<GetGroupRepoError, GroupWithMemberships | null> {
@@ -265,6 +279,23 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
       )()
   }
 
+  private getAgentMembershipsByAgentIdTask(): (
+    agentId: string
+  ) => TaskEither<UnknownError, ReadonlyArray<PrismaAgentGroupMembership & {agents: PrismaAgent}>> {
+    return agentId =>
+      TE.tryCatchK(
+        () =>
+          this.dbClient.agentGroupMembership.findMany({
+            where: {agentId},
+            include: {agents: true}
+          }),
+        error => {
+          Logger.error("Error while retrieving agent memberships. Unknown error", error)
+          return "unknown_error" as const
+        }
+      )()
+  }
+
   private static readonly GROUP_WITH_MEMBERSHIPS_INCLUDE = {
     groupMemberships: {
       include: {
@@ -351,6 +382,28 @@ function mapToDomainMembershipWithGroupRef(
   return pipe(
     E.Do,
     E.bindW("membership", () => mapUserMembershipToDomain(dbObject)),
+    E.bindW("data", ({membership}) => {
+      return E.right({
+        ...membership,
+        groupId: dbObject.groupId
+      })
+    }),
+    E.chainW(({data}) => MembershipFactory.validateWithGroupRef(data))
+  )
+}
+
+function mapToDomainAgentMembershipWithGroupRefs(
+  dbObject: ReadonlyArray<PrismaAgentGroupMembership & {agents: PrismaAgent}>
+): Either<MembershipValidationErrorWithGroupRef | AgentKeyDecodeError, ReadonlyArray<MembershipWithGroupRef>> {
+  return pipe([...dbObject], A.traverse(E.Applicative)(mapToDomainAgentMembershipWithGroupRef))
+}
+
+function mapToDomainAgentMembershipWithGroupRef(
+  dbObject: Readonly<PrismaAgentGroupMembership & {agents: PrismaAgent}>
+): Either<MembershipValidationErrorWithGroupRef | AgentKeyDecodeError, MembershipWithGroupRef> {
+  return pipe(
+    E.Do,
+    E.bindW("membership", () => mapAgentMembershipToDomain(dbObject)),
     E.bindW("data", ({membership}) => {
       return E.right({
         ...membership,

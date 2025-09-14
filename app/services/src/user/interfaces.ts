@@ -1,6 +1,6 @@
 import {User, UserSummary, UserSummaryValidationError, UserValidationError} from "@domain"
 import {AuthorizationError, UnknownError} from "@services/error"
-import {Versioned} from "@services/shared/utils"
+import {Versioned} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 
 export type UserCreateError = "user_already_exists" | AuthorizationError | UserValidationError | UnknownError

@@ -15,7 +15,7 @@ import {
   DeleteSpaceRepoError,
   DeleteSpaceRepo
 } from "@services"
-import {Versioned} from "@services/shared/utils"
+import {Versioned} from "@domain"
 import * as E from "fp-ts/lib/Either"
 import * as TE from "fp-ts/lib/TaskEither"
 import {TaskEither} from "fp-ts/lib/TaskEither"

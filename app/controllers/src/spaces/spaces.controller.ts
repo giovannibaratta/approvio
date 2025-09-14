@@ -10,18 +10,12 @@ import {
   mapSpaceToApi
 } from "@controllers/spaces/spaces.mappers"
 import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query, Res} from "@nestjs/common"
-import {
-  AuthenticatedEntity,
-  CreateSpaceRequest,
-  DeleteSpaceRequest,
-  GetSpaceRequest,
-  ListSpacesRequest,
-  SpaceService
-} from "@services"
+import {CreateSpaceRequest, DeleteSpaceRequest, GetSpaceRequest, ListSpacesRequest, SpaceService} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
 import * as TE from "fp-ts/lib/TaskEither"
+import {AuthenticatedEntity} from "@domain"
 
 export const SPACES_ENDPOINT_ROOT = "spaces"
 

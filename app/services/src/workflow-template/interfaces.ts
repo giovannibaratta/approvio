@@ -9,7 +9,7 @@ import {UnknownError} from "@services/error"
 import {RequestorAwareRequest} from "@services/shared/types"
 import {TaskEither} from "fp-ts/TaskEither"
 import {Option} from "fp-ts/Option"
-import {Versioned} from "@services/shared/utils"
+import {Versioned} from "@domain"
 
 export interface WorkflowTemplateRepository {
   /**

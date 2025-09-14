@@ -4,6 +4,7 @@ import * as E from "fp-ts/Either"
 import {KeyPairSyncResult, randomUUID} from "crypto"
 import {isUUIDv4, PrefixUnion} from "@utils"
 import {generateKeyPairSync} from "crypto"
+import {BoundRole} from "./role"
 
 export const AGENT_NAME_MIN_LENGTH = 1
 export const AGENT_NAME_MAX_LENGTH = 1024
@@ -17,6 +18,7 @@ interface AgentData {
   agentName: string
   publicKey: string
   createdAt: Date
+  roles: ReadonlyArray<BoundRole<string>>
 }
 
 interface AgentCreateData {
@@ -49,7 +51,8 @@ export class AgentFactory {
           agentName: validatedData.agentName,
           publicKey: keyPair.publicKey,
           privateKey: keyPair.privateKey,
-          createdAt: new Date()
+          createdAt: new Date(),
+          roles: []
         }
         return agent
       })
@@ -88,10 +91,26 @@ export class AgentFactory {
           id: validatedId,
           agentName: validatedAgentName,
           publicKey: data.publicKey,
-          createdAt: data.createdAt
+          createdAt: data.createdAt,
+          roles: data.roles || []
         }
       })
     )
+  }
+
+  /**
+   * Adds roles/permissions to an agent
+   * @param agent The agent to update
+   * @param newRoles The new roles to add
+   * @returns Either validation error or updated agent
+   */
+  static addPermissions(agent: Agent, newRoles: ReadonlyArray<BoundRole<string>>): Either<AgentValidationError, Agent> {
+    const updatedAgent: Agent = {
+      ...agent,
+      roles: [...agent.roles, ...newRoles]
+    }
+
+    return AgentFactory.validate(updatedAgent)
   }
 
   /**

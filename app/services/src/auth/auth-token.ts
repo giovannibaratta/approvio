@@ -1,4 +1,4 @@
-import {User, Agent, OrgRole} from "@domain"
+import {User, Agent, OrgRole, AuthenticatedEntity} from "@domain"
 
 const CLOCK_SKEW_TOLERANCE_IN_SECONDS = 60
 
@@ -14,7 +14,7 @@ export interface TokenPayloadForSigning {
   name: string // Display name (using standard 'name' claim)
 
   // Custom application claims
-  entityType: "user" | "agent"
+  entityType: AuthenticatedEntity["entityType"]
   orgRole?: OrgRole // Organizational role (admin/member) - only for users
 }
 
@@ -112,7 +112,7 @@ export class TokenPayloadBuilder {
    */
   static from(data: {
     sub: string
-    entityType: "user" | "agent"
+    entityType: AuthenticatedEntity["entityType"]
     displayName: string
     email?: string
     orgRole?: OrgRole

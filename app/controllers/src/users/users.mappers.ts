@@ -1,5 +1,5 @@
 import {ListUsers200Response, User as UserApi, UserCreate} from "@approvio/api"
-import {User as UserDomain} from "@domain"
+import {AuthenticatedEntity, User as UserDomain} from "@domain"
 import {
   BadRequestException,
   ConflictException,
@@ -9,7 +9,6 @@ import {
   NotFoundException
 } from "@nestjs/common"
 import {
-  AuthenticatedEntity,
   AuthorizationError,
   CreateUserRequest,
   ListUsersRequest,

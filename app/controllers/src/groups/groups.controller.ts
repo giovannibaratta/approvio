@@ -36,7 +36,6 @@ import {
 } from "@nestjs/common"
 import {
   AddMembersToGroupRequest,
-  AuthenticatedEntity,
   CreateGroupRequest,
   GetGroupByIdentifierRequest,
   GetGroupWithMembershipRequest,
@@ -49,6 +48,7 @@ import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
 import * as TE from "fp-ts/lib/TaskEither"
+import {AuthenticatedEntity} from "@domain"
 
 export const GROUPS_ENDPOINT_ROOT = "groups"
 const MAX_LIMIT = 100

@@ -26,3 +26,11 @@ export function isPrismaRecordNotFoundError(error: unknown, modelName: Prisma.Mo
   const violatedModel = error.meta.modelName as string
   return modelName === violatedModel
 }
+
+export function isPrismaCheckConstraintError(error: unknown, constraint: string): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false
+  if (error.code !== "P2004" || !error.meta?.constraint) return false
+
+  const violatedConstraint = error.meta.constraint as string
+  return constraint === violatedConstraint
+}

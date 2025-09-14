@@ -9,7 +9,7 @@ import {UserGetError} from "../user/interfaces"
 import {PrefixUnion} from "@utils"
 import {ConfigProvider} from "@external/config/config-provider"
 import {Agent, AgentChallenge, AgentChallengeFactory, DecoratedAgentChallenge, User} from "@domain"
-import {Versioned} from "../shared/utils"
+import {Versioned} from "@domain"
 import {
   OIDC_PROVIDER_TOKEN,
   OidcProvider,

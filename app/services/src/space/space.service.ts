@@ -12,7 +12,7 @@ import {
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError} from "@services/error"
 import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
-import {Versioned} from "@services/shared/utils"
+import {Versioned} from "@domain"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
