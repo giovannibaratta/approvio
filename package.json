@@ -24,7 +24,7 @@
     "prisma:generate": "yarn prisma generate",
     "build": "nest build core",
     "test:setup": "yarn deps:start:test && yarn prisma:generate && yarn liquibase:update:test",
-    "test": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest",
+    "test": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest --maxWorkers=50%",
     "test:all": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest app/**/*.test.ts"
   },
   "packageManager": "yarn@4.7.0",

@@ -1,0 +1,24 @@
+databaseChangeLog:
+  - changeSet:
+      id: convert-tables-to-unlogged
+      author: system
+      comment: Convert all tables to UNLOGGED for improved test performance
+      changes:
+        - sql:
+            sql: |
+              -- Convert all application tables to UNLOGGED for test performance
+              -- UNLOGGED tables skip WAL writes and are much faster for tests
+              -- Order is important: convert child tables (with FKs) first, then parent tables
+              ALTER TABLE pkce_sessions SET UNLOGGED;
+              ALTER TABLE agent_challenges SET UNLOGGED;
+              ALTER TABLE workflow_actions_email_task SET UNLOGGED;
+              ALTER TABLE votes SET UNLOGGED;
+              ALTER TABLE workflows SET UNLOGGED;
+              ALTER TABLE workflow_templates SET UNLOGGED;
+              ALTER TABLE organization_admins SET UNLOGGED;
+              ALTER TABLE agent_group_memberships SET UNLOGGED;
+              ALTER TABLE group_memberships SET UNLOGGED;
+              ALTER TABLE users SET UNLOGGED;
+              ALTER TABLE groups SET UNLOGGED;
+              ALTER TABLE agents SET UNLOGGED;
+              ALTER TABLE spaces SET UNLOGGED;

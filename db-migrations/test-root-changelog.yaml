@@ -1,0 +1,8 @@
+databaseChangeLog:
+  # Include all standard migrations first
+  - include:
+      file: root-changelog.yaml
+
+  # Convert all tables to UNLOGGED for test performance
+  - include:
+      file: integration-tests/convert-tables-to-unlogged.yaml
