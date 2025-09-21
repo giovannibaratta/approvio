@@ -1,10 +1,13 @@
 import {
-  BoundRole,
+  UnconstrainedBoundRole,
   RoleScope,
   GroupPermission,
   SpacePermission,
   WorkflowTemplatePermission,
-  WorkflowPermission
+  GroupScope,
+  SpaceScope,
+  OrgScope,
+  WorkflowTemplateScope
 } from "./role"
 
 export class RolePermissionChecker {
@@ -15,16 +18,14 @@ export class RolePermissionChecker {
    * @param permission The specific permission to verify
    * @returns true if the user has the required permission in the specified scope
    */
-  private static hasPermission<T extends string>(
-    roles: ReadonlyArray<BoundRole<T>>,
+  private static hasPermission(
+    roles: ReadonlyArray<UnconstrainedBoundRole>,
     scope: RoleScope,
-    permission: T
+    permission: string
   ): boolean {
     return roles.some(role => {
       // Check if the role has the required permission
-      if (!role.permissions.includes(permission)) {
-        return false
-      }
+      if (!role.permissions.some(p => p === permission)) return false
 
       // Check scope matching
       return this.scopeMatches(role.scope, scope)
@@ -37,9 +38,7 @@ export class RolePermissionChecker {
    */
   private static scopeMatches(roleScope: RoleScope, requestedScope: RoleScope): boolean {
     // Org-level permissions apply to everything
-    if (roleScope.type === "org") {
-      return true
-    }
+    if (roleScope.type === "org") return true
 
     // Exact scope type match required for non-org scopes
     if (roleScope.type !== requestedScope.type) return false
@@ -62,35 +61,27 @@ export class RolePermissionChecker {
     return true
   }
 
-  static hasGroupPermission<T extends string>(
-    roles: ReadonlyArray<BoundRole<T>>,
-    scope: RoleScope,
+  static hasGroupPermission(
+    roles: ReadonlyArray<UnconstrainedBoundRole>,
+    scope: GroupScope,
     permission: GroupPermission
   ): boolean {
-    return this.hasPermission(roles, scope, permission as T)
+    return this.hasPermission(roles, scope, permission)
   }
 
-  static hasSpacePermission<T extends string>(
-    roles: ReadonlyArray<BoundRole<T>>,
-    scope: RoleScope,
+  static hasSpacePermission(
+    roles: ReadonlyArray<UnconstrainedBoundRole>,
+    scope: SpaceScope | OrgScope,
     permission: SpacePermission
   ): boolean {
-    return this.hasPermission(roles, scope, permission as T)
+    return this.hasPermission(roles, scope, permission)
   }
 
-  static hasWorkflowTemplatePermission<T extends string>(
-    roles: ReadonlyArray<BoundRole<T>>,
-    scope: RoleScope,
+  static hasWorkflowTemplatePermission(
+    roles: ReadonlyArray<UnconstrainedBoundRole>,
+    scope: WorkflowTemplateScope | SpaceScope | OrgScope,
     permission: WorkflowTemplatePermission
   ): boolean {
-    return this.hasPermission(roles, scope, permission as T)
-  }
-
-  static hasWorkflowPermission<T extends string>(
-    roles: ReadonlyArray<BoundRole<T>>,
-    scope: RoleScope,
-    permission: WorkflowPermission
-  ): boolean {
-    return this.hasPermission(roles, scope, permission as T)
+    return this.hasPermission(roles, scope, permission)
   }
 }

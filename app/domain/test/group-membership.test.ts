@@ -7,9 +7,9 @@ import {
   OrgRole,
   User,
   UserFactory,
-  RoleFactory,
   createUserMembershipEntity
 } from "@domain"
+import {SystemRole} from "../src/system-role"
 
 import {Either, isLeft, isRight} from "fp-ts/lib/Either"
 
@@ -81,7 +81,7 @@ describe("GroupManager", () => {
     // Add group manager role to groupManager
     groupManager = {
       ...groupManager,
-      roles: [RoleFactory.createGroupManagerRole(groupScope)]
+      roles: [SystemRole.createGroupManagerRole(groupScope)]
     }
 
     member = unwrapRight(

@@ -439,7 +439,9 @@ describe("Groups API", () => {
           roles: [
             {
               name: "GroupReadOnly",
+              resourceType: "group",
               permissions: ["read"],
+              scopeType: "group",
               scope: {type: "group", groupId: createdGroup.id}
             }
           ]
@@ -476,7 +478,9 @@ describe("Groups API", () => {
           roles: [
             {
               name: "GroupReadOnly",
+              resourceType: "group",
               permissions: ["read"],
+              scopeType: "group",
               scope: {type: "group", groupId: createdGroup.id}
             }
           ]

@@ -7,7 +7,7 @@ import {
 } from "@approvio/api"
 import {AppModule} from "@app/app.module"
 import {WORKFLOWS_ENDPOINT_ROOT} from "@controllers"
-import {RoleFactory} from "@domain"
+import {SystemRole} from "@domain"
 import {ApprovalRuleType, WORKFLOW_DESCRIPTION_MAX_LENGTH, WORKFLOW_NAME_MAX_LENGTH, WorkflowStatus} from "@domain"
 import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
@@ -383,7 +383,7 @@ describe("Workflows API", () => {
       await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id)
 
       // Add voter roles for this workflow template
-      const voterRole = RoleFactory.createWorkflowTemplateVoterRole({
+      const voterRole = SystemRole.createWorkflowTemplateVoterRole({
         type: "workflow_template",
         workflowTemplateId: template.id
       })
@@ -438,7 +438,7 @@ describe("Workflows API", () => {
 
       it("should return 200 OK with canVote:false if user is not in the required group", async () => {
         // Given: a new user with voter role but not in any group related to this workflow
-        const voterRole = RoleFactory.createWorkflowTemplateVoterRole({
+        const voterRole = SystemRole.createWorkflowTemplateVoterRole({
           type: "workflow_template",
           workflowTemplateId: template.id
         })
@@ -537,7 +537,7 @@ describe("Workflows API", () => {
         await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id)
 
         // Add voter roles for the workflow template
-        const voterRole = RoleFactory.createWorkflowTemplateVoterRole({
+        const voterRole = SystemRole.createWorkflowTemplateVoterRole({
           type: "workflow_template",
           workflowTemplateId: workflowTemplate.id
         })
@@ -677,7 +677,7 @@ describe("Workflows API", () => {
         })
 
         // Given: a new user not in any group related to this workflow
-        const voterRole = RoleFactory.createWorkflowTemplateVoterRole({
+        const voterRole = SystemRole.createWorkflowTemplateVoterRole({
           type: "workflow_template",
           workflowTemplateId: workflowTemplate.id
         })

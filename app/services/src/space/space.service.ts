@@ -3,7 +3,7 @@ import {
   SpaceFactory,
   User,
   UserFactory,
-  RoleFactory,
+  SystemRole,
   RolePermissionChecker,
   SpaceValidationError,
   UserValidationError,
@@ -68,7 +68,7 @@ export class SpaceService {
     const fetchUser = (requestor: User) => this.userRepo.getUserById(requestor.id)
 
     const addManagePermissions = ({user, space}: {user: Versioned<User>; space: Space}) => {
-      const manageRole = RoleFactory.createSpaceManagerRole({type: "space", spaceId: space.id})
+      const manageRole = SystemRole.createSpaceManagerRole({type: "space", spaceId: space.id})
       return pipe(UserFactory.addPermissions(user, [manageRole]), TE.fromEither)
     }
 

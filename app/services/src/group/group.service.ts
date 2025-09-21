@@ -6,7 +6,7 @@ import {
   MembershipFactory,
   User,
   UserFactory,
-  RoleFactory,
+  SystemRole,
   UserValidationError,
   createUserMembershipEntity,
   RolePermissionChecker
@@ -62,7 +62,7 @@ export class GroupService {
       pipe(MembershipFactory.newMembership({entity: createUserMembershipEntity(user)}), TE.fromEither)
 
     const addManagePermissions = ({user, group}: {user: Versioned<User>; group: Group}) => {
-      const manageRole = RoleFactory.createGroupManagerRole({type: "group", groupId: group.id})
+      const manageRole = SystemRole.createGroupManagerRole({type: "group", groupId: group.id})
       return pipe(UserFactory.addPermissions(user, [manageRole]), TE.fromEither)
     }
 

@@ -1,7 +1,7 @@
 import {CanVoteResponse as CanVoteResponseApi, WorkflowVoteRequest as WorkflowVoteRequestApi} from "@approvio/api"
 import {AppModule} from "@app/app.module"
 import {WORKFLOWS_ENDPOINT_ROOT} from "@controllers"
-import {RoleFactory} from "@domain"
+import {SystemRole} from "@domain"
 import {ApprovalRuleType, WorkflowStatus} from "@domain"
 import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
@@ -115,7 +115,7 @@ describe("Agent Workflow Voting API", () => {
     }
 
     // Add voter roles for agents (preparing for future schema support)
-    const voterRole = RoleFactory.createWorkflowTemplateVoterRole({
+    const voterRole = SystemRole.createWorkflowTemplateVoterRole({
       type: "workflow_template",
       workflowTemplateId: mockWorkflowTemplate.id
     })

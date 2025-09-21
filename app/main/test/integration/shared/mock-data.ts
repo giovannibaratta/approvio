@@ -9,7 +9,7 @@ import {
   Group as PrismaGroup,
   Space as PrismaSpace
 } from "@prisma/client"
-import {ApprovalRuleType, BoundRole, User, WorkflowStatus} from "@domain"
+import {ApprovalRuleType, UnconstrainedBoundRole, User, WorkflowStatus} from "@domain"
 import {mapToDomainVersionedUser} from "@external/database/shared"
 import {isLeft} from "fp-ts/lib/Either"
 // eslint-disable-next-line node/no-unpublished-import
@@ -289,7 +289,7 @@ export async function createMockUserInDb(
   prisma: PrismaClient,
   overrides?: Partial<Omit<Prisma.UserCreateInput, "roles">> & {
     orgAdmin?: boolean
-    roles?: ReadonlyArray<BoundRole<string>>
+    roles?: ReadonlyArray<UnconstrainedBoundRole>
   }
 ): Promise<PrismaUserWithOrgAdmin> {
   const randomUser: Prisma.UserCreateInput = {

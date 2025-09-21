@@ -1,7 +1,14 @@
 import {Either, left, right, isLeft} from "fp-ts/Either"
 import {randomUUID} from "crypto"
 import {getStringAsEnum, isEmail, isUUIDv4, PrefixUnion} from "@utils"
-import {BoundRole, RoleFactory, RoleValidationError, SpaceScope, GroupScope, WorkflowTemplateScope} from "./role"
+import {
+  UnconstrainedBoundRole,
+  RoleFactory,
+  RoleValidationError,
+  SpaceScope,
+  GroupScope,
+  WorkflowTemplateScope
+} from "./role"
 
 export const DISPLAY_NAME_MAX_LENGTH = 255
 export const EMAIL_MAX_LENGTH = 255
@@ -23,7 +30,7 @@ interface UserSummaryData {
 interface PrivateUser extends UserSummaryData {
   createdAt: Date
   orgRole: OrgRole
-  roles: ReadonlyArray<BoundRole<string>>
+  roles: ReadonlyArray<UnconstrainedBoundRole>
 }
 
 type EmailValidationError = "email_empty" | "email_too_long" | "email_invalid"
@@ -48,7 +55,10 @@ export class UserFactory {
    * @param newRoles Array of new bound roles to add
    * @returns Either validation error or user with updated permissions
    */
-  static addPermissions(user: User, newRoles: ReadonlyArray<BoundRole<string>>): Either<UserValidationError, User> {
+  static addPermissions(
+    user: User,
+    newRoles: ReadonlyArray<UnconstrainedBoundRole>
+  ): Either<UserValidationError, User> {
     const updatedUser: User = {
       ...user,
       roles: [...user.roles, ...newRoles]
@@ -62,7 +72,7 @@ export class UserFactory {
    * @param roles Array data that should represent BoundRole array
    * @returns Either validation error or validated roles array
    */
-  static validateRoles(roles: unknown): Either<UserValidationError, ReadonlyArray<BoundRole<string>>> {
+  static validateRoles(roles: unknown): Either<UserValidationError, ReadonlyArray<UnconstrainedBoundRole>> {
     if (roles === null || roles === undefined) return right([])
     if (!Array.isArray(roles)) return left("user_role_assignments_invalid_format")
 
@@ -145,7 +155,9 @@ export class UserFactory {
    * @param roles Array of roles to check for duplicates
    * @returns Either validation error if duplicates found or success
    */
-  private static checkForDuplicateRoles(roles: ReadonlyArray<BoundRole<string>>): Either<UserValidationError, void> {
+  private static checkForDuplicateRoles(
+    roles: ReadonlyArray<UnconstrainedBoundRole>
+  ): Either<UserValidationError, void> {
     for (let i = 0; i < roles.length; i++) {
       for (let j = i + 1; j < roles.length; j++) {
         const roleI = roles[i]
@@ -164,7 +176,10 @@ export class UserFactory {
    * @param scope2 Second scope to compare
    * @returns true if scopes are equal, false otherwise
    */
-  private static isSameScope(scope1: BoundRole<string>["scope"], scope2: BoundRole<string>["scope"]): boolean {
+  private static isSameScope(
+    scope1: UnconstrainedBoundRole["scope"],
+    scope2: UnconstrainedBoundRole["scope"]
+  ): boolean {
     if (scope1.type !== scope2.type) return false
 
     switch (scope1.type) {

@@ -1,4 +1,4 @@
-import {BoundRole} from "@domain"
+import {UnconstrainedBoundRole} from "@domain"
 import {Prisma} from "@prisma/client"
 
 export interface UpdateUserWithRolesData {
@@ -6,7 +6,7 @@ export interface UpdateUserWithRolesData {
   userOcc: bigint
   displayName: string
   email: string
-  roles: ReadonlyArray<BoundRole<string>>
+  roles: ReadonlyArray<UnconstrainedBoundRole>
   createdAt: Date
 }
 
@@ -34,9 +34,11 @@ export async function persistExistingUserRaceConditionFree(
   })
 }
 
-function mapRolesToJsonValue(roles: ReadonlyArray<BoundRole<string>>): Prisma.InputJsonValue {
+function mapRolesToJsonValue(roles: ReadonlyArray<UnconstrainedBoundRole>): Prisma.InputJsonValue {
   return roles.map(role => ({
     name: role.name,
+    resourceType: role.resourceType,
+    scopeType: role.scopeType,
     permissions: [...role.permissions],
     scope: {
       type: role.scope.type,

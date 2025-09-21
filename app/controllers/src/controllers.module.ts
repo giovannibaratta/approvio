@@ -10,6 +10,7 @@ import {WorkflowsController} from "./workflows"
 import {WorkflowTemplatesController} from "./workflow-templates"
 import {WorkflowTemplateInternalController} from "./internal"
 import {AuthController} from "./auth"
+import {RolesController} from "./roles"
 
 const internalControllers = [WorkflowTemplateInternalController]
 
@@ -24,6 +25,7 @@ const internalControllers = [WorkflowTemplateInternalController]
     WorkflowsController,
     WorkflowTemplatesController,
     AuthController,
+    RolesController,
     ...internalControllers
   ],
   providers: [],

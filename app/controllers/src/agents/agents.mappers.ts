@@ -51,6 +51,17 @@ export function generateErrorResponseForRegisterAgent(error: AgentRegistrationEr
       )
     case "agent_key_decode_error":
     case "agent_invalid_uuid":
+    case "agent_role_invalid_uuid":
+    case "agent_role_name_empty":
+    case "agent_role_name_too_long":
+    case "agent_role_name_invalid_characters":
+    case "agent_role_permissions_empty":
+    case "agent_role_permission_invalid":
+    case "agent_role_invalid_scope":
+    case "agent_role_resource_id_invalid":
+    case "agent_role_resource_required_for_scope":
+    case "agent_role_resource_not_allowed_for_scope":
+    case "agent_role_invalid_structure":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)

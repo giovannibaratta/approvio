@@ -3,7 +3,7 @@ import {
   MembershipWithGroupRef,
   WorkflowTemplate,
   WorkflowTemplateFactory,
-  RoleFactory,
+  SystemRole,
   BoundRole
 } from "@domain"
 import {createMembership, createGroupRequirementRule, createAndRule, createOrRule} from "./workflow-test-helpers"
@@ -31,8 +31,8 @@ const getWorkflowTemplate = (rule: ApprovalRule): WorkflowTemplate => {
 /**
  * Helper function to create a voter role for a specific workflow template
  */
-const createVoterRole = (workflowTemplateId: string): BoundRole<string> => {
-  return RoleFactory.createWorkflowTemplateVoterRole({
+const createVoterRole = (workflowTemplateId: string): BoundRole<"workflow_template"> => {
+  return SystemRole.createWorkflowTemplateVoterRole({
     type: "workflow_template",
     workflowTemplateId
   })

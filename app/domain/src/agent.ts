@@ -4,7 +4,7 @@ import * as E from "fp-ts/Either"
 import {KeyPairSyncResult, randomUUID} from "crypto"
 import {isUUIDv4, PrefixUnion} from "@utils"
 import {generateKeyPairSync} from "crypto"
-import {BoundRole} from "./role"
+import {UnconstrainedBoundRole, RoleFactory, RoleValidationError} from "./role"
 
 export const AGENT_NAME_MIN_LENGTH = 1
 export const AGENT_NAME_MAX_LENGTH = 1024
@@ -18,7 +18,7 @@ interface AgentData {
   agentName: string
   publicKey: string
   createdAt: Date
-  roles: ReadonlyArray<BoundRole<string>>
+  roles: ReadonlyArray<UnconstrainedBoundRole>
 }
 
 interface AgentCreateData {
@@ -29,7 +29,10 @@ type AgentNameValidationError = PrefixUnion<"agent", "name_empty" | "name_too_lo
 type IdValidationError = PrefixUnion<"agent", "invalid_uuid">
 type KeyGenerationError = PrefixUnion<"agent", "key_generation_failed">
 
-export type AgentValidationError = IdValidationError | AgentNameValidationError
+export type AgentValidationError =
+  | IdValidationError
+  | AgentNameValidationError
+  | PrefixUnion<"agent", RoleValidationError>
 export type AgentCreateValidationError = AgentNameValidationError
 export type AgentCreationError = KeyGenerationError | AgentNameValidationError
 
@@ -39,20 +42,25 @@ export class AgentFactory {
    * @param data The agent creation data
    * @returns Either validation/creation error or created agent
    */
-  static create(data: AgentCreateData): Either<AgentCreationError, AgentWithPrivateKey> {
+  static create(data: AgentCreateData): Either<AgentCreationError | AgentValidationError, AgentWithPrivateKey> {
     return pipe(
       E.Do,
       E.bindW("data", () => E.right(data)),
       E.bindW("validatedData", ({data}) => this.validateAgentCreateData(data)),
       E.bindW("keyPair", () => this.generateKeyPair()),
-      E.map(({validatedData, keyPair}) => {
-        const agent: AgentWithPrivateKey = {
+      E.bindW("validatedAgent", ({validatedData, keyPair}) =>
+        AgentFactory.validate({
           id: randomUUID(),
           agentName: validatedData.agentName,
-          publicKey: keyPair.publicKey,
-          privateKey: keyPair.privateKey,
           createdAt: new Date(),
-          roles: []
+          roles: [],
+          publicKey: keyPair.publicKey
+        })
+      ),
+      E.map(({validatedAgent, keyPair}) => {
+        const agent: AgentWithPrivateKey = {
+          ...validatedAgent,
+          privateKey: keyPair.privateKey
         }
         return agent
       })
@@ -81,18 +89,21 @@ export class AgentFactory {
    * @param data The agent data to validate
    * @returns Either validation error or validated agent
    */
-  static validate(data: AgentData): Either<AgentValidationError, Agent> {
+  static validate(
+    data: Omit<Agent, "roles"> & {readonly roles: Agent["roles"] | unknown}
+  ): Either<AgentValidationError, Agent> {
     return pipe(
       E.Do,
       E.bindW("validatedId", () => this.validateId(data.id)),
       E.bindW("validatedAgentName", () => this.validateAgentName(data.agentName)),
-      E.map(({validatedId, validatedAgentName}) => {
+      E.bindW("validatedRoles", () => this.validateRoles(data.roles)),
+      E.map(({validatedId, validatedAgentName, validatedRoles}) => {
         return {
           id: validatedId,
           agentName: validatedAgentName,
           publicKey: data.publicKey,
           createdAt: data.createdAt,
-          roles: data.roles || []
+          roles: validatedRoles
         }
       })
     )
@@ -104,7 +115,10 @@ export class AgentFactory {
    * @param newRoles The new roles to add
    * @returns Either validation error or updated agent
    */
-  static addPermissions(agent: Agent, newRoles: ReadonlyArray<BoundRole<string>>): Either<AgentValidationError, Agent> {
+  static addPermissions(
+    agent: Agent,
+    newRoles: ReadonlyArray<UnconstrainedBoundRole>
+  ): Either<AgentValidationError, Agent> {
     const updatedAgent: Agent = {
       ...agent,
       roles: [...agent.roles, ...newRoles]
@@ -149,5 +163,21 @@ export class AgentFactory {
     if (!agentName || agentName.trim().length === 0) return left("agent_name_empty")
     if (agentName.length > AGENT_NAME_MAX_LENGTH) return left("agent_name_too_long")
     return right(agentName)
+  }
+
+  /**
+   * Validates role assignments from external data
+   * @param roles Array data that should represent BoundRole array
+   * @returns Either validation error or validated roles array
+   */
+  private static validateRoles(roles: unknown): Either<AgentValidationError, ReadonlyArray<UnconstrainedBoundRole>> {
+    if (roles === null || roles === undefined) return right([])
+    if (!Array.isArray(roles)) return left("agent_role_invalid_structure")
+
+    return pipe(
+      roles,
+      RoleFactory.validateBoundRoles,
+      E.mapLeft(error => ("agent_" + error) as AgentValidationError)
+    )
   }
 }

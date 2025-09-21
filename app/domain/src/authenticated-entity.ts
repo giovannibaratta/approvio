@@ -1,4 +1,4 @@
-import {User, Agent, Versioned, BoundRole} from "@domain"
+import {User, Agent, Versioned, UnconstrainedBoundRole} from "@domain"
 
 export type AuthenticatedEntity = AuthenticatedUser | AuthenticatedAgent
 
@@ -30,7 +30,7 @@ export function getEntityType(entity: AuthenticatedEntity): EntityReference["ent
   return entity.entityType
 }
 
-export function getEntityRoles(entity: AuthenticatedEntity): ReadonlyArray<BoundRole<string>> {
+export function getEntityRoles(entity: AuthenticatedEntity): ReadonlyArray<UnconstrainedBoundRole> {
   switch (entity.entityType) {
     case "user":
       return entity.user.roles

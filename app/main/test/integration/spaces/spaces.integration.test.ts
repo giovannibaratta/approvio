@@ -304,7 +304,9 @@ describe("Spaces API", () => {
           roles: [
             {
               name: "SpaceReader",
+              resourceType: "space",
               permissions: ["read"],
+              scopeType: "space",
               scope: {type: "space", spaceId: createdSpace.id}
             }
           ]
@@ -390,7 +392,9 @@ describe("Spaces API", () => {
           roles: [
             {
               name: "SpaceManager",
+              resourceType: "space",
               permissions: ["read", "manage"],
+              scopeType: "space",
               scope: {type: "space", spaceId: createdSpace.id}
             }
           ]

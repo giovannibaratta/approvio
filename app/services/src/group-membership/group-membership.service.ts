@@ -6,7 +6,8 @@ import {
   UserValidationError,
   createUserMembershipEntity,
   createAgentMembershipEntity,
-  EntityReference
+  EntityReference,
+  AgentValidationError
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError} from "@services"
@@ -63,6 +64,7 @@ export class GroupMembershipService {
     | "membership_invalid_entity_uuid"
     | "membership_inconsistent_dates"
     | AgentKeyDecodeError
+    | AgentValidationError
     | AuthorizationError,
     GetGroupMembershipResult
   > {

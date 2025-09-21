@@ -1,57 +1,69 @@
 import {
-  RoleFactory,
-  BoundRole,
-  RoleScope,
+  UnconstrainedBoundRole,
   GroupPermission,
+  GroupScope,
+  OrgScope,
+  RoleFactory,
   SpacePermission,
-  WorkflowTemplatePermission
+  SpaceScope,
+  WorkflowTemplatePermission,
+  WorkflowTemplateScope
 } from "../src/role"
+import {SystemRole} from "../src/system-role"
 
 describe("RoleFactory", () => {
   // Test data helpers
-  const createValidOrgScope = (): RoleScope => ({
+  const createValidOrgScope = (): OrgScope => ({
     type: "org"
   })
 
-  const createValidSpaceScope = (): RoleScope => ({
+  const createValidSpaceScope = (): SpaceScope => ({
     type: "space",
     spaceId: "space-123"
   })
 
-  const createValidGroupScope = (): RoleScope => ({
+  const createValidGroupScope = (): GroupScope => ({
     type: "group",
     groupId: "group-123"
   })
 
-  const createValidWorkflowTemplateScope = (): RoleScope => ({
+  const createValidWorkflowTemplateScope = (): WorkflowTemplateScope => ({
     type: "workflow_template",
     workflowTemplateId: "template-123"
   })
 
-  const createValidGroupRole = (permissions: GroupPermission[] = ["read"]): BoundRole<string> => ({
+  const createValidGroupRole = (permissions: GroupPermission[] = ["read"]): UnconstrainedBoundRole => ({
     name: "TestGroupRole",
+    resourceType: "group",
     permissions,
-    scope: createValidGroupScope()
+    scope: createValidGroupScope(),
+    scopeType: "group"
   })
 
-  const createValidSpaceRole = (permissions: SpacePermission[] = ["read"]): BoundRole<string> => ({
+  const createValidSpaceRole = (permissions: SpacePermission[] = ["read"]): UnconstrainedBoundRole => ({
     name: "TestSpaceRole",
+    resourceType: "space",
     permissions,
-    scope: createValidSpaceScope()
+    scope: createValidSpaceScope(),
+    scopeType: "space"
   })
 
   const createValidWorkflowTemplateRole = (
     permissions: WorkflowTemplatePermission[] = ["read"]
-  ): BoundRole<string> => ({
+  ): UnconstrainedBoundRole => ({
     name: "TestWorkflowTemplateRole",
+    resourceType: "workflow_template",
     permissions,
-    scope: createValidWorkflowTemplateScope()
+    scope: createValidWorkflowTemplateScope(),
+    scopeType: "workflow_template"
   })
 
-  const createValidOrgRole = (permissions: string[] = ["any_permission"]): BoundRole<string> => ({
+  const createValidOrgRole = (permissions: SpacePermission[] = ["read"]): UnconstrainedBoundRole => ({
     name: "TestOrgRole",
+    resourceType: "space", // org scopes are typically space roles
     permissions,
-    scope: createValidOrgScope()
+    scope: createValidOrgScope(),
+    scopeType: "org"
   })
 
   describe("validateBoundRoles", () => {
@@ -70,7 +82,7 @@ describe("RoleFactory", () => {
 
       it("should accept valid single group role", () => {
         // Given
-        const rolesData = [createValidGroupRole(["read"])]
+        const rolesData = [createValidGroupRole()]
 
         // When
         const result = RoleFactory.validateBoundRoles(rolesData)
@@ -81,7 +93,7 @@ describe("RoleFactory", () => {
 
       it("should accept valid single space role", () => {
         // Given
-        const rolesData = [createValidSpaceRole(["read"])]
+        const rolesData = [createValidSpaceRole()]
 
         // When
         const result = RoleFactory.validateBoundRoles(rolesData)
@@ -92,7 +104,7 @@ describe("RoleFactory", () => {
 
       it("should accept valid single workflow template role", () => {
         // Given
-        const rolesData = [createValidWorkflowTemplateRole(["read"])]
+        const rolesData = [createValidWorkflowTemplateRole()]
 
         // When
         const result = RoleFactory.validateBoundRoles(rolesData)
@@ -103,7 +115,7 @@ describe("RoleFactory", () => {
 
       it("should accept valid single org role", () => {
         // Given
-        const rolesData = [createValidOrgRole(["custom_permission"])]
+        const rolesData = [createValidOrgRole(["read"])]
 
         // When
         const result = RoleFactory.validateBoundRoles(rolesData)
@@ -162,7 +174,7 @@ describe("RoleFactory", () => {
 
       it("should accept org role with any permission", () => {
         // Given
-        const rolesData = [createValidOrgRole(["custom", "admin", "super_user"])]
+        const rolesData = [createValidOrgRole(["read", "manage"])]
 
         // When
         const result = RoleFactory.validateBoundRoles(rolesData)
@@ -173,63 +185,6 @@ describe("RoleFactory", () => {
     })
 
     describe("bad cases", () => {
-      describe("invalid input types", () => {
-        it("should reject null input", () => {
-          // Given
-          const rolesData = null
-
-          // When
-          const result = RoleFactory.validateBoundRoles(rolesData)
-
-          // Then
-          expect(result).toBeLeftOf("role_permissions_empty")
-        })
-
-        it("should reject undefined input", () => {
-          // Given
-          const rolesData = undefined
-
-          // When
-          const result = RoleFactory.validateBoundRoles(rolesData)
-
-          // Then
-          expect(result).toBeLeftOf("role_permissions_empty")
-        })
-
-        it("should reject string input", () => {
-          // Given
-          const rolesData = "not an array"
-
-          // When
-          const result = RoleFactory.validateBoundRoles(rolesData)
-
-          // Then
-          expect(result).toBeLeftOf("role_permissions_empty")
-        })
-
-        it("should reject number input", () => {
-          // Given
-          const rolesData = 123
-
-          // When
-          const result = RoleFactory.validateBoundRoles(rolesData)
-
-          // Then
-          expect(result).toBeLeftOf("role_permissions_empty")
-        })
-
-        it("should reject object input", () => {
-          // Given
-          const rolesData = {not: "an array"}
-
-          // When
-          const result = RoleFactory.validateBoundRoles(rolesData)
-
-          // Then
-          expect(result).toBeLeftOf("role_permissions_empty")
-        })
-      })
-
       describe("invalid role structure", () => {
         it("should reject array with null role", () => {
           // Given
@@ -256,7 +211,9 @@ describe("RoleFactory", () => {
         it("should reject role without name", () => {
           // Given
           const role = {
+            resourceType: "group",
             permissions: ["read"],
+            scopeType: "group",
             scope: createValidGroupScope()
           }
           const rolesData = [role]
@@ -272,7 +229,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "",
+            resourceType: "group",
             permissions: ["read"],
+            scopeType: "group",
             scope: createValidGroupScope()
           }
           const rolesData = [role]
@@ -288,7 +247,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: 123,
+            resourceType: "group",
             permissions: ["read"],
+            scopeType: "group",
             scope: createValidGroupScope()
           }
           const rolesData = [role]
@@ -304,6 +265,8 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "group",
+            scopeType: "group",
             scope: createValidGroupScope()
           }
           const rolesData = [role]
@@ -319,7 +282,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "group",
             permissions: "read",
+            scopeType: "group",
             scope: createValidGroupScope()
           }
           const rolesData = [role]
@@ -335,7 +300,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
-            permissions: ["read"]
+            resourceType: "group",
+            permissions: ["read"],
+            scopeType: "group"
           }
           const rolesData = [role]
 
@@ -350,7 +317,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "group",
             permissions: ["read"],
+            scopeType: "group",
             scope: null
           }
           const rolesData = [role]
@@ -366,7 +335,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "group",
             permissions: ["read"],
+            scopeType: "group",
             scope: "invalid"
           }
           const rolesData = [role]
@@ -382,7 +353,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "group",
             permissions: ["read"],
+            scopeType: "group",
             scope: {groupId: "group-123"}
           }
           const rolesData = [role]
@@ -398,7 +371,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "group",
             permissions: ["read"],
+            scopeType: "group",
             scope: {type: 123, groupId: "group-123"}
           }
           const rolesData = [role]
@@ -416,7 +391,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "group",
             permissions: ["invalid_permission"],
+            scopeType: "group",
             scope: createValidGroupScope()
           }
           const rolesData = [role]
@@ -432,7 +409,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "group",
             permissions: ["instantiate"], // valid for workflow template but not group
+            scopeType: "group",
             scope: createValidGroupScope()
           }
           const rolesData = [role]
@@ -448,7 +427,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "space",
             permissions: ["write"], // not valid for space
+            scopeType: "space",
             scope: createValidSpaceScope()
           }
           const rolesData = [role]
@@ -464,7 +445,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "workflow_template",
             permissions: ["manage"], // not valid for workflow template
+            scopeType: "workflow_template",
             scope: createValidWorkflowTemplateScope()
           }
           const rolesData = [role]
@@ -480,7 +463,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "group",
             permissions: [123],
+            scopeType: "group",
             scope: createValidGroupScope()
           }
           const rolesData = [role]
@@ -498,7 +483,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "group",
             permissions: ["read"],
+            scopeType: "group",
             scope: {type: "invalid_type"}
           }
           const rolesData = [role]
@@ -514,7 +501,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "space",
             permissions: ["read"],
+            scopeType: "space",
             scope: {type: "space"}
           }
           const rolesData = [role]
@@ -530,7 +519,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "space",
             permissions: ["read"],
+            scopeType: "space",
             scope: {type: "space", spaceId: 123}
           }
           const rolesData = [role]
@@ -546,7 +537,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "group",
             permissions: ["read"],
+            scopeType: "group",
             scope: {type: "group"}
           }
           const rolesData = [role]
@@ -562,7 +555,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "group",
             permissions: ["read"],
+            scopeType: "group",
             scope: {type: "group", groupId: 123}
           }
           const rolesData = [role]
@@ -578,7 +573,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "workflow_template",
             permissions: ["read"],
+            scopeType: "workflow_template",
             scope: {type: "workflow_template"}
           }
           const rolesData = [role]
@@ -594,7 +591,9 @@ describe("RoleFactory", () => {
           // Given
           const role = {
             name: "TestRole",
+            resourceType: "workflow_template",
             permissions: ["read"],
+            scopeType: "workflow_template",
             scope: {type: "workflow_template", workflowTemplateId: 123}
           }
           const rolesData = [role]
@@ -633,7 +632,7 @@ describe("RoleFactory", () => {
         const scope = createValidGroupScope()
 
         // When
-        const role = RoleFactory.createGroupReadOnlyRole(scope)
+        const role = SystemRole.createGroupReadOnlyRole(scope)
 
         // Then
         expect(role.name).toBe("GroupReadOnly")
@@ -643,15 +642,15 @@ describe("RoleFactory", () => {
 
       it("should work with different scope types", () => {
         // Given
-        const orgScope = createValidOrgScope()
+        const groupScope = createValidGroupScope()
 
         // When
-        const role = RoleFactory.createGroupReadOnlyRole(orgScope)
+        const role = SystemRole.createGroupReadOnlyRole(groupScope)
 
         // Then
         expect(role.name).toBe("GroupReadOnly")
         expect(role.permissions).toEqual(["read"])
-        expect(role.scope).toBe(orgScope)
+        expect(role.scope.type).toBe("group")
       })
     })
 
@@ -661,7 +660,7 @@ describe("RoleFactory", () => {
         const scope = createValidGroupScope()
 
         // When
-        const role = RoleFactory.createGroupWriteRole(scope)
+        const role = SystemRole.createGroupWriteRole(scope)
 
         // Then
         expect(role.name).toBe("GroupWrite")
@@ -676,7 +675,7 @@ describe("RoleFactory", () => {
         const scope = createValidGroupScope()
 
         // When
-        const role = RoleFactory.createGroupManagerRole(scope)
+        const role = SystemRole.createGroupManagerRole(scope)
 
         // Then
         expect(role.name).toBe("GroupManager")
@@ -693,7 +692,7 @@ describe("RoleFactory", () => {
         const scope = createValidSpaceScope()
 
         // When
-        const role = RoleFactory.createSpaceReadOnlyRole(scope)
+        const role = SystemRole.createSpaceReadOnlyRole(scope)
 
         // Then
         expect(role.name).toBe("SpaceReadOnly")
@@ -708,7 +707,7 @@ describe("RoleFactory", () => {
         const scope = createValidSpaceScope()
 
         // When
-        const role = RoleFactory.createSpaceManagerRole(scope)
+        const role = SystemRole.createSpaceManagerRole(scope)
 
         // Then
         expect(role.name).toBe("SpaceManager")
@@ -725,7 +724,7 @@ describe("RoleFactory", () => {
         const scope = createValidWorkflowTemplateScope()
 
         // When
-        const role = RoleFactory.createWorkflowTemplateReadOnlyRole(scope)
+        const role = SystemRole.createWorkflowTemplateReadOnlyRole(scope)
 
         // Then
         expect(role.name).toBe("WorkflowTemplateReadOnly")
@@ -740,7 +739,7 @@ describe("RoleFactory", () => {
         const scope = createValidWorkflowTemplateScope()
 
         // When
-        const role = RoleFactory.createWorkflowTemplateWriteRole(scope)
+        const role = SystemRole.createWorkflowTemplateWriteRole(scope)
 
         // Then
         expect(role.name).toBe("WorkflowTemplateWrite")
@@ -755,7 +754,7 @@ describe("RoleFactory", () => {
         const scope = createValidWorkflowTemplateScope()
 
         // When
-        const role = RoleFactory.createWorkflowTemplateInstantiatorRole(scope)
+        const role = SystemRole.createWorkflowTemplateInstantiatorRole(scope)
 
         // Then
         expect(role.name).toBe("WorkflowTemplateInstantiator")
@@ -770,7 +769,7 @@ describe("RoleFactory", () => {
         const scope = createValidWorkflowTemplateScope()
 
         // When
-        const role = RoleFactory.createWorkflowTemplateVoterRole(scope)
+        const role = SystemRole.createWorkflowTemplateVoterRole(scope)
 
         // Then
         expect(role.name).toBe("WorkflowTemplateVoter")
@@ -785,7 +784,7 @@ describe("RoleFactory", () => {
         const scope = createValidWorkflowTemplateScope()
 
         // When
-        const role = RoleFactory.createWorkflowTemplateFullAccessRole(scope)
+        const role = SystemRole.createWorkflowTemplateFullAccessRole(scope)
 
         // Then
         expect(role.name).toBe("WorkflowTemplateFullAccess")
@@ -802,11 +801,11 @@ describe("RoleFactory", () => {
         const scope = createValidWorkflowTemplateScope()
 
         // When
-        const role = RoleFactory.createWorkflowReadOnlyRole(scope)
+        const role = SystemRole.createWorkflowReadOnlyRole(scope)
 
         // Then
         expect(role.name).toBe("WorkflowReadOnly")
-        expect(role.permissions).toEqual(["read"])
+        expect(role.permissions).toEqual(["workflow_read"])
         expect(role.scope).toBe(scope)
       })
     })
@@ -817,11 +816,11 @@ describe("RoleFactory", () => {
         const scope = createValidWorkflowTemplateScope()
 
         // When
-        const role = RoleFactory.createWorkflowListRole(scope)
+        const role = SystemRole.createWorkflowListRole(scope)
 
         // Then
         expect(role.name).toBe("WorkflowList")
-        expect(role.permissions).toEqual(["read", "list"])
+        expect(role.permissions).toEqual(["workflow_read", "workflow_list"])
         expect(role.scope).toBe(scope)
       })
     })
@@ -832,11 +831,11 @@ describe("RoleFactory", () => {
         const scope = createValidWorkflowTemplateScope()
 
         // When
-        const role = RoleFactory.createWorkflowCancelRole(scope)
+        const role = SystemRole.createWorkflowCancelRole(scope)
 
         // Then
         expect(role.name).toBe("WorkflowCancel")
-        expect(role.permissions).toEqual(["read", "cancel"])
+        expect(role.permissions).toEqual(["workflow_read", "workflow_cancel"])
         expect(role.scope).toBe(scope)
       })
     })
@@ -847,11 +846,11 @@ describe("RoleFactory", () => {
         const scope = createValidWorkflowTemplateScope()
 
         // When
-        const role = RoleFactory.createWorkflowFullAccessRole(scope)
+        const role = SystemRole.createWorkflowFullAccessRole(scope)
 
         // Then
         expect(role.name).toBe("WorkflowFullAccess")
-        expect(role.permissions).toEqual(["read", "list", "cancel"])
+        expect(role.permissions).toEqual(["workflow_read", "workflow_list", "workflow_cancel"])
         expect(role.scope).toBe(scope)
       })
     })

@@ -1,5 +1,6 @@
 import {
   AddMembershipError,
+  AgentValidationError,
   EntityReference,
   Group,
   GroupManagerValidationError,
@@ -37,6 +38,7 @@ export type MembershipRemoveError =
   | MembershipValidationError
   | RemoveMembershipError
   | AgentKeyDecodeError
+  | AgentValidationError
   | UnknownError
   | ConcurrentModificationError
 
@@ -65,7 +67,7 @@ export interface GroupMembershipRepository {
   getGroupWithMembershipById(
     data: GetGroupWithMembershipRepo
   ): TaskEither<
-    GetGroupRepoError | UserValidationError | MembershipValidationError | AgentKeyDecodeError,
+    GetGroupRepoError | UserValidationError | MembershipValidationError | AgentKeyDecodeError | AgentValidationError,
     GetGroupMembershipResult
   >
   addMembershipsToGroup(request: AddMembershipRepoRequest): TaskEither<MembershipAddError, AddMembershipResult>
@@ -82,7 +84,7 @@ export interface GroupMembershipRepository {
   getAgentMembershipsByAgentId(
     agentId: string
   ): TaskEither<
-    MembershipValidationErrorWithGroupRef | AgentKeyDecodeError | UnknownError,
+    MembershipValidationErrorWithGroupRef | AgentKeyDecodeError | AgentValidationError | UnknownError,
     ReadonlyArray<MembershipWithGroupRef>
   >
 }

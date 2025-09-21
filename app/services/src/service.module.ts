@@ -11,6 +11,7 @@ import {WorkflowTemplateService} from "./workflow-template"
 import {VoteService} from "./vote"
 import {EmailService} from "./email/email.service"
 import {AuthService, PkceService} from "./auth"
+import {RoleService} from "./role"
 import {ConfigModule} from "@external/config.module"
 import {ConfigProvider} from "@external/config"
 import {JwtModule} from "@nestjs/jwt"
@@ -26,7 +27,8 @@ const services = [
   WorkflowTemplateService,
   VoteService,
   EmailService,
-  AuthService
+  AuthService,
+  RoleService
 ]
 
 const internalServices = [PkceService]

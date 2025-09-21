@@ -1,6 +1,5 @@
 import {
   Agent,
-  BoundRole,
   Group,
   GroupFactory,
   GroupValidationError,
@@ -23,7 +22,9 @@ import {
   WorkflowTemplateValidationError,
   DecoratedWorkflow,
   WorkflowDecoratorSelector,
-  OrgRole
+  OrgRole,
+  AgentFactory,
+  AgentValidationError
 } from "@domain"
 import {
   Agent as PrismaAgent,
@@ -265,7 +266,7 @@ export function mapToDomainVersionedSpace(dbObject: PrismaSpace): Either<SpaceVa
   )
 }
 
-export function mapAgentToDomain(dbObject: PrismaAgent): Either<AgentKeyDecodeError, Agent> {
+export function mapAgentToDomain(dbObject: PrismaAgent): Either<AgentKeyDecodeError | AgentValidationError, Agent> {
   const decodePublicKey = E.tryCatch(
     () => Buffer.from(dbObject.base64PublicKey, "base64").toString("utf8"),
     () => "agent_key_decode_error" as const
@@ -274,14 +275,15 @@ export function mapAgentToDomain(dbObject: PrismaAgent): Either<AgentKeyDecodeEr
   return pipe(
     decodePublicKey,
     E.map(decodedPublicKey => {
-      const agent: Agent = {
+      const agent = {
         id: dbObject.id,
         agentName: dbObject.agentName,
         publicKey: decodedPublicKey,
         createdAt: dbObject.createdAt,
-        roles: Array.isArray(dbObject.roles) ? (dbObject.roles as unknown as ReadonlyArray<BoundRole<string>>) : [] // Parse roles from JSON field
+        roles: dbObject.roles
       }
       return agent
-    })
+    }),
+    E.chainW(agentToValidate => AgentFactory.validate(agentToValidate))
   )
 }

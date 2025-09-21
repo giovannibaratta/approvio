@@ -3,7 +3,7 @@ import * as E from "fp-ts/Either"
 import {Either, isLeft, left, right} from "fp-ts/lib/Either"
 import {ApprovalRule, ApprovalRuleFactory, ApprovalRuleValidationError} from "./approval-rules"
 import {WorkflowAction, WorkflowActionValidationError, validateWorkflowActions} from "./workflow-actions"
-import {MembershipWithGroupRef, BoundRole} from "@domain"
+import {MembershipWithGroupRef, UnconstrainedBoundRole} from "@domain"
 import {PrefixUnion, getStringAsEnum} from "@utils"
 
 export const WORKFLOW_TEMPLATE_NAME_MAX_LENGTH = 512
@@ -61,7 +61,7 @@ export type WorkflowTemplateCantVoteReason =
 interface WorkflowTemplateLogic {
   canVote(
     memberships: ReadonlyArray<MembershipWithGroupRef>,
-    entityRoles: ReadonlyArray<BoundRole<string>>
+    entityRoles: ReadonlyArray<UnconstrainedBoundRole>
   ): Either<WorkflowTemplateCantVoteReason, true>
 }
 
@@ -217,8 +217,10 @@ export class WorkflowTemplateFactory {
 
     return right({
       ...workflowTemplateData,
-      canVote: (memberships: ReadonlyArray<MembershipWithGroupRef>, entityRoles: ReadonlyArray<BoundRole<string>>) =>
-        canVote(workflowTemplateData, memberships, entityRoles)
+      canVote: (
+        memberships: ReadonlyArray<MembershipWithGroupRef>,
+        entityRoles: ReadonlyArray<UnconstrainedBoundRole>
+      ) => canVote(workflowTemplateData, memberships, entityRoles)
     })
   }
 }
@@ -279,7 +281,7 @@ function validateWorkflowTemplateVersion(
 function canVote(
   workflowTemplate: WorkflowTemplateData,
   memberships: ReadonlyArray<MembershipWithGroupRef>,
-  entityRoles: ReadonlyArray<BoundRole<string>>
+  entityRoles: ReadonlyArray<UnconstrainedBoundRole>
 ): Either<WorkflowTemplateCantVoteReason, true> {
   if (workflowTemplate.status !== WorkflowTemplateStatus.ACTIVE && !workflowTemplate.allowVotingOnDeprecatedTemplate) {
     return left("workflow_template_not_active")
@@ -301,7 +303,7 @@ function canVote(
 
 function hasVotePermissionForWorkflowTemplate(
   workflowTemplateId: string,
-  entityRoles: ReadonlyArray<BoundRole<string>>
+  entityRoles: ReadonlyArray<UnconstrainedBoundRole>
 ): boolean {
   return entityRoles.some(
     role =>

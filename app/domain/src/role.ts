@@ -5,8 +5,6 @@ import {pipe} from "fp-ts/function"
 export const ROLE_NAME_MAX_LENGTH = 100
 export const PERMISSION_NAME_MAX_LENGTH = 100
 
-export type RoleScope = OrgScope | SpaceScope | GroupScope | WorkflowTemplateScope
-
 export interface OrgScope {
   readonly type: "org"
 }
@@ -26,32 +24,67 @@ export interface WorkflowTemplateScope {
   readonly workflowTemplateId: string
 }
 
+export type RoleScope = OrgScope | SpaceScope | GroupScope | WorkflowTemplateScope
+export type ResourceType = "space" | "group" | "workflow_template"
+export type ScopeType = RoleScope["type"]
+
+type ResourceScopePermissionBinding = {
+  group: {
+    scopeType: "group"
+    permission: GroupPermission
+  }
+  space: {
+    scopeType: "space" | "org"
+    permission: SpacePermission
+  }
+  workflow_template: {
+    scopeType: "workflow_template" | "space" | "org"
+    permission: WorkflowTemplatePermission
+  }
+}
+
+/**
+ * A role template defines a predefined role without being bound to specific resources.
+ * It represents the hardcoded roles available in the system.
+ */
+export interface RoleTemplate<RType extends ResourceType = ResourceType> {
+  readonly name: string
+  readonly resourceType: RType
+  readonly permissions: ReadonlyArray<ResourceScopePermissionBinding[RType]["permission"]>
+  readonly scopeType: ResourceScopePermissionBinding[RType]["scopeType"]
+}
+
 /**
  * A bound role is a role definition that is applied to a scope (that defines to which resources
- * the permissions applies)
+ * the permissions applies). It extends RoleTemplate with the full scope information.
  */
-export interface BoundRole<AllowedPermission extends string> {
-  readonly name: string
-  readonly permissions: ReadonlyArray<AllowedPermission>
-  readonly scope: RoleScope
+export interface BoundRole<RType extends ResourceType = ResourceType> extends RoleTemplate<RType> {
+  readonly scope: RoleScope & {type: ResourceScopePermissionBinding[RType]["scopeType"]}
 }
 
 export type GroupPermission = "read" | "write" | "manage"
 export type SpacePermission = "read" | "manage"
-export type WorkflowTemplatePermission = "read" | "write" | "instantiate" | "vote"
-export type WorkflowPermission = "read" | "list" | "cancel"
+export type WorkflowTemplatePermission =
+  | "read"
+  | "write"
+  | "instantiate"
+  | "vote"
+  | "workflow_read"
+  | "workflow_list"
+  | "workflow_cancel"
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-interface GroupRole extends BoundRole<GroupPermission> {}
+// Template type aliases for unbound roles
+export type GroupRoleTemplate = RoleTemplate<"group">
+export type SpaceRoleTemplate = RoleTemplate<"space">
+export type WorkflowTemplateRoleTemplate = RoleTemplate<"workflow_template">
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-interface SpaceRole extends BoundRole<SpacePermission> {}
+// Bound role type aliases
+export type GroupRole = BoundRole<"group">
+export type SpaceRole = BoundRole<"space">
+export type WorkflowTemplateRole = BoundRole<"workflow_template">
 
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-interface WorkflowTemplateRole extends BoundRole<WorkflowTemplatePermission> {}
-
-// eslint-disable-next-line @typescript-eslint/no-empty-object-type
-interface WorkflowRole extends BoundRole<WorkflowPermission> {}
+// Unconstrained bound role for cases where resource type is unknown
+export type UnconstrainedBoundRole = BoundRole<ResourceType>
 
 type NameValidationError = "name_empty" | "name_too_long" | "name_invalid_characters"
 type PermissionValidationError = "permissions_empty" | "permission_invalid"
@@ -75,19 +108,17 @@ export class RoleFactory {
    * @param rolesData Array data that should represent BoundRole array
    * @returns Either validation error or validated roles array
    */
-  static validateBoundRoles(rolesData: unknown): Either<RoleValidationError, ReadonlyArray<BoundRole<string>>> {
-    if (!Array.isArray(rolesData)) return left("role_permissions_empty")
-
-    return traverseArray(this.validateRole)(rolesData)
+  static validateBoundRoles(rolesData: unknown[]): Either<RoleValidationError, ReadonlyArray<BoundRole>> {
+    return traverseArray(RoleFactory.validateRole)(rolesData)
   }
 
-  private static validateRole(role: unknown): Either<RoleValidationError, BoundRole<string>> {
+  private static validateRole(role: unknown): Either<RoleValidationError, BoundRole> {
     const value = pipe(
       role,
       RoleFactory.validateRoleStructure,
       chainFirstW(boundRole => RoleFactory.validateRoleName(boundRole.name)),
       chainFirstW(boundRole =>
-        RoleFactory.validatePermissionsForScope([...boundRole.permissions], boundRole.scope.type)
+        RoleFactory.validatePermissionsForResourceType([...boundRole.permissions], boundRole.resourceType)
       )
     )
 
@@ -103,9 +134,11 @@ export class RoleFactory {
 
   private static validateRoleStructure(
     role: unknown
-  ): Either<"role_invalid_structure" | "role_invalid_scope", BoundRole<string>> {
+  ): Either<"role_invalid_structure" | "role_invalid_scope", BoundRole> {
     if (!role || typeof role !== "object") return left("role_invalid_structure")
     if (!("name" in role) || typeof role.name !== "string") return left("role_invalid_structure")
+    if (!("resourceType" in role) || typeof role.resourceType !== "string") return left("role_invalid_structure")
+    if (!("scopeType" in role)) return left("role_invalid_structure")
     if (
       !("permissions" in role) ||
       !Array.isArray(role.permissions) ||
@@ -116,7 +149,7 @@ export class RoleFactory {
     if (!("scope" in role)) return left("role_invalid_structure")
     if (!RoleFactory.isValidRoleScope(role.scope)) return left("role_invalid_scope")
 
-    return right(role as BoundRole<string>)
+    return right(role as BoundRole)
   }
 
   private static isValidRoleScope(scope: unknown): scope is RoleScope {
@@ -159,18 +192,26 @@ export class RoleFactory {
     )
   }
 
-  private static validatePermissionsForScope(
+  private static validatePermissionsForResourceType(
     permissions: unknown[],
-    scopeType: string
+    resourceType: string
   ): Either<RoleValidationError, unknown[]> {
     const validGroupPermissions: GroupPermission[] = ["read", "write", "manage"]
     const validSpacePermissions: SpacePermission[] = ["read", "manage"]
-    const validWorkflowTemplatePermissions: WorkflowTemplatePermission[] = ["read", "write", "instantiate", "vote"]
+    const validWorkflowTemplatePermissions: WorkflowTemplatePermission[] = [
+      "read",
+      "write",
+      "instantiate",
+      "vote",
+      "workflow_read",
+      "workflow_list",
+      "workflow_cancel"
+    ]
 
     for (const permission of permissions) {
       if (typeof permission !== "string") return left("role_permission_invalid")
 
-      switch (scopeType) {
+      switch (resourceType) {
         case "group":
           if (!validGroupPermissions.includes(permission as GroupPermission)) return left("role_permission_invalid")
           break
@@ -181,130 +222,11 @@ export class RoleFactory {
           if (!validWorkflowTemplatePermissions.includes(permission as WorkflowTemplatePermission))
             return left("role_permission_invalid")
           break
-        case "org":
-          // Org scope can have any permission
-          break
         default:
           return left("role_invalid_scope")
       }
     }
 
     return right(permissions)
-  }
-
-  // Group roles
-  static createGroupReadOnlyRole(scope: RoleScope): GroupRole {
-    return {
-      name: "GroupReadOnly",
-      permissions: ["read"],
-      scope
-    }
-  }
-
-  static createGroupWriteRole(scope: RoleScope): GroupRole {
-    return {
-      name: "GroupWrite",
-      permissions: ["read", "write"],
-      scope
-    }
-  }
-
-  static createGroupManagerRole(scope: RoleScope): GroupRole {
-    return {
-      name: "GroupManager",
-      permissions: ["read", "write", "manage"],
-      scope
-    }
-  }
-
-  // Space roles
-  static createSpaceReadOnlyRole(scope: RoleScope): SpaceRole {
-    return {
-      name: "SpaceReadOnly",
-      permissions: ["read"],
-      scope
-    }
-  }
-
-  static createSpaceManagerRole(scope: RoleScope): SpaceRole {
-    return {
-      name: "SpaceManager",
-      permissions: ["read", "manage"],
-      scope
-    }
-  }
-
-  // Workflow template roles
-  static createWorkflowTemplateReadOnlyRole(scope: RoleScope): WorkflowTemplateRole {
-    return {
-      name: "WorkflowTemplateReadOnly",
-      permissions: ["read"],
-      scope
-    }
-  }
-
-  static createWorkflowTemplateWriteRole(scope: RoleScope): WorkflowTemplateRole {
-    return {
-      name: "WorkflowTemplateWrite",
-      permissions: ["read", "write"],
-      scope
-    }
-  }
-
-  static createWorkflowTemplateInstantiatorRole(scope: RoleScope): WorkflowTemplateRole {
-    return {
-      name: "WorkflowTemplateInstantiator",
-      permissions: ["read", "instantiate"],
-      scope
-    }
-  }
-
-  static createWorkflowTemplateVoterRole(scope: RoleScope): WorkflowTemplateRole {
-    return {
-      name: "WorkflowTemplateVoter",
-      permissions: ["read", "vote"],
-      scope
-    }
-  }
-
-  static createWorkflowTemplateFullAccessRole(scope: RoleScope): WorkflowTemplateRole {
-    return {
-      name: "WorkflowTemplateFullAccess",
-      permissions: ["read", "write", "instantiate", "vote"],
-      scope
-    }
-  }
-
-  // Workflow roles
-  static createWorkflowReadOnlyRole(scope: RoleScope): WorkflowRole {
-    return {
-      name: "WorkflowReadOnly",
-      permissions: ["read"],
-      scope
-    }
-  }
-
-  static createWorkflowListRole(scope: RoleScope): WorkflowRole {
-    return {
-      name: "WorkflowList",
-      permissions: ["read", "list"],
-      scope
-    }
-  }
-
-  static createWorkflowCancelRole(scope: RoleScope): WorkflowRole {
-    return {
-      name: "WorkflowCancel",
-      permissions: ["read", "cancel"],
-      scope
-    }
-  }
-
-  static createWorkflowFullAccessRole(scope: RoleScope): WorkflowRole {
-    return {
-      name: "WorkflowFullAccess",
-      permissions: ["read", "list", "cancel"],
-      scope
-    }
   }
 }
