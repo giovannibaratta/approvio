@@ -1,6 +1,6 @@
-import {User, UserFactory} from "@domain"
+import {OrgRole, User, UserFactory} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
-import {AuthorizationError} from "@services/error"
+import {AuthorizationError, UnknownError} from "@services/error"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
@@ -68,6 +68,48 @@ export class UserService {
 
     return this.userRepo.listUsers({search, page, limit})
   }
+
+  /**
+   * Auto-registers a new user from OIDC provider claims with automatic role assignment.
+   * Implements the "first user becomes admin" pattern for initial system setup.
+   *
+   * @param request - User registration data containing email and display name from OIDC provider
+   * @returns TaskEither with AutoRegisterError on failure or User domain object on success
+   *
+   * Business Rules:
+   * 1. First registered user automatically becomes organization admin
+   * 2. Subsequent users are registered as regular users
+   *
+   * Flow:
+   * 1. Check if any organization admins exist in the system
+   * 2. Create user with admin role if no admins exist (first user scenario)
+   * 3. Create regular user if admins already exist
+   * 4. Persist user with appropriate privileges based on role
+   */
+  autoRegisterOidcUser(request: AutoRegisterOidcUserRequest): TaskEither<AutoRegisterError, User> {
+    const persistUser = (user: User) => {
+      if (user.orgRole === OrgRole.ADMIN) return this.userRepo.createUserWithOrgAdmin(user)
+      return this.userRepo.createUser(user)
+    }
+
+    const createUserFromOidcClaims = (isFirstUser: boolean) => {
+      return TE.fromEither(
+        UserFactory.newUserFromOidc(
+          {
+            email: request.email,
+            displayName: request.displayName
+          },
+          isFirstUser
+        )
+      )
+    }
+
+    return pipe(
+      this.userRepo.hasAnyOrganizationAdmins(),
+      TE.chainW(hasAdmins => createUserFromOidcClaims(!hasAdmins)),
+      TE.chainW(user => persistUser(user))
+    )
+  }
 }
 
 export interface CreateUserRequest extends RequestorAwareRequest {
@@ -79,3 +121,10 @@ export interface ListUsersRequest {
   readonly page?: number
   readonly limit?: number
 }
+
+export interface AutoRegisterOidcUserRequest {
+  readonly email: string
+  readonly displayName: string
+}
+
+export type AutoRegisterError = UserCreateError | UnknownError

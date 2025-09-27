@@ -24,9 +24,11 @@ export const USER_REPOSITORY_TOKEN = "USER_REPOSITORY_TOKEN"
 
 export interface UserRepository {
   createUser(user: User): TaskEither<UserCreateError, User>
+  createUserWithOrgAdmin(user: User): TaskEither<UserCreateError, User>
   getUserById(userId: string): TaskEither<UserGetError, Versioned<User>>
   getUserByEmail(email: string): TaskEither<UserGetError, Versioned<User>>
   listUsers(params: ListUsersRepoRequest): TaskEither<UserListError, PaginatedUsersList>
+  hasAnyOrganizationAdmins(): TaskEither<UnknownError, boolean>
 }
 
 export interface ListUsersRepoRequest {

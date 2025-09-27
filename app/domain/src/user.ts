@@ -121,6 +121,36 @@ export class UserFactory {
   }
 
   /**
+   * Creates a new User from OIDC claims with automatic org role assignment.
+   * This method is used for auto-registration of OIDC-authenticated users.
+   * @param oidcClaims Basic user information from OIDC provider
+   * @param isFirstUser Whether this is the first user in the system (gets admin role)
+   * @returns Either a validation error or the newly created User object.
+   */
+  static newUserFromOidc(
+    oidcClaims: {
+      email: string
+      displayName: string
+    },
+    isFirstUser: boolean
+  ): Either<UserValidationError, User> {
+    const uuid = randomUUID()
+    const now = new Date()
+    const orgRole = isFirstUser ? OrgRole.ADMIN : OrgRole.MEMBER
+
+    const user: User = {
+      id: uuid,
+      email: oidcClaims.email,
+      displayName: oidcClaims.displayName,
+      createdAt: now,
+      orgRole,
+      roles: []
+    }
+
+    return UserFactory.validate(user)
+  }
+
+  /**
    * Performs the core validation logic for a User object.
    * @param data The User object data.
    * @returns Either a validation error or the validated User object.

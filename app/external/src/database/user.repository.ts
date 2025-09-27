@@ -20,6 +20,7 @@ import {mapToDomainUserSummary, mapToDomainVersionedUser, mapUserToDomain} from 
 import {areAllRights, chainNullableToLeft} from "./utils"
 import {isLeft} from "fp-ts/lib/Either"
 import * as E from "fp-ts/lib/Either"
+import {randomUUID} from "crypto"
 
 interface Identifier {
   identifier: string
@@ -37,6 +38,10 @@ export class UserDbRepository implements UserRepository {
 
   createUser(user: User): TaskEither<UserCreateError, User> {
     return pipe(user, TE.right, TE.chainW(this.persistObjectTask()), TE.chainEitherKW(mapUserToDomain))
+  }
+
+  createUserWithOrgAdmin(user: User): TaskEither<UserCreateError, User> {
+    return pipe(user, TE.right, TE.chainW(this.persistUserWithOrgAdminTask()), TE.chainEitherKW(mapUserToDomain))
   }
 
   getUserById(userId: string): TaskEither<UserGetError, Versioned<User>> {
@@ -75,6 +80,19 @@ export class UserDbRepository implements UserRepository {
     )
   }
 
+  hasAnyOrganizationAdmins(): TaskEither<"unknown_error", boolean> {
+    return TE.tryCatchK(
+      async () => {
+        const count = await this.dbClient.organizationAdmin.count()
+        return count > 0
+      },
+      error => {
+        Logger.error("Error while checking for organization admins", error)
+        return "unknown_error" as const
+      }
+    )()
+  }
+
   private getUser(identifier: Identifier): TaskEither<UserGetError, Versioned<User>> {
     return pipe(
       identifier,
@@ -85,26 +103,58 @@ export class UserDbRepository implements UserRepository {
     )
   }
 
+  private createUserInDb(dbClient: Prisma.TransactionClient, user: User): Promise<PrismaUserWithOrgAdmin> {
+    return dbClient.user.create({
+      data: {
+        id: user.id,
+        displayName: user.displayName,
+        email: user.email,
+        createdAt: user.createdAt,
+        occ: POSTGRES_BIGINT_LOWER_BOUND
+      },
+      include: {
+        organizationAdmins: true
+      }
+    })
+  }
+
   private persistObjectTask(): (user: User) => TaskEither<UserCreateError, PrismaUserWithOrgAdmin> {
     return user =>
       TE.tryCatchK(
+        () => this.createUserInDb(this.dbClient, user),
+        error => {
+          if (isPrismaUniqueConstraintError(error, ["email"])) return "user_already_exists"
+
+          Logger.error("Error while creating user. Unknown error", error)
+          return "unknown_error"
+        }
+      )()
+  }
+
+  private persistUserWithOrgAdminTask(): (user: User) => TaskEither<UserCreateError, PrismaUserWithOrgAdmin> {
+    return user =>
+      TE.tryCatchK(
         () =>
-          this.dbClient.user.create({
-            data: {
-              id: user.id,
-              displayName: user.displayName,
-              email: user.email,
-              createdAt: user.createdAt,
-              occ: POSTGRES_BIGINT_LOWER_BOUND
-            },
-            include: {
-              organizationAdmins: true
+          this.dbClient.$transaction(async tx => {
+            const createdUser = await this.createUserInDb(tx, user)
+
+            const orgAdmin = await tx.organizationAdmin.create({
+              data: {
+                id: randomUUID(),
+                email: user.email,
+                createdAt: new Date()
+              }
+            })
+
+            return {
+              ...createdUser,
+              organizationAdmins: orgAdmin
             }
           }),
         error => {
           if (isPrismaUniqueConstraintError(error, ["email"])) return "user_already_exists"
 
-          Logger.error("Error while creating user. Unknown error", error)
+          Logger.error("Error while creating user with organization admin. Unknown error", error)
           return "unknown_error"
         }
       )()

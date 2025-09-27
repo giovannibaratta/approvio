@@ -1,6 +1,7 @@
 import {Injectable, Inject, Logger} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
-import {UserService} from "../user/user.service"
+import {UserService, AutoRegisterOidcUserRequest, AutoRegisterError} from "../user/user.service"
+import {OrganizationAdminCreateError} from "../organization-admin/interfaces"
 import {PkceService} from "./pkce.service"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
@@ -9,7 +10,6 @@ import {UserGetError} from "../user/interfaces"
 import {PrefixUnion} from "@utils"
 import {ConfigProvider} from "@external/config/config-provider"
 import {Agent, AgentChallenge, AgentChallengeFactory, DecoratedAgentChallenge, User} from "@domain"
-import {Versioned} from "@domain"
 import {
   OIDC_PROVIDER_TOKEN,
   OidcProvider,
@@ -43,6 +43,8 @@ export type AuthError =
       | "missing_email_from_oidc_provider"
     >
   | UserGetError
+  | AutoRegisterError
+  | OrganizationAdminCreateError
   | OidcError
   | PkceError
 
@@ -68,37 +70,59 @@ export class AuthService {
     this.issuer = issuer
   }
 
-  generateJwtToken(oidcUser: OidcUser): TaskEither<AuthError, string> {
-    const generateTokenFromUser = (versionedUser: Versioned<User>) => {
-      return TE.tryCatch(
-        async () => {
-          const tokenPayload = TokenPayloadBuilder.fromUser(versionedUser, {
-            issuer: this.issuer,
-            audience: [this.audience],
-            expiresInSeconds: 60 * 60 // 1 hour
-          })
+  generateJwtToken(user: User): TaskEither<AuthError, string> {
+    return TE.tryCatch(
+      async () => {
+        const tokenPayload = TokenPayloadBuilder.fromUser(user, {
+          issuer: this.issuer,
+          audience: [this.audience],
+          expiresInSeconds: 60 * 60 // 1 hour
+        })
 
-          const token = this.jwtService.sign(tokenPayload)
-          Logger.log(`JWT token generated for user: ${versionedUser.id}`)
-          return token
-        },
-        error => {
-          Logger.error("Error generating JWT token", error)
-          return "auth_token_generation_failed" as const
-        }
-      )
+        const token = this.jwtService.sign(tokenPayload)
+        Logger.log(`JWT token generated for user: ${user.id}`)
+        return token
+      },
+      error => {
+        Logger.error("Error generating JWT token", error)
+        return "auth_token_generation_failed" as const
+      }
+    )
+  }
+
+  /**
+   * Authenticates an existing user or auto-registers a new user from OIDC provider data.
+   * This function implements the Just-In-Time (JIT) user provisioning pattern for OIDC authentication.
+   *
+   * @param oidcUser - User information received from the OIDC provider including subject ID, email, and display name
+   * @returns TaskEither with AuthError on failure or User domain object on success
+   *
+   * Flow:
+   * 1. Attempts to find existing user by email
+   * 2. If user exists, returns the user for authentication
+   * 3. If user not found, automatically registers a new user with OIDC data
+   */
+  authenticateOrRegisterOidcUser(oidcUser: OidcUser): TaskEither<AuthError, User> {
+    const autoRegisterUser = (oidcUserData: OidcUser): TaskEither<AuthError, User> => {
+      const displayName = oidcUserData.displayName || oidcUserData.email
+      const autoRegisterRequest: AutoRegisterOidcUserRequest = {
+        email: oidcUserData.email,
+        displayName
+      }
+
+      return this.userService.autoRegisterOidcUser(autoRegisterRequest)
     }
 
     return pipe(
       this.userService.getUserByIdentifier(oidcUser.email),
-      TE.mapLeft((error: UserGetError): AuthError => {
+      TE.orElse((error: UserGetError) => {
         if (error === "user_not_found") {
-          Logger.warn(`User with email ${oidcUser.email} not found in system`)
-          return "auth_user_not_found_in_system" as const
+          Logger.log(`User with email ${oidcUser.email} not found, attempting auto-registration`)
+          return autoRegisterUser(oidcUser)
         }
-        return error
-      }),
-      TE.chainW(generateTokenFromUser)
+        Logger.error(`Error retrieving user: ${error}`)
+        return TE.left(error)
+      })
     )
   }
 
@@ -143,7 +167,8 @@ export class AuthService {
       this.exchangeCodeForTokens(code, pkceData),
       TE.chainW(tokenResponse => this.getUserInfoFromProvider(tokenResponse.access_token)),
       TE.chainW(mapUserInfoToOidcUser),
-      TE.chainW(oidcUser => this.generateJwtToken(oidcUser))
+      TE.chainW(oidcUser => this.authenticateOrRegisterOidcUser(oidcUser)),
+      TE.chainW(user => this.generateJwtToken(user))
     )
   }
 
