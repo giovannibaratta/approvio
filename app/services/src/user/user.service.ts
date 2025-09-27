@@ -63,7 +63,10 @@ export class UserService {
     if (limit < MIN_LIMIT || limit > MAX_LIMIT) return TE.left("invalid_limit_number")
     if (search !== undefined) {
       if (search.length > MAX_SEARCH_LENGTH) return TE.left("search_too_long")
-      if (!search.match(/^[a-zA-Z0-9@.%_+.-]+$/)) return TE.left("search_term_invalid_characters")
+      // Reject whitespace-only searches
+      if (search.trim() === "") return TE.left("search_term_invalid_characters")
+      // Allow alphanumeric, spaces, email chars, and basic punctuation
+      if (!search.match(/^[a-zA-Z0-9@.%_+.\s-]+$/)) return TE.left("search_term_invalid_characters")
     }
 
     return this.userRepo.listUsers({search, page, limit})

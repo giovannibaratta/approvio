@@ -319,6 +319,21 @@ describe("Users API", () => {
         expect(responseUserEmails).toBeArrayIncludingOnly([user2.email, user3.email])
       })
 
+      it("should return users matching fuzzy display name search with spaces (as OrgAdmin)", async () => {
+        // Given
+        const user1 = await createMockUserInDb(prisma, {displayName: "John Smith", email: "john.smith@example.com"})
+        await createMockUserInDb(prisma, {displayName: "Jane Doe", email: "jane.doe@example.com"})
+        await createMockUserInDb(prisma, {displayName: "Bob Johnson", email: "bob.j@example.com"})
+
+        // When
+        const response = await get(app, endpoint).withToken(orgAdminUser.token).query({search: "John S"}).build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        expect(response.body.users).toBeArrayOfSize(1)
+        expect(response.body.users.map((u: UserSummary) => u.id)).toBeArrayIncludingOnly([user1.id])
+      })
+
       it("should return a list of users (as OrgMember)", async () => {
         // When
         const response = await get(app, endpoint).withToken(orgMemberUser.token).build()
@@ -336,6 +351,45 @@ describe("Users API", () => {
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
+      })
+
+      it("should return 400 BAD_REQUEST (SEARCH_TOO_LONG) for search queries exceeding 256 characters", async () => {
+        // Given
+        const longSearch = "a".repeat(101) // 257 characters
+
+        // When
+        const response = await get(app, endpoint).withToken(orgAdminUser.token).query({search: longSearch}).build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("SEARCH_TOO_LONG")
+      })
+
+      it("should return 400 BAD_REQUEST (SEARCH_TERM_INVALID_CHARACTERS) for search queries with invalid characters", async () => {
+        // Given
+        const invalidSearch = "user<script>alert('xss')</script>"
+
+        // When
+        const response = await get(app, endpoint).withToken(orgAdminUser.token).query({search: invalidSearch}).build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("SEARCH_TERM_INVALID_CHARACTERS")
+      })
+
+      it("should return 400 BAD_REQUEST (SEARCH_TERM_INVALID_CHARACTERS) for whitespace-only search queries", async () => {
+        // Given
+        const whitespaceSearch = "   "
+
+        // When
+        const response = await get(app, endpoint)
+          .withToken(orgAdminUser.token)
+          .query({search: whitespaceSearch})
+          .build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("SEARCH_TERM_INVALID_CHARACTERS")
       })
     })
   })
