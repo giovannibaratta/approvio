@@ -104,6 +104,10 @@ export function generateErrorResponseForAgentRoleAssignment(
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request format`))
     case "agent_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Agent not found`))
+    case "workflow_template_not_found":
+      return new BadRequestException(
+        generateErrorPayload(errorCode, `${context}: Workflow template not found for role assignment`)
+      )
     case "requestor_not_authorized":
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Not authorized to assign roles`))
     case "role_entity_type_role_restriction":

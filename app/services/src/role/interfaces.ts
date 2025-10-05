@@ -8,6 +8,7 @@ export type ListRoleTemplatesResult = ReadonlyArray<RoleTemplate>
 
 export type UserRoleAssignmentError =
   | "user_not_found"
+  | "workflow_template_not_found"
   | RoleValidationError
   | UserValidationError
   | UserUpdateError
@@ -16,6 +17,7 @@ export type UserRoleAssignmentError =
 
 export type AgentRoleAssignmentError =
   | "agent_not_found"
+  | "workflow_template_not_found"
   | RoleValidationError
   | AgentValidationError
   | AgentUpdateError

@@ -5,6 +5,7 @@ import {
   AgentFactory,
   BoundRole,
   RoleScope,
+  WorkflowTemplateScope,
   AuthenticatedEntity,
   RoleAuthorizationChecker,
   User,
@@ -24,6 +25,7 @@ import {
 import {validateUserEntity} from "@services/shared/types"
 import {AGENT_REPOSITORY_TOKEN, AgentRepository} from "@services/agent"
 import {USER_REPOSITORY_TOKEN, UserRepository} from "@services/user"
+import {WORKFLOW_TEMPLATE_REPOSITORY_TOKEN, WorkflowTemplateRepository} from "@services/workflow-template"
 
 @Injectable()
 export class RoleService {
@@ -31,7 +33,9 @@ export class RoleService {
     @Inject(USER_REPOSITORY_TOKEN)
     private readonly userRoleRepo: UserRepository,
     @Inject(AGENT_REPOSITORY_TOKEN)
-    private readonly agentRoleRepo: AgentRepository
+    private readonly agentRoleRepo: AgentRepository,
+    @Inject(WORKFLOW_TEMPLATE_REPOSITORY_TOKEN)
+    private readonly workflowTemplateRepo: WorkflowTemplateRepository
   ) {}
 
   /**
@@ -94,6 +98,26 @@ export class RoleService {
   }
 
   /**
+   * Type guard to narrow BoundRole to workflow template scoped roles
+   */
+  private isWorkflowTemplateRole(role: BoundRole): role is BoundRole & {scope: WorkflowTemplateScope} {
+    return role.scope.type === "workflow_template"
+  }
+
+  /**
+   * Fetches workflow template to space ID mappings for roles that require it
+   */
+  private fetchWorkflowTemplateSpaceMappings(
+    boundRoles: ReadonlyArray<BoundRole>
+  ): TaskEither<"workflow_template_not_found", ReadonlyMap<string, string>> {
+    const workflowTemplateIds = boundRoles
+      .filter(this.isWorkflowTemplateRole)
+      .map(role => role.scope.workflowTemplateId)
+
+    return this.workflowTemplateRepo.getWorkflowTemplatesParents(workflowTemplateIds)
+  }
+
+  /**
    * Assigns roles to a user (additive operation)
    */
   assignRolesToUser(request: AssignRolesToUserRequest): TaskEither<UserRoleAssignmentError, void> {
@@ -103,12 +127,16 @@ export class RoleService {
         E.chainW(boundRoles => RoleFactory.validateRolesForEntityType(boundRoles, "user"))
       )
 
-    const validateRequestorAsPermissions = (req: AssignRolesToUserRequest, boundRoles: ReadonlyArray<BoundRole>) => {
+    const validateRequestorAsPermissions = (
+      req: AssignRolesToUserRequest,
+      boundRoles: ReadonlyArray<BoundRole>,
+      workflowTemplatesParents: ReadonlyMap<string, string>
+    ) => {
       return pipe(
         validateUserEntity(req.requestor),
         E.chainW(user =>
           E.fromPredicate(
-            (u: User) => RoleAuthorizationChecker.canAssignRoles(u, boundRoles),
+            (u: User) => RoleAuthorizationChecker.canAssignRoles(u, boundRoles, workflowTemplatesParents),
             () => "requestor_not_authorized" as const
           )(user)
         )
@@ -119,8 +147,11 @@ export class RoleService {
       TE.Do,
       TE.bindW("request", () => TE.right(request)),
       TE.bindW("boundRolesToAssign", ({request}) => TE.fromEither(validateAndCreateBoundRoles(request.roles))),
-      TE.chainFirstEitherKW(({request, boundRolesToAssign}) =>
-        validateRequestorAsPermissions(request, boundRolesToAssign)
+      TE.bindW("workflowTemplatesParents", ({boundRolesToAssign}) =>
+        this.fetchWorkflowTemplateSpaceMappings(boundRolesToAssign)
+      ),
+      TE.chainFirstEitherKW(({request, boundRolesToAssign, workflowTemplatesParents}) =>
+        validateRequestorAsPermissions(request, boundRolesToAssign, workflowTemplatesParents)
       ),
       TE.bindW("currentUser", ({request}) => this.userRoleRepo.getUserById(request.userId)),
       TE.chainEitherKW(({currentUser, boundRolesToAssign}) => UserFactory.assignRoles(currentUser, boundRolesToAssign)),
@@ -139,12 +170,16 @@ export class RoleService {
         E.chainW(boundRoles => RoleFactory.validateRolesForEntityType(boundRoles, "agent"))
       )
 
-    const validateRequestorAsPermissions = (req: AssignRolesToAgentRequest, boundRoles: ReadonlyArray<BoundRole>) => {
+    const validateRequestorAsPermissions = (
+      req: AssignRolesToAgentRequest,
+      boundRoles: ReadonlyArray<BoundRole>,
+      workflowTemplatesParents: ReadonlyMap<string, string>
+    ) => {
       return pipe(
         validateUserEntity(req.requestor),
         E.chainW(user =>
           E.fromPredicate(
-            (u: User) => RoleAuthorizationChecker.canAssignRoles(u, boundRoles),
+            (u: User) => RoleAuthorizationChecker.canAssignRoles(u, boundRoles, workflowTemplatesParents),
             () => "requestor_not_authorized" as const
           )(user)
         )
@@ -155,8 +190,11 @@ export class RoleService {
       TE.Do,
       TE.bindW("request", () => TE.right(request)),
       TE.bindW("boundRolesToAssign", ({request}) => TE.fromEither(validateAndCreateBoundRoles(request.roles))),
-      TE.chainFirstEitherKW(({request, boundRolesToAssign}) =>
-        validateRequestorAsPermissions(request, boundRolesToAssign)
+      TE.bindW("workflowTemplatesParents", ({boundRolesToAssign}) =>
+        this.fetchWorkflowTemplateSpaceMappings(boundRolesToAssign)
+      ),
+      TE.chainFirstEitherKW(({request, boundRolesToAssign, workflowTemplatesParents}) =>
+        validateRequestorAsPermissions(request, boundRolesToAssign, workflowTemplatesParents)
       ),
       TE.bindW("currentAgent", ({request}) => this.agentRoleRepo.getAgentById(request.agentId)),
       TE.chainEitherKW(({currentAgent, boundRolesToAssign}) =>

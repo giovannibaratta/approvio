@@ -438,9 +438,12 @@ export async function createMockWorkflowTemplateInDb(
     updatedAt: dates.updatedAt
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const {spaceId: _, ...overridesWithoutSpaceId} = overrides ?? {}
+
   const data: Prisma.WorkflowTemplateCreateInput = {
     ...randomTemplate,
-    ...overrides
+    ...overridesWithoutSpaceId
   }
 
   const template = await prisma.workflowTemplate.create({data})
@@ -454,13 +457,14 @@ export async function createMockWorkflowInDb(
     description?: string
     status?: WorkflowStatus
     workflowTemplateId?: string
+    spaceId?: string
     expiresAt?: Date | "active" | "expired"
   }
 ): Promise<PrismaWorkflow> {
   let workflowId: string | undefined = overrides.workflowTemplateId
 
   if (!workflowId) {
-    const template = await createMockWorkflowTemplateInDb(prisma)
+    const template = await createMockWorkflowTemplateInDb(prisma, {spaceId: overrides.spaceId})
     workflowId = template.id
   }
 

@@ -7,7 +7,13 @@ import {USERS_ENDPOINT_ROOT} from "@controllers"
 import {PrismaClient} from "@prisma/client"
 import {randomUUID} from "crypto"
 import {cleanDatabase, prepareDatabase} from "../database"
-import {createDomainMockUserInDb, createTestGroup, MockConfigProvider} from "../shared/mock-data"
+import {
+  createDomainMockUserInDb,
+  createTestGroup,
+  createMockSpaceInDb,
+  createMockWorkflowTemplateInDb,
+  MockConfigProvider
+} from "../shared/mock-data"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
 import {put} from "../shared/requests"
@@ -313,8 +319,8 @@ describe("User Roles API", () => {
         ])
       })
 
-      it("should handle assignment of workflow template role with non-existent resource ID", async () => {
-        // Given: Role assignment request with non-existent workflow template ID (not validated for performance)
+      it("should return 400 when assigning workflow template role with non-existent resource ID", async () => {
+        // Given: Role assignment request with non-existent workflow template ID
         const nonExistentWorkflowTemplateId = randomUUID()
 
         const roleAssignmentRequest: RoleAssignmentRequest = {
@@ -335,19 +341,8 @@ describe("User Roles API", () => {
           .build()
           .send(roleAssignmentRequest)
 
-        // Then: Should receive success response (resource IDs not validated for performance)
-        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
-
-        // And: Role should be persisted in database
-        const userFromDb = await prisma.user.findUnique({
-          where: {id: targetUser.user.id}
-        })
-        expect(userFromDb!.roles).toMatchObject([
-          {
-            name: "WorkflowTemplateReadOnly",
-            scope: {type: "workflow_template", workflowTemplateId: nonExistentWorkflowTemplateId}
-          }
-        ])
+        // Then: Should receive bad request response
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
       })
 
       it("should handle maximum of 128 unique roles assignment with different scopes", async () => {
@@ -712,6 +707,262 @@ describe("User Roles API", () => {
 
         // Then: Should receive bad request response
         expect(response).toHaveStatusCode(HttpStatus.UNPROCESSABLE_ENTITY)
+      })
+    })
+
+    describe("workflow template role authorization", () => {
+      let spaceId: string
+      let otherSpaceId: string
+      let workflowTemplateId: string
+      let workflowTemplateInOtherSpace: string
+      let spaceManagerUser: UserWithToken
+      let regularUser: UserWithToken
+
+      beforeEach(async () => {
+        // Given: Create spaces and workflow templates
+        const space = await createMockSpaceInDb(prisma, {name: "Main Space"})
+        const otherSpace = await createMockSpaceInDb(prisma, {name: "Other Space"})
+        spaceId = space.id
+        otherSpaceId = otherSpace.id
+
+        const template = await createMockWorkflowTemplateInDb(prisma, {
+          name: "Template in Main Space",
+          spaceId: spaceId
+        })
+        const templateInOther = await createMockWorkflowTemplateInDb(prisma, {
+          name: "Template in Other Space",
+          spaceId: otherSpaceId
+        })
+        workflowTemplateId = template.id
+        workflowTemplateInOtherSpace = templateInOther.id
+
+        // Given: Create users
+        const managerUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
+        const normalUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
+
+        const createUserToken = (user: typeof managerUser) => {
+          const tokenPayload = TokenPayloadBuilder.from({
+            sub: user.id,
+            entityType: "user",
+            displayName: user.displayName,
+            email: user.email,
+            issuer: configProvider.jwtConfig.issuer,
+            audience: [configProvider.jwtConfig.audience]
+          })
+          return jwtService.sign(tokenPayload)
+        }
+
+        spaceManagerUser = {user: managerUser, token: createUserToken(managerUser)}
+        regularUser = {user: normalUser, token: createUserToken(normalUser)}
+
+        // Given: Assign space manager role to managerUser for Main Space
+        await prisma.user.update({
+          where: {id: managerUser.id},
+          data: {
+            roles: [
+              {
+                name: "SpaceManager",
+                resourceType: "space",
+                scopeType: "space",
+                scope: {type: "space", spaceId: spaceId},
+                permissions: ["read", "manage"]
+              }
+            ]
+          }
+        })
+      })
+
+      it("should allow org admin to assign workflow template role", async () => {
+        // Given: Org admin wants to assign workflow template role
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "WorkflowTemplateVoter",
+              scope: {
+                type: "workflow_template",
+                workflowTemplateId: workflowTemplateId
+              }
+            }
+          ]
+        }
+
+        // When: Org admin assigns workflow template role
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${regularUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Expect: Should succeed
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Role should be persisted
+        const userFromDb = await prisma.user.findUnique({
+          where: {id: regularUser.user.id}
+        })
+        expect(userFromDb!.roles).toMatchObject([
+          {
+            name: "WorkflowTemplateVoter",
+            scope: {type: "workflow_template", workflowTemplateId: workflowTemplateId}
+          }
+        ])
+      })
+
+      it("should allow space manager to assign workflow template role for template in their space", async () => {
+        // Given: Space manager wants to assign workflow template role for template in their managed space
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "WorkflowTemplateVoter",
+              scope: {
+                type: "workflow_template",
+                workflowTemplateId: workflowTemplateId
+              }
+            }
+          ]
+        }
+
+        // When: Space manager assigns workflow template role for template in their space
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${regularUser.user.id}/roles`)
+          .withToken(spaceManagerUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Expect: Should succeed
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Role should be persisted
+        const userFromDb = await prisma.user.findUnique({
+          where: {id: regularUser.user.id}
+        })
+        expect(userFromDb!.roles).toMatchObject([
+          {
+            name: "WorkflowTemplateVoter",
+            scope: {type: "workflow_template", workflowTemplateId: workflowTemplateId}
+          }
+        ])
+      })
+
+      it("should allow user with org-wide space manage permission to assign workflow template role", async () => {
+        // Given: User with org-wide space manage permission
+        const orgWideManagerUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
+        await prisma.user.update({
+          where: {id: orgWideManagerUser.id},
+          data: {
+            roles: [
+              {
+                name: "OrgWideSpaceManager",
+                resourceType: "space",
+                scopeType: "org",
+                scope: {type: "org"},
+                permissions: ["read", "manage"]
+              }
+            ]
+          }
+        })
+        const orgWideManagerToken = jwtService.sign(
+          TokenPayloadBuilder.from({
+            sub: orgWideManagerUser.id,
+            entityType: "user",
+            displayName: orgWideManagerUser.displayName,
+            email: orgWideManagerUser.email,
+            issuer: configProvider.jwtConfig.issuer,
+            audience: [configProvider.jwtConfig.audience]
+          })
+        )
+
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "WorkflowTemplateVoter",
+              scope: {
+                type: "workflow_template",
+                workflowTemplateId: workflowTemplateId
+              }
+            }
+          ]
+        }
+
+        // When: Org-wide space manager assigns workflow template role
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${regularUser.user.id}/roles`)
+          .withToken(orgWideManagerToken)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Expect: Should succeed
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+      })
+
+      it("should deny regular user without space manage permission from assigning workflow template role", async () => {
+        // Given: Regular user without any manage permissions
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "WorkflowTemplateVoter",
+              scope: {
+                type: "workflow_template",
+                workflowTemplateId: workflowTemplateId
+              }
+            }
+          ]
+        }
+
+        // When: Regular user tries to assign workflow template role
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${orgAdminUser.user.id}/roles`)
+          .withToken(regularUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Expect: Should be denied with forbidden/unprocessable status
+        expect([HttpStatus.FORBIDDEN, HttpStatus.UNPROCESSABLE_ENTITY]).toContain(response.status)
+      })
+
+      it("should deny space manager from assigning workflow template role for template in different space", async () => {
+        // Given: Space manager trying to assign role for template in a different space they don't manage
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "WorkflowTemplateVoter",
+              scope: {
+                type: "workflow_template",
+                workflowTemplateId: workflowTemplateInOtherSpace
+              }
+            }
+          ]
+        }
+
+        // When: Space manager tries to assign workflow template role for template in other space
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${regularUser.user.id}/roles`)
+          .withToken(spaceManagerUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Expect: Should be denied
+        expect([HttpStatus.FORBIDDEN, HttpStatus.UNPROCESSABLE_ENTITY]).toContain(response.status)
+      })
+
+      it("should deny assignment of workflow template role for non-existent workflow template", async () => {
+        // Given: Non-existent workflow template ID
+        const nonExistentTemplateId = randomUUID()
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "WorkflowTemplateVoter",
+              scope: {
+                type: "workflow_template",
+                workflowTemplateId: nonExistentTemplateId
+              }
+            }
+          ]
+        }
+
+        // When: Space manager tries to assign role for non-existent template
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${regularUser.user.id}/roles`)
+          .withToken(spaceManagerUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Expect: Should fail (either not found or authorization failure)
+        expect(response.status).toBeGreaterThanOrEqual(400)
       })
     })
   })

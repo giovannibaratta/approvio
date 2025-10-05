@@ -7,7 +7,14 @@ import {AGENTS_ENDPOINT_ROOT} from "@controllers"
 import {PrismaClient} from "@prisma/client"
 import {randomUUID} from "crypto"
 import {cleanDatabase, prepareDatabase} from "../database"
-import {createDomainMockUserInDb, createMockAgentInDb, createTestGroup, MockConfigProvider} from "../shared/mock-data"
+import {
+  createDomainMockUserInDb,
+  createMockAgentInDb,
+  createTestGroup,
+  createMockWorkflowTemplateInDb,
+  createMockSpaceInDb,
+  MockConfigProvider
+} from "../shared/mock-data"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
 import {put} from "../shared/requests"
@@ -132,7 +139,8 @@ describe("Agent Roles API", () => {
 
       it("should add workflow template-specific role to agent and persist in database", async () => {
         // Given: Valid role assignment request with workflow template scope
-        const workflowTemplateId = randomUUID()
+        const workflowTemplate = await createMockWorkflowTemplateInDb(prisma)
+        const workflowTemplateId = workflowTemplate.id
 
         const roleAssignmentRequest: RoleAssignmentRequest = {
           roles: [
@@ -172,7 +180,8 @@ describe("Agent Roles API", () => {
 
       it("should add workflow read permissions to agent and persist in database", async () => {
         // Given: Valid role assignment request for workflow read permissions
-        const workflowTemplateId = randomUUID()
+        const workflowTemplate = await createMockWorkflowTemplateInDb(prisma)
+        const workflowTemplateId = workflowTemplate.id
 
         const roleAssignmentRequest: RoleAssignmentRequest = {
           roles: [
@@ -212,8 +221,10 @@ describe("Agent Roles API", () => {
 
       it("should add multiple workflow-related roles to agent and persist in database", async () => {
         // Given: Valid role assignment request with multiple workflow roles
-        const workflowTemplateId1 = randomUUID()
-        const workflowTemplateId2 = randomUUID()
+        const workflowTemplate1 = await createMockWorkflowTemplateInDb(prisma)
+        const workflowTemplate2 = await createMockWorkflowTemplateInDb(prisma)
+        const workflowTemplateId1 = workflowTemplate1.id
+        const workflowTemplateId2 = workflowTemplate2.id
 
         const roleAssignmentRequest: RoleAssignmentRequest = {
           roles: [
@@ -266,8 +277,10 @@ describe("Agent Roles API", () => {
 
       it("should add roles to existing roles without replacing them", async () => {
         // Given: Agent already has a workflow role assigned
-        const workflowTemplateId1 = randomUUID()
-        const workflowTemplateId2 = randomUUID()
+        const workflowTemplate1 = await createMockWorkflowTemplateInDb(prisma)
+        const workflowTemplate2 = await createMockWorkflowTemplateInDb(prisma)
+        const workflowTemplateId1 = workflowTemplate1.id
+        const workflowTemplateId2 = workflowTemplate2.id
 
         // First assignment
         const firstAssignment: RoleAssignmentRequest = {
@@ -327,7 +340,8 @@ describe("Agent Roles API", () => {
 
       it("should consolidate duplicate workflow roles in request and only add unique ones", async () => {
         // Given: Role assignment request with duplicate workflow roles (should be consolidated)
-        const workflowTemplateId = randomUUID()
+        const workflowTemplate = await createMockWorkflowTemplateInDb(prisma)
+        const workflowTemplateId = workflowTemplate.id
 
         const roleAssignmentRequest: RoleAssignmentRequest = {
           roles: [
@@ -654,13 +668,17 @@ describe("Agent Roles API", () => {
       it("should return 422 when total roles would exceed limit", async () => {
         // Given: Agent already has some workflow roles assigned
         const existingRoles = []
-        for (let i = 0; i < MAX_ROLES_PER_ENTITY; i++) {
-          const workflowTemplateId = randomUUID()
+        // Create a single space for all templates to avoid parallel creation issues
+        const space = await createMockSpaceInDb(prisma)
+        const templates = await Promise.all(
+          Array.from({length: MAX_ROLES_PER_ENTITY}, () => createMockWorkflowTemplateInDb(prisma, {spaceId: space.id}))
+        )
+        for (const template of templates) {
           existingRoles.push({
             roleName: "WorkflowTemplateVoter",
             scope: {
               type: "workflow_template",
-              workflowTemplateId: workflowTemplateId
+              workflowTemplateId: template.id
             }
           })
         }
@@ -673,13 +691,15 @@ describe("Agent Roles API", () => {
 
         // When: Admin tries to add more roles that would exceed total limit
         const additionalRoles = []
-        for (let i = 0; i < 5; i++) {
-          const workflowTemplateId = randomUUID()
+        const additionalTemplates = await Promise.all(
+          Array.from({length: 5}, () => createMockWorkflowTemplateInDb(prisma, {spaceId: space.id}))
+        )
+        for (const template of additionalTemplates) {
           additionalRoles.push({
             roleName: "WorkflowTemplateInstantiator",
             scope: {
               type: "workflow_template",
-              workflowTemplateId: workflowTemplateId
+              workflowTemplateId: template.id
             }
           })
         }

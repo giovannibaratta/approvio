@@ -77,6 +77,15 @@ export interface WorkflowTemplateRepository {
     existingTemplate: Versioned<WorkflowTemplate>
     newTemplate: WorkflowTemplate
   }): TaskEither<WorkflowTemplateUpdateError | CreateWorkflowTemplateRepoError, WorkflowTemplate>
+
+  /**
+   * Retrieves space mappings for a batch of workflow template IDs.
+   * @param templateIds Array of workflow template IDs to look up
+   * @returns A map of templateId to spaceId, or an error if any template is not found or missing spaceId
+   */
+  getWorkflowTemplatesParents(
+    templateIds: ReadonlyArray<string>
+  ): TaskEither<"workflow_template_not_found", ReadonlyMap<string, string>>
 }
 
 export interface ListWorkflowTemplatesRequest extends RequestorAwareRequest {

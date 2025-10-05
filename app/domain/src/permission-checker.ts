@@ -93,19 +93,32 @@ export class RoleAuthorizationChecker {
    * Checks if a user can assign the specified roles to another entity
    * @param requestor The user requesting to assign roles
    * @param rolesToAssign Array of bound roles to be assigned
+   * @param workflowTemplatesParents Optional map of workflow template IDs to their parent space IDs
    * @returns true if the requestor has permission to assign all the roles
    */
-  static canAssignRoles(requestor: User, rolesToAssign: ReadonlyArray<BoundRole>): boolean {
-    return rolesToAssign.filter(boundRole => !this.canAssignRoleAtScope(requestor, boundRole)).length === 0
+  static canAssignRoles(
+    requestor: User,
+    rolesToAssign: ReadonlyArray<BoundRole>,
+    workflowTemplatesParents?: ReadonlyMap<string, string>
+  ): boolean {
+    return (
+      rolesToAssign.filter(boundRole => !this.canAssignRoleAtScope(requestor, boundRole, workflowTemplatesParents))
+        .length === 0
+    )
   }
 
   /**
    * Checks if a user can assign a specific role at a specific scope
    * @param requestor The user requesting to assign the role
    * @param boundRole The bound role to check
+   * @param workflowTemplatesParents Optional map of workflow template IDs to their parent space IDs
    * @returns true if the requestor has permission to assign this role at this scope
    */
-  private static canAssignRoleAtScope(requestor: User, boundRole: BoundRole): boolean {
+  private static canAssignRoleAtScope(
+    requestor: User,
+    boundRole: BoundRole,
+    workflowTemplatesParents?: ReadonlyMap<string, string>
+  ): boolean {
     if (requestor.orgRole === OrgRole.ADMIN) return true
 
     const scope = boundRole.scope
@@ -120,12 +133,15 @@ export class RoleAuthorizationChecker {
       case "space":
         return RolePermissionChecker.hasSpacePermission(requestor.roles, scope, "manage")
 
-      case "workflow_template":
-        // For the moment this is can not be manager because there is no link to the parent space,
-        // and it is required to validate that the requestor has the manage role on the parent.
-        // TODO: This must be fixed in a subsequent PR once the link between workflow templates and
-        // space is added.
-        return false
+      case "workflow_template": {
+        if (!workflowTemplatesParents) return false
+
+        const parentSpaceId = workflowTemplatesParents.get(scope.workflowTemplateId)
+        if (!parentSpaceId) return false
+
+        const parentSpaceScope: SpaceScope = {type: "space", spaceId: parentSpaceId}
+        return RolePermissionChecker.hasSpacePermission(requestor.roles, parentSpaceScope, "manage")
+      }
     }
   }
 }

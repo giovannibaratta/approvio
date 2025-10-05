@@ -182,6 +182,10 @@ export function generateErrorResponseForUserRoleAssignment(
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request format`))
     case "user_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: User not found`))
+    case "workflow_template_not_found":
+      return new BadRequestException(
+        generateErrorPayload(errorCode, `${context}: Workflow template not found for role assignment`)
+      )
     case "requestor_not_authorized":
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Not authorized to assign roles`))
     case "role_assignments_empty":

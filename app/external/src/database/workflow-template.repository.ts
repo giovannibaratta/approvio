@@ -199,6 +199,39 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
     )
   }
 
+  getWorkflowTemplatesParents(
+    templateIds: ReadonlyArray<string>
+  ): TaskEither<"workflow_template_not_found", ReadonlyMap<string, string>> {
+    if (templateIds.length === 0) return TE.right(new Map())
+
+    return pipe(
+      TE.tryCatch(
+        async () =>
+          this.dbClient.workflowTemplate.findMany({
+            where: {id: {in: [...templateIds]}},
+            select: {id: true, spaceId: true}
+          }),
+        error => {
+          Logger.error("Error while retrieving workflow template space mappings. Unknown error", error)
+          return "workflow_template_not_found" as const
+        }
+      ),
+      TE.chainW(templates => {
+        if (templates.length !== templateIds.length) return TE.left("workflow_template_not_found" as const)
+
+        const mappings = templates.map(t => {
+          return TE.right([t.id, t.spaceId] as const)
+        })
+
+        return pipe(
+          mappings,
+          TE.sequenceArray,
+          TE.map(entries => new Map(entries))
+        )
+      })
+    )
+  }
+
   private atomicUpdateAndCreateTask(): (data: {
     existingTemplate: Versioned<WorkflowTemplate>
     newTemplate: WorkflowTemplate
