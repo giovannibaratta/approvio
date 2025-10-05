@@ -1,5 +1,6 @@
 import {
   UnconstrainedBoundRole,
+  BoundRole,
   RoleScope,
   GroupPermission,
   SpacePermission,
@@ -9,6 +10,7 @@ import {
   OrgScope,
   WorkflowTemplateScope
 } from "./role"
+import {User, OrgRole} from "./user"
 
 export class RolePermissionChecker {
   /**
@@ -83,5 +85,47 @@ export class RolePermissionChecker {
     permission: WorkflowTemplatePermission
   ): boolean {
     return this.hasPermission(roles, scope, permission)
+  }
+}
+
+export class RoleAuthorizationChecker {
+  /**
+   * Checks if a user can assign the specified roles to another entity
+   * @param requestor The user requesting to assign roles
+   * @param rolesToAssign Array of bound roles to be assigned
+   * @returns true if the requestor has permission to assign all the roles
+   */
+  static canAssignRoles(requestor: User, rolesToAssign: ReadonlyArray<BoundRole>): boolean {
+    return rolesToAssign.filter(boundRole => !this.canAssignRoleAtScope(requestor, boundRole)).length === 0
+  }
+
+  /**
+   * Checks if a user can assign a specific role at a specific scope
+   * @param requestor The user requesting to assign the role
+   * @param boundRole The bound role to check
+   * @returns true if the requestor has permission to assign this role at this scope
+   */
+  private static canAssignRoleAtScope(requestor: User, boundRole: BoundRole): boolean {
+    if (requestor.orgRole === OrgRole.ADMIN) return true
+
+    const scope = boundRole.scope
+
+    switch (scope.type) {
+      case "org":
+        return false
+
+      case "group":
+        return RolePermissionChecker.hasGroupPermission(requestor.roles, scope, "manage")
+
+      case "space":
+        return RolePermissionChecker.hasSpacePermission(requestor.roles, scope, "manage")
+
+      case "workflow_template":
+        // For the moment this is can not be manager because there is no link to the parent space,
+        // and it is required to validate that the requestor has the manage role on the parent.
+        // TODO: This must be fixed in a subsequent PR once the link between workflow templates and
+        // space is added.
+        return false
+    }
   }
 }

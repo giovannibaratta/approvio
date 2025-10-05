@@ -2,9 +2,9 @@ import {Either, left, right} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 import * as E from "fp-ts/Either"
 import {KeyPairSyncResult, randomUUID} from "crypto"
-import {isUUIDv4, PrefixUnion} from "@utils"
+import {isUUIDv4, PrefixUnion, DecorableEntity, isDecoratedWith} from "@utils"
 import {generateKeyPairSync} from "crypto"
-import {UnconstrainedBoundRole, RoleFactory, RoleValidationError} from "./role"
+import {UnconstrainedBoundRole, RoleFactory, RoleValidationError, MAX_ROLES_PER_ENTITY} from "./role"
 
 export const AGENT_NAME_MIN_LENGTH = 1
 export const AGENT_NAME_MAX_LENGTH = 1024
@@ -28,13 +28,35 @@ interface AgentCreateData {
 type AgentNameValidationError = PrefixUnion<"agent", "name_empty" | "name_too_long">
 type IdValidationError = PrefixUnion<"agent", "invalid_uuid">
 type KeyGenerationError = PrefixUnion<"agent", "key_generation_failed">
+type OccValidationError = PrefixUnion<"agent", "invalid_occ">
 
 export type AgentValidationError =
   | IdValidationError
   | AgentNameValidationError
+  | OccValidationError
   | PrefixUnion<"agent", RoleValidationError>
 export type AgentCreateValidationError = AgentNameValidationError
 export type AgentCreationError = KeyGenerationError | AgentNameValidationError
+
+export interface AgentDecorators {
+  occ: bigint
+}
+
+export type AgentDecoratorSelector = Partial<Record<keyof AgentDecorators, boolean>>
+
+export type DecoratedAgent<T extends AgentDecoratorSelector> = DecorableEntity<Agent, AgentDecorators, T>
+
+export function isDecoratedAgent<K extends keyof AgentDecorators>(
+  agent: DecoratedAgent<AgentDecoratorSelector>,
+  key: K,
+  options?: AgentDecoratorSelector
+): agent is DecoratedAgent<AgentDecoratorSelector & Record<K, true>> {
+  return isDecoratedWith<DecoratedAgent<AgentDecoratorSelector>, AgentDecorators, AgentDecoratorSelector, K>(
+    agent,
+    key,
+    options
+  )
+}
 
 export class AgentFactory {
   /**
@@ -89,39 +111,50 @@ export class AgentFactory {
    * @param data The agent data to validate
    * @returns Either validation error or validated agent
    */
-  static validate(
-    data: Omit<Agent, "roles"> & {readonly roles: Agent["roles"] | unknown}
-  ): Either<AgentValidationError, Agent> {
+  static validate<T extends AgentDecoratorSelector>(
+    data: Omit<DecoratedAgent<T>, "roles"> & {readonly roles: Agent["roles"] | unknown}
+  ): Either<AgentValidationError, DecoratedAgent<T>> {
     return pipe(
       E.Do,
       E.bindW("validatedId", () => this.validateId(data.id)),
       E.bindW("validatedAgentName", () => this.validateAgentName(data.agentName)),
       E.bindW("validatedRoles", () => this.validateRoles(data.roles)),
-      E.map(({validatedId, validatedAgentName, validatedRoles}) => {
-        return {
+      E.bindW("baseObj", ({validatedId, validatedAgentName, validatedRoles}) => {
+        return E.right({
+          ...data,
           id: validatedId,
           agentName: validatedAgentName,
-          publicKey: data.publicKey,
-          createdAt: data.createdAt,
           roles: validatedRoles
+        })
+      }),
+      E.bindW("validatedOcc", ({baseObj}) => this.validateOcc(baseObj)),
+      E.map(({baseObj, validatedOcc}) => {
+        const agent = {
+          ...baseObj,
+          occ: validatedOcc
         }
+        return agent
       })
     )
   }
 
   /**
-   * Adds roles/permissions to an agent
-   * @param agent The agent to update
-   * @param newRoles The new roles to add
-   * @returns Either validation error or updated agent
+   * Creates a new Agent with additional roles assigned (additive operation)
+   * @param agent Existing agent (can be regular Agent or DecoratedAgent with occ)
+   * @param newRoles Array of new roles to add
+   * @returns Either validation error or new Agent/DecoratedAgent with roles added (preserves input type)
    */
-  static addPermissions(
-    agent: Agent,
+  static assignRoles<T extends AgentDecoratorSelector>(
+    agent: DecoratedAgent<T>,
     newRoles: ReadonlyArray<UnconstrainedBoundRole>
-  ): Either<AgentValidationError, Agent> {
-    const updatedAgent: Agent = {
+  ): Either<AgentValidationError, DecoratedAgent<T>> {
+    const consolidatedRoles = RoleFactory.consolidateRoles([...agent.roles, ...newRoles])
+
+    if (consolidatedRoles.length > MAX_ROLES_PER_ENTITY) return left("agent_role_total_roles_exceed_maximum")
+
+    const updatedAgent = {
       ...agent,
-      roles: [...agent.roles, ...newRoles]
+      roles: consolidatedRoles
     }
 
     return AgentFactory.validate(updatedAgent)
@@ -179,5 +212,16 @@ export class AgentFactory {
       RoleFactory.validateBoundRoles,
       E.mapLeft(error => ("agent_" + error) as AgentValidationError)
     )
+  }
+
+  private static validateOcc<T extends AgentDecoratorSelector>(
+    data: DecoratedAgent<T>
+  ): Either<AgentValidationError, bigint | undefined> {
+    if (isDecoratedAgent(data, "occ", {occ: true})) {
+      if (typeof data.occ !== "bigint") return left("agent_invalid_occ")
+      return right(data.occ)
+    }
+
+    return right(undefined)
   }
 }

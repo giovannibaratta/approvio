@@ -266,6 +266,16 @@ export function mapToDomainVersionedSpace(dbObject: PrismaSpace): Either<SpaceVa
   )
 }
 
+export function mapToDomainVersionedAgent(
+  dbObject: PrismaAgent
+): Either<AgentKeyDecodeError | AgentValidationError, Versioned<Agent>> {
+  return pipe(
+    dbObject,
+    mapAgentToDomain,
+    E.map(agent => ({...agent, occ: dbObject.occ}))
+  )
+}
+
 export function mapAgentToDomain(dbObject: PrismaAgent): Either<AgentKeyDecodeError | AgentValidationError, Agent> {
   const decodePublicKey = E.tryCatch(
     () => Buffer.from(dbObject.base64PublicKey, "base64").toString("utf8"),

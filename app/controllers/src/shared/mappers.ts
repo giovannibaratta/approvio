@@ -1,5 +1,19 @@
 import {ApprovalRuleData, ApprovalRuleType} from "@domain"
-import {ApprovalRule as ApprovalRuleApi} from "@approvio/api"
+import {
+  ApprovalRule as ApprovalRuleApi,
+  RoleAssignmentItem,
+  RoleAssignmentRequest,
+  RoleScope,
+  SpaceScope,
+  OrgScope,
+  GroupScope,
+  WorkflowTemplateScope
+} from "@approvio/api"
+import {Either, right, left, chain} from "fp-ts/Either"
+import * as E from "fp-ts/Either"
+import * as A from "fp-ts/Array"
+import {pipe} from "fp-ts/lib/function"
+import {PrefixUnion, isUUIDv4} from "@utils"
 
 /** Map the domain model to the API model */
 export function mapApprovalRuleDataToApi(rule: ApprovalRuleData): ApprovalRuleApi {
@@ -21,4 +35,156 @@ export function mapApprovalRuleDataToApi(rule: ApprovalRuleData): ApprovalRuleAp
         rules: rule.rules.map(mapApprovalRuleDataToApi)
       }
   }
+}
+
+export type RoleAssignmentValidationError = PrefixUnion<
+  "request",
+  | "malformed"
+  | "roles_missing"
+  | "roles_not_array"
+  | "roles_empty"
+  | "role_name_missing"
+  | "role_name_not_string"
+  | "role_name_empty"
+  | "scope_missing"
+  | "scope_not_object"
+  | "scope_type_missing"
+  | "scope_type_invalid"
+  | "scope_id_missing"
+  | "scope_id_invalid_uuid"
+>
+
+/**
+ * Validates the structure of a RoleAssignmentRequest from unknown input.
+ * Only performs structural validation, not semantic validation.
+ */
+export function validateRoleAssignmentRequest(
+  request: unknown
+): Either<RoleAssignmentValidationError, RoleAssignmentRequest> {
+  return pipe(
+    request,
+    E.right,
+    E.chainW(validateRequestStructure),
+    E.chainW(validateRolesArray),
+    E.map(() => request as RoleAssignmentRequest)
+  )
+}
+
+function validateRequestStructure(
+  request: unknown
+): Either<RoleAssignmentValidationError, {roles: [unknown, ...unknown[]]}> {
+  if (typeof request !== "object" || request === null) return left("request_malformed")
+  if (!("roles" in request)) return left("request_roles_missing")
+  if (!Array.isArray(request.roles)) return left("request_roles_not_array")
+  if (request.roles.length === 0) return left("request_roles_empty")
+  return right(request as {roles: [unknown, ...unknown[]]})
+}
+
+function validateRolesArray(request: {
+  roles: [unknown, ...unknown[]]
+}): Either<RoleAssignmentValidationError, {roles: RoleAssignmentItem[]}> {
+  return pipe(
+    request.roles,
+    A.traverse(E.Applicative)(role => validateSingleRole(role)),
+    E.map(roles => ({roles}))
+  )
+}
+
+function validateSingleRole(role: unknown): Either<RoleAssignmentValidationError, RoleAssignmentItem> {
+  return pipe(
+    E.Do,
+    E.bindW("structure", () => validateRoleStructure(role)),
+    E.bindW("roleName", ({structure}) => validateRoleName(structure.roleName)),
+    E.bindW("scope", ({structure}) => validateRoleScope(structure.scope)),
+    E.map(({roleName, scope}) => ({roleName, scope}))
+  )
+}
+
+function validateRoleStructure(
+  role: unknown
+): Either<RoleAssignmentValidationError, {roleName: unknown; scope: unknown}> {
+  if (typeof role !== "object" || role === null) return left("request_malformed")
+  if (!("roleName" in role)) return left("request_role_name_missing")
+  if (!("scope" in role)) return left("request_scope_missing")
+  return right(role as {roleName: unknown; scope: unknown})
+}
+
+function validateRoleName(roleName: unknown): Either<RoleAssignmentValidationError, string> {
+  if (typeof roleName !== "string") return left("request_role_name_not_string")
+  if (roleName.trim().length === 0) return left("request_role_name_empty")
+  return right(roleName)
+}
+
+function validateRoleScope(scope: unknown): Either<RoleAssignmentValidationError, RoleScope> {
+  return pipe(scope, validateGenericScopeStructure, chain(validateScopeType))
+}
+
+function validateGenericScopeStructure(
+  scope: unknown
+): Either<RoleAssignmentValidationError, object & {type: RoleScope["type"]}> {
+  if (!scope) return left("request_scope_missing")
+  if (typeof scope !== "object" || scope === null) return left("request_scope_not_object")
+  if (!("type" in scope)) return left("request_scope_type_missing")
+  if (typeof scope.type !== "string") return left("request_scope_type_invalid")
+  if (!["org", "space", "group", "workflow_template"].includes(scope.type)) return left("request_scope_type_invalid")
+
+  return right(scope as object & {type: RoleScope["type"]})
+}
+
+function validateScopeType(
+  scope: object & {type: RoleScope["type"]}
+): Either<RoleAssignmentValidationError, RoleScope> {
+  switch (scope.type) {
+    case "org":
+      return validateOrgScope(scope as OrgScope)
+    case "space":
+      return validateSpaceScope(scope as SpaceScope)
+    case "group":
+      return validateGroupScope(scope as GroupScope)
+    case "workflow_template":
+      return validateWorkflowTemplateScope(scope as WorkflowTemplateScope)
+  }
+}
+
+function validateOrgScope(scope: {type: "org"}): Either<RoleAssignmentValidationError, OrgScope> {
+  return right(scope)
+}
+
+function validateSpaceScope(
+  scope: {type: "space"} & Record<string, unknown>
+): Either<RoleAssignmentValidationError, SpaceScope> {
+  return pipe(
+    E.Do,
+    E.bindW("type", () => right(scope.type)),
+    E.bindW("spaceId", () => validateScopeUuidField(scope.spaceId)),
+    E.map(({type, spaceId}) => ({type, spaceId}))
+  )
+}
+
+function validateGroupScope(
+  scope: {type: "group"} & Record<string, unknown>
+): Either<RoleAssignmentValidationError, GroupScope> {
+  return pipe(
+    E.Do,
+    E.bindW("type", () => right(scope.type)),
+    E.bindW("groupId", () => validateScopeUuidField(scope.groupId)),
+    E.map(({type, groupId}) => ({type, groupId}))
+  )
+}
+
+function validateWorkflowTemplateScope(
+  scope: {type: "workflow_template"} & Record<string, unknown>
+): Either<RoleAssignmentValidationError, WorkflowTemplateScope> {
+  return pipe(
+    E.Do,
+    E.bindW("type", () => right(scope.type)),
+    E.bindW("workflowTemplateId", () => validateScopeUuidField(scope.workflowTemplateId)),
+    E.map(({type, workflowTemplateId}) => ({type, workflowTemplateId}))
+  )
+}
+
+function validateScopeUuidField(fieldValue: unknown): Either<RoleAssignmentValidationError, string> {
+  if (typeof fieldValue !== "string") return left("request_scope_id_missing")
+  if (!isUUIDv4(fieldValue)) return left("request_scope_id_invalid_uuid")
+  return right(fieldValue)
 }

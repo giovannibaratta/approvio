@@ -6,7 +6,9 @@ import {
   ForbiddenException,
   HttpException,
   InternalServerErrorException,
-  NotFoundException
+  Logger,
+  NotFoundException,
+  UnprocessableEntityException
 } from "@nestjs/common"
 import {
   AuthorizationError,
@@ -15,13 +17,16 @@ import {
   PaginatedUsersList,
   UserCreateError,
   UserGetError,
-  UserListError
+  UserListError,
+  UserRoleAssignmentError
 } from "@services"
-import {bindW, Do, Either, map, left, right} from "fp-ts/Either"
+import {bindW, Do, Either, map, right, left} from "fp-ts/Either"
 import {generateErrorPayload} from "../error"
 import {pipe} from "fp-ts/lib/function"
 import * as O from "fp-ts/Option"
 import {Option} from "fp-ts/Option"
+import {RoleAssignmentValidationError} from "../shared/mappers"
+
 export function createUserApiToServiceModel(data: {
   userData: UserCreate
   requestor: AuthenticatedEntity
@@ -80,8 +85,15 @@ export function generateErrorResponseForCreateUser(
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":
     case "role_invalid_structure":
+    case "role_entity_type_role_restriction":
+    case "role_assignments_empty":
+    case "role_assignments_exceed_maximum":
+    case "role_total_roles_exceed_maximum":
+    case "role_unknown_role_name":
+    case "role_scope_incompatible_with_template":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
-        generateErrorPayload(errorCode, `${context}: Internal data inconsistency`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
   }
 }
@@ -115,8 +127,17 @@ export function generateErrorResponseForGetUser(error: UserGetError, context: st
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":
     case "unknown_error":
+    case "role_entity_type_role_restriction":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
+      )
+    case "role_assignments_empty":
+    case "role_assignments_exceed_maximum":
+    case "role_total_roles_exceed_maximum":
+    case "role_unknown_role_name":
+    case "role_scope_incompatible_with_template":
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
   }
 }
@@ -135,6 +156,87 @@ export function mapUsersToApi(paginatedUsers: PaginatedUsersList): ListUsers200R
       limit,
       total
     }
+  }
+}
+
+export function generateErrorResponseForUserRoleAssignment(
+  error: UserRoleAssignmentError | RoleAssignmentValidationError,
+  context: string
+): HttpException {
+  const errorCode = error.toUpperCase()
+
+  switch (error) {
+    case "request_malformed":
+    case "request_roles_missing":
+    case "request_roles_not_array":
+    case "request_roles_empty":
+    case "request_role_name_missing":
+    case "request_role_name_not_string":
+    case "request_role_name_empty":
+    case "request_scope_missing":
+    case "request_scope_not_object":
+    case "request_scope_type_missing":
+    case "request_scope_type_invalid":
+    case "request_scope_id_missing":
+    case "request_scope_id_invalid_uuid":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request format`))
+    case "user_not_found":
+      return new NotFoundException(generateErrorPayload(errorCode, `${context}: User not found`))
+    case "requestor_not_authorized":
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Not authorized to assign roles`))
+    case "role_assignments_empty":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Roles array cannot be empty`))
+    case "role_unknown_role_name":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Unknown role name`))
+    case "role_assignments_exceed_maximum":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Request contains too many roles`))
+    case "role_total_roles_exceed_maximum":
+      return new UnprocessableEntityException(
+        generateErrorPayload(errorCode, `${context}: Maximum number of roles exceeded`)
+      )
+    case "role_invalid_scope":
+    case "role_resource_id_invalid":
+    case "role_resource_required_for_scope":
+    case "role_resource_not_allowed_for_scope":
+    case "role_invalid_structure":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid role assignment format`))
+    case "role_scope_incompatible_with_template":
+      return new BadRequestException(
+        generateErrorPayload(errorCode, `${context}: the specified scope is not supported by this role`)
+      )
+    case "role_entity_type_role_restriction":
+      return new BadRequestException(
+        generateErrorPayload(errorCode, `${context}: This role type cannot be assigned to this entity`)
+      )
+    case "user_invalid_uuid":
+    case "user_display_name_empty":
+    case "user_display_name_too_long":
+    case "user_email_empty":
+    case "user_email_too_long":
+    case "user_email_invalid":
+    case "user_org_role_invalid":
+    case "user_role_assignments_invalid_format":
+    case "user_duplicate_roles":
+    case "role_invalid_uuid":
+    case "role_name_empty":
+    case "role_name_too_long":
+    case "role_name_invalid_characters":
+    case "role_permissions_empty":
+    case "role_permission_invalid":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
+      )
+    case "unknown_error":
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
+      )
+    case "request_invalid_user_identifier":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request for role assignment`))
+    case "concurrent_modification_error":
+      return new ConflictException(
+        generateErrorPayload(errorCode, `${context}: The user was affected by another request`)
+      )
   }
 }
 

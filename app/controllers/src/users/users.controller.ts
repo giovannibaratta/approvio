@@ -1,27 +1,39 @@
-import {Pagination as PaginationApi, User as UserApi, UserCreate, UserSummary as UserSummaryApi} from "@approvio/api"
+import {
+  Pagination as PaginationApi,
+  User as UserApi,
+  UserCreate,
+  UserSummary as UserSummaryApi,
+  RoleAssignmentRequest
+} from "@approvio/api"
 import {GetAuthenticatedEntity} from "@app/auth"
-import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Query, Res} from "@nestjs/common"
-import {ListUsersRequest, UserService} from "@services"
+import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
+import {ListUsersRequest, UserService, RoleService, AssignRolesToUserRequest} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
+import * as E from "fp-ts/Either"
 import * as TE from "fp-ts/lib/TaskEither"
 import {
   createUserApiToServiceModel,
   generateErrorResponseForCreateUser,
   generateErrorResponseForGetUser,
   generateErrorResponseForListUsers,
+  generateErrorResponseForUserRoleAssignment,
   mapToServiceRequest,
   mapUserToApi,
   mapUsersToApi
 } from "./users.mappers"
+import {validateRoleAssignmentRequest} from "../shared/mappers"
 import {AuthenticatedEntity} from "@domain"
 
 export const USERS_ENDPOINT_ROOT = "users"
 
 @Controller(USERS_ENDPOINT_ROOT)
 export class UsersController {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    private readonly roleService: RoleService
+  ) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -83,5 +95,32 @@ export class UsersController {
 
     const user = eitherUser.right
     return mapUserToApi(user)
+  }
+
+  @Put(":userId/roles")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async assignRolesToUser(
+    @Param("userId") userId: string,
+    @Body() request: unknown,
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+  ): Promise<void> {
+    const mapToServiceModel = (req: RoleAssignmentRequest) => ({
+      userId,
+      roles: req.roles,
+      requestor
+    })
+    const assignRole = (req: AssignRolesToUserRequest) => this.roleService.assignRolesToUser(req)
+
+    const eitherResult = await pipe(
+      request,
+      E.right,
+      E.chainW(validateRoleAssignmentRequest),
+      E.map(mapToServiceModel),
+      TE.fromEither,
+      TE.chainW(assignRole)
+    )()
+
+    if (isLeft(eitherResult))
+      throw generateErrorResponseForUserRoleAssignment(eitherResult.left, "Failed to assign roles to user")
   }
 }

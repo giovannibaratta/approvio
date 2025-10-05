@@ -11,6 +11,7 @@ import {
   ScopeType,
   ResourceType
 } from "./role"
+import {Either, left, right} from "fp-ts/Either"
 
 /**
  * System role templates - hardcoded role definitions available in the system
@@ -18,6 +19,20 @@ import {
 export class SystemRole {
   private static readonly ORG_SCOPE_TYPE_PREFIX = "OrgWide"
   private static readonly SPACE_SCOPE_TYPE_PREFIX = "SpaceWide"
+
+  /**
+   * Cached map of role name to role template for O(1) lookups.
+   *
+   * Key: Role name (string) - The exact role name as defined in the system
+   * Value: RoleTemplate - The complete role template object
+   *
+   * Examples of keys:
+   * - "GroupReadOnly" -> GroupRoleTemplate
+   * - "OrgWideSpaceManager" -> SpaceRoleTemplate with org scope
+   * - "WorkflowTemplateVoter" -> WorkflowTemplateRoleTemplate
+   *
+   */
+  private static readonly roleTemplateCache: Map<string, RoleTemplate> = SystemRole.buildRoleTemplateCache()
 
   /**
    * Helper method to generate standardized role names based on scope
@@ -279,6 +294,28 @@ export class SystemRole {
       SystemRole.getWorkflowFullAccessTemplate("space"),
       SystemRole.getWorkflowFullAccessTemplate("org")
     ]
+  }
+
+  /**
+   * Builds the role template cache by mapping role names to their templates.
+   * Called once during class initialization for immediate cache availability.
+   */
+  private static buildRoleTemplateCache(): Map<string, RoleTemplate> {
+    const cache = new Map<string, RoleTemplate>()
+    const allRoles = SystemRole.getAllSystemRoleTemplates()
+
+    for (const role of allRoles) cache.set(role.name, role)
+
+    return cache
+  }
+
+  /**
+   * @param roleName The name of the role to find
+   * @returns Either with error for unknown role or the role template
+   */
+  static findRoleTemplate(roleName: string): Either<"role_unknown_role_name", RoleTemplate> {
+    const template = SystemRole.roleTemplateCache.get(roleName)
+    return template ? right(template) : left("role_unknown_role_name")
   }
 
   /**

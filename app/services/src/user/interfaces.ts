@@ -1,10 +1,11 @@
 import {User, UserSummary, UserSummaryValidationError, UserValidationError} from "@domain"
-import {AuthorizationError, UnknownError} from "@services/error"
+import {AuthorizationError, ConcurrentModificationError, UnknownError} from "@services/error"
 import {Versioned} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 
 export type UserCreateError = "user_already_exists" | AuthorizationError | UserValidationError | UnknownError
 export type UserGetError = "user_not_found" | "request_invalid_user_identifier" | UserValidationError | UnknownError
+export type UserUpdateError = UserGetError | ConcurrentModificationError
 
 export type UserListValidationError =
   | "invalid_page_number"
@@ -29,6 +30,7 @@ export interface UserRepository {
   getUserByEmail(email: string): TaskEither<UserGetError, Versioned<User>>
   listUsers(params: ListUsersRepoRequest): TaskEither<UserListError, PaginatedUsersList>
   hasAnyOrganizationAdmins(): TaskEither<UnknownError, boolean>
+  updateUser(user: Versioned<User>): TaskEither<UserUpdateError, User>
 }
 
 export interface ListUsersRepoRequest {

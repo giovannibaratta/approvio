@@ -107,6 +107,12 @@ export function generateErrorResponseForCreateSpace(error: CreateSpaceError, con
     case "user_not_found":
     case "user_not_found_in_db":
     case "request_invalid_user_identifier":
+    case "role_assignments_empty":
+    case "role_assignments_exceed_maximum":
+    case "role_total_roles_exceed_maximum":
+    case "role_unknown_role_name":
+    case "role_scope_incompatible_with_template":
+    case "role_entity_type_role_restriction":
       Logger.error(`Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", "Internal data inconsistency"))
     case "requestor_not_authorized":

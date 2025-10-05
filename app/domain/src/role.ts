@@ -1,9 +1,35 @@
+/**
+ * Role and Permission System
+ *
+ * This module implements a type-safe role-based access control system with three-way binding
+ * to ensure compile-time safety and eliminate duplication.
+ *
+ * ## Architecture - Single Source of Truth Pattern
+ *
+ * The system uses a cascading dependency chain where each piece derives from a single source:
+ *
+ * 1. **RESOURCE_TYPES** (const array) - The independent source of truth
+ *    - Defines all resources in the system: e.g. spaces, groups
+ *
+ * 2. **ResourceType** (derived type) - Extracted from RESOURCE_TYPES
+ *    - Uses `(typeof RESOURCE_TYPES)[number]` to create a union type for the resources
+ *
+ * 3. **ALLOWED_SCOPE_TYPES_BY_RESOURCE** & **RESOURCE_PERMISSIONS** (const objects)
+ *    - Both use `satisfies Record<ResourceType, ...>` constraint to guarantee all resource types are present
+ *
+ * 4. **Permission types** (derived types) - Extracted from RESOURCE_PERMISSIONS
+ *    - Derive types for the permissions from the mapping RESOURCE_PERMISSIONS
+ *
+ * 5. **ResourceScopePermissionBinding** (derived type) - Ties everything together
+ */
+
 import {PrefixUnion} from "@utils"
 import {Either, left, right, traverseArray, chainFirstW} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 
 export const ROLE_NAME_MAX_LENGTH = 100
 export const PERMISSION_NAME_MAX_LENGTH = 100
+export const MAX_ROLES_PER_ENTITY = 128
 
 export interface OrgScope {
   readonly type: "org"
@@ -25,21 +51,45 @@ export interface WorkflowTemplateScope {
 }
 
 export type RoleScope = OrgScope | SpaceScope | GroupScope | WorkflowTemplateScope
-export type ResourceType = "space" | "group" | "workflow_template"
 export type ScopeType = RoleScope["type"]
 
+/**
+ * All resource types in the system.
+ *
+ * This is the independent source of truth for what resources exist.
+ * Everything else in the type system derives from this array.
+ */
+export const RESOURCE_TYPES = ["group", "space", "workflow_template"] as const
+
+// Typescript type based on the RESOURCE_TYPES
+export type ResourceType = (typeof RESOURCE_TYPES)[number]
+
+/**
+ * Maps each resource type to its allowed scope types.
+ *
+ * The `satisfies Record<ResourceType, ReadonlyArray<ScopeType>>` constraint ensures:
+ * - ALL ResourceType keys must be present (enforced at compile time)
+ */
+const ALLOWED_SCOPE_TYPES_BY_RESOURCE = {
+  group: ["group"],
+  space: ["space", "org"],
+  workflow_template: ["workflow_template", "space", "org"]
+} as const satisfies Record<ResourceType, ReadonlyArray<ScopeType>>
+
+/**
+ * Internal type that binds resource types to their allowed scopes and permissions.
+ *
+ * This mapped type iterates over each ResourceType and extracts:
+ * - scopeType: Union of allowed scope types using `[K][number]` to extract from const array
+ * - permission: Union of allowed permissions using `[K][number]` to extract from const array
+ *
+ * This ensures that RoleTemplate and BoundRole always use the correct scope and permission types
+ * for each resource type, with perfect type safety.
+ */
 type ResourceScopePermissionBinding = {
-  group: {
-    scopeType: "group"
-    permission: GroupPermission
-  }
-  space: {
-    scopeType: "space" | "org"
-    permission: SpacePermission
-  }
-  workflow_template: {
-    scopeType: "workflow_template" | "space" | "org"
-    permission: WorkflowTemplatePermission
+  [K in ResourceType]: {
+    scopeType: (typeof ALLOWED_SCOPE_TYPES_BY_RESOURCE)[K][number]
+    permission: (typeof RESOURCE_PERMISSIONS)[K][number]
   }
 }
 
@@ -62,16 +112,28 @@ export interface BoundRole<RType extends ResourceType = ResourceType> extends Ro
   readonly scope: RoleScope & {type: ResourceScopePermissionBinding[RType]["scopeType"]}
 }
 
-export type GroupPermission = "read" | "write" | "manage"
-export type SpacePermission = "read" | "manage"
-export type WorkflowTemplatePermission =
-  | "read"
-  | "write"
-  | "instantiate"
-  | "vote"
-  | "workflow_read"
-  | "workflow_list"
-  | "workflow_cancel"
+/**
+ * Maps each resource type to its valid permissions.
+ *
+ * This is the single source of truth for permission definitions.
+ * Permission types (GroupPermission, SpacePermission, etc.) are derived from this const.
+ *
+ * The `satisfies Record<ResourceType, ReadonlyArray<string>>` constraint ensures:
+ * - ALL ResourceType keys must be present (enforced at compile time)
+ */
+const RESOURCE_PERMISSIONS = {
+  group: ["read", "write", "manage"],
+  space: ["read", "manage"],
+  workflow_template: ["read", "write", "instantiate", "vote", "workflow_read", "workflow_list", "workflow_cancel"]
+} as const satisfies Record<ResourceType, ReadonlyArray<string>>
+
+/**
+ * Permission types derived from RESOURCE_PERMISSIONS.
+ * These extract the literal union type from the const arrays using `[number]` indexed access.
+ */
+export type GroupPermission = (typeof RESOURCE_PERMISSIONS)["group"][number]
+export type SpacePermission = (typeof RESOURCE_PERMISSIONS)["space"][number]
+export type WorkflowTemplatePermission = (typeof RESOURCE_PERMISSIONS)["workflow_template"][number]
 
 // Template type aliases for unbound roles
 export type GroupRoleTemplate = RoleTemplate<"group">
@@ -91,6 +153,13 @@ type PermissionValidationError = "permissions_empty" | "permission_invalid"
 type ScopeValidationError = "invalid_scope"
 type ResourceValidationError = "resource_id_invalid" | "resource_required_for_scope" | "resource_not_allowed_for_scope"
 type IdValidationError = "invalid_uuid"
+type RoleAssignmentValidationError =
+  | "assignments_empty"
+  | "assignments_exceed_maximum"
+  | "total_roles_exceed_maximum"
+  | "unknown_role_name"
+  | "scope_incompatible_with_template"
+  | "entity_type_role_restriction"
 
 export type RoleValidationError = PrefixUnion<
   "role",
@@ -99,6 +168,7 @@ export type RoleValidationError = PrefixUnion<
   | ScopeValidationError
   | ResourceValidationError
   | IdValidationError
+  | RoleAssignmentValidationError
   | "invalid_structure"
 >
 
@@ -110,6 +180,54 @@ export class RoleFactory {
    */
   static validateBoundRoles(rolesData: unknown[]): Either<RoleValidationError, ReadonlyArray<BoundRole>> {
     return traverseArray(RoleFactory.validateRole)(rolesData)
+  }
+
+  /**
+   * Validates that a scope is compatible with a role template
+   */
+  static validateScopeForTemplate(scope: RoleScope, template: RoleTemplate): Either<RoleValidationError, RoleScope> {
+    // Check if scope type is allowed for this role template
+    const allowedScopeTypes: ReadonlyArray<ScopeType> = ALLOWED_SCOPE_TYPES_BY_RESOURCE[template.resourceType]
+
+    if (!allowedScopeTypes.includes(scope.type)) return left("role_scope_incompatible_with_template")
+    if (!RoleFactory.isValidRoleScope(scope)) return left("role_invalid_scope")
+
+    return right(scope)
+  }
+
+  /**
+   * Consolidates roles by removing duplicates based on role name and scope
+   */
+  static consolidateRoles(roles: ReadonlyArray<BoundRole>): ReadonlyArray<BoundRole> {
+    const seen = new Set<string>()
+    const consolidated: BoundRole[] = []
+
+    for (const role of roles) {
+      const roleKey = `${role.name}-${JSON.stringify(role.scope)}`
+      if (!seen.has(roleKey)) {
+        seen.add(roleKey)
+        consolidated.push(role)
+      }
+    }
+
+    return consolidated
+  }
+
+  /**
+   * Validates that roles can be assigned to a specific entity type
+   */
+  static validateRolesForEntityType(
+    roles: ReadonlyArray<BoundRole>,
+    targetEntityType: "user" | "agent"
+  ): Either<RoleValidationError, ReadonlyArray<BoundRole>> {
+    switch (targetEntityType) {
+      case "user":
+        return right(roles)
+      case "agent":
+        for (const role of roles)
+          if (role.resourceType !== "workflow_template") return left("role_entity_type_role_restriction")
+        return right(roles)
+    }
   }
 
   private static validateRole(role: unknown): Either<RoleValidationError, BoundRole> {
@@ -196,35 +314,13 @@ export class RoleFactory {
     permissions: unknown[],
     resourceType: string
   ): Either<RoleValidationError, unknown[]> {
-    const validGroupPermissions: GroupPermission[] = ["read", "write", "manage"]
-    const validSpacePermissions: SpacePermission[] = ["read", "manage"]
-    const validWorkflowTemplatePermissions: WorkflowTemplatePermission[] = [
-      "read",
-      "write",
-      "instantiate",
-      "vote",
-      "workflow_read",
-      "workflow_list",
-      "workflow_cancel"
-    ]
+    if (!(resourceType in RESOURCE_PERMISSIONS)) return left("role_invalid_scope")
+
+    const validPermissions = RESOURCE_PERMISSIONS[resourceType as ResourceType] as readonly string[]
 
     for (const permission of permissions) {
       if (typeof permission !== "string") return left("role_permission_invalid")
-
-      switch (resourceType) {
-        case "group":
-          if (!validGroupPermissions.includes(permission as GroupPermission)) return left("role_permission_invalid")
-          break
-        case "space":
-          if (!validSpacePermissions.includes(permission as SpacePermission)) return left("role_permission_invalid")
-          break
-        case "workflow_template":
-          if (!validWorkflowTemplatePermissions.includes(permission as WorkflowTemplatePermission))
-            return left("role_permission_invalid")
-          break
-        default:
-          return left("role_invalid_scope")
-      }
+      if (!validPermissions.includes(permission)) return left("role_permission_invalid")
     }
 
     return right(permissions)

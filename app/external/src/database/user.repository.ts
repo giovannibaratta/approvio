@@ -8,7 +8,8 @@ import {
   UserRepository,
   UserListError,
   PaginatedUsersList,
-  ListUsersRepoRequest
+  ListUsersRepoRequest,
+  UserUpdateError
 } from "@services"
 import {Versioned} from "@domain"
 import * as TE from "fp-ts/lib/TaskEither"
@@ -88,6 +89,41 @@ export class UserDbRepository implements UserRepository {
       },
       error => {
         Logger.error("Error while checking for organization admins", error)
+        return "unknown_error" as const
+      }
+    )()
+  }
+
+  updateUser(user: Versioned<User>): TaskEither<UserUpdateError, User> {
+    return TE.tryCatchK(
+      async (): Promise<User> => {
+        const updatedUser = (await this.dbClient.user.update({
+          where: {id: user.id, occ: Number(user.occ)},
+          data: {
+            roles: user.roles as unknown as Prisma.InputJsonValue, // Prisma JSON serialization
+            occ: {
+              increment: 1
+            }
+          },
+          include: {
+            organizationAdmins: true
+          }
+        })) as PrismaUserWithOrgAdmin
+
+        const mappedUser = mapUserToDomain(updatedUser)
+        if (E.isLeft(mappedUser)) {
+          throw new Error("Failed to map updated user to domain")
+        }
+
+        return mappedUser.right
+      },
+      error => {
+        if (isPrismaUniqueConstraintError(error, ["occ"])) {
+          Logger.warn("Optimistic concurrency control conflict during user role update", error)
+          return "unknown_error" as const
+        }
+
+        Logger.error("Error while updating user roles", error)
         return "unknown_error" as const
       }
     )()

@@ -1,0 +1,718 @@
+import {Test, TestingModule} from "@nestjs/testing"
+import {ConfigProvider} from "@external/config"
+import {NestApplication} from "@nestjs/core"
+import {AppModule} from "@app/app.module"
+import {DatabaseClient} from "@external"
+import {USERS_ENDPOINT_ROOT} from "@controllers"
+import {PrismaClient} from "@prisma/client"
+import {randomUUID} from "crypto"
+import {cleanDatabase, prepareDatabase} from "../database"
+import {createDomainMockUserInDb, createTestGroup, MockConfigProvider} from "../shared/mock-data"
+import {HttpStatus} from "@nestjs/common"
+import {JwtService} from "@nestjs/jwt"
+import {put} from "../shared/requests"
+import {UserWithToken} from "../shared/types"
+import "expect-more-jest"
+import "@utils/matchers"
+import {TokenPayloadBuilder} from "@services"
+import {RoleAssignmentRequest} from "@approvio/api"
+import {MAX_ROLES_PER_ENTITY} from "@domain"
+
+describe("User Roles API", () => {
+  let app: NestApplication
+  let prisma: PrismaClient
+  let jwtService: JwtService
+  let configProvider: ConfigProvider
+  let orgAdminUser: UserWithToken
+  let targetUser: UserWithToken
+
+  beforeEach(async () => {
+    const isolatedDb = await prepareDatabase()
+
+    let module: TestingModule
+    try {
+      module = await Test.createTestingModule({
+        imports: [AppModule]
+      })
+        .overrideProvider(ConfigProvider)
+        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .compile()
+    } catch (error) {
+      console.error(error)
+      throw error
+    }
+
+    app = module.createNestApplication()
+    prisma = module.get(DatabaseClient)
+    jwtService = module.get(JwtService)
+    configProvider = module.get(ConfigProvider)
+
+    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
+    const userToAssignRoles = await createDomainMockUserInDb(prisma, {orgAdmin: false})
+
+    const createUserToken = (user: typeof adminUser) => {
+      const tokenPayload = TokenPayloadBuilder.from({
+        sub: user.id,
+        entityType: "user",
+        displayName: user.displayName,
+        email: user.email,
+        issuer: configProvider.jwtConfig.issuer,
+        audience: [configProvider.jwtConfig.audience]
+      })
+      return jwtService.sign(tokenPayload)
+    }
+
+    orgAdminUser = {user: adminUser, token: createUserToken(adminUser)}
+    targetUser = {user: userToAssignRoles, token: createUserToken(userToAssignRoles)}
+
+    await app.init()
+  }, 30000)
+
+  afterEach(async () => {
+    await cleanDatabase(prisma)
+  })
+
+  afterAll(async () => {
+    await app.close()
+    await prisma.$disconnect()
+  })
+
+  describe("PUT /users/{userId}/roles", () => {
+    describe("good cases", () => {
+      it("should add organization-wide role to user and persist in database", async () => {
+        // Given: Valid role assignment request with org scope
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "OrgWideSpaceManager",
+              scope: {
+                type: "org"
+              }
+            }
+          ]
+        }
+
+        // When: Admin assigns role to user
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive success response
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Role should be persisted in database
+        const userFromDb = await prisma.user.findUnique({
+          where: {id: targetUser.user.id}
+        })
+        expect(userFromDb).not.toBeNull()
+        expect(userFromDb!.roles).toMatchObject([
+          {
+            name: "OrgWideSpaceManager",
+            resourceType: "space",
+            scopeType: "org",
+            scope: {type: "org"},
+            permissions: expect.any(Array)
+          }
+        ])
+      })
+
+      it("should add space-specific role to user and persist in database", async () => {
+        // Given: Valid role assignment request with space scope
+        const spaceId = randomUUID()
+
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "SpaceManager",
+              scope: {
+                type: "space",
+                spaceId: spaceId
+              }
+            }
+          ]
+        }
+
+        // When: Admin assigns space role to user
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive success response
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Role should be persisted in database
+        const userFromDb = await prisma.user.findUnique({
+          where: {id: targetUser.user.id}
+        })
+        expect(userFromDb!.roles).toMatchObject([
+          {
+            name: "SpaceManager",
+            resourceType: "space",
+            scopeType: "space",
+            scope: {type: "space", spaceId: spaceId},
+            permissions: expect.any(Array)
+          }
+        ])
+      })
+
+      it("should add group-specific role to user and persist in database", async () => {
+        // Given: A group exists and valid role assignment request
+        const group = await createTestGroup(prisma, {
+          name: "Test Group",
+          description: "Test group for role assignment"
+        })
+
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "GroupManager",
+              scope: {
+                type: "group",
+                groupId: group.id
+              }
+            }
+          ]
+        }
+
+        // When: Admin assigns group role to user
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive success response
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Role should be persisted in database
+        const userFromDb = await prisma.user.findUnique({
+          where: {id: targetUser.user.id}
+        })
+        expect(userFromDb!.roles).toMatchObject([
+          {
+            name: "GroupManager",
+            resourceType: "group",
+            scopeType: "group",
+            scope: {type: "group", groupId: group.id},
+            permissions: expect.any(Array)
+          }
+        ])
+      })
+
+      it("should add multiple roles to user and persist in database", async () => {
+        // Given: Valid role assignment request with multiple roles
+        const group = await createTestGroup(prisma, {name: "Test Group"})
+
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "OrgWideSpaceReadOnly",
+              scope: {
+                type: "org"
+              }
+            },
+            {
+              roleName: "GroupReadOnly",
+              scope: {
+                type: "group",
+                groupId: group.id
+              }
+            }
+          ]
+        }
+
+        // When: Admin assigns multiple roles to user
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive success response
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: All roles should be persisted in database
+        const userFromDb = await prisma.user.findUnique({
+          where: {id: targetUser.user.id}
+        })
+        expect(userFromDb!.roles).toHaveLength(2)
+        expect(userFromDb!.roles).toMatchObject([
+          {
+            name: "OrgWideSpaceReadOnly",
+            resourceType: "space",
+            scopeType: "org",
+            scope: {type: "org"}
+          },
+          {
+            name: "GroupReadOnly",
+            resourceType: "group",
+            scopeType: "group",
+            scope: {type: "group", groupId: group.id}
+          }
+        ])
+      })
+
+      it("should add roles to existing roles without replacing them", async () => {
+        // Given: User already has a role assigned
+        const group1 = await createTestGroup(prisma, {name: "Group 1"})
+        const group2 = await createTestGroup(prisma, {name: "Group 2"})
+
+        // First assignment
+        const firstAssignment: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "GroupReadOnly",
+              scope: {
+                type: "group",
+                groupId: group1.id
+              }
+            }
+          ]
+        }
+
+        await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(firstAssignment)
+
+        // When: Admin adds additional roles
+        const secondAssignment: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "GroupManager",
+              scope: {
+                type: "group",
+                groupId: group2.id
+              }
+            }
+          ]
+        }
+
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(secondAssignment)
+
+        // Then: Should receive success response
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Both roles should exist in database (not replaced)
+        const userFromDb = await prisma.user.findUnique({
+          where: {id: targetUser.user.id}
+        })
+        expect(userFromDb!.roles).toHaveLength(2)
+        expect(userFromDb!.roles).toMatchObject([
+          {
+            name: "GroupReadOnly",
+            scope: {type: "group", groupId: group1.id}
+          },
+          {
+            name: "GroupManager",
+            scope: {type: "group", groupId: group2.id}
+          }
+        ])
+      })
+
+      it("should handle assignment of workflow template role with non-existent resource ID", async () => {
+        // Given: Role assignment request with non-existent workflow template ID (not validated for performance)
+        const nonExistentWorkflowTemplateId = randomUUID()
+
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "WorkflowTemplateReadOnly",
+              scope: {
+                type: "workflow_template",
+                workflowTemplateId: nonExistentWorkflowTemplateId
+              }
+            }
+          ]
+        }
+
+        // When: Admin assigns role with non-existent resource ID
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive success response (resource IDs not validated for performance)
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Role should be persisted in database
+        const userFromDb = await prisma.user.findUnique({
+          where: {id: targetUser.user.id}
+        })
+        expect(userFromDb!.roles).toMatchObject([
+          {
+            name: "WorkflowTemplateReadOnly",
+            scope: {type: "workflow_template", workflowTemplateId: nonExistentWorkflowTemplateId}
+          }
+        ])
+      })
+
+      it("should handle maximum of 128 unique roles assignment with different scopes", async () => {
+        // Given: Role assignment request with 128 unique roles (maximum allowed)
+        const groups = []
+        for (let i = 0; i < 127; i++) {
+          const group = await createTestGroup(prisma, {name: `Group ${i}`})
+          groups.push(group)
+        }
+
+        const roles = []
+        // Add 127 group-specific roles
+        for (let i = 0; i < 127; i++) {
+          roles.push({
+            roleName: "GroupReadOnly",
+            scope: {
+              type: "group" as const,
+              groupId: groups[i]!.id
+            }
+          })
+        }
+        // Add 1 org-wide role
+        roles.push({
+          roleName: "OrgWideSpaceReadOnly",
+          scope: {
+            type: "org" as const
+          }
+        })
+
+        const roleAssignmentRequest: RoleAssignmentRequest = {roles}
+
+        // When: Admin assigns maximum number of unique roles
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive success response
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: All roles should be persisted in database
+        const userFromDb = await prisma.user.findUnique({
+          where: {id: targetUser.user.id}
+        })
+        expect(userFromDb!.roles).toHaveLength(128)
+      })
+
+      it("should consolidate duplicate roles in request and only add unique ones", async () => {
+        // Given: Role assignment request with duplicate roles (should be consolidated)
+        const group = await createTestGroup(prisma, {name: "Test Group"})
+
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "GroupReadOnly",
+              scope: {
+                type: "group",
+                groupId: group.id
+              }
+            },
+            {
+              roleName: "GroupReadOnly",
+              scope: {
+                type: "group",
+                groupId: group.id
+              }
+            },
+            {
+              roleName: "OrgWideSpaceReadOnly",
+              scope: {
+                type: "org"
+              }
+            }
+          ]
+        }
+
+        // When: Admin assigns roles with duplicates
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive success response
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Only unique roles should be persisted (duplicates consolidated)
+        const userFromDb = await prisma.user.findUnique({
+          where: {id: targetUser.user.id}
+        })
+        expect(userFromDb!.roles).toHaveLength(2) // Only 2 unique roles
+        expect(userFromDb!.roles).toMatchObject([
+          {
+            name: "GroupReadOnly",
+            scope: {type: "group", groupId: group.id}
+          },
+          {
+            name: "OrgWideSpaceReadOnly",
+            scope: {type: "org"}
+          }
+        ])
+      })
+    })
+
+    describe("bad cases", () => {
+      it("should return 401 for unauthenticated requests", async () => {
+        // Given: Valid role assignment request but no auth token
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "GroupReadOnly",
+              scope: {
+                type: "org"
+              }
+            }
+          ]
+        }
+
+        // When: Making request without token
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive unauthorized response
+        expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
+      })
+
+      it("should return 401 for invalid token", async () => {
+        // Given: Valid role assignment request but invalid token
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "GroupReadOnly",
+              scope: {
+                type: "org"
+              }
+            }
+          ]
+        }
+
+        // When: Making request with invalid token
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken("invalid-token")
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive unauthorized response
+        expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
+      })
+
+      it("should return 400 for empty roles array", async () => {
+        // Given: Empty roles assignment request
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: []
+        }
+
+        // When: Admin tries to assign empty roles
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive bad request response
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      })
+
+      it("should return 400 for unknown role name", async () => {
+        // Given: Role assignment request with invalid role name
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "UnknownRole",
+              scope: {
+                type: "org"
+              }
+            }
+          ]
+        }
+
+        // When: Admin tries to assign unknown role
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive bad request response
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      })
+
+      it("should return 400 for missing required scope identifier", async () => {
+        // Given: Role assignment request missing required spaceId
+        const roleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "SpaceManager",
+              scope: {
+                type: "space"
+                // Missing spaceId - this is intentionally invalid for testing
+              }
+            }
+          ]
+        }
+
+        // When: Admin tries to assign role with invalid scope
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive bad request response
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      })
+
+      it("should return 400 for invalid UUID format in scope", async () => {
+        // Given: Role assignment request with invalid UUID format
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "GroupManager",
+              scope: {
+                type: "group",
+                groupId: "invalid-uuid"
+              }
+            }
+          ]
+        }
+
+        // When: Admin tries to assign role with invalid UUID format
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive bad request response
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      })
+
+      it("should return 404 for non-existent user", async () => {
+        // Given: Valid role assignment request but non-existent user ID
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "OrgWideSpaceReadOnly",
+              scope: {
+                type: "org"
+              }
+            }
+          ]
+        }
+
+        const nonExistentUserId = randomUUID()
+
+        // When: Admin tries to assign role to non-existent user
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${nonExistentUserId}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive not found response
+        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
+      })
+
+      it("should return 400 for invalid request body structure", async () => {
+        // Given: Invalid request body structure
+        const invalidRequest = {
+          invalidField: "value"
+        }
+
+        // When: Admin sends invalid request body
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(invalidRequest)
+
+        // Then: Should receive bad request response
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      })
+
+      it("should return 400 for role with incorrect scope type", async () => {
+        // Given: Role assignment request with incompatible scope
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles: [
+            {
+              roleName: "GroupReadOnly", // Group role
+              scope: {
+                type: "org" // But org scope
+              }
+            }
+          ]
+        }
+
+        // When: Admin tries to assign role with incompatible scope
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive bad request response
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      })
+
+      it("should return 400 for exceeding maximum roles in request (129 roles)", async () => {
+        // Given: Role assignment request with more than 128 roles
+        const roles = []
+        for (let i = 0; i < MAX_ROLES_PER_ENTITY + 1; i++) {
+          roles.push({
+            roleName: "OrgWideSpaceReadOnly",
+            scope: {
+              type: "org" as const
+            }
+          })
+        }
+
+        const roleAssignmentRequest: RoleAssignmentRequest = {roles}
+
+        // When: Admin tries to assign more than maximum allowed roles in single request
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive bad request response
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      })
+
+      it("should return 422 when total roles would exceed limit", async () => {
+        // Given: User already has some roles assigned
+        const existingRoles = []
+        for (let i = 0; i < MAX_ROLES_PER_ENTITY; i++) {
+          const group = await createTestGroup(prisma, {name: `Existing Group ${i}`})
+          existingRoles.push({
+            roleName: "GroupReadOnly",
+            scope: {
+              type: "group",
+              groupId: group.id
+            }
+          })
+        }
+
+        // Assign existing roles
+        await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({roles: existingRoles})
+
+        // When: Admin tries to add more roles that would exceed total limit
+        const additionalRoles = []
+        for (let i = 0; i < 5; i++) {
+          const group = await createTestGroup(prisma, {name: `Additional Group ${i}`})
+          additionalRoles.push({
+            roleName: "GroupManager",
+            scope: {
+              type: "group",
+              groupId: group.id
+            }
+          })
+        }
+
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({roles: additionalRoles})
+
+        // Then: Should receive bad request response
+        expect(response).toHaveStatusCode(HttpStatus.UNPROCESSABLE_ENTITY)
+      })
+    })
+  })
+})

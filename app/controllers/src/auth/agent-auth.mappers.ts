@@ -125,6 +125,13 @@ export const generateErrorResponseForChallengeRequest = (
     case "agent_role_resource_required_for_scope":
     case "agent_role_resource_not_allowed_for_scope":
     case "agent_role_invalid_structure":
+    case "agent_role_assignments_empty":
+    case "agent_role_assignments_exceed_maximum":
+    case "agent_role_total_roles_exceed_maximum":
+    case "agent_role_unknown_role_name":
+    case "agent_role_scope_incompatible_with_template":
+    case "agent_invalid_occ":
+    case "agent_role_entity_type_role_restriction":
       Logger.error(`${context}: data inconsistency error - ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: data inconsistency error`)
@@ -178,6 +185,13 @@ export const generateErrorResponseForAgentTokenExchange = (
     case "agent_role_resource_required_for_scope":
     case "agent_role_resource_not_allowed_for_scope":
     case "agent_role_invalid_structure":
+    case "agent_role_assignments_empty":
+    case "agent_role_assignments_exceed_maximum":
+    case "agent_role_total_roles_exceed_maximum":
+    case "agent_role_unknown_role_name":
+    case "agent_role_scope_incompatible_with_template":
+    case "agent_invalid_occ":
+    case "agent_role_entity_type_role_restriction":
       Logger.error(`${context}: data inconsistency error - ${error}`)
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid data inconsistency`))
     case "unknown_error":

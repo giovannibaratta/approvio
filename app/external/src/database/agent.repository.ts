@@ -1,15 +1,16 @@
-import {Agent} from "@domain"
+import {Agent, Versioned} from "@domain"
 import {isPrismaUniqueConstraintError} from "@external/database/errors"
 import {Injectable} from "@nestjs/common"
-import {Agent as PrismaAgent} from "@prisma/client"
-import {AgentRepository, AgentCreateError, AgentGetError} from "@services"
+import {Agent as PrismaAgent, Prisma} from "@prisma/client"
+import {AgentRepository, AgentCreateError, AgentGetError, AgentUpdateError} from "@services"
 import * as TE from "fp-ts/lib/TaskEither"
+import * as E from "fp-ts/lib/Either"
 import {TaskEither} from "fp-ts/lib/TaskEither"
 import {pipe} from "fp-ts/lib/function"
 import {DatabaseClient} from "./database-client"
 import {chainNullableToLeft} from "./utils"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
-import {mapAgentToDomain} from "./shared"
+import {mapAgentToDomain, mapToDomainVersionedAgent} from "./shared"
 
 @Injectable()
 export class AgentDbRepository implements AgentRepository {
@@ -33,7 +34,7 @@ export class AgentDbRepository implements AgentRepository {
     )
   }
 
-  getAgentById(agentId: string): TaskEither<AgentGetError, Agent> {
+  getAgentById(agentId: string): TaskEither<AgentGetError, Versioned<Agent>> {
     return pipe(
       TE.tryCatch(
         () =>
@@ -43,8 +44,40 @@ export class AgentDbRepository implements AgentRepository {
         this.mapGetError
       ),
       chainNullableToLeft("agent_not_found" as const),
-      TE.chainEitherKW(mapAgentToDomain)
+      TE.chainEitherKW(mapToDomainVersionedAgent)
     )
+  }
+
+  updateAgent(agent: Versioned<Agent>): TaskEither<AgentUpdateError, Agent> {
+    return TE.tryCatchK(
+      async () => {
+        const updatedAgent = await this.dbClient.agent.update({
+          where: {id: agent.id, occ: Number(agent.occ)},
+          data: {
+            roles: agent.roles as unknown as Prisma.InputJsonValue, // Prisma JSON serialization
+            occ: {
+              increment: 1
+            }
+          }
+        })
+
+        const mappedAgent = mapAgentToDomain(updatedAgent)
+        if (E.isLeft(mappedAgent)) {
+          throw new Error("Failed to map updated agent to domain")
+        }
+
+        return mappedAgent.right
+      },
+      error => {
+        if (isPrismaUniqueConstraintError(error, ["occ"])) {
+          console.warn("Optimistic concurrency control conflict during agent role update", error)
+          return "unknown_error" as const
+        }
+
+        console.error("Error while updating agent roles", error)
+        return "unknown_error" as const
+      }
+    )()
   }
 
   private persistAgentTask() {
@@ -63,6 +96,7 @@ export class AgentDbRepository implements AgentRepository {
       id: agent.id,
       agentName: agent.agentName,
       base64PublicKey: Buffer.from(agent.publicKey).toString("base64"),
+      roles: agent.roles as unknown as Prisma.InputJsonValue, // Prisma JSON serialization
       createdAt: agent.createdAt,
       occ: POSTGRES_BIGINT_LOWER_BOUND
     }

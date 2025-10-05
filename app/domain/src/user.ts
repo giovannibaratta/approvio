@@ -7,8 +7,10 @@ import {
   RoleValidationError,
   SpaceScope,
   GroupScope,
-  WorkflowTemplateScope
+  WorkflowTemplateScope,
+  MAX_ROLES_PER_ENTITY
 } from "./role"
+import {Versioned} from "./shared"
 
 export const DISPLAY_NAME_MAX_LENGTH = 255
 export const EMAIL_MAX_LENGTH = 255
@@ -148,6 +150,46 @@ export class UserFactory {
     }
 
     return UserFactory.validate(user)
+  }
+
+  /**
+   * Creates a new User with additional roles assigned (additive operation)
+   * @param user Existing user (can be regular User or Versioned<User>)
+   * @param newRoles Array of new roles to add
+   * @returns Either validation error or new User/Versioned<User> with roles added (preserves input type)
+   */
+  static assignRoles<T extends User | Versioned<User>>(
+    user: T,
+    newRoles: ReadonlyArray<UnconstrainedBoundRole>
+  ): Either<UserValidationError, T> {
+    const consolidatedRoles = RoleFactory.consolidateRoles([...user.roles, ...newRoles])
+
+    if (consolidatedRoles.length > MAX_ROLES_PER_ENTITY) return left("role_total_roles_exceed_maximum")
+
+    const updatedUser = {
+      ...user,
+      roles: consolidatedRoles
+    } as T
+
+    // Extract the base user for validation (remove occ if present)
+    const baseUser: User =
+      "occ" in user
+        ? {
+            id: user.id,
+            displayName: user.displayName,
+            email: user.email,
+            createdAt: user.createdAt,
+            orgRole: user.orgRole,
+            roles: consolidatedRoles
+          }
+        : (updatedUser as User)
+
+    const validation = UserFactory.validate(baseUser)
+    if (isLeft(validation)) {
+      return validation
+    }
+
+    return right(updatedUser)
   }
 
   /**
