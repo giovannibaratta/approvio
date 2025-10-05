@@ -104,6 +104,7 @@ export interface CreateWorkflowTemplateRequest extends RequestorAwareRequest {
     approvalRule: ApprovalRule
     actions?: ReadonlyArray<WorkflowAction>
     defaultExpiresInHours?: number
+    spaceId: string
   }
 }
 

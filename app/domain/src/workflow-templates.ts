@@ -1,10 +1,11 @@
 import {randomUUID} from "crypto"
 import * as E from "fp-ts/Either"
 import {Either, isLeft, left, right} from "fp-ts/lib/Either"
+import {pipe} from "fp-ts/function"
 import {ApprovalRule, ApprovalRuleFactory, ApprovalRuleValidationError} from "./approval-rules"
 import {WorkflowAction, WorkflowActionValidationError, validateWorkflowActions} from "./workflow-actions"
 import {MembershipWithGroupRef, UnconstrainedBoundRole} from "@domain"
-import {PrefixUnion, getStringAsEnum} from "@utils"
+import {PrefixUnion, getStringAsEnum, isUUIDv4} from "@utils"
 
 export const WORKFLOW_TEMPLATE_NAME_MAX_LENGTH = 512
 export const WORKFLOW_TEMPLATE_DESCRIPTION_MAX_LENGTH = 2048
@@ -44,6 +45,7 @@ interface WorkflowTemplateData {
   defaultExpiresInHours?: number
   status: WorkflowTemplateStatus
   allowVotingOnDeprecatedTemplate: boolean
+  spaceId: string
   createdAt: Date
   updatedAt: Date
 }
@@ -82,6 +84,7 @@ type UnprefixedWorkflowTemplateValidationError =
   | "version_too_long"
   | "version_invalid_format"
   | "active_is_not_latest"
+  | "space_id_invalid_uuid"
 
 export type WorkflowTemplateDeprecationError =
   | "workflow_template_not_active"
@@ -180,48 +183,41 @@ export class WorkflowTemplateFactory {
       status: string
     }
   ): Either<WorkflowTemplateValidationError, WorkflowTemplate> {
-    const nameValidation = validateWorkflowTemplateName(data.name)
-    const versionValidation = validateWorkflowTemplateVersion(data.version)
-    const descriptionValidation = data.description
-      ? validateWorkflowTemplateDescription(data.description)
-      : right(undefined)
-    const ruleValidation = ApprovalRuleFactory.validate(data.approvalRule)
-    const actionsValidation = validateWorkflowActions(data.actions)
-    const expiresValidation =
-      data.defaultExpiresInHours !== undefined ? validateExpiresInHours(data.defaultExpiresInHours) : right(undefined)
-    const statusValidation = validateWorkflowTemplateStatus(data.status)
+    return pipe(
+      E.Do,
+      E.bindW("name", () => validateWorkflowTemplateName(data.name)),
+      E.bindW("version", () => validateWorkflowTemplateVersion(data.version)),
+      E.bindW("description", () => validateWorkflowTemplateDescription(data.description)),
+      E.bindW("approvalRule", () => ApprovalRuleFactory.validate(data.approvalRule)),
+      E.bindW("actions", () => validateWorkflowActions(data.actions)),
+      E.bindW("defaultExpiresInHours", () => validateExpiresInHours(data.defaultExpiresInHours)),
+      E.bindW("status", () => validateWorkflowTemplateStatus(data.status)),
+      E.bindW("spaceId", () => validateSpaceId(data.spaceId)),
+      E.chainFirstW(() => validateCreatedBeforeUpdated(data.createdAt, data.updatedAt)),
+      E.chainFirstW(({status, version}) => validateActiveIsLatest(status, version)),
+      E.chainFirstW(({status, version}) => validateLatestIsActive(status, version)),
+      E.map(({name, version, description, approvalRule, actions, defaultExpiresInHours, status, spaceId}) => {
+        const workflowTemplateData: WorkflowTemplateData = {
+          ...data,
+          name,
+          version,
+          description,
+          approvalRule,
+          actions,
+          defaultExpiresInHours,
+          status,
+          spaceId
+        }
 
-    if (isLeft(nameValidation)) return nameValidation
-    if (isLeft(versionValidation)) return versionValidation
-    if (isLeft(descriptionValidation)) return descriptionValidation
-    if (isLeft(ruleValidation)) return ruleValidation
-    if (isLeft(actionsValidation)) return actionsValidation
-    if (isLeft(expiresValidation)) return expiresValidation
-    if (isLeft(statusValidation)) return statusValidation
-    if (data.createdAt > data.updatedAt) return left("workflow_template_update_before_create")
-    if (statusValidation.right === WorkflowTemplateStatus.ACTIVE && versionValidation.right !== "latest")
-      return left("workflow_template_active_is_not_latest")
-    if (versionValidation.right === "latest" && statusValidation.right !== WorkflowTemplateStatus.ACTIVE)
-      return left("workflow_template_active_is_not_latest")
-
-    const workflowTemplateData: WorkflowTemplateData = {
-      ...data,
-      name: nameValidation.right,
-      version: versionValidation.right,
-      description: descriptionValidation.right,
-      approvalRule: ruleValidation.right,
-      actions: actionsValidation.right,
-      defaultExpiresInHours: expiresValidation.right,
-      status: statusValidation.right
-    }
-
-    return right({
-      ...workflowTemplateData,
-      canVote: (
-        memberships: ReadonlyArray<MembershipWithGroupRef>,
-        entityRoles: ReadonlyArray<UnconstrainedBoundRole>
-      ) => canVote(workflowTemplateData, memberships, entityRoles)
-    })
+        return {
+          ...workflowTemplateData,
+          canVote: (
+            memberships: ReadonlyArray<MembershipWithGroupRef>,
+            entityRoles: ReadonlyArray<UnconstrainedBoundRole>
+          ) => canVote(workflowTemplateData, memberships, entityRoles)
+        }
+      })
+    )
   }
 }
 
@@ -236,14 +232,18 @@ function validateWorkflowTemplateName(name: string): Either<WorkflowTemplateVali
   return E.right(name)
 }
 
-function validateWorkflowTemplateDescription(description: string): Either<WorkflowTemplateValidationError, string> {
+function validateWorkflowTemplateDescription(
+  description: string | undefined
+): Either<WorkflowTemplateValidationError, string | undefined> {
+  if (description === undefined) return E.right(undefined)
   if (description.length > WORKFLOW_TEMPLATE_DESCRIPTION_MAX_LENGTH)
     return E.left("workflow_template_description_too_long")
 
   return E.right(description)
 }
 
-function validateExpiresInHours(hours: unknown): Either<WorkflowTemplateValidationError, number> {
+function validateExpiresInHours(hours: unknown): Either<WorkflowTemplateValidationError, number | undefined> {
+  if (hours === undefined) return right(undefined)
   if (typeof hours !== "number" || !Number.isInteger(hours) || hours < 1 || hours > MAX_EXPIRES_IN_HOURS) {
     return left("workflow_template_expires_in_hours_invalid")
   }
@@ -278,6 +278,34 @@ function validateWorkflowTemplateVersion(
   return value < 0 ? E.left("workflow_template_version_invalid_number") : E.right(value)
 }
 
+function validateSpaceId(spaceId: string): Either<WorkflowTemplateValidationError, string> {
+  if (!isUUIDv4(spaceId)) return E.left("workflow_template_space_id_invalid_uuid")
+  return E.right(spaceId)
+}
+
+function validateCreatedBeforeUpdated(createdAt: Date, updatedAt: Date): Either<WorkflowTemplateValidationError, void> {
+  if (createdAt > updatedAt) return E.left("workflow_template_update_before_create")
+  return E.right(undefined)
+}
+
+function validateActiveIsLatest(
+  status: WorkflowTemplateStatus,
+  version: WorkflowTemplate["version"]
+): Either<WorkflowTemplateValidationError, void> {
+  if (status === WorkflowTemplateStatus.ACTIVE && version !== "latest")
+    return E.left("workflow_template_active_is_not_latest")
+  return E.right(undefined)
+}
+
+function validateLatestIsActive(
+  status: WorkflowTemplateStatus,
+  version: WorkflowTemplate["version"]
+): Either<WorkflowTemplateValidationError, void> {
+  if (version === "latest" && status !== WorkflowTemplateStatus.ACTIVE)
+    return E.left("workflow_template_active_is_not_latest")
+  return E.right(undefined)
+}
+
 function canVote(
   workflowTemplate: WorkflowTemplateData,
   memberships: ReadonlyArray<MembershipWithGroupRef>,
@@ -287,8 +315,8 @@ function canVote(
     return left("workflow_template_not_active")
   }
 
-  // Check if entity has vote permission for this workflow template
-  const hasVotePermission = hasVotePermissionForWorkflowTemplate(workflowTemplate.id, entityRoles)
+  // Check if entity has vote permission for this workflow template (hierarchical check)
+  const hasVotePermission = hasVotePermissionForWorkflowTemplate(workflowTemplate, entityRoles)
   if (!hasVotePermission) return left("entity_not_eligible_to_vote")
 
   const votingGroups = workflowTemplate.approvalRule.getVotingGroupIds()
@@ -302,15 +330,26 @@ function canVote(
 }
 
 function hasVotePermissionForWorkflowTemplate(
-  workflowTemplateId: string,
+  workflowTemplate: WorkflowTemplateData,
   entityRoles: ReadonlyArray<UnconstrainedBoundRole>
 ): boolean {
-  return entityRoles.some(
-    role =>
-      role.permissions.includes("vote") &&
-      role.scope.type === "workflow_template" &&
-      role.scope.workflowTemplateId === workflowTemplateId
-  )
+  const workflowTemplateId = workflowTemplate.id
+  const parentSpaceId = workflowTemplate.spaceId
+
+  return entityRoles.some(role => {
+    if (role.resourceType !== "workflow_template" || !role.permissions.includes("vote")) return false
+
+    // Check org-level vote permission
+    if (role.scope.type === "org") return true
+
+    // Check space-level vote permission
+    if (role.scope.type === "space" && role.scope.spaceId === parentSpaceId) return true
+
+    // Check workflow template-level vote permission
+    if (role.scope.type === "workflow_template" && role.scope.workflowTemplateId === workflowTemplateId) return true
+
+    return false
+  })
 }
 
 /**

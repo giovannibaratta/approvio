@@ -402,9 +402,14 @@ export async function createTestGroup(
 
 export async function createMockWorkflowTemplateInDb(
   prisma: PrismaClient,
-  overrides?: Partial<Omit<Prisma.WorkflowTemplateCreateInput, "id" | "occ">>
+  overrides?: Partial<Omit<Prisma.WorkflowTemplateCreateInput, "id" | "occ" | "spaces">> & {
+    spaceId?: string
+  }
 ): Promise<PrismaWorkflowTemplate> {
   const dates = generate_consistent_dates_for_workflow_template(overrides)
+
+  const spaceId = overrides?.spaceId ?? (await createMockSpaceInDb(prisma)).id
+
   const randomTemplate: Prisma.WorkflowTemplateCreateInput = {
     id: chance.guid({
       version: 4
@@ -424,6 +429,11 @@ export async function createMockWorkflowTemplateInDb(
     allowVotingOnDeprecatedTemplate: true,
     version: "latest",
     occ: 1,
+    spaces: {
+      connect: {
+        id: spaceId
+      }
+    },
     createdAt: dates.createdAt,
     updatedAt: dates.updatedAt
   }

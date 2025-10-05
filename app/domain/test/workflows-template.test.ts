@@ -19,7 +19,8 @@ const getWorkflowTemplate = (rule: ApprovalRule): WorkflowTemplate => {
     name: "Test Template",
     description: "A test template",
     approvalRule: rule,
-    actions: []
+    actions: [],
+    spaceId: randomUUID()
   })
 
   if (!isRight(result)) {

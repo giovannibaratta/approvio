@@ -220,6 +220,7 @@ export function mapWorkflowTemplateToDomain(
     defaultExpiresInHours: dbObject.defaultExpiresInHours ?? undefined,
     status: dbObject.status,
     allowVotingOnDeprecatedTemplate: dbObject.allowVotingOnDeprecatedTemplate,
+    spaceId: dbObject.spaceId,
     occ: dbObject.occ
   }
   return pipe(object, WorkflowTemplateFactory.validate)

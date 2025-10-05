@@ -145,6 +145,7 @@ export function generateErrorResponseForCreateWorkflow(
     case "workflow_template_version_invalid_format":
     case "workflow_template_version_invalid_number":
     case "workflow_template_version_too_long":
+    case "workflow_template_space_id_invalid_uuid":
     case "workflow_template_active_is_not_latest":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
@@ -202,6 +203,7 @@ export function generateErrorResponseForGetWorkflow(error: GetWorkflowLeft, cont
     case "workflow_template_version_invalid_format":
     case "workflow_template_version_invalid_number":
     case "workflow_template_version_too_long":
+    case "workflow_template_space_id_invalid_uuid":
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
     case "workflow_template_active_is_not_latest":
@@ -247,6 +249,7 @@ export function generateErrorResponseForListWorkflows(error: ListWorkflowsLeft, 
     case "workflow_template_version_invalid_format":
     case "workflow_template_version_invalid_number":
     case "workflow_template_version_too_long":
+    case "workflow_template_space_id_invalid_uuid":
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
     case "workflow_template_active_is_not_latest":
@@ -483,6 +486,7 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "workflow_template_version_invalid_format":
     case "workflow_template_version_invalid_number":
     case "workflow_template_version_too_long":
+    case "workflow_template_space_id_invalid_uuid":
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
     case "workflow_template_active_is_not_latest":
@@ -623,6 +627,7 @@ export function generateErrorResponseForCastVote(
     case "workflow_template_version_invalid_format":
     case "workflow_template_version_invalid_number":
     case "workflow_template_version_too_long":
+    case "workflow_template_space_id_invalid_uuid":
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
     case "workflow_template_active_is_not_latest":

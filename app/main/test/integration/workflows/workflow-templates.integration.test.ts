@@ -4,7 +4,7 @@ import {NestApplication} from "@nestjs/core"
 import {AppModule} from "@app/app.module"
 import {DatabaseClient} from "@external"
 import {WORKFLOW_TEMPLATES_ENDPOINT_ROOT} from "@controllers"
-import {PrismaClient, WorkflowTemplate as PrismaWorkflowTemplate} from "@prisma/client"
+import {PrismaClient, WorkflowTemplate as PrismaWorkflowTemplate, Space as PrismaSpace} from "@prisma/client"
 import {
   WorkflowTemplateCreate,
   WorkflowTemplateUpdate,
@@ -13,7 +13,12 @@ import {
 } from "@approvio/api"
 import {randomUUID} from "crypto"
 import {cleanDatabase, prepareDatabase} from "../database"
-import {createDomainMockUserInDb, createMockWorkflowTemplateInDb, MockConfigProvider} from "../shared/mock-data"
+import {
+  createDomainMockUserInDb,
+  createMockWorkflowTemplateInDb,
+  MockConfigProvider,
+  createMockSpaceInDb
+} from "../shared/mock-data"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
 import {ApprovalRuleType} from "@domain"
@@ -29,6 +34,7 @@ describe("Workflow Templates API", () => {
   let orgAdminUser: UserWithToken
   let orgMemberUser: UserWithToken
   let jwtService: JwtService
+  let testSpace: PrismaSpace
 
   const endpoint = `/${WORKFLOW_TEMPLATES_ENDPOINT_ROOT}`
 
@@ -67,6 +73,8 @@ describe("Workflow Templates API", () => {
     orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
     orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
 
+    testSpace = await createMockSpaceInDb(prisma)
+
     await app.init()
   }, 30000)
 
@@ -77,17 +85,22 @@ describe("Workflow Templates API", () => {
   })
 
   describe("POST /workflow-templates", () => {
-    const createWorkflowTemplatePayload: WorkflowTemplateCreate = {
-      name: "Test Workflow Template",
-      description: "A test workflow template",
-      approvalRule: {
-        type: ApprovalRuleType.GROUP_REQUIREMENT,
-        groupId: randomUUID(),
-        minCount: 1
-      },
-      actions: [],
-      defaultExpiresInHours: 24
-    }
+    let createWorkflowTemplatePayload: WorkflowTemplateCreate
+
+    beforeEach(() => {
+      createWorkflowTemplatePayload = {
+        name: "Test Workflow Template",
+        description: "A test workflow template",
+        approvalRule: {
+          type: ApprovalRuleType.GROUP_REQUIREMENT,
+          groupId: randomUUID(),
+          minCount: 1
+        },
+        actions: [],
+        defaultExpiresInHours: 24,
+        spaceId: testSpace.id
+      }
+    })
 
     describe("good cases", () => {
       it("should create a workflow template and return 201 with location header (as OrgAdmin)", async () => {
@@ -122,7 +135,8 @@ describe("Workflow Templates API", () => {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
             groupId: randomUUID(),
             minCount: 1
-          }
+          },
+          spaceId: testSpace.id
         }
 
         // When
@@ -161,7 +175,8 @@ describe("Workflow Templates API", () => {
                 ]
               }
             ]
-          }
+          },
+          spaceId: testSpace.id
         }
 
         // When
@@ -196,7 +211,8 @@ describe("Workflow Templates API", () => {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
             groupId: randomUUID(),
             minCount: 1
-          }
+          },
+          spaceId: testSpace.id
         }
 
         // When
@@ -215,7 +231,8 @@ describe("Workflow Templates API", () => {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
             groupId: randomUUID(),
             minCount: 1
-          }
+          },
+          spaceId: testSpace.id
         }
 
         // When
@@ -235,7 +252,8 @@ describe("Workflow Templates API", () => {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
             groupId: randomUUID(),
             minCount: 1
-          }
+          },
+          spaceId: testSpace.id
         }
 
         // When
@@ -254,7 +272,8 @@ describe("Workflow Templates API", () => {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
             groupId: randomUUID(),
             minCount: 1
-          }
+          },
+          spaceId: testSpace.id
         }
 
         // When
@@ -275,7 +294,8 @@ describe("Workflow Templates API", () => {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
             groupId: randomUUID(),
             minCount: 1
-          }
+          },
+          spaceId: testSpace.id
         }
 
         // When
@@ -295,7 +315,8 @@ describe("Workflow Templates API", () => {
             groupId: randomUUID(),
             minCount: 1
           },
-          defaultExpiresInHours: 0 // Invalid: must be >= 1
+          defaultExpiresInHours: 0, // Invalid: must be >= 1
+          spaceId: testSpace.id
         }
 
         // When
@@ -314,7 +335,8 @@ describe("Workflow Templates API", () => {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
             groupId: randomUUID(),
             minCount: 0 // Invalid: minCount must be at least 1
-          }
+          },
+          spaceId: testSpace.id
         }
 
         // When
@@ -333,7 +355,8 @@ describe("Workflow Templates API", () => {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
             groupId: "invalid-group-id", // Invalid: not a valid UUID
             minCount: 1
-          }
+          },
+          spaceId: testSpace.id
         }
 
         // When
@@ -351,7 +374,8 @@ describe("Workflow Templates API", () => {
           approvalRule: {
             type: ApprovalRuleType.AND,
             rules: [] // Invalid: AND rule must have at least one rule
-          }
+          },
+          spaceId: testSpace.id
         }
 
         // When
@@ -369,7 +393,8 @@ describe("Workflow Templates API", () => {
           approvalRule: {
             type: ApprovalRuleType.OR,
             rules: [] // Invalid: OR rule must have at least one rule
-          }
+          },
+          spaceId: testSpace.id
         }
 
         // When

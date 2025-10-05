@@ -10,6 +10,8 @@ databaseChangeLog:
   - include:
       file: v1/create-group-memberships-table.yaml
   - include:
+      file: v1/create-spaces-table.yaml
+  - include:
       file: v1/create-workflow-templates-table.yaml
   - include:
       file: v1/create-workflows-table.yaml
@@ -21,8 +23,6 @@ databaseChangeLog:
       file: v1/create-pkce-sessions-table.yaml
   - include:
       file: v1/create-organization-admins-table.yaml
-  - include:
-      file: v1/create-spaces-table.yaml
   - include:
       file: v1/create-agent-challenges-table.yaml
   - include:

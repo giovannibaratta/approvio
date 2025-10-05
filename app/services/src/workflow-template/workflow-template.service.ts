@@ -57,7 +57,8 @@ export class WorkflowTemplateService {
           description: request.workflowTemplateData.description,
           approvalRule: request.workflowTemplateData.approvalRule,
           actions: request.workflowTemplateData.actions || [],
-          defaultExpiresInHours: request.workflowTemplateData.defaultExpiresInHours
+          defaultExpiresInHours: request.workflowTemplateData.defaultExpiresInHours,
+          spaceId: request.workflowTemplateData.spaceId
         })
       ),
       TE.fromEither,

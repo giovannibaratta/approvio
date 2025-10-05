@@ -325,6 +325,7 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
               defaultExpiresInHours: data.defaultExpiresInHours,
               status: data.status,
               allowVotingOnDeprecatedTemplate: data.allowVotingOnDeprecatedTemplate,
+              spaceId: data.spaceId,
               createdAt: data.createdAt,
               updatedAt: data.updatedAt,
               occ: POSTGRES_BIGINT_LOWER_BOUND

@@ -53,7 +53,8 @@ export function createWorkflowTemplateApiToServiceModel(data: {
     description: data.workflowTemplateData.description,
     approvalRule: eitherApprovalRule.right,
     actions: actions.right,
-    defaultExpiresInHours: data.workflowTemplateData.defaultExpiresInHours
+    defaultExpiresInHours: data.workflowTemplateData.defaultExpiresInHours,
+    spaceId: data.workflowTemplateData.spaceId
   }
 
   return right({
@@ -133,6 +134,7 @@ export function mapWorkflowTemplateToApi(workflowTemplate: WorkflowTemplate): Wo
     metadata: {}, // Metadata are currently not supported
     actions: workflowTemplate.actions.map(mapWorkflowActionToApi),
     defaultExpiresInHours: workflowTemplate.defaultExpiresInHours,
+    spaceId: workflowTemplate.spaceId,
     createdAt: workflowTemplate.createdAt.toISOString(),
     updatedAt: workflowTemplate.updatedAt.toISOString(),
     status: workflowTemplate.status,
@@ -203,6 +205,7 @@ export function generateErrorResponseForCreateWorkflowTemplate(
     case "workflow_template_name_empty":
     case "workflow_template_name_invalid_characters":
     case "workflow_template_name_too_long":
+    case "workflow_template_space_id_invalid_uuid":
     case "workflow_template_status_invalid":
     case "workflow_template_version_invalid_format":
     case "workflow_template_version_invalid_number":
@@ -256,6 +259,7 @@ export function generateErrorResponseForGetWorkflowTemplate(
     case "workflow_template_version_invalid_format":
     case "workflow_template_version_invalid_number":
     case "workflow_template_version_too_long":
+    case "workflow_template_space_id_invalid_uuid":
     case "workflow_template_active_is_not_latest":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
@@ -301,6 +305,7 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
     case "workflow_template_name_empty":
     case "workflow_template_name_invalid_characters":
     case "workflow_template_name_too_long":
+    case "workflow_template_space_id_invalid_uuid":
     case "workflow_template_status_invalid":
     case "workflow_template_version_invalid_format":
     case "workflow_template_version_invalid_number":
@@ -376,6 +381,7 @@ export function generateErrorResponseForDeprecateWorkflowTemplate(
     case "workflow_template_name_invalid_characters":
     case "workflow_template_name_too_long":
     case "workflow_template_status_invalid":
+    case "workflow_template_space_id_invalid_uuid":
     case "workflow_template_update_before_create":
     case "workflow_template_version_invalid_format":
     case "workflow_template_version_invalid_number":
@@ -424,6 +430,7 @@ export function generateErrorResponseForListWorkflowTemplates(
     case "workflow_template_name_invalid_characters":
     case "workflow_template_name_too_long":
     case "workflow_template_status_invalid":
+    case "workflow_template_space_id_invalid_uuid":
     case "workflow_template_update_before_create":
     case "workflow_template_version_invalid_format":
     case "workflow_template_version_invalid_number":

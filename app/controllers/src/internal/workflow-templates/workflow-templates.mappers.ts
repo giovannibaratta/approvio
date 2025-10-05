@@ -32,6 +32,7 @@ export function generateErrorResponseForCancelWorkflowsForTemplate(
     case "workflow_template_description_too_long":
     case "workflow_template_update_before_create":
     case "workflow_template_expires_in_hours_invalid":
+    case "workflow_template_space_id_invalid_uuid":
     case "workflow_template_status_invalid":
     case "workflow_template_version_invalid_number":
     case "workflow_template_version_too_long":
