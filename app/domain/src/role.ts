@@ -230,6 +230,28 @@ export class RoleFactory {
     }
   }
 
+  /**
+   * Compares two role scopes for equality
+   * Matches scopes by type and their relevant IDs
+   * @param scope1 First scope to compare
+   * @param scope2 Second scope to compare
+   * @returns true if scopes are equal, false otherwise
+   */
+  static isSameScope(scope1: RoleScope, scope2: RoleScope): boolean {
+    if (scope1.type !== scope2.type) return false
+
+    switch (scope1.type) {
+      case "org":
+        return true
+      case "space":
+        return scope1.spaceId === (scope2 as SpaceScope).spaceId
+      case "group":
+        return scope1.groupId === (scope2 as GroupScope).groupId
+      case "workflow_template":
+        return scope1.workflowTemplateId === (scope2 as WorkflowTemplateScope).workflowTemplateId
+    }
+  }
+
   private static validateRole(role: unknown): Either<RoleValidationError, BoundRole> {
     const value = pipe(
       role,

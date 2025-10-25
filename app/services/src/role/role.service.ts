@@ -20,7 +20,9 @@ import {
   ListRoleTemplatesError,
   ListRoleTemplatesResult,
   UserRoleAssignmentError,
-  AgentRoleAssignmentError
+  AgentRoleAssignmentError,
+  UserRoleRemovalError,
+  AgentRoleRemovalError
 } from "./interfaces"
 import {validateUserEntity} from "@services/shared/types"
 import {AGENT_REPOSITORY_TOKEN, AgentRepository} from "@services/agent"
@@ -153,8 +155,8 @@ export class RoleService {
       TE.chainFirstEitherKW(({request, boundRolesToAssign, workflowTemplatesParents}) =>
         validateRequestorAsPermissions(request, boundRolesToAssign, workflowTemplatesParents)
       ),
-      TE.bindW("currentUser", ({request}) => this.userRoleRepo.getUserById(request.userId)),
-      TE.chainEitherKW(({currentUser, boundRolesToAssign}) => UserFactory.assignRoles(currentUser, boundRolesToAssign)),
+      TE.bindW("targetUser", ({request}) => this.userRoleRepo.getUserById(request.userId)),
+      TE.chainEitherKW(({targetUser, boundRolesToAssign}) => UserFactory.assignRoles(targetUser, boundRolesToAssign)),
       TE.chainW(updatedUser => this.userRoleRepo.updateUser(updatedUser)),
       TE.map(() => undefined)
     )
@@ -204,6 +206,94 @@ export class RoleService {
       TE.map(() => undefined)
     )
   }
+
+  /**
+   * Removes roles from a user
+   */
+  removeRolesFromUser(request: RemoveRolesFromUserRequest): TaskEither<UserRoleRemovalError, void> {
+    const validateAndCreateBoundRoles = (items: RoleAssignmentItem[]) =>
+      pipe(
+        this.generateBoundRoles<UserRoleRemovalError>(items),
+        E.chainW(boundRoles => RoleFactory.validateRolesForEntityType(boundRoles, "user"))
+      )
+
+    const validateRequestorAsPermissions = (
+      req: RemoveRolesFromUserRequest,
+      boundRoles: ReadonlyArray<BoundRole>,
+      workflowTemplatesParents: ReadonlyMap<string, string>
+    ) => {
+      return pipe(
+        validateUserEntity(req.requestor),
+        E.chainW(user =>
+          E.fromPredicate(
+            (u: User) => RoleAuthorizationChecker.canAssignRoles(u, boundRoles, workflowTemplatesParents),
+            () => "requestor_not_authorized" as const
+          )(user)
+        )
+      )
+    }
+
+    return pipe(
+      TE.Do,
+      TE.bindW("request", () => TE.right(request)),
+      TE.bindW("boundRolesToRemove", ({request}) => TE.fromEither(validateAndCreateBoundRoles(request.roles))),
+      TE.bindW("workflowTemplatesParents", ({boundRolesToRemove}) =>
+        this.fetchWorkflowTemplateSpaceMappings(boundRolesToRemove)
+      ),
+      TE.chainFirstEitherKW(({request, boundRolesToRemove, workflowTemplatesParents}) =>
+        validateRequestorAsPermissions(request, boundRolesToRemove, workflowTemplatesParents)
+      ),
+      TE.bindW("targetUser", ({request}) => this.userRoleRepo.getUserById(request.userId)),
+      TE.chainEitherKW(({targetUser, boundRolesToRemove}) => UserFactory.removeRoles(targetUser, boundRolesToRemove)),
+      TE.chainW(updatedUser => this.userRoleRepo.updateUser(updatedUser)),
+      TE.map(() => undefined)
+    )
+  }
+
+  /**
+   * Removes roles from an agent
+   */
+  removeRolesFromAgent(request: RemoveRolesFromAgentRequest): TaskEither<AgentRoleRemovalError, void> {
+    const validateAndCreateBoundRoles = (items: RoleAssignmentItem[]) =>
+      pipe(
+        this.generateBoundRoles<AgentRoleRemovalError>(items),
+        E.chainW(boundRoles => RoleFactory.validateRolesForEntityType(boundRoles, "agent"))
+      )
+
+    const validateRequestorAsPermissions = (
+      req: RemoveRolesFromAgentRequest,
+      boundRoles: ReadonlyArray<BoundRole>,
+      workflowTemplatesParents: ReadonlyMap<string, string>
+    ) => {
+      return pipe(
+        validateUserEntity(req.requestor),
+        E.chainW(user =>
+          E.fromPredicate(
+            (u: User) => RoleAuthorizationChecker.canAssignRoles(u, boundRoles, workflowTemplatesParents),
+            () => "requestor_not_authorized" as const
+          )(user)
+        )
+      )
+    }
+
+    return pipe(
+      TE.Do,
+      TE.bindW("request", () => TE.right(request)),
+      TE.bindW("boundRolesToRemove", ({request}) => TE.fromEither(validateAndCreateBoundRoles(request.roles))),
+      TE.bindW("workflowTemplatesParents", ({boundRolesToRemove}) =>
+        this.fetchWorkflowTemplateSpaceMappings(boundRolesToRemove)
+      ),
+      TE.chainFirstEitherKW(({request, boundRolesToRemove, workflowTemplatesParents}) =>
+        validateRequestorAsPermissions(request, boundRolesToRemove, workflowTemplatesParents)
+      ),
+      TE.bindW("currentAgent", ({request}) => this.agentRoleRepo.getAgentById(request.agentId)),
+      TE.chainEitherKW(({currentAgent, boundRolesToRemove}) =>
+        AgentFactory.removeRoles<{occ: true}>(currentAgent, boundRolesToRemove)
+      ),
+      TE.chainW(updatedAgent => this.agentRoleRepo.updateAgent(updatedAgent)),
+      TE.map(() => undefined)
+    )
+  }
 }
 
 export interface RoleAssignmentItem {
@@ -218,6 +308,18 @@ export interface AssignRolesToUserRequest {
 }
 
 export interface AssignRolesToAgentRequest {
+  readonly agentId: string
+  readonly roles: RoleAssignmentItem[]
+  readonly requestor: AuthenticatedEntity
+}
+
+export interface RemoveRolesFromUserRequest {
+  readonly userId: string
+  readonly roles: RoleAssignmentItem[]
+  readonly requestor: AuthenticatedEntity
+}
+
+export interface RemoveRolesFromAgentRequest {
   readonly agentId: string
   readonly roles: RoleAssignmentItem[]
   readonly requestor: AuthenticatedEntity

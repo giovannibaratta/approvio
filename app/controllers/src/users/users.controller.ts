@@ -3,11 +3,18 @@ import {
   User as UserApi,
   UserCreate,
   UserSummary as UserSummaryApi,
-  RoleAssignmentRequest
+  RoleAssignmentRequest,
+  RoleRemovalRequest
 } from "@approvio/api"
 import {GetAuthenticatedEntity} from "@app/auth"
-import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
-import {ListUsersRequest, UserService, RoleService, AssignRolesToUserRequest} from "@services"
+import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
+import {
+  ListUsersRequest,
+  UserService,
+  RoleService,
+  AssignRolesToUserRequest,
+  RemoveRolesFromUserRequest
+} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -19,11 +26,12 @@ import {
   generateErrorResponseForGetUser,
   generateErrorResponseForListUsers,
   generateErrorResponseForUserRoleAssignment,
+  generateErrorResponseForUserRoleRemoval,
   mapToServiceRequest,
   mapUserToApi,
   mapUsersToApi
 } from "./users.mappers"
-import {validateRoleAssignmentRequest} from "../shared/mappers"
+import {validateRoleAssignmentRequest, validateRoleRemovalRequest} from "../shared/mappers"
 import {AuthenticatedEntity} from "@domain"
 
 export const USERS_ENDPOINT_ROOT = "users"
@@ -122,5 +130,32 @@ export class UsersController {
 
     if (isLeft(eitherResult))
       throw generateErrorResponseForUserRoleAssignment(eitherResult.left, "Failed to assign roles to user")
+  }
+
+  @Delete(":userId/roles")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeRolesFromUser(
+    @Param("userId") userId: string,
+    @Body() request: unknown,
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+  ): Promise<void> {
+    const mapToServiceModel = (req: RoleRemovalRequest) => ({
+      userId,
+      roles: req.roles,
+      requestor
+    })
+    const removeRole = (req: RemoveRolesFromUserRequest) => this.roleService.removeRolesFromUser(req)
+
+    const eitherResult = await pipe(
+      request,
+      E.right,
+      E.chainW(validateRoleRemovalRequest),
+      E.map(mapToServiceModel),
+      TE.fromEither,
+      TE.chainW(removeRole)
+    )()
+
+    if (isLeft(eitherResult))
+      throw generateErrorResponseForUserRoleRemoval(eitherResult.left, "Failed to remove roles from user")
   }
 }

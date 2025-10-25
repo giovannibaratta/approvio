@@ -3,11 +3,13 @@ import {
   ApprovalRule as ApprovalRuleApi,
   RoleAssignmentItem,
   RoleAssignmentRequest,
+  RoleRemovalRequest,
   RoleScope,
   SpaceScope,
   OrgScope,
   GroupScope,
-  WorkflowTemplateScope
+  WorkflowTemplateScope,
+  RoleOperationRequest
 } from "@approvio/api"
 import {Either, right, left, chain} from "fp-ts/Either"
 import * as E from "fp-ts/Either"
@@ -37,7 +39,7 @@ export function mapApprovalRuleDataToApi(rule: ApprovalRuleData): ApprovalRuleAp
   }
 }
 
-export type RoleAssignmentValidationError = PrefixUnion<
+type RoleOperationChangeValidationError = PrefixUnion<
   "request",
   | "malformed"
   | "roles_missing"
@@ -54,13 +56,14 @@ export type RoleAssignmentValidationError = PrefixUnion<
   | "scope_id_invalid_uuid"
 >
 
+export type RoleAssignmentValidationError = RoleOperationChangeValidationError
+export type RoleRemovalValidationError = RoleOperationChangeValidationError
+
 /**
- * Validates the structure of a RoleAssignmentRequest from unknown input.
+ * Internal validation function for role operations (assignment or removal).
  * Only performs structural validation, not semantic validation.
  */
-export function validateRoleAssignmentRequest(
-  request: unknown
-): Either<RoleAssignmentValidationError, RoleAssignmentRequest> {
+function validateRoleOperation(request: unknown): Either<RoleOperationChangeValidationError, RoleOperationRequest> {
   return pipe(
     request,
     E.right,
@@ -70,9 +73,27 @@ export function validateRoleAssignmentRequest(
   )
 }
 
+/**
+ * Validates the structure of a RoleAssignmentRequest from unknown input.
+ * Only performs structural validation, not semantic validation.
+ */
+export function validateRoleAssignmentRequest(
+  request: unknown
+): Either<RoleAssignmentValidationError, RoleAssignmentRequest> {
+  return validateRoleOperation(request)
+}
+
+/**
+ * Validates the structure of a RoleRemovalRequest from unknown input.
+ * Only performs structural validation, not semantic validation.
+ */
+export function validateRoleRemovalRequest(request: unknown): Either<RoleRemovalValidationError, RoleRemovalRequest> {
+  return validateRoleOperation(request)
+}
+
 function validateRequestStructure(
   request: unknown
-): Either<RoleAssignmentValidationError, {roles: [unknown, ...unknown[]]}> {
+): Either<RoleOperationChangeValidationError, {roles: [unknown, ...unknown[]]}> {
   if (typeof request !== "object" || request === null) return left("request_malformed")
   if (!("roles" in request)) return left("request_roles_missing")
   if (!Array.isArray(request.roles)) return left("request_roles_not_array")
@@ -82,7 +103,7 @@ function validateRequestStructure(
 
 function validateRolesArray(request: {
   roles: [unknown, ...unknown[]]
-}): Either<RoleAssignmentValidationError, {roles: RoleAssignmentItem[]}> {
+}): Either<RoleOperationChangeValidationError, {roles: RoleAssignmentItem[]}> {
   return pipe(
     request.roles,
     A.traverse(E.Applicative)(role => validateSingleRole(role)),
@@ -90,7 +111,7 @@ function validateRolesArray(request: {
   )
 }
 
-function validateSingleRole(role: unknown): Either<RoleAssignmentValidationError, RoleAssignmentItem> {
+function validateSingleRole(role: unknown): Either<RoleOperationChangeValidationError, RoleAssignmentItem> {
   return pipe(
     E.Do,
     E.bindW("structure", () => validateRoleStructure(role)),
@@ -102,26 +123,26 @@ function validateSingleRole(role: unknown): Either<RoleAssignmentValidationError
 
 function validateRoleStructure(
   role: unknown
-): Either<RoleAssignmentValidationError, {roleName: unknown; scope: unknown}> {
+): Either<RoleOperationChangeValidationError, {roleName: unknown; scope: unknown}> {
   if (typeof role !== "object" || role === null) return left("request_malformed")
   if (!("roleName" in role)) return left("request_role_name_missing")
   if (!("scope" in role)) return left("request_scope_missing")
   return right(role as {roleName: unknown; scope: unknown})
 }
 
-function validateRoleName(roleName: unknown): Either<RoleAssignmentValidationError, string> {
+function validateRoleName(roleName: unknown): Either<RoleOperationChangeValidationError, string> {
   if (typeof roleName !== "string") return left("request_role_name_not_string")
   if (roleName.trim().length === 0) return left("request_role_name_empty")
   return right(roleName)
 }
 
-function validateRoleScope(scope: unknown): Either<RoleAssignmentValidationError, RoleScope> {
+function validateRoleScope(scope: unknown): Either<RoleOperationChangeValidationError, RoleScope> {
   return pipe(scope, validateGenericScopeStructure, chain(validateScopeType))
 }
 
 function validateGenericScopeStructure(
   scope: unknown
-): Either<RoleAssignmentValidationError, object & {type: RoleScope["type"]}> {
+): Either<RoleOperationChangeValidationError, object & {type: RoleScope["type"]}> {
   if (!scope) return left("request_scope_missing")
   if (typeof scope !== "object" || scope === null) return left("request_scope_not_object")
   if (!("type" in scope)) return left("request_scope_type_missing")
@@ -133,7 +154,7 @@ function validateGenericScopeStructure(
 
 function validateScopeType(
   scope: object & {type: RoleScope["type"]}
-): Either<RoleAssignmentValidationError, RoleScope> {
+): Either<RoleOperationChangeValidationError, RoleScope> {
   switch (scope.type) {
     case "org":
       return validateOrgScope(scope as OrgScope)
@@ -146,13 +167,13 @@ function validateScopeType(
   }
 }
 
-function validateOrgScope(scope: {type: "org"}): Either<RoleAssignmentValidationError, OrgScope> {
+function validateOrgScope(scope: {type: "org"}): Either<RoleOperationChangeValidationError, OrgScope> {
   return right(scope)
 }
 
 function validateSpaceScope(
   scope: {type: "space"} & Record<string, unknown>
-): Either<RoleAssignmentValidationError, SpaceScope> {
+): Either<RoleOperationChangeValidationError, SpaceScope> {
   return pipe(
     E.Do,
     E.bindW("type", () => right(scope.type)),
@@ -163,7 +184,7 @@ function validateSpaceScope(
 
 function validateGroupScope(
   scope: {type: "group"} & Record<string, unknown>
-): Either<RoleAssignmentValidationError, GroupScope> {
+): Either<RoleOperationChangeValidationError, GroupScope> {
   return pipe(
     E.Do,
     E.bindW("type", () => right(scope.type)),
@@ -174,7 +195,7 @@ function validateGroupScope(
 
 function validateWorkflowTemplateScope(
   scope: {type: "workflow_template"} & Record<string, unknown>
-): Either<RoleAssignmentValidationError, WorkflowTemplateScope> {
+): Either<RoleOperationChangeValidationError, WorkflowTemplateScope> {
   return pipe(
     E.Do,
     E.bindW("type", () => right(scope.type)),
@@ -183,7 +204,7 @@ function validateWorkflowTemplateScope(
   )
 }
 
-function validateScopeUuidField(fieldValue: unknown): Either<RoleAssignmentValidationError, string> {
+function validateScopeUuidField(fieldValue: unknown): Either<RoleOperationChangeValidationError, string> {
   if (typeof fieldValue !== "string") return left("request_scope_id_missing")
   if (!isUUIDv4(fieldValue)) return left("request_scope_id_invalid_uuid")
   return right(fieldValue)

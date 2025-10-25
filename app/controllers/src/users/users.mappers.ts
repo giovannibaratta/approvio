@@ -18,14 +18,15 @@ import {
   UserCreateError,
   UserGetError,
   UserListError,
-  UserRoleAssignmentError
+  UserRoleAssignmentError,
+  UserRoleRemovalError
 } from "@services"
 import {bindW, Do, Either, map, right, left} from "fp-ts/Either"
 import {generateErrorPayload} from "../error"
 import {pipe} from "fp-ts/lib/function"
 import * as O from "fp-ts/Option"
 import {Option} from "fp-ts/Option"
-import {RoleAssignmentValidationError} from "../shared/mappers"
+import {RoleAssignmentValidationError, RoleRemovalValidationError} from "@controllers/shared"
 
 export function createUserApiToServiceModel(data: {
   userData: UserCreate
@@ -237,6 +238,91 @@ export function generateErrorResponseForUserRoleAssignment(
       )
     case "request_invalid_user_identifier":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request for role assignment`))
+    case "concurrent_modification_error":
+      return new ConflictException(
+        generateErrorPayload(errorCode, `${context}: The user was affected by another request`)
+      )
+  }
+}
+
+export function generateErrorResponseForUserRoleRemoval(
+  error: UserRoleRemovalError | RoleRemovalValidationError,
+  context: string
+): HttpException {
+  const errorCode = error.toUpperCase()
+
+  switch (error) {
+    case "request_malformed":
+    case "request_roles_missing":
+    case "request_roles_not_array":
+    case "request_roles_empty":
+    case "request_role_name_missing":
+    case "request_role_name_not_string":
+    case "request_role_name_empty":
+    case "request_scope_missing":
+    case "request_scope_not_object":
+    case "request_scope_type_missing":
+    case "request_scope_type_invalid":
+    case "request_scope_id_missing":
+    case "request_scope_id_invalid_uuid":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request format`))
+    case "user_not_found":
+      return new NotFoundException(generateErrorPayload(errorCode, `${context}: User not found`))
+    case "workflow_template_not_found":
+      return new BadRequestException(
+        generateErrorPayload(errorCode, `${context}: Workflow template not found for role removal`)
+      )
+    case "requestor_not_authorized":
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Not authorized to remove roles`))
+    case "role_assignments_empty":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Roles array cannot be empty`))
+    case "role_unknown_role_name":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Unknown role name`))
+    case "role_assignments_exceed_maximum":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Request contains too many roles`))
+    case "role_total_roles_exceed_maximum":
+      return new UnprocessableEntityException(
+        generateErrorPayload(errorCode, `${context}: Maximum number of roles exceeded`)
+      )
+    case "role_invalid_scope":
+    case "role_resource_id_invalid":
+    case "role_resource_required_for_scope":
+    case "role_resource_not_allowed_for_scope":
+    case "role_invalid_structure":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid role removal format`))
+    case "role_scope_incompatible_with_template":
+      return new BadRequestException(
+        generateErrorPayload(errorCode, `${context}: the specified scope is not supported by this role`)
+      )
+    case "role_entity_type_role_restriction":
+      return new BadRequestException(
+        generateErrorPayload(errorCode, `${context}: This role type cannot be removed from this entity`)
+      )
+    case "user_invalid_uuid":
+    case "user_display_name_empty":
+    case "user_display_name_too_long":
+    case "user_email_empty":
+    case "user_email_too_long":
+    case "user_email_invalid":
+    case "user_org_role_invalid":
+    case "user_role_assignments_invalid_format":
+    case "user_duplicate_roles":
+    case "role_invalid_uuid":
+    case "role_name_empty":
+    case "role_name_too_long":
+    case "role_name_invalid_characters":
+    case "role_permissions_empty":
+    case "role_permission_invalid":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
+      )
+    case "unknown_error":
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
+      )
+    case "request_invalid_user_identifier":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request for role removal`))
     case "concurrent_modification_error":
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: The user was affected by another request`)

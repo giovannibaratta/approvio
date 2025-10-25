@@ -1,15 +1,7 @@
 import {Either, left, right, isLeft} from "fp-ts/Either"
 import {randomUUID} from "crypto"
 import {getStringAsEnum, isEmail, isUUIDv4, PrefixUnion} from "@utils"
-import {
-  UnconstrainedBoundRole,
-  RoleFactory,
-  RoleValidationError,
-  SpaceScope,
-  GroupScope,
-  WorkflowTemplateScope,
-  MAX_ROLES_PER_ENTITY
-} from "./role"
+import {UnconstrainedBoundRole, RoleFactory, RoleValidationError, MAX_ROLES_PER_ENTITY} from "./role"
 import {Versioned} from "./shared"
 
 export const DISPLAY_NAME_MAX_LENGTH = 255
@@ -185,9 +177,48 @@ export class UserFactory {
         : (updatedUser as User)
 
     const validation = UserFactory.validate(baseUser)
-    if (isLeft(validation)) {
-      return validation
-    }
+    if (isLeft(validation)) return validation
+
+    return right(updatedUser)
+  }
+
+  /**
+   * Creates a new User with specified roles removed
+   * @param user Existing user (can be regular User or Versioned<User>)
+   * @param rolesToRemove Array of roles to remove (matched by name and scope)
+   * @returns Either validation error or new User/Versioned<User> with roles removed (preserves input type)
+   */
+  static removeRoles<T extends User | Versioned<User>>(
+    user: T,
+    rolesToRemove: ReadonlyArray<UnconstrainedBoundRole>
+  ): Either<UserValidationError, T> {
+    const remainingRoles = user.roles.filter(existingRole => {
+      return !rolesToRemove.some(
+        roleToRemove =>
+          existingRole.name === roleToRemove.name && RoleFactory.isSameScope(existingRole.scope, roleToRemove.scope)
+      )
+    })
+
+    const updatedUser = {
+      ...user,
+      roles: remainingRoles
+    } as T
+
+    // Extract the base user for validation (remove occ if present)
+    const baseUser: User =
+      "occ" in user
+        ? {
+            id: user.id,
+            displayName: user.displayName,
+            email: user.email,
+            createdAt: user.createdAt,
+            orgRole: user.orgRole,
+            roles: remainingRoles
+          }
+        : (updatedUser as User)
+
+    const validation = UserFactory.validate(baseUser)
+    if (isLeft(validation)) return validation
 
     return right(updatedUser)
   }
@@ -234,36 +265,12 @@ export class UserFactory {
       for (let j = i + 1; j < roles.length; j++) {
         const roleI = roles[i]
         const roleJ = roles[j]
-        if (roleI && roleJ && roleI.name === roleJ.name && this.isSameScope(roleI.scope, roleJ.scope)) {
+        if (roleI && roleJ && roleI.name === roleJ.name && RoleFactory.isSameScope(roleI.scope, roleJ.scope)) {
           return left("user_duplicate_roles")
         }
       }
     }
     return right(undefined)
-  }
-
-  /**
-   * Helper function to compare two role scopes for equality
-   * @param scope1 First scope to compare
-   * @param scope2 Second scope to compare
-   * @returns true if scopes are equal, false otherwise
-   */
-  private static isSameScope(
-    scope1: UnconstrainedBoundRole["scope"],
-    scope2: UnconstrainedBoundRole["scope"]
-  ): boolean {
-    if (scope1.type !== scope2.type) return false
-
-    switch (scope1.type) {
-      case "org":
-        return true
-      case "space":
-        return scope1.spaceId === (scope2 as SpaceScope).spaceId
-      case "group":
-        return scope1.groupId === (scope2 as GroupScope).groupId
-      case "workflow_template":
-        return scope1.workflowTemplateId === (scope2 as WorkflowTemplateScope).workflowTemplateId
-    }
   }
 
   private static createUserSummary(data: UserSummaryData): Either<UserSummaryValidationError, UserSummary> {

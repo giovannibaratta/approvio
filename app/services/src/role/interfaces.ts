@@ -23,3 +23,21 @@ export type AgentRoleAssignmentError =
   | AgentUpdateError
   | AuthorizationError
   | UnknownError
+
+export type UserRoleRemovalError =
+  | "user_not_found"
+  | "workflow_template_not_found"
+  | RoleValidationError
+  | UserValidationError
+  | UserUpdateError
+  | AuthorizationError
+  | UnknownError
+
+export type AgentRoleRemovalError =
+  | "agent_not_found"
+  | "workflow_template_not_found"
+  | RoleValidationError
+  | AgentValidationError
+  | AgentUpdateError
+  | AuthorizationError
+  | UnknownError

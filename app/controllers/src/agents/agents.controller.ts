@@ -1,7 +1,18 @@
-import {AgentRegistrationRequest, AgentRegistrationResponse, RoleAssignmentRequest} from "@approvio/api"
+import {
+  AgentRegistrationRequest,
+  AgentRegistrationResponse,
+  RoleAssignmentRequest,
+  RoleRemovalRequest
+} from "@approvio/api"
 import {GetAuthenticatedEntity} from "@app/auth"
-import {Body, Controller, HttpCode, HttpStatus, Param, Post, Put, Res} from "@nestjs/common"
-import {AgentService, RegisterAgentRequest, RoleService, AssignRolesToAgentRequest} from "@services"
+import {Body, Controller, Delete, HttpCode, HttpStatus, Param, Post, Put, Res} from "@nestjs/common"
+import {
+  AgentService,
+  RegisterAgentRequest,
+  RoleService,
+  AssignRolesToAgentRequest,
+  RemoveRolesFromAgentRequest
+} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
@@ -11,9 +22,10 @@ import {
   agentRegistrationApiToServiceModel,
   generateErrorResponseForRegisterAgent,
   generateErrorResponseForAgentRoleAssignment,
+  generateErrorResponseForAgentRoleRemoval,
   mapAgentToRegistrationResponse
 } from "./agents.mappers"
-import {validateRoleAssignmentRequest} from "../shared/mappers"
+import {validateRoleAssignmentRequest, validateRoleRemovalRequest} from "../shared/mappers"
 import {AuthenticatedEntity} from "@domain"
 
 export const AGENTS_ENDPOINT_ROOT = "agents"
@@ -75,5 +87,32 @@ export class AgentsController {
 
     if (isLeft(eitherResult))
       throw generateErrorResponseForAgentRoleAssignment(eitherResult.left, "Failed to assign roles to agent")
+  }
+
+  @Delete(":agentId/roles")
+  @HttpCode(HttpStatus.NO_CONTENT)
+  async removeRolesFromAgent(
+    @Param("agentId") agentId: string,
+    @Body() request: unknown,
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+  ): Promise<void> {
+    const mapToServiceModel = (req: RoleRemovalRequest) => ({
+      agentId,
+      roles: req.roles,
+      requestor
+    })
+    const removeRole = (req: RemoveRolesFromAgentRequest) => this.roleService.removeRolesFromAgent(req)
+
+    const eitherResult = await pipe(
+      request,
+      E.right,
+      E.chainW(validateRoleRemovalRequest),
+      E.map(mapToServiceModel),
+      TE.fromEither,
+      TE.chainW(removeRole)
+    )()
+
+    if (isLeft(eitherResult))
+      throw generateErrorResponseForAgentRoleRemoval(eitherResult.left, "Failed to remove roles from agent")
   }
 }

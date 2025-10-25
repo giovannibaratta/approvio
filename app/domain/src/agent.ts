@@ -161,6 +161,31 @@ export class AgentFactory {
   }
 
   /**
+   * Creates a new Agent with specified roles removed
+   * @param agent Existing agent (can be regular Agent or DecoratedAgent with occ)
+   * @param rolesToRemove Array of roles to remove (matched by name and scope)
+   * @returns Either validation error or new Agent/DecoratedAgent with roles removed (preserves input type)
+   */
+  static removeRoles<T extends AgentDecoratorSelector>(
+    agent: DecoratedAgent<T>,
+    rolesToRemove: ReadonlyArray<UnconstrainedBoundRole>
+  ): Either<AgentValidationError, DecoratedAgent<T>> {
+    const remainingRoles = agent.roles.filter(existingRole => {
+      return !rolesToRemove.some(
+        roleToRemove =>
+          existingRole.name === roleToRemove.name && RoleFactory.isSameScope(existingRole.scope, roleToRemove.scope)
+      )
+    })
+
+    const updatedAgent = {
+      ...agent,
+      roles: remainingRoles
+    }
+
+    return AgentFactory.validate(updatedAgent)
+  }
+
+  /**
    * Generates RSA key pair for agent authentication
    * @returns Either key generation error or key pair
    */
