@@ -1,0 +1,108 @@
+<svg width="1100" height="650" xmlns="http://www.w3.org/2000/svg">
+  <!-- Define arrow marker -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="0" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#333" />
+    </marker>
+  </defs>
+
+  <!-- Main container -->
+  <g transform="translate(10, 10)">
+    <!-- ORGANIZATION SCOPE -->
+    <rect x="0" y="0" width="1080" height="630" rx="15" ry="15" fill="#f0f4f8" stroke="#b0bec5" stroke-width="2"/>
+    <text x="540" y="40" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle">ORGANIZATION SCOPE</text>
+    <text x="540" y="65" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#555">(Roles applied here affect all resources within the organization)</text>
+
+    <!-- SPACE 1 -->
+    <g transform="translate(20, 120)">
+        <rect width="360" height="460" rx="10" ry="10" fill="#e3f2fd" stroke="#64b5f6" stroke-width="2" />
+        <text x="180" y="35" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle">SPACE</text>
+        <text x="180" y="58" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#555">(e.g., spaceId: "finance-uuid")</text>
+
+        <!-- SpaceManager Role -->
+        <g transform="translate(55, 80)">
+            <rect width="250" height="70" rx="10" ry="10" fill="#ffffff" stroke="#42a5f5" stroke-width="1"/>
+            <text x="125" y="30" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle">SpaceManager</text>
+            <text x="125" y="50" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#555">Permissions apply to this space</text>
+        </g>
+
+        <!-- Arrow from Space to Templates -->
+        <line x1="180" y1="160" x2="180" y2="190" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)" />
+
+        <!-- WORKFLOW TEMPLATES -->
+         <g transform="translate(15, 190)">
+            <rect width="330" height="150" rx="10" ry="10" fill="#e8eaf6" stroke="#7986cb" stroke-width="2" />
+            <text x="165" y="30" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle">WORKFLOW TEMPLATES</text>
+
+            <!-- Example Templates -->
+            <rect x="20" y="60" width="90" height="60" rx="8" ry="8" fill="#fff" stroke="#5c6bc0" stroke-width="1"/>
+            <text x="65" y="90" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#333">'expense'</text>
+
+            <rect x="120" y="60" width="90" height="60" rx="8" ry="8" fill="#fff" stroke="#5c6bc0" stroke-width="1"/>
+            <text x="165" y="90" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#333">'invoice'</text>
+
+            <rect x="220" y="60" width="90" height="60" rx="8" ry="8" fill="#fff" stroke="#5c6bc0" stroke-width="1"/>
+            <text x="265" y="90" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#333">'travel'</text>
+        </g>
+    </g>
+
+    <!-- SPACE 2 -->
+    <g transform="translate(400, 120)">
+        <rect width="360" height="460" rx="10" ry="10" fill="#e3f2fd" stroke="#64b5f6" stroke-width="2" />
+        <text x="180" y="35" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle">SPACE</text>
+        <text x="180" y="58" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#555">(e.g., spaceId: "hr-uuid")</text>
+
+        <!-- SpaceManager Role -->
+        <g transform="translate(55, 80)">
+            <rect width="250" height="70" rx="10" ry="10" fill="#ffffff" stroke="#42a5f5" stroke-width="1"/>
+            <text x="125" y="30" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle">SpaceManager</text>
+            <text x="125" y="50" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#555">Permissions apply to this space</text>
+        </g>
+        
+        <!-- Arrow from Space to Templates -->
+        <line x1="180" y1="160" x2="180" y2="190" stroke="#333" stroke-width="2" marker-end="url(#arrowhead)" />
+
+        <!-- WORKFLOW TEMPLATES -->
+         <g transform="translate(15, 190)">
+            <rect width="330" height="150" rx="10" ry="10" fill="#e8eaf6" stroke="#7986cb" stroke-width="2" />
+            <text x="165" y="30" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle">WORKFLOW TEMPLATES</text>
+
+             <!-- Example Templates -->
+            <rect x="70" y="60" width="100" height="60" rx="8" ry="8" fill="#fff" stroke="#5c6bc0" stroke-width="1"/>
+            <text x="120" y="90" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#333">'hiring-process'</text>
+
+            <rect x="180" y="60" width="100" height="60" rx="8" ry="8" fill="#fff" stroke="#5c6bc0" stroke-width="1"/>
+            <text x="230" y="90" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#333">'performance-review'</text>
+        </g>
+    </g>
+
+    <!-- GROUP 1 -->
+    <g transform="translate(780, 120)">
+        <rect width="280" height="210
+        " rx="15" ry="15" fill="#e0f2f1" stroke="#4db6ac" stroke-width="2"/>
+        <text x="140" y="40" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle">Group</text>
+        <text x="140" y="65" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#555">groupId: "finance-team-uuid"</text>
+        <text x="140" y="85" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#555">Permissions apply to this group</text>
+
+        <!-- GroupManager Role -->
+        <g transform="translate(40, 130)">
+            <rect width="200" height="70" rx="10" ry="10" fill="#ffffff" stroke="#26a69a" stroke-width="1"/>
+            <text x="100" y="40" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle">GroupManager</text>
+        </g>
+    </g>
+
+    <!-- GROUP 2 -->
+    <g transform="translate(780, 370)">
+        <rect width="280" height="210" rx="15" ry="15" fill="#e0f2f1" stroke="#4db6ac" stroke-width="2"/>
+        <text x="140" y="40" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="middle">Group</text>
+        <text x="140" y="65" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#555">groupId: "marketing-team-uuid"</text>
+        <text x="140" y="85" font-family="Arial, sans-serif" font-size="14" text-anchor="middle" fill="#555">Permissions apply to this group</text>
+
+        <!-- GroupManager Role -->
+        <g transform="translate(40, 130)">
+            <rect width="200" height="70" rx="10" ry="10" fill="#ffffff" stroke="#26a69a" stroke-width="1"/>
+            <text x="100" y="40" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle">GroupManager</text>
+        </g>
+    </g>
+  </g>
+</svg>
