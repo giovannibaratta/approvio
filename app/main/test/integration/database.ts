@@ -1,5 +1,7 @@
 import {PrismaClient} from "@prisma/client"
 import {randomUUID} from "crypto"
+// eslint-disable-next-line node/no-unpublished-import
+import Redis from "ioredis"
 
 /** Create a duplicated database using the reference database as template
  * @returns the connection string to the new database
@@ -22,6 +24,36 @@ export async function prepareDatabase(): Promise<string> {
   await prismaClient.$disconnect()
 
   return `postgresql://developer:Safe1!@localhost:5433/${databaseName}?schema=public`
+}
+
+/**
+ * Prepare an isolated Redis key prefix for testing
+ * @returns a unique prefix string for this test run
+ */
+export function prepareRedisPrefix(): string {
+  return `test_${randomUUID()}_`
+}
+
+/**
+ * Clean (delete) all Redis keys with a specific prefix
+ * @param prefix The prefix string to match keys for deletion
+ */
+export async function cleanRedisByPrefix(prefix: string): Promise<void> {
+  const redisHost = process.env.REDIS_HOST || "localhost"
+  const redisPort = parseInt(process.env.REDIS_PORT || "6379", 10)
+  const redisDb = parseInt(process.env.REDIS_DB || "0", 10)
+
+  const redis = new Redis({
+    host: redisHost,
+    port: redisPort,
+    db: redisDb
+  })
+
+  // Find all keys matching the prefix pattern
+  const keys = await redis.keys(`${prefix}*`)
+
+  if (keys.length > 0) await redis.del(...keys)
+  await redis.quit()
 }
 
 export async function cleanDatabase(client: PrismaClient): Promise<void> {

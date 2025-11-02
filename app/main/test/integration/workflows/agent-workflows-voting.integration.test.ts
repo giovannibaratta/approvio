@@ -16,7 +16,7 @@ import {
   Agent as PrismaAgent
 } from "@prisma/client"
 import {randomUUID} from "crypto"
-import {cleanDatabase, prepareDatabase} from "../database"
+import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "../database"
 import {
   createMockAgentInDb,
   createMockWorkflowInDb,
@@ -28,6 +28,9 @@ import {get, post} from "../shared/requests"
 import {TokenPayloadBuilder} from "@services"
 import {mapAgentToDomain} from "@external/database/shared"
 import {isLeft} from "fp-ts/lib/Either"
+import {getQueueToken} from "@nestjs/bull"
+import {WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"
+import {Queue} from "bull"
 
 type AgentWithToken = {
   agent: PrismaAgent
@@ -64,11 +67,14 @@ describe("Agent Workflow Voting API", () => {
   let configProvider: ConfigProvider
   let mockGroupId: string
   let mockWorkflowTemplate: PrismaWorkflowTemplate
+  let redisPrefix: string
+  let recalculationQueue: Queue
 
   const endpoint = `/${WORKFLOWS_ENDPOINT_ROOT}`
 
   beforeEach(async () => {
     const isolatedDb = await prepareDatabase()
+    redisPrefix = prepareRedisPrefix()
 
     let module: TestingModule
     try {
@@ -76,7 +82,7 @@ describe("Agent Workflow Voting API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix))
         .compile()
     } catch (error) {
       console.error(error)
@@ -157,17 +163,21 @@ describe("Agent Workflow Voting API", () => {
     testAgentNotInGroup = {agent: agentNotInGroup, token: jwtService.sign(agentNotInGroupTokenPayload)}
     testAgentWithRole = {agent: agentWithRole, token: jwtService.sign(agentWithRoleTokenPayload)}
 
+    recalculationQueue = module.get<Queue>(getQueueToken(WORKFLOW_STATUS_RECALCULATION_QUEUE))
+
     await app.init()
   }, 30000)
 
   afterEach(async () => {
     await cleanDatabase(prisma)
     await prisma.$disconnect()
+    await cleanRedisByPrefix(redisPrefix)
     await app.close()
   })
 
   it("should be defined", () => {
     expect(app).toBeDefined()
+    expect(recalculationQueue).toBeDefined()
   })
 
   describe("GET /workflows/:workflowId/canVote", () => {
@@ -280,7 +290,7 @@ describe("Agent Workflow Voting API", () => {
       })
     })
 
-    describe("good cases - expected future behavior when agent voting is properly implemented", () => {
+    describe("good cases", () => {
       it("should allow agent with proper permissions to APPROVE a workflow and return 202 ACCEPTED", async () => {
         // Given: vote request to approve workflow
         const requestBody: WorkflowVoteRequestApi = {
@@ -357,6 +367,30 @@ describe("Agent Workflow Voting API", () => {
           where: {workflowId: workflowForVoting.id, agentId: testAgent.agent.id}
         })
         expect(votesInDb).toHaveLength(2)
+      })
+
+      it("should allow create a recalculation task if vote is successful", async () => {
+        // Given: a request body to approve the workflow
+        const requestBody: WorkflowVoteRequestApi = {
+          voteType: {
+            type: "APPROVE",
+            votedForGroups: [mockGroupId]
+          }
+        }
+
+        // When: agent with proper permissions attempts to vote
+        const response = await post(app, `${endpoint}/${workflowForVoting.id}/vote`)
+          .withToken(testAgent.token)
+          .build()
+          .send(requestBody)
+
+        // Expect: a 202 Accepted status and the vote recorded in the database
+        expect(response).toHaveStatusCode(HttpStatus.ACCEPTED)
+
+        const tasks = await recalculationQueue.getWaiting()
+
+        expect(tasks).toHaveLength(1)
+        expect(tasks[0]).toMatchObject({data: {workflowId: workflowForVoting.id}})
       })
     })
 

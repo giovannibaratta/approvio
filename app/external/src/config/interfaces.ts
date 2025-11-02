@@ -26,9 +26,17 @@ export interface JwtConfig {
   audience: string
 }
 
+export interface RedisConfig {
+  host: string
+  port: number
+  db: number
+  prefix?: string
+}
+
 export interface ConfigProviderInterface {
   dbConnectionUrl: string
   emailProviderConfig: Option<EmailProviderConfig>
   oidcConfig: OidcProviderConfig
   jwtConfig: JwtConfig
+  redisConfig: RedisConfig
 }

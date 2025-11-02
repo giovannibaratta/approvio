@@ -17,6 +17,7 @@ import {RequestorAwareRequest} from "@services/shared/types"
 import {AgentKeyDecodeError} from "@services/agent/interfaces"
 import {WorkflowGetError, WorkflowUpdateError} from "../workflow/interfaces"
 import {WorkflowService} from "../workflow/workflow.service"
+import {QueueService} from "../queue/queue.service"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
@@ -34,7 +35,8 @@ export class VoteService {
     private readonly voteRepo: VoteRepository,
     private readonly workflowService: WorkflowService,
     @Inject(GROUP_MEMBERSHIP_REPOSITORY_TOKEN)
-    private readonly groupMembershipRepo: GroupMembershipRepository
+    private readonly groupMembershipRepo: GroupMembershipRepository,
+    private readonly queueService: QueueService
   ) {}
 
   /**
@@ -96,6 +98,7 @@ export class VoteService {
    * Casts a vote on a workflow.
    * This action is optimistic and may be subject to race conditions.
    * The vote's validity is ultimately determined during the next workflow status evaluation.
+   * After persisting the vote, enqueues a recalculation job in a best-effort manner.
    * @param request The request containing vote data, workflowId, and the requestor.
    * @returns A TaskEither with the persisted vote or an error.
    */
@@ -125,8 +128,19 @@ export class VoteService {
         return pipe(
           VoteFactory.newVote(voteData),
           TE.fromEither,
-          TE.chainW(vote => this.voteRepo.persistVoteAndMarkWorkflowRecalculation(vote))
+          TE.chainW(vote => this.voteRepo.persistVoteAndMarkWorkflowRecalculation(vote)),
+          TE.chainFirstW(this.enqueueRecalculationBestEffort)
         )
+      })
+    )
+  }
+
+  private enqueueRecalculationBestEffort = (vote: Vote): TaskEither<never, void> => {
+    return pipe(
+      this.queueService.enqueueWorkflowStatusRecalculation(vote.workflowId),
+      TE.orElseW(() => {
+        Logger.warn(`Failed to enqueue recalculation for workflow ${vote.workflowId}, vote persisted successfully`)
+        return TE.right(undefined)
       })
     )
   }

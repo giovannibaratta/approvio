@@ -19,7 +19,8 @@ import {
   ConfigProviderInterface,
   EmailProviderConfig,
   JwtConfig,
-  OidcProviderConfig
+  OidcProviderConfig,
+  RedisConfig
 } from "@external/config"
 import {Option} from "fp-ts/lib/Option"
 import * as O from "fp-ts/lib/Option"
@@ -239,10 +240,11 @@ export class MockConfigProvider implements ConfigProviderInterface {
   emailProviderConfig: Option<EmailProviderConfig>
   oidcConfig: OidcProviderConfig
   jwtConfig: JwtConfig
+  redisConfig: RedisConfig
 
   private constructor(
     originalProvider?: ConfigProvider,
-    mocks: {dbConnectionUrl?: string; emailProviderConfig?: EmailProviderConfig} = {}
+    mocks: {dbConnectionUrl?: string; emailProviderConfig?: EmailProviderConfig; redisPrefix?: string} = {}
   ) {
     const provider: ConfigProviderInterface = originalProvider ?? {
       dbConnectionUrl: "postgresql://test:test@localhost:5433/postgres?schema=public",
@@ -259,6 +261,11 @@ export class MockConfigProvider implements ConfigProviderInterface {
         trustedIssuers: ["idp.test.localhost"],
         issuer: "idp.test.localhost",
         audience: "approvio.test.localhost"
+      },
+      redisConfig: {
+        host: "localhost",
+        port: 1234,
+        db: 5
       }
     }
 
@@ -267,14 +274,17 @@ export class MockConfigProvider implements ConfigProviderInterface {
       mocks.emailProviderConfig !== undefined ? O.some(mocks.emailProviderConfig) : provider.emailProviderConfig
     this.oidcConfig = provider.oidcConfig
     this.jwtConfig = provider.jwtConfig
+    this.redisConfig =
+      mocks.redisPrefix !== undefined ? {...provider.redisConfig, prefix: mocks.redisPrefix} : provider.redisConfig
   }
 
-  static fromDbConnectionUrl(dbConnectionUrl: string): MockConfigProvider {
-    return new MockConfigProvider(undefined, {dbConnectionUrl})
+  static fromDbConnectionUrl(dbConnectionUrl: string, redisPrefix?: string): MockConfigProvider {
+    const realProvider = new ConfigProvider()
+    return new MockConfigProvider(realProvider, {dbConnectionUrl, redisPrefix})
   }
 
   static fromOriginalProvider(
-    mocks: {dbConnectionUrl?: string; emailProviderConfig?: EmailProviderConfig} = {}
+    mocks: {dbConnectionUrl?: string; emailProviderConfig?: EmailProviderConfig; redisPrefix?: string} = {}
   ): MockConfigProvider {
     const provider = new ConfigProvider()
     return new MockConfigProvider(provider, mocks)

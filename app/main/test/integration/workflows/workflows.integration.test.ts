@@ -17,7 +17,7 @@ import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient, Workflow as PrismaWorkflow, WorkflowTemplate as PrismaWorkflowTemplate} from "@prisma/client"
 import {randomUUID} from "crypto"
-import {cleanDatabase, prepareDatabase} from "../database"
+import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "../database"
 import {
   createDomainMockUserInDb,
   createMockWorkflowInDb,
@@ -27,6 +27,9 @@ import {
 import {get, post} from "../shared/requests"
 import {UserWithToken} from "../shared/types"
 import {TokenPayloadBuilder} from "@services"
+import {getQueueToken} from "@nestjs/bull"
+import {WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"
+import {Queue} from "bull"
 
 // Helper function to create a mock group for tests
 async function createTestGroup(prisma: PrismaClient, name: string): Promise<{id: string}> {
@@ -71,11 +74,14 @@ describe("Workflows API", () => {
   let configProvider: ConfigProvider
   let mockGroupId1: string
   let mockWorkflowTemplate: PrismaWorkflowTemplate
+  let redisPrefix: string
+  let recalculationQueue: Queue
 
   const endpoint = `/${WORKFLOWS_ENDPOINT_ROOT}`
 
   beforeEach(async () => {
     const isolatedDb = await prepareDatabase()
+    redisPrefix = prepareRedisPrefix()
 
     let module: TestingModule
     try {
@@ -83,7 +89,7 @@ describe("Workflows API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix))
         .compile()
     } catch (error) {
       console.error(error)
@@ -121,17 +127,20 @@ describe("Workflows API", () => {
       }
     })
 
+    recalculationQueue = module.get<Queue>(getQueueToken(WORKFLOW_STATUS_RECALCULATION_QUEUE))
     await app.init()
   }, 30000)
 
   afterEach(async () => {
     await cleanDatabase(prisma)
     await prisma.$disconnect()
+    await cleanRedisByPrefix(redisPrefix)
     await app.close()
   })
 
   it("should be defined", () => {
     expect(app).toBeDefined()
+    expect(recalculationQueue).toBeDefined()
   })
 
   describe("POST /workflows", () => {
@@ -626,6 +635,30 @@ describe("Workflows API", () => {
           where: {workflowId: workflowForVoting.id, userId: orgMemberUser.user.id}
         })
         expect(voteInDb).toHaveLength(2)
+      })
+
+      it("should allow create a recalculation task if vote is successful", async () => {
+        // Given: a request body to approve the workflow
+        const requestBody: WorkflowVoteRequestApi = {
+          voteType: {
+            type: "APPROVE",
+            votedForGroups: [mockGroupId1]
+          }
+        }
+
+        // When: the OrgMember sends a vote request
+        const response = await post(app, `${endpoint}/${workflowForVoting.id}/vote`)
+          .withToken(orgMemberUser.token)
+          .build()
+          .send(requestBody)
+
+        // Expect: a 202 Accepted status and the vote recorded in the database
+        expect(response).toHaveStatusCode(HttpStatus.ACCEPTED)
+
+        const tasks = await recalculationQueue.getWaiting()
+
+        expect(tasks).toHaveLength(1)
+        expect(tasks[0]).toMatchObject({data: {workflowId: workflowForVoting.id}})
       })
     })
 

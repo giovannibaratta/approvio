@@ -1,7 +1,7 @@
 import {Injectable} from "@nestjs/common"
 import {Option} from "fp-ts/lib/Option"
 import * as O from "fp-ts/lib/Option"
-import {ConfigProviderInterface, EmailProviderConfig, JwtConfig, OidcProviderConfig} from "./interfaces"
+import {ConfigProviderInterface, EmailProviderConfig, JwtConfig, OidcProviderConfig, RedisConfig} from "./interfaces"
 import {isNonEmptyArray} from "@utils"
 
 @Injectable()
@@ -10,12 +10,14 @@ export class ConfigProvider implements ConfigProviderInterface {
   readonly emailProviderConfig: Option<EmailProviderConfig>
   readonly oidcConfig: OidcProviderConfig
   readonly jwtConfig: JwtConfig
+  readonly redisConfig: RedisConfig
 
   constructor() {
     this.dbConnectionUrl = this.validateConnectionUrl()
     this.emailProviderConfig = this.validateEmailProviderConfig()
     this.oidcConfig = this.validateOidcProviderConfig()
     this.jwtConfig = this.validateJwtConfig()
+    this.redisConfig = this.validateRedisConfig()
   }
 
   private validateConnectionUrl(): string {
@@ -157,6 +159,43 @@ export class ConfigProvider implements ConfigProviderInterface {
       trustedIssuers,
       issuer: issuerEnv,
       audience: audienceEnv
+    }
+  }
+
+  private validateRedisConfig(): RedisConfig {
+    const host = process.env.REDIS_HOST
+    const unparsedPort = process.env.REDIS_PORT
+    const unparsedDb = process.env.REDIS_DB || "0"
+    const prefix = process.env.REDIS_PREFIX
+
+    if (host === undefined) throw new Error("REDIS_HOST not defined")
+    if (unparsedPort === undefined) throw new Error("REDIS_PORT is not defined")
+
+    let port: number
+
+    try {
+      port = parseInt(unparsedPort, 10)
+    } catch (error) {
+      throw new Error("REDIS_PORT must be a valid number", {cause: error})
+    }
+
+    if (port <= 0 || port > 65535) throw new Error("REDIS_PORT must be a valid number between 1 and 65535")
+
+    let db: number
+
+    try {
+      db = parseInt(unparsedDb, 10)
+    } catch (error) {
+      throw new Error("REDIS_DB must be a valid number", {cause: error})
+    }
+
+    if (db < 0 || db > 15) throw new Error("REDIS_DB must be a valid number between 0 and 15")
+
+    return {
+      host,
+      port,
+      db,
+      prefix
     }
   }
 }

@@ -15,6 +15,7 @@ import {RoleService} from "./role"
 import {ConfigModule} from "@external/config.module"
 import {ConfigProvider} from "@external/config"
 import {JwtModule} from "@nestjs/jwt"
+import {QueueService} from "./queue"
 
 const services = [
   AgentService,
@@ -28,7 +29,8 @@ const services = [
   VoteService,
   EmailService,
   AuthService,
-  RoleService
+  RoleService,
+  QueueService
 ]
 
 const internalServices = [PkceService]

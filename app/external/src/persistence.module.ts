@@ -23,10 +23,13 @@ import {
   USER_REPOSITORY_TOKEN,
   VOTE_REPOSITORY_TOKEN,
   WORKFLOW_REPOSITORY_TOKEN,
-  WORKFLOW_TEMPLATE_REPOSITORY_TOKEN
+  WORKFLOW_TEMPLATE_REPOSITORY_TOKEN,
+  QUEUE_PROVIDER_TOKEN
 } from "@services"
 import {PKCE_SESSION_REPOSITORY_TOKEN} from "@services/auth"
 import {ConfigModule} from "./config.module"
+import {QueueModule} from "./queue/queue.module"
+import {BullQueueProvider} from "./queue/queue.provider"
 
 const agentRepository = {
   provide: AGENT_REPOSITORY_TOKEN,
@@ -83,6 +86,11 @@ const pkceSessionRepository = {
   useClass: PkceSessionDbRepository
 }
 
+const queueProvider = {
+  provide: QUEUE_PROVIDER_TOKEN,
+  useClass: BullQueueProvider
+}
+
 const repositories = [
   agentRepository,
   agentChallengeRepository,
@@ -98,8 +106,8 @@ const repositories = [
 ]
 
 @Module({
-  imports: [ConfigModule],
-  providers: [DatabaseClient, ...repositories],
-  exports: [...repositories]
+  imports: [ConfigModule, QueueModule],
+  providers: [DatabaseClient, ...repositories, queueProvider],
+  exports: [...repositories, queueProvider]
 })
 export class PersistenceModule {}

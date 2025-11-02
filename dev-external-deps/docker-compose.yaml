@@ -1,9 +1,12 @@
 version: "3.8"
 
 volumes:
-  # Ephermeral volume used to store Mailpit self-signed TLS certificates
+  # Ephemeral volume used to store Mailpit self-signed TLS certificates
   mailpit_certs_test:
   mailpit_certs_dev:
+  # Ephemeral volumes to store Redis data
+  redis_dev_data:
+  redis_test_data:
 
 services:
   # Local DB used for development and manual testing
@@ -30,6 +33,36 @@ services:
       POSTGRES_DB: approvio
     ports:
       - "5433:5432"
+
+  # Redis for queue processing (development)
+  redis-dev:
+    profiles: [dev]
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    command: redis-server --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis for queue processing (testing)
+  redis-test:
+    profiles: [test]
+    image: redis:8-alpine
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_test_data:/data
+    command: redis-server --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 
   cert-generator-dev:
     profiles: [dev]
