@@ -12,6 +12,7 @@ Users have organizational-level roles that provide system-wide permissions:
 - **Member**: Standard user with permissions based on assigned roles
 
 **Key Points:**
+
 - Organization admins can override all permission checks
 - Organization admins can assign any roles at any scope
 - Members require specific role assignments for resource access
@@ -26,6 +27,7 @@ Groups are collections of users and agents used for approval workflows:
 - **Voting Eligibility**: Group membership is required but not sufficient for voting
 
 To vote on a workflow, entities need **both**:
+
 1. Membership in a required approval group
 2. Voter role for the workflow template
 
@@ -58,12 +60,14 @@ Permissions follow a hierarchical model:
 Voting on workflows requires multiple conditions:
 
 **For Users and Agents:**
+
 - **Group Membership**: Must belong to a group referenced in the workflow's approval rules
 - **Voter Role**: Must have voter role for the workflow template (at org, space, or template scope)
 - **Workflow Status**: Workflow must be in EVALUATION_IN_PROGRESS state
 - **Template Status**: Template must allow voting (not deprecated with voting disabled)
 
 **Example:**
+
 ```
 User "alice@company.com" can vote on a workflow if:
 ✓ Alice is a member of "Finance Approvers" group

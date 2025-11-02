@@ -18,6 +18,7 @@ A template defines:
 Every workflow template must belong to a space. Spaces are logical containers that help organize related approval processes.
 
 **Key Points:**
+
 - Each template has a **spaceId** that identifies its parent space
 - Templates cannot exist without a space
 - Templates cannot be moved between spaces after creation

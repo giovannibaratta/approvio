@@ -21,6 +21,7 @@ Workflows progress through several states:
 Both **users** and **agents** can vote on workflows if they meet the requirements:
 
 **Voting Requirements:**
+
 - Must be a member of a group referenced in the workflow's approval rules
 - Must have voter role for the workflow template (see [Roles](./roles.md))
 - Workflow must be in EVALUATION_IN_PROGRESS state
@@ -49,6 +50,7 @@ A single veto vote immediately rejects the workflow regardless of approval votes
 ### Multiple Votes
 
 Both users and agents can vote multiple times on the same workflow:
+
 - Each vote is recorded separately with timestamp
 - All votes contribute to the approval evaluation
 - Useful for agents that re-evaluate conditions over time
