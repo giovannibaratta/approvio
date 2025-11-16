@@ -7,8 +7,8 @@
     "node": "22"
   },
   "scripts": {
-    "start": "dotenv -e .env.local -- nest start",
-    "start:dev": "dotenv -e .env.local -- nest start --watch --debug",
+    "start:backend": "dotenv -e .env.local -- nest start backend",
+    "start:backend:dev": "dotenv -e .env.local -- nest start backend --watch --debug",
     "deps:start": "./scripts/dependencies.sh start",
     "deps:start:test": "./scripts/dependencies.sh start test",
     "deps:stop": "./scripts/dependencies.sh stop",
@@ -23,6 +23,8 @@
     "prisma:pull": "yarn prisma db pull && prisma-case-format --file prisma/schema.prisma -p --table-case pascal,singular --field-case camel",
     "prisma:generate": "yarn prisma generate",
     "build": "nest build core",
+    "start:worker": "dotenv -e .env.local -- nest start worker",
+    "start:worker:dev": "dotenv -e .env.local -- nest start worker --watch --debug",
     "test:setup": "yarn deps:start:test && yarn prisma:generate && yarn liquibase:update:test",
     "test": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest --maxWorkers=50%",
     "test:all": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest app/**/*.test.ts"

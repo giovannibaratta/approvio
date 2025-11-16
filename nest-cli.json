@@ -10,13 +10,22 @@
     "webpackConfigPath": "./webpack.config.js"
   },
   "projects": {
-    "core": {
+    "backend": {
       "type": "application",
-      "root": "app/main",
+      "root": "backend",
       "entryFile": "main",
       "sourceRoot": "app/main/src",
       "compilerOptions": {
         "tsConfigPath": "app/main/tsconfig.json"
+      }
+    },
+    "worker": {
+      "type": "application",
+      "root": "worker",
+      "entryFile": "main",
+      "sourceRoot": "app/worker/src",
+      "compilerOptions": {
+        "tsConfigPath": "app/worker/tsconfig.json"
       }
     },
     "controllers": {
