@@ -65,12 +65,11 @@ export class OidcClient implements OidcProvider {
         const response = await client.fetchProtectedResource(rawConfiguration, accessToken, userinfoUrl, "GET")
         const rawUserInfoData = (await response.json()) as RawUserInfoResponse
 
+        Logger.verbose(`Raw UserInfo response received: ${JSON.stringify(rawUserInfoData)}`)
+
         const validationResult = validateUserInfoResponse(rawUserInfoData)
         if (E.isLeft(validationResult)) {
-          Logger.error("UserInfo response validation failed", {
-            error: validationResult.left,
-            rawData: rawUserInfoData
-          })
+          Logger.error("UserInfo response validation failed", validationResult.left)
           throw new Error(`UserInfo validation failed: ${validationResult.left}`)
         }
 

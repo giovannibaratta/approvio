@@ -1,9 +1,23 @@
 import {NestFactory} from "@nestjs/core"
 import {globalValidationPipe} from "./validation-pipe"
 import {AppModule} from "./app.module"
+import {ConsoleLogger, LogLevel} from "@nestjs/common"
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule)
+  const logLevels: LogLevel[] = ["log", "error", "warn"]
+
+  if (process.env.LOG_LEVEL === "trace") {
+    logLevels.push("verbose")
+    logLevels.push("debug")
+  }
+
+  const logger = new ConsoleLogger({
+    timestamp: true,
+    prefix: "backend",
+    logLevels
+  })
+
+  const app = await NestFactory.create(AppModule, {logger: logger})
 
   app.useGlobalPipes(globalValidationPipe)
   app.enableCors({

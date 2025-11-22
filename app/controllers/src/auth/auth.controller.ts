@@ -141,9 +141,9 @@ export class AuthController {
 
     const {code, state} = body
 
-    if (!code || !state) {
-      throw new UnauthorizedException("Missing required parameters")
-    }
+    if (!code || !state) throw new UnauthorizedException("Missing required parameters")
+
+    Logger.verbose(`Generating token for code: ${code} and state: ${state}`)
 
     const result = await this.authService.completeOidcLogin(code, state)()
 

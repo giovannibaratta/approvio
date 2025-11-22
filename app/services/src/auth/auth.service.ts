@@ -141,7 +141,7 @@ export class AuthService {
     return pipe(
       this.oidcClient.getUserInfo(accessToken),
       TE.mapLeft((error: OidcError): AuthError => {
-        Logger.error("User info fetch failed", {error})
+        Logger.error("Failed to get user info from OIDC provider", error)
         return error
       })
     )
