@@ -1,6 +1,7 @@
 import * as E from "fp-ts/Either"
 import {validateUserInfoResponse, RawUserInfoResponse} from "../../src/oidc/oidc-types"
 import {unwrapRight, unwrapLeft} from "@utils/either"
+import "expect-more-jest"
 
 describe("validateUserInfoResponse", () => {
   describe("good cases", () => {
@@ -92,6 +93,28 @@ describe("validateUserInfoResponse", () => {
       // Expect: validation succeeds with email_verified as boolean
       expect(E.isRight(result)).toBe(true)
       expect(unwrapRight(result).email_verified).toBe(true)
+    })
+
+    it("should accept response with string email_verified claim", () => {
+      // Given: response with string email_verified
+
+      const valuesToValidate = ["true", "TRUE", "false", "FALSE", "TRue", "fAlSe"]
+
+      for (const value of valuesToValidate) {
+        const rawResponse: RawUserInfoResponse = {
+          sub: "user-123",
+          email: "test@example.com",
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          email_verified: value as any
+        }
+
+        // When: validating the response
+        const result = validateUserInfoResponse(rawResponse)
+
+        // Expect: validation succeeds and converts to boolean
+        expect(E.isRight(result)).toBe(true)
+        expect(unwrapRight(result).email_verified).toBeBoolean()
+      }
     })
 
     it("should validate response with email_verified as false", () => {
@@ -414,22 +437,6 @@ describe("validateUserInfoResponse", () => {
           sub: "user-123",
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           family_name: 67890 as any
-        }
-
-        // When: validating the response
-        const result = validateUserInfoResponse(rawResponse)
-
-        // Expect: validation fails with invalid_claim_type error
-        expect(unwrapLeft(result)).toBe("invalid_claim_type")
-      })
-
-      it("should reject response with string email_verified claim", () => {
-        // Given: response with string email_verified
-        const rawResponse: RawUserInfoResponse = {
-          sub: "user-123",
-          email: "test@example.com",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          email_verified: "true" as any
         }
 
         // When: validating the response

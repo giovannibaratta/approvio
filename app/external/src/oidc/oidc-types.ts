@@ -58,13 +58,20 @@ export function validateUserInfoResponse(
       if (typeof rawResponse[claim] !== "string") return E.left("invalid_claim_type")
   }
 
-  // Validate email_verified if present (must be boolean)
+  // Validate email_verified if present (must be boolean or string boolean)
   if (
     "email_verified" in rawResponse &&
     rawResponse.email_verified !== undefined &&
     rawResponse.email_verified !== null
-  )
-    if (typeof rawResponse.email_verified !== "boolean") return E.left("invalid_claim_type")
+  ) {
+    if (typeof rawResponse.email_verified !== "boolean" && typeof rawResponse.email_verified !== "string")
+      return E.left("invalid_claim_type")
+
+    if (typeof rawResponse.email_verified === "string") {
+      const lowerVal = rawResponse.email_verified.toLowerCase()
+      if (lowerVal !== "true" && lowerVal !== "false") return E.left("invalid_claim_type")
+    }
+  }
 
   // All validations passed - construct validated response
   const validatedUserInfo: OidcUserInfo = {
@@ -76,7 +83,11 @@ export function validateUserInfoResponse(
     ...validatedUserInfo,
     ...(rawResponse.name && typeof rawResponse.name === "string" ? {name: rawResponse.name} : {}),
     ...(rawResponse.email && typeof rawResponse.email === "string" ? {email: rawResponse.email} : {}),
-    ...(typeof rawResponse.email_verified === "boolean" ? {email_verified: rawResponse.email_verified} : {}),
+    ...(rawResponse.email_verified !== undefined && rawResponse.email_verified !== null
+      ? {
+          email_verified: Boolean(rawResponse.email_verified)
+        }
+      : {}),
     ...(rawResponse.preferred_username && typeof rawResponse.preferred_username === "string"
       ? {preferred_username: rawResponse.preferred_username}
       : {}),
