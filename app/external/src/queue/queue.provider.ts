@@ -36,7 +36,8 @@ export class BullQueueProvider implements QueueProvider {
             },
             removeOnFail: {
               age: 604800 // Keep failed jobs for 7 days
-            }
+            },
+            removeOnComplete: true
           }
         )
       },

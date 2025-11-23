@@ -2,20 +2,21 @@ import {Module} from "@nestjs/common"
 import {AgentService} from "./agent"
 import {GroupService} from "./group"
 import {OrganizationAdminService} from "./organization-admin"
-import {PersistenceModule, ThirdPartyModule} from "@external"
+import {PersistenceModule, ThirdPartyModule, QueueModule} from "@external"
 import {GroupMembershipService} from "./group-membership"
 import {SpaceService} from "./space"
 import {UserService} from "./user"
 import {WorkflowService} from "./workflow"
+import {WorkflowRecalculationService} from "./workflow"
 import {WorkflowTemplateService} from "./workflow-template"
 import {VoteService} from "./vote"
 import {EmailService} from "./email/email.service"
 import {AuthService, PkceService} from "./auth"
 import {RoleService} from "./role"
+import {QueueService} from "./queue"
 import {ConfigModule} from "@external/config.module"
 import {ConfigProvider} from "@external/config"
 import {JwtModule} from "@nestjs/jwt"
-import {QueueService} from "./queue"
 
 const services = [
   AgentService,
@@ -25,6 +26,7 @@ const services = [
   SpaceService,
   UserService,
   WorkflowService,
+  WorkflowRecalculationService,
   WorkflowTemplateService,
   VoteService,
   EmailService,
@@ -46,7 +48,7 @@ const jwtModule = JwtModule.registerAsync({
 })
 
 @Module({
-  imports: [PersistenceModule, ThirdPartyModule, ConfigModule, jwtModule],
+  imports: [PersistenceModule, ThirdPartyModule, ConfigModule, QueueModule, jwtModule],
   providers: [...internalServices, ...services],
   exports: [...services]
 })

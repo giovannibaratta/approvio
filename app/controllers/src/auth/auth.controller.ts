@@ -135,9 +135,7 @@ export class AuthController {
   @PublicRoute()
   @Post("token")
   async generateToken(@Body() body: TokenRequest): Promise<TokenResponse> {
-    if (!body) {
-      throw new UnauthorizedException("Missing required parameters")
-    }
+    if (!body) throw new UnauthorizedException("Missing required parameters")
 
     const {code, state} = body
 

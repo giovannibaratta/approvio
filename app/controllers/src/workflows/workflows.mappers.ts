@@ -164,10 +164,6 @@ export function generateErrorResponseForGetWorkflow(error: GetWorkflowLeft, cont
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow not found`))
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
-    case "concurrency_error":
-      return new ConflictException(
-        generateErrorPayload(errorCode, `${context}: Workflow has been updated concurrently`)
-      )
     case "approval_rule_and_rule_must_have_rules":
     case "approval_rule_group_rule_invalid_group_id":
     case "approval_rule_group_rule_invalid_min_count":
@@ -175,15 +171,6 @@ export function generateErrorResponseForGetWorkflow(error: GetWorkflowLeft, cont
     case "approval_rule_malformed_content":
     case "approval_rule_max_rule_nesting_exceeded":
     case "approval_rule_or_rule_must_have_rules":
-    case "vote_invalid_group_id":
-    case "vote_invalid_voter_id":
-    case "vote_invalid_voter_type":
-    case "vote_invalid_vote_type":
-    case "vote_missing_voter_entity":
-    case "vote_conflicting_voter_entities":
-    case "vote_invalid_workflow_id":
-    case "vote_reason_too_long":
-    case "vote_voted_for_groups_required":
     case "workflow_action_recipients_empty":
     case "workflow_action_recipients_invalid_email":
     case "workflow_action_type_invalid":

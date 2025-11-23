@@ -1,6 +1,5 @@
 import {
   DecoratedWorkflow,
-  evaluateWorkflowStatus,
   Workflow,
   WorkflowDecoratorSelector,
   WorkflowFactory,
@@ -8,7 +7,6 @@ import {
   WorkflowValidationError
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
-import {FindVotesError, VOTE_REPOSITORY_TOKEN, VoteRepository} from "../vote/interfaces"
 import {
   WORKFLOW_TEMPLATE_REPOSITORY_TOKEN,
   WorkflowTemplateGetError,
@@ -25,7 +23,6 @@ import {
   WORKFLOW_REPOSITORY_TOKEN,
   WorkflowGetError,
   WorkflowRepository,
-  WorkflowUpdateError,
   ListWorkflowsRequest,
   ListWorkflowsResponse
 } from "./interfaces"
@@ -35,8 +32,6 @@ export class WorkflowService {
   constructor(
     @Inject(WORKFLOW_REPOSITORY_TOKEN)
     private readonly workflowRepo: WorkflowRepository,
-    @Inject(VOTE_REPOSITORY_TOKEN)
-    private readonly voteRepo: VoteRepository,
     @Inject(WORKFLOW_TEMPLATE_REPOSITORY_TOKEN)
     private readonly workflowTemplateRepo: WorkflowTemplateRepository
   ) {}
@@ -81,31 +76,23 @@ export class WorkflowService {
 
   /**
    * Gets a workflow by its ID or name.
-   * If the workflow is marked for recalculation, its status will be re-evaluated and persisted before being returned.
+   * Note: If recalculationRequired is true, the status may be stale (recalculation in progress).
    * @param identifier The ID (UUID) or name of the workflow.
    * @param includeRef The references to include in the result.
-   * @returns A TaskEither with the versioned workflow or an error.
+   * @returns A TaskEither with the workflow or an error.
    */
   getWorkflowByIdentifier<T extends WorkflowDecoratorSelector>(
     identifier: string,
     includeRef?: T
-  ): TaskEither<WorkflowGetError | FindVotesError | WorkflowUpdateError, DecoratedWorkflow<T>> {
+  ): TaskEither<WorkflowGetError, DecoratedWorkflow<T>> {
     const isUuid = isUUIDv4(identifier)
 
     const repoGetWorkflow = (value: string) =>
       isUuid
-        ? this.workflowRepo.getWorkflowById(value, {...includeRef, occ: true, workflowTemplate: true})
-        : this.workflowRepo.getWorkflowByName(value, {...includeRef, occ: true, workflowTemplate: true})
+        ? this.workflowRepo.getWorkflowById(value, includeRef)
+        : this.workflowRepo.getWorkflowByName(value, includeRef)
 
-    return pipe(
-      identifier,
-      TE.right,
-      TE.chainW(repoGetWorkflow),
-      TE.chainW(workflow => {
-        if (workflow.recalculationRequired) return this.recalculateWorkflowStatus(workflow, includeRef)
-        return TE.right(workflow as DecoratedWorkflow<T>)
-      })
-    )
+    return pipe(identifier, TE.right, TE.chainW(repoGetWorkflow))
   }
 
   /**
@@ -117,31 +104,6 @@ export class WorkflowService {
     request: ListWorkflowsRequest<T>
   ): TaskEither<WorkflowGetError, ListWorkflowsResponse<T>> {
     return this.workflowRepo.listWorkflows(request)
-  }
-
-  private recalculateWorkflowStatus<T extends WorkflowDecoratorSelector>(
-    workflow: DecoratedWorkflow<{occ: true; workflowTemplate: true}>,
-    includeRef?: T
-  ): TaskEither<WorkflowGetError | FindVotesError | WorkflowUpdateError, DecoratedWorkflow<T>> {
-    const getVotesTask = () => this.voteRepo.getVotesByWorkflowId(workflow.id)
-
-    return pipe(
-      TE.Do,
-      TE.bindW("votes", getVotesTask),
-      TE.bindW("workflowWithUpdatedStatus", ({votes}) => TE.fromEither(evaluateWorkflowStatus(workflow, votes))),
-      TE.chainW(({workflowWithUpdatedStatus}) =>
-        this.workflowRepo.updateWorkflowConcurrentSafe(
-          workflowWithUpdatedStatus.id,
-          workflow.occ,
-          {
-            updatedAt: new Date(),
-            status: workflowWithUpdatedStatus.status,
-            recalculationRequired: false
-          },
-          includeRef
-        )
-      )
-    )
   }
 }
 
