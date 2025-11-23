@@ -22,7 +22,7 @@
     "format:prettier": "yarn prettier --config .prettierrc . --write",
     "prisma:pull": "yarn prisma db pull && prisma-case-format --file prisma/schema.prisma -p --table-case pascal,singular --field-case camel",
     "prisma:generate": "yarn prisma generate",
-    "build": "nest build core",
+    "build": "nest build backend && nest build worker",
     "start:worker": "dotenv -e .env.local -- nest start worker",
     "start:worker:dev": "dotenv -e .env.local -- nest start worker --watch --debug",
     "test:setup": "yarn deps:start:test && yarn prisma:generate && yarn liquibase:update:test",
