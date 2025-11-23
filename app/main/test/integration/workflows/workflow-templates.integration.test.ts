@@ -12,18 +12,18 @@ import {
   ListWorkflowTemplates200Response
 } from "@approvio/api"
 import {randomUUID} from "crypto"
-import {cleanDatabase, prepareDatabase} from "../database"
+import {cleanDatabase, prepareDatabase} from "@test/database"
 import {
   createDomainMockUserInDb,
   createMockWorkflowTemplateInDb,
   MockConfigProvider,
   createMockSpaceInDb
-} from "../shared/mock-data"
+} from "@test/mock-data"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
 import {ApprovalRuleType} from "@domain"
-import {get, post, put} from "../shared/requests"
-import {UserWithToken} from "../shared/types"
+import {get, post, put} from "@test/requests"
+import {UserWithToken} from "@test/types"
 import "expect-more-jest"
 import "@utils/matchers"
 import {TokenPayloadBuilder} from "@services"

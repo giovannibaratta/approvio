@@ -6,7 +6,7 @@ import {DatabaseClient} from "@external"
 import {AGENTS_ENDPOINT_ROOT} from "@controllers"
 import {PrismaClient} from "@prisma/client"
 import {randomUUID} from "crypto"
-import {cleanDatabase, prepareDatabase} from "../database"
+import {cleanDatabase, prepareDatabase} from "@test/database"
 import {
   createDomainMockUserInDb,
   createMockAgentInDb,
@@ -14,11 +14,11 @@ import {
   createMockWorkflowTemplateInDb,
   createMockSpaceInDb,
   MockConfigProvider
-} from "../shared/mock-data"
+} from "@test/mock-data"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
-import {put, del} from "../shared/requests"
-import {UserWithToken} from "../shared/types"
+import {put, del} from "@test/requests"
+import {UserWithToken} from "@test/types"
 import "expect-more-jest"
 import "@utils/matchers"
 import {TokenPayloadBuilder} from "@services"

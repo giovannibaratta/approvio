@@ -20,6 +20,7 @@
       "@controllers/*": ["app/controllers/src/*"],
       "@utils": ["app/utils/src"],
       "@utils/*": ["app/utils/src/*"],
+      "@test/*": ["app/test/*"],
       "@prisma/client": ["generated/prisma/client.ts"]
     }
   },

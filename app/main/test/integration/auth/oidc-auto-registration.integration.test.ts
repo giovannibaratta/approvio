@@ -4,12 +4,12 @@ import * as request from "supertest"
 import {AppModule} from "@app/app.module"
 import * as crypto from "crypto"
 import {DatabaseClient} from "@external/database"
-import {cleanDatabase, prepareDatabase} from "../database"
+import {cleanDatabase, prepareDatabase} from "@test/database"
 import {ConfigProvider} from "@external/config"
-import {MockConfigProvider} from "../shared/mock-data"
+import {MockConfigProvider} from "@test/mock-data"
 import {PrismaClient} from "@prisma/client"
 import "@utils/matchers"
-import {simulateOidcAuthorization, OidcMockUser} from "../shared/oidc-test-helpers"
+import {simulateOidcAuthorization, OidcMockUser} from "@test/oidc-test-helpers"
 
 /**
  * ┌─────────────────────────────────────────────────────────────────────────────────────────┐

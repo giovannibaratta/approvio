@@ -3,9 +3,9 @@ import {INestApplication} from "@nestjs/common"
 import * as request from "supertest"
 import {AppModule} from "@app/app.module"
 import {DatabaseClient} from "@external/database"
-import {cleanDatabase, prepareDatabase} from "../database"
+import {cleanDatabase, prepareDatabase} from "@test/database"
 import {ConfigProvider} from "@external/config"
-import {MockConfigProvider} from "../shared/mock-data"
+import {MockConfigProvider} from "@test/mock-data"
 import {PrismaClient} from "@prisma/client"
 
 describe("Auth Integration", () => {

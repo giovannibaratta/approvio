@@ -17,15 +17,15 @@ import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient, Workflow as PrismaWorkflow, WorkflowTemplate as PrismaWorkflowTemplate} from "@prisma/client"
 import {randomUUID} from "crypto"
-import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "../database"
+import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "@test/database"
 import {
   createDomainMockUserInDb,
   createMockWorkflowInDb,
   createMockWorkflowTemplateInDb,
   MockConfigProvider
-} from "../shared/mock-data"
-import {get, post} from "../shared/requests"
-import {UserWithToken} from "../shared/types"
+} from "@test/mock-data"
+import {get, post} from "@test/requests"
+import {UserWithToken} from "@test/types"
 import {TokenPayloadBuilder} from "@services"
 import {getQueueToken} from "@nestjs/bull"
 import {WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"

@@ -16,15 +16,15 @@ import {
   Agent as PrismaAgent
 } from "@prisma/client"
 import {randomUUID} from "crypto"
-import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "../database"
+import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "@test/database"
 import {
   createMockAgentInDb,
   createMockWorkflowInDb,
   createMockWorkflowTemplateInDb,
   createTestGroup,
   MockConfigProvider
-} from "../shared/mock-data"
-import {get, post} from "../shared/requests"
+} from "@test/mock-data"
+import {get, post} from "@test/requests"
 import {TokenPayloadBuilder} from "@services"
 import {mapAgentToDomain} from "@external/database/shared"
 import {isLeft} from "fp-ts/lib/Either"

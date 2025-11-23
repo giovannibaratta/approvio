@@ -44,6 +44,7 @@
     "class-validator": "0.14.2",
     "express": "4.21.2",
     "fp-ts": "2.16.11",
+    "ioredis": "5.8.2",
     "nodemailer": "7.0.5",
     "openid-client": "6.7.0",
     "passport": "0.7.0",

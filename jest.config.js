@@ -16,6 +16,7 @@ const mainSettings = {
     "@external": "<rootDir>/app/external/src",
     "@utils/(.*)": "<rootDir>/app/utils/src/$1",
     "@utils": "<rootDir>/app/utils/src",
+    "@test/(.*)$": "<rootDir>/app/test/$1",
     "^@prisma/client$": "<rootDir>/generated/prisma/client.ts"
   }
 }
