@@ -187,7 +187,7 @@ function changeStatusAndMarkAsRecalculated(
   workflow: WorkflowData,
   status: WorkflowStatus
 ): Either<WorkflowValidationError, Workflow> {
-  return WorkflowFactory.validate({...workflow, status, recalculationRequired: false})
+  return WorkflowFactory.validate({...workflow, status, recalculationRequired: false, updatedAt: new Date()})
 }
 
 function validateWorkflowName(name: string): Either<WorkflowValidationError, string> {

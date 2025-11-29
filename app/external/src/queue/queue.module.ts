@@ -5,6 +5,7 @@ import {ConfigProvider} from "../config/config-provider"
 
 export const ACTION_TASK_QUEUE = "action-tasks"
 export const WORKFLOW_STATUS_RECALCULATION_QUEUE = "workflow-status-recalculation"
+export const WORKFLOW_STATUS_CHANGED_QUEUE = "workflow-status-changed"
 
 @Module({
   imports: [
@@ -25,6 +26,9 @@ export const WORKFLOW_STATUS_RECALCULATION_QUEUE = "workflow-status-recalculatio
     }),
     BullModule.registerQueue({
       name: WORKFLOW_STATUS_RECALCULATION_QUEUE
+    }),
+    BullModule.registerQueue({
+      name: WORKFLOW_STATUS_CHANGED_QUEUE
     })
   ],
   exports: [BullModule]

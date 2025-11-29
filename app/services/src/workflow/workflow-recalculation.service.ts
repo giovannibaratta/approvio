@@ -5,8 +5,13 @@ import {pipe} from "fp-ts/function"
 import {evaluateWorkflowStatus} from "@domain"
 import {VOTE_REPOSITORY_TOKEN, VoteRepository, FindVotesError} from "../vote/interfaces"
 import {WORKFLOW_REPOSITORY_TOKEN, WorkflowRepository, WorkflowGetError, WorkflowUpdateError} from "./interfaces"
+import {EnqueueRecalculationError, QUEUE_PROVIDER_TOKEN, QueueProvider} from "../queue/interface"
 
-export type WorkflowRecalculationError = WorkflowGetError | FindVotesError | WorkflowUpdateError
+export type WorkflowRecalculationError =
+  | WorkflowGetError
+  | FindVotesError
+  | WorkflowUpdateError
+  | EnqueueRecalculationError
 
 @Injectable()
 export class WorkflowRecalculationService {
@@ -14,7 +19,9 @@ export class WorkflowRecalculationService {
     @Inject(WORKFLOW_REPOSITORY_TOKEN)
     private readonly workflowRepo: WorkflowRepository,
     @Inject(VOTE_REPOSITORY_TOKEN)
-    private readonly voteRepo: VoteRepository
+    private readonly voteRepo: VoteRepository,
+    @Inject(QUEUE_PROVIDER_TOKEN)
+    private readonly queueProvider: QueueProvider
   ) {}
 
   /**
@@ -39,14 +46,32 @@ export class WorkflowRecalculationService {
           Logger.log(`Workflow ${workflowWithUpdatedStatus.id} new status: ${workflowWithUpdatedStatus.status}`)
         )
       ),
-      TE.chainW(({workflow, workflowWithUpdatedStatus}) =>
+      TE.chainFirstW(({workflow, workflowWithUpdatedStatus}) =>
         this.workflowRepo.updateWorkflowConcurrentSafe(workflowWithUpdatedStatus.id, workflow.occ, {
-          updatedAt: new Date(),
+          updatedAt: workflowWithUpdatedStatus.updatedAt,
           status: workflowWithUpdatedStatus.status,
           recalculationRequired: false
         })
       ),
-      TE.chainFirstIOK(workflow => TE.fromIO(() => Logger.log(`Persisted status for Workflow ${workflow.id}`))),
+      TE.chainFirstIOK(({workflow}) => TE.fromIO(() => Logger.log(`Persisted status for Workflow ${workflow.id}`))),
+      TE.chainFirstW(({workflow, workflowWithUpdatedStatus}) => {
+        if (workflow.status !== "EVALUATION_IN_PROGRESS") {
+          pipe(
+            this.queueProvider.enqueueWorkflowStatusChanged({
+              workflowId: workflow.id,
+              oldStatus: workflow.status,
+              newStatus: workflowWithUpdatedStatus.status,
+              timestamp: workflowWithUpdatedStatus.updatedAt
+            }),
+            TE.map(() => undefined),
+            TE.orElse(error => {
+              Logger.error(`Failed to enqueue workflow status changed event: ${error}`)
+              return TE.right(undefined)
+            })
+          )
+        }
+        return TE.right(undefined)
+      }),
       TE.map(() => undefined)
     )
   }
