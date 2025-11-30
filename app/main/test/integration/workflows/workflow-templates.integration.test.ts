@@ -28,6 +28,28 @@ import "expect-more-jest"
 import "@utils/matchers"
 import {TokenPayloadBuilder} from "@services"
 
+/**
+ * Type guard assertion that checks if the value is a non-empty array of records.
+ * Uses TypeScript's assertion signature to narrow the type without returning a value.
+ * @throws Error (via Jest) if the assertions fail
+ */
+function assertIsNonEmptyArrayOfRecord(value: unknown): asserts value is Record<string, unknown>[] {
+  expect(value).toBeDefined()
+  expect(Array.isArray(value)).toBe(true)
+  expect(value).toHaveLength(1)
+}
+
+/**
+ * Type guard assertion that checks if the first element of an array is defined.
+ * Uses TypeScript's assertion signature to narrow the array's element type.
+ * @throws Error (via Jest) if the assertion fails
+ */
+function assertFirstActionIsDefined(
+  actions: Record<string, unknown>[]
+): asserts actions is [Record<string, unknown>, ...Record<string, unknown>[]] {
+  expect(actions[0]).toBeDefined()
+}
+
 describe("Workflow Templates API", () => {
   let app: NestApplication
   let prisma: PrismaClient
@@ -189,6 +211,50 @@ describe("Workflow Templates API", () => {
         const templateDbObject = await prisma.workflowTemplate.findUnique({where: {id: responseUuid}})
 
         expect(templateDbObject?.approvalRule).toEqual(requestBody.approvalRule)
+      })
+      it("should create a workflow template with webhook action (as OrgAdmin)", async () => {
+        // Given
+        const requestBody: WorkflowTemplateCreate = {
+          name: "Webhook Template",
+          approvalRule: {
+            type: ApprovalRuleType.GROUP_REQUIREMENT,
+            groupId: randomUUID(),
+            minCount: 1
+          },
+          actions: [
+            {
+              type: "WEBHOOK",
+              url: "https://example.com/webhook",
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Custom-Header": "value"
+              }
+            }
+          ],
+          spaceId: testSpace.id
+        }
+
+        // When
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.CREATED)
+
+        const responseUuid: string = response.headers.location?.split("/").reverse()[0] ?? ""
+        const templateDbObject = await prisma.workflowTemplate.findUnique({where: {id: responseUuid}})
+
+        assertIsNonEmptyArrayOfRecord(templateDbObject?.actions)
+        assertFirstActionIsDefined(templateDbObject.actions)
+        const firstAction = templateDbObject.actions[0]
+
+        expect(firstAction.type).toEqual("WEBHOOK")
+        expect(firstAction.url).toEqual("https://example.com/webhook")
+        expect(firstAction.method).toEqual("POST")
+        expect(firstAction.headers).toEqual({
+          "Content-Type": "application/json",
+          "X-Custom-Header": "value"
+        })
       })
     })
 
@@ -404,6 +470,90 @@ describe("Workflow Templates API", () => {
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("APPROVAL_RULE_OR_RULE_MUST_HAVE_RULES")
       })
+    })
+
+    it("should return 400 BAD_REQUEST (WORKFLOW_ACTION_URL_INVALID) for invalid webhook URL", async () => {
+      // Given
+      const requestBody: WorkflowTemplateCreate = {
+        name: "Invalid Webhook URL Template",
+        approvalRule: {
+          type: ApprovalRuleType.GROUP_REQUIREMENT,
+          groupId: randomUUID(),
+          minCount: 1
+        },
+        actions: [
+          {
+            type: "WEBHOOK",
+            url: "not-a-url",
+            method: "POST"
+          }
+        ],
+        spaceId: testSpace.id
+      }
+
+      // When
+      const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+      // Expect
+      expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      expect(response.body).toHaveErrorCode("WORKFLOW_ACTION_URL_INVALID")
+    })
+
+    it("should return 400 BAD_REQUEST (WORKFLOW_ACTION_MISSING_HTTP_METHOD) for missing webhook method", async () => {
+      // Given
+      const requestBody: WorkflowTemplateCreate = {
+        name: "Missing Method Template",
+        approvalRule: {
+          type: ApprovalRuleType.GROUP_REQUIREMENT,
+          groupId: randomUUID(),
+          minCount: 1
+        },
+        actions: [
+          {
+            type: "WEBHOOK",
+            url: "https://example.com"
+            // method missing
+          }
+        ],
+        spaceId: testSpace.id
+      }
+
+      // When
+      const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+      // Expect
+      expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      expect(response.body).toHaveErrorCode("WORKFLOW_ACTION_MISSING_HTTP_METHOD")
+    })
+
+    it("should return 400 BAD_REQUEST (WORKFLOW_ACTION_HEADERS_INVALID) for invalid headers", async () => {
+      // Given
+      const requestBody: WorkflowTemplateCreate = {
+        name: "Invalid Headers Template",
+        approvalRule: {
+          type: ApprovalRuleType.GROUP_REQUIREMENT,
+          groupId: randomUUID(),
+          minCount: 1
+        },
+        actions: [
+          {
+            type: "WEBHOOK",
+            url: "https://example.com",
+            method: "POST",
+            headers: {
+              "Content-Type": 123 as unknown as string
+            }
+          }
+        ],
+        spaceId: testSpace.id
+      }
+
+      // When
+      const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+      // Expect
+      expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      expect(response.body).toHaveErrorCode("WORKFLOW_ACTION_HEADERS_INVALID")
     })
   })
 

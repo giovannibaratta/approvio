@@ -90,10 +90,10 @@ export type WorkflowTemplateDeprecationError =
   | "workflow_template_not_active"
   | "workflow_template_not_pending_deprecation"
 
-type UserModifiableAttributes = Pick<
-  WorkflowTemplate,
-  "actions" | "approvalRule" | "defaultExpiresInHours" | "description"
->
+type UserModifiableAttributes = Pick<WorkflowTemplate, "defaultExpiresInHours" | "description"> & {
+  actions?: unknown
+  approvalRule?: unknown
+}
 
 export class WorkflowTemplateFactory {
   /**
@@ -126,10 +126,10 @@ export class WorkflowTemplateFactory {
     }
 
     return right({
-      ...(partialData.description && {description: partialData.description}),
-      ...(partialData.approvalRule && {approvalRule: partialData.approvalRule}),
-      ...(partialData.actions && {actions: partialData.actions}),
-      ...(partialData.defaultExpiresInHours && {defaultExpiresInHours: partialData.defaultExpiresInHours})
+      ...(partialData.description !== undefined && {description: partialData.description}),
+      ...(partialData.approvalRule !== undefined && {approvalRule: partialData.approvalRule}),
+      ...(partialData.actions !== undefined && {actions: partialData.actions}),
+      ...(partialData.defaultExpiresInHours !== undefined && {defaultExpiresInHours: partialData.defaultExpiresInHours})
     })
   }
 

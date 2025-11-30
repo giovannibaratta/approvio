@@ -135,6 +135,8 @@ export function generateErrorResponseForCreateWorkflow(
     case "workflow_action_recipients_empty":
     case "workflow_action_recipients_invalid_email":
     case "workflow_action_type_invalid":
+    case "workflow_action_url_invalid":
+    case "workflow_action_method_invalid":
     case "workflow_template_description_too_long":
     case "workflow_template_expires_in_hours_invalid":
     case "workflow_template_name_empty":
@@ -147,6 +149,8 @@ export function generateErrorResponseForCreateWorkflow(
     case "workflow_template_version_too_long":
     case "workflow_template_space_id_invalid_uuid":
     case "workflow_template_active_is_not_latest":
+    case "workflow_action_missing_http_method":
+    case "workflow_action_headers_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -174,6 +178,8 @@ export function generateErrorResponseForGetWorkflow(error: GetWorkflowLeft, cont
     case "workflow_action_recipients_empty":
     case "workflow_action_recipients_invalid_email":
     case "workflow_action_type_invalid":
+    case "workflow_action_url_invalid":
+    case "workflow_action_method_invalid":
     case "workflow_description_too_long":
     case "workflow_expires_at_in_the_past":
     case "workflow_name_empty":
@@ -194,6 +200,8 @@ export function generateErrorResponseForGetWorkflow(error: GetWorkflowLeft, cont
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
     case "workflow_template_active_is_not_latest":
+    case "workflow_action_missing_http_method":
+    case "workflow_action_headers_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -219,6 +227,8 @@ export function generateErrorResponseForListWorkflows(error: ListWorkflowsLeft, 
     case "workflow_action_recipients_empty":
     case "workflow_action_recipients_invalid_email":
     case "workflow_action_type_invalid":
+    case "workflow_action_url_invalid":
+    case "workflow_action_method_invalid":
     case "workflow_description_too_long":
     case "workflow_expires_at_in_the_past":
     case "workflow_name_empty":
@@ -240,6 +250,8 @@ export function generateErrorResponseForListWorkflows(error: ListWorkflowsLeft, 
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
     case "workflow_template_active_is_not_latest":
+    case "workflow_action_missing_http_method":
+    case "workflow_action_headers_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -457,6 +469,8 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "workflow_action_recipients_empty":
     case "workflow_action_recipients_invalid_email":
     case "workflow_action_type_invalid":
+    case "workflow_action_url_invalid":
+    case "workflow_action_method_invalid":
     case "workflow_description_too_long":
     case "workflow_expires_at_in_the_past":
     case "workflow_name_empty":
@@ -525,6 +539,8 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "agent_invalid_occ":
     case "role_entity_type_role_restriction":
     case "agent_role_entity_type_role_restriction":
+    case "workflow_action_missing_http_method":
+    case "workflow_action_headers_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -598,6 +614,8 @@ export function generateErrorResponseForCastVote(
     case "workflow_action_recipients_empty":
     case "workflow_action_recipients_invalid_email":
     case "workflow_action_type_invalid":
+    case "workflow_action_url_invalid":
+    case "workflow_action_method_invalid":
     case "workflow_description_too_long":
     case "workflow_expires_at_in_the_past":
     case "workflow_name_empty":
@@ -666,6 +684,8 @@ export function generateErrorResponseForCastVote(
     case "agent_invalid_occ":
     case "role_entity_type_role_restriction":
     case "agent_role_entity_type_role_restriction":
+    case "workflow_action_missing_http_method":
+    case "workflow_action_headers_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)

@@ -36,7 +36,7 @@ import {
   WorkflowTemplateService
 } from "@services"
 import {ExtractLeftFromMethod} from "@utils"
-import {Either, isLeft, left, right, traverseArray} from "fp-ts/Either"
+import {Either, isLeft, right} from "fp-ts/Either"
 
 export function createWorkflowTemplateApiToServiceModel(data: {
   workflowTemplateData: WorkflowTemplateCreateApi
@@ -45,14 +45,11 @@ export function createWorkflowTemplateApiToServiceModel(data: {
   const eitherApprovalRule = mapApprovalRuleToDomain(data.workflowTemplateData.approvalRule)
   if (isLeft(eitherApprovalRule)) return eitherApprovalRule
 
-  const actions = mapActionsToDomain(data.workflowTemplateData.actions)
-  if (isLeft(actions)) return actions
-
   const workflowTemplateData: CreateWorkflowTemplateRequest["workflowTemplateData"] = {
     name: data.workflowTemplateData.name,
     description: data.workflowTemplateData.description,
     approvalRule: eitherApprovalRule.right,
-    actions: actions.right,
+    actions: data.workflowTemplateData.actions,
     defaultExpiresInHours: data.workflowTemplateData.defaultExpiresInHours,
     spaceId: data.workflowTemplateData.spaceId
   }
@@ -61,22 +58,6 @@ export function createWorkflowTemplateApiToServiceModel(data: {
     workflowTemplateData,
     requestor: data.requestor
   })
-}
-
-function mapActionsToDomain(
-  actions?: WorkflowActionApi[]
-): Either<WorkflowTemplateValidationError, ReadonlyArray<WorkflowAction>> {
-  if (!actions) return right([])
-
-  return traverseArray(mapWorkflowActionToDomain)(actions)
-}
-
-function mapWorkflowActionToDomain(action: WorkflowActionApi): Either<WorkflowTemplateValidationError, WorkflowAction> {
-  switch (action.type) {
-    case WorkflowActionType.EMAIL:
-      return right({type: WorkflowActionType.EMAIL, recipients: action.recipients})
-  }
-  return left("workflow_action_type_invalid")
 }
 
 export function updateWorkflowTemplateApiToServiceModel(data: {
@@ -94,23 +75,15 @@ export function updateWorkflowTemplateApiToServiceModel(data: {
 
   const workflowTemplateData: UpdateWorkflowTemplateRequest["workflowTemplateData"] = {}
 
-  if (data.workflowTemplateData.description !== undefined) {
+  if (data.workflowTemplateData.description !== undefined)
     workflowTemplateData.description = data.workflowTemplateData.description
-  }
 
-  if (approvalRule !== undefined) {
-    workflowTemplateData.approvalRule = approvalRule
-  }
+  if (approvalRule !== undefined) workflowTemplateData.approvalRule = approvalRule
 
-  if (data.workflowTemplateData.actions !== undefined) {
-    const actions = mapActionsToDomain(data.workflowTemplateData.actions)
-    if (isLeft(actions)) return actions
-    workflowTemplateData.actions = actions.right
-  }
+  if (data.workflowTemplateData.actions !== undefined) workflowTemplateData.actions = data.workflowTemplateData.actions
 
-  if (data.workflowTemplateData.defaultExpiresInHours !== undefined) {
+  if (data.workflowTemplateData.defaultExpiresInHours !== undefined)
     workflowTemplateData.defaultExpiresInHours = data.workflowTemplateData.defaultExpiresInHours
-  }
 
   return right({
     templateName: data.templateName,
@@ -171,6 +144,13 @@ function mapWorkflowActionToApi(action: WorkflowAction): WorkflowActionApi {
         type: action.type,
         recipients: action.recipients.slice()
       }
+    case WorkflowActionType.WEBHOOK:
+      return {
+        type: action.type,
+        url: action.url,
+        method: action.method,
+        headers: action.headers ? {...action.headers} : undefined
+      }
   }
 }
 
@@ -200,6 +180,8 @@ export function generateErrorResponseForCreateWorkflowTemplate(
     case "workflow_action_recipients_empty":
     case "workflow_action_recipients_invalid_email":
     case "workflow_action_type_invalid":
+    case "workflow_action_url_invalid":
+    case "workflow_action_method_invalid":
     case "workflow_template_description_too_long":
     case "workflow_template_expires_in_hours_invalid":
     case "workflow_template_name_empty":
@@ -210,6 +192,8 @@ export function generateErrorResponseForCreateWorkflowTemplate(
     case "workflow_template_version_invalid_format":
     case "workflow_template_version_invalid_number":
     case "workflow_template_version_too_long":
+    case "workflow_action_missing_http_method":
+    case "workflow_action_headers_invalid":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
     case "workflow_template_already_exists":
       return new ConflictException(
@@ -249,6 +233,8 @@ export function generateErrorResponseForGetWorkflowTemplate(
     case "workflow_action_recipients_empty":
     case "workflow_action_recipients_invalid_email":
     case "workflow_action_type_invalid":
+    case "workflow_action_url_invalid":
+    case "workflow_action_method_invalid":
     case "workflow_template_description_too_long":
     case "workflow_template_expires_in_hours_invalid":
     case "workflow_template_name_empty":
@@ -261,6 +247,8 @@ export function generateErrorResponseForGetWorkflowTemplate(
     case "workflow_template_version_too_long":
     case "workflow_template_space_id_invalid_uuid":
     case "workflow_template_active_is_not_latest":
+    case "workflow_action_missing_http_method":
+    case "workflow_action_headers_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -300,6 +288,8 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
     case "workflow_action_recipients_empty":
     case "workflow_action_recipients_invalid_email":
     case "workflow_action_type_invalid":
+    case "workflow_action_url_invalid":
+    case "workflow_action_method_invalid":
     case "workflow_template_description_too_long":
     case "workflow_template_expires_in_hours_invalid":
     case "workflow_template_name_empty":
@@ -310,6 +300,8 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
     case "workflow_template_version_invalid_format":
     case "workflow_template_version_invalid_number":
     case "workflow_template_version_too_long":
+    case "workflow_action_missing_http_method":
+    case "workflow_action_headers_invalid":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
     case "workflow_template_update_before_create":
     case "workflow_template_active_is_not_latest":
@@ -375,6 +367,8 @@ export function generateErrorResponseForDeprecateWorkflowTemplate(
     case "workflow_action_recipients_empty":
     case "workflow_action_recipients_invalid_email":
     case "workflow_action_type_invalid":
+    case "workflow_action_url_invalid":
+    case "workflow_action_method_invalid":
     case "workflow_template_description_too_long":
     case "workflow_template_expires_in_hours_invalid":
     case "workflow_template_name_empty":
@@ -389,6 +383,8 @@ export function generateErrorResponseForDeprecateWorkflowTemplate(
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
     case "workflow_template_active_is_not_latest":
     case "workflow_template_most_recent_non_active_invalid_status":
+    case "workflow_action_missing_http_method":
+    case "workflow_action_headers_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
@@ -424,6 +420,8 @@ export function generateErrorResponseForListWorkflowTemplates(
     case "workflow_action_recipients_empty":
     case "workflow_action_recipients_invalid_email":
     case "workflow_action_type_invalid":
+    case "workflow_action_url_invalid":
+    case "workflow_action_method_invalid":
     case "workflow_template_description_too_long":
     case "workflow_template_expires_in_hours_invalid":
     case "workflow_template_name_empty":
@@ -435,8 +433,9 @@ export function generateErrorResponseForListWorkflowTemplates(
     case "workflow_template_version_invalid_format":
     case "workflow_template_version_invalid_number":
     case "workflow_template_version_too_long":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
     case "workflow_template_active_is_not_latest":
+    case "workflow_action_missing_http_method":
+    case "workflow_action_headers_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)

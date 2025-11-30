@@ -502,32 +502,36 @@ function generate_consistent_dates_for_workflow(optionalExpiresAt: Date | "activ
   createdAt: Date
   updatedAt: Date
 } {
+  const now = new Date()
+
+  // Default: createdAt is a few minutes in the past, updatedAt is slightly after createdAt, expiresAt is in the future
   if (optionalExpiresAt === undefined) {
-    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)
-    const updatedAt = randomDateBefore(expiresAt)
-    const createdAt = randomDateBefore(updatedAt)
+    const createdAt = new Date(now.getTime() - 1000 * 60 * 5) // 5 minutes ago
+    const updatedAt = new Date(createdAt.getTime() + 1000 * 10) // 10 seconds after creation
+    const expiresAt = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 30) // 30 days from now
     return {expiresAt, createdAt, updatedAt}
   }
 
+  // Specific expiresAt date provided
   if (typeof optionalExpiresAt !== "string") {
     const expiresAt = optionalExpiresAt
-    const updatedAt = randomDateBefore(expiresAt)
-    const createdAt = randomDateBefore(updatedAt)
+    const createdAt = new Date(now.getTime() - 1000 * 60 * 5) // 5 minutes ago
+    const updatedAt = new Date(createdAt.getTime() + 1000 * 10) // 10 seconds after creation
     return {expiresAt, createdAt, updatedAt}
   }
 
+  // Active workflow: expiresAt in the future
   if (optionalExpiresAt === "active") {
-    const now = new Date(Date.now())
-    const expiresAt = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 30)
-    const updatedAt = randomDateBefore(now)
-    const createdAt = randomDateBefore(updatedAt)
+    const createdAt = new Date(now.getTime() - 1000 * 60 * 5) // 5 minutes ago
+    const updatedAt = new Date(createdAt.getTime() + 1000 * 10) // 10 seconds after creation
+    const expiresAt = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 30) // 30 days from now
     return {expiresAt, createdAt, updatedAt}
   }
 
-  const now = new Date(Date.now())
-  const expiresAt = new Date(now.getTime() - 1000 * 60 * 60 * 24 * 30)
-  const updatedAt = randomDateBefore(expiresAt)
-  const createdAt = randomDateBefore(updatedAt)
+  // Expired workflow: expiresAt in the past
+  const expiresAt = new Date(now.getTime() - 1000 * 60 * 60 * 24) // 1 day ago
+  const createdAt = new Date(expiresAt.getTime() - 1000 * 60 * 60 * 24 * 30) // 30 days before expiry
+  const updatedAt = new Date(createdAt.getTime() + 1000 * 60) // 1 minute after creation
   return {expiresAt, createdAt, updatedAt}
 }
 

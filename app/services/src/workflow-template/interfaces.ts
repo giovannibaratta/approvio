@@ -1,10 +1,4 @@
-import {
-  WorkflowTemplate,
-  WorkflowTemplateValidationError,
-  ApprovalRule,
-  WorkflowAction,
-  WorkflowTemplateSummary
-} from "@domain"
+import {WorkflowTemplate, WorkflowTemplateValidationError, ApprovalRule, WorkflowTemplateSummary} from "@domain"
 import {UnknownError} from "@services/error"
 import {RequestorAwareRequest} from "@services/shared/types"
 import {TaskEither} from "fp-ts/TaskEither"
@@ -111,7 +105,7 @@ export interface CreateWorkflowTemplateRequest extends RequestorAwareRequest {
     name: string
     description?: string
     approvalRule: ApprovalRule
-    actions?: ReadonlyArray<WorkflowAction>
+    actions?: ReadonlyArray<unknown>
     defaultExpiresInHours?: number
     spaceId: string
   }

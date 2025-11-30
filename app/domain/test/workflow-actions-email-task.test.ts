@@ -1,8 +1,4 @@
-import {
-  WorkflowActionEmailTaskFactory,
-  TaskStatus,
-  DecoratedWorkflowActionEmailTask
-} from "../src/workflow-actions-email-task"
+import {DecoratedWorkflowActionEmailTask, TaskStatus, WorkflowActionEmailTaskFactory} from "@domain"
 
 describe("WorkflowActionEmailTaskFactory", () => {
   const baseTaskData = {

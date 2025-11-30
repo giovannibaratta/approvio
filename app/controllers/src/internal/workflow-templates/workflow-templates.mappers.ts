@@ -48,6 +48,8 @@ export function generateErrorResponseForCancelWorkflowsForTemplate(
     case "workflow_action_type_invalid":
     case "workflow_action_recipients_empty":
     case "workflow_action_recipients_invalid_email":
+    case "workflow_action_url_invalid":
+    case "workflow_action_method_invalid":
     case "workflow_name_empty":
     case "workflow_name_too_long":
     case "workflow_name_invalid_characters":
@@ -56,6 +58,8 @@ export function generateErrorResponseForCancelWorkflowsForTemplate(
     case "workflow_status_invalid":
     case "workflow_workflow_template_id_invalid_uuid":
     case "workflow_expires_at_in_the_past":
+    case "workflow_action_missing_http_method":
+    case "workflow_action_headers_invalid":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `Internal data inconsistency. Context: ${context}`)
       )

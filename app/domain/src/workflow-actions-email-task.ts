@@ -1,29 +1,20 @@
 import {randomUUID} from "crypto"
 import {Either, isLeft, left, right} from "fp-ts/lib/Either"
-import {DecorableEntity, PrefixUnion, getStringAsEnum, isDecoratedWith} from "@utils"
-
-export enum TaskStatus {
-  PENDING = "PENDING",
-  COMPLETED = "COMPLETED",
-  ERROR = "ERROR"
-}
+import {DecorableEntity, PrefixUnion, isDecoratedWith} from "@utils"
+import {
+  Lock,
+  TaskStatus,
+  validateLock,
+  validateTaskStatus,
+  validateErrorReason,
+  mapLockErrorWithPrefix,
+  WorkflowActionTaskData
+} from "./workflow-actions-shared"
 
 export type WorkflowActionEmailTask = Readonly<WorkflowActionEmailTaskData>
 
-interface WorkflowActionEmailTaskData {
-  id: string
-  workflowId: string
-  status: TaskStatus
+interface WorkflowActionEmailTaskData extends WorkflowActionTaskData {
   configuration: Record<string, unknown>
-  retryCount: number
-  errorReason?: string
-  createdAt: Date
-  updatedAt: Date
-}
-
-export type Lock = {
-  lockedBy: string
-  lockedAt: Date
 }
 
 export interface WorkflowActionEmailTaskDecorators {
@@ -102,14 +93,14 @@ export class WorkflowActionEmailTaskFactory {
       status: string
     }
   ): Either<WorkflowActionEmailTaskValidationError, DecoratedWorkflowActionEmailTask<T>> {
-    const statusValidation = validateTaskStatus(dataToBeValidated.status)
-    if (isLeft(statusValidation)) {
-      return statusValidation
-    }
+    const statusValidation = validateTaskStatus(dataToBeValidated.status, "workflow_action_email_task_status_invalid")
+    if (isLeft(statusValidation)) return statusValidation
 
-    if (dataToBeValidated.errorReason && dataToBeValidated.errorReason.length > 16384) {
-      return left("workflow_action_email_task_error_reason_too_long")
-    }
+    const errorReasonValidation = validateErrorReason(
+      dataToBeValidated.errorReason,
+      "workflow_action_email_task_error_reason_too_long"
+    )
+    if (isLeft(errorReasonValidation)) return errorReasonValidation
 
     const dataWithTypedStatus = {...dataToBeValidated, status: statusValidation.right}
 
@@ -123,7 +114,11 @@ export class WorkflowActionEmailTaskFactory {
 
     if (isDecoratedWithLock) {
       const lockValidation = validateLock(dataWithTypedStatus.lock, dataWithTypedStatus.createdAt)
-      if (isLeft(lockValidation)) return lockValidation
+      if (isLeft(lockValidation))
+        return mapLockErrorWithPrefix<WorkflowActionEmailTaskValidationError>(
+          lockValidation.left,
+          "workflow_action_email_task"
+        )
     }
 
     const task: WorkflowActionEmailTask = {
@@ -134,37 +129,4 @@ export class WorkflowActionEmailTaskFactory {
 
     return right(task as DecoratedWorkflowActionEmailTask<T>)
   }
-}
-
-function validateTaskStatus(status: string): Either<WorkflowActionEmailTaskValidationError, TaskStatus> {
-  const enumStatus = getStringAsEnum(status, TaskStatus)
-  if (enumStatus === undefined) {
-    return left("workflow_action_email_task_status_invalid")
-  }
-  return right(enumStatus)
-}
-
-function validateLock(lock: Lock, createdAt: Date): Either<WorkflowActionEmailTaskValidationError, Lock> {
-  if (lock.lockedAt < createdAt) {
-    return left("workflow_action_email_task_lock_date_prior_creation")
-  }
-
-  if (lock.lockedBy.length > 1024) {
-    return left("workflow_action_email_task_lock_by_too_long")
-  }
-
-  if (lock.lockedBy.trim().length === 0) {
-    return left("workflow_action_email_task_lock_by_is_empty")
-  }
-
-  // Must start with [a-zA-Z]
-  // Must end with [a-zA-Z0-9]
-  // Can contain a dash
-  // Can not contain two consecutive dashses
-  const lockByRegex = /^[a-zA-Z](-?[a-zA-Z0-9]+)*$/
-  if (!lockByRegex.test(lock.lockedBy)) {
-    return left("workflow_action_email_task_lock_by_invalid_format")
-  }
-
-  return right(lock)
 }

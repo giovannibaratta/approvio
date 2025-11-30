@@ -5,6 +5,7 @@ import {
   ApprovalRule,
   ApprovalRuleType,
   WorkflowAction,
+  WorkflowActionType,
   getMostRecentVersionFromTuples,
   WorkflowTemplateStatus
 } from "@domain"
@@ -399,9 +400,19 @@ function mapActionsToJsonb(actions: WorkflowAction[]): Prisma.InputJsonArray {
 }
 
 function mapActionToJsonb(action: WorkflowAction): Prisma.InputJsonValue {
-  return {
-    type: action.type,
-    recipients: [...action.recipients]
+  switch (action.type) {
+    case WorkflowActionType.EMAIL:
+      return {
+        type: action.type,
+        recipients: [...action.recipients]
+      }
+    case WorkflowActionType.WEBHOOK:
+      return {
+        type: action.type,
+        url: action.url,
+        method: action.method,
+        headers: action.headers ? {...action.headers} : undefined
+      }
   }
 }
 
