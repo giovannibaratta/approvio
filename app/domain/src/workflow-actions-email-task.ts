@@ -1,5 +1,5 @@
 import {randomUUID} from "crypto"
-import {Either, isLeft, left, right} from "fp-ts/lib/Either"
+import {Either, isLeft, right} from "fp-ts/lib/Either"
 import {DecorableEntity, PrefixUnion, isDecoratedWith} from "@utils"
 import {
   Lock,

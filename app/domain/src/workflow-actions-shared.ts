@@ -1,4 +1,4 @@
-import {Either, Left, left, right} from "fp-ts/lib/Either"
+import {Either, left, right} from "fp-ts/lib/Either"
 import {PrefixUnion, getStringAsEnum} from "@utils"
 
 export enum TaskStatus {

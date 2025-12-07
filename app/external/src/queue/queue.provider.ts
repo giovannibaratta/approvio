@@ -4,7 +4,7 @@ import {Queue, JobOptions} from "bull"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
 import {WORKFLOW_STATUS_CHANGED_QUEUE, WORKFLOW_STATUS_RECALCULATION_QUEUE} from "./queue.module"
-import {EnqueueRecalculationError, QueueProvider} from "@services"
+import {EnqueueRecalculationError, EnqueueWorkflowStatusChangedError, QueueProvider} from "@services"
 import {WorkflowStatusChangedEvent} from "@domain"
 
 export interface RecalculationJobData {
@@ -55,10 +55,13 @@ export class BullQueueProvider implements QueueProvider {
     )
   }
 
-  enqueueWorkflowStatusChanged(event: WorkflowStatusChangedEvent): TaskEither<EnqueueRecalculationError, void> {
+  enqueueWorkflowStatusChanged(event: WorkflowStatusChangedEvent): TaskEither<EnqueueWorkflowStatusChangedError, void> {
     return TE.tryCatch(
       async () => {
-        await this.statusChangedQueue.add("workflow-status-changed", event, SHARED_QUEUE_OPTIONS)
+        await this.statusChangedQueue.add("workflow-status-changed", event, {
+          ...SHARED_QUEUE_OPTIONS,
+          jobId: event.eventId
+        })
       },
       error => {
         Logger.error(`Failed to enqueue status change for workflow ${event.workflowId}`, error)

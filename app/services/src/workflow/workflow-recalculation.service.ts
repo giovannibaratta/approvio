@@ -3,6 +3,7 @@ import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {evaluateWorkflowStatus} from "@domain"
+import {generateDeterministicId} from "@utils"
 import {VOTE_REPOSITORY_TOKEN, VoteRepository, FindVotesError} from "../vote/interfaces"
 import {WORKFLOW_REPOSITORY_TOKEN, WorkflowRepository, WorkflowGetError, WorkflowUpdateError} from "./interfaces"
 import {EnqueueRecalculationError, QUEUE_PROVIDER_TOKEN, QueueProvider} from "../queue/interface"
@@ -56,11 +57,16 @@ export class WorkflowRecalculationService {
       TE.chainFirstIOK(({workflow}) => TE.fromIO(() => Logger.log(`Persisted status for Workflow ${workflow.id}`))),
       TE.chainFirstW(({workflow, workflowWithUpdatedStatus}) => {
         if (workflow.status !== "EVALUATION_IN_PROGRESS") {
+          const eventId = generateDeterministicId(
+            `${workflow.id}-${workflowWithUpdatedStatus.status}-${workflowWithUpdatedStatus.updatedAt.toISOString()}`
+          )
           pipe(
             this.queueProvider.enqueueWorkflowStatusChanged({
+              eventId,
               workflowId: workflow.id,
               oldStatus: workflow.status,
               newStatus: workflowWithUpdatedStatus.status,
+              workflowTemplateActions: workflow.workflowTemplate.actions,
               timestamp: workflowWithUpdatedStatus.updatedAt
             }),
             TE.map(() => undefined),

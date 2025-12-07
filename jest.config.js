@@ -35,7 +35,7 @@ const testSettings = {
   ],
   modulePathIgnorePatterns: ["<rootDir>/build/"],
   setupFilesAfterEnv: ["<rootDir>/app/utils/src/matchers.ts"],
-  transformIgnorePatterns: ["node_modules/(?!(openid-client|oauth4webapi|jose)/)"]
+  transformIgnorePatterns: ["node_modules/(?!(openid-client|oauth4webapi|jose|uuid)/)"]
 }
 
 module.exports = {
