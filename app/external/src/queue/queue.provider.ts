@@ -3,9 +3,20 @@ import {InjectQueue} from "@nestjs/bull"
 import {Queue, JobOptions} from "bull"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
-import {WORKFLOW_STATUS_CHANGED_QUEUE, WORKFLOW_STATUS_RECALCULATION_QUEUE} from "./queue.module"
-import {EnqueueRecalculationError, EnqueueWorkflowStatusChangedError, QueueProvider} from "@services"
-import {WorkflowStatusChangedEvent} from "@domain"
+import {
+  WORKFLOW_STATUS_CHANGED_QUEUE,
+  WORKFLOW_STATUS_RECALCULATION_QUEUE,
+  WORKFLOW_ACTION_EMAIL_QUEUE,
+  WORKFLOW_ACTION_WEBHOOK_QUEUE
+} from "./queue.module"
+import {
+  EnqueueRecalculationError,
+  EnqueueWorkflowActionEmailError,
+  EnqueueWorkflowActionWebhookError,
+  EnqueueWorkflowStatusChangedError,
+  QueueProvider
+} from "@services"
+import {WorkflowStatusChangedEvent, WorkflowActionEmailEvent, WorkflowActionWebhookEvent} from "@domain"
 
 export interface RecalculationJobData {
   workflowId: string
@@ -31,7 +42,11 @@ export class BullQueueProvider implements QueueProvider {
     @InjectQueue(WORKFLOW_STATUS_RECALCULATION_QUEUE)
     private readonly queue: Queue<RecalculationJobData>,
     @InjectQueue(WORKFLOW_STATUS_CHANGED_QUEUE)
-    private readonly statusChangedQueue: Queue<WorkflowStatusChangedEvent>
+    private readonly statusChangedQueue: Queue<WorkflowStatusChangedEvent>,
+    @InjectQueue(WORKFLOW_ACTION_EMAIL_QUEUE)
+    private readonly emailActionQueue: Queue<WorkflowActionEmailEvent>,
+    @InjectQueue(WORKFLOW_ACTION_WEBHOOK_QUEUE)
+    private readonly webhookActionQueue: Queue<WorkflowActionWebhookEvent>
   ) {}
 
   /**
@@ -67,6 +82,36 @@ export class BullQueueProvider implements QueueProvider {
       },
       error => {
         Logger.error(`Failed to enqueue status change for workflow ${event.workflowId}`, error)
+        return "unknown_error" as const
+      }
+    )
+  }
+
+  enqueueEmailAction(event: WorkflowActionEmailEvent): TaskEither<EnqueueWorkflowActionEmailError, void> {
+    return TE.tryCatch(
+      async () => {
+        await this.emailActionQueue.add("workflow-action-email", event, {
+          ...SHARED_QUEUE_OPTIONS,
+          jobId: event.taskId
+        })
+      },
+      error => {
+        Logger.error(`Failed to enqueue email action for task ${event.taskId}`, error)
+        return "unknown_error" as const
+      }
+    )
+  }
+
+  enqueueWebhookAction(event: WorkflowActionWebhookEvent): TaskEither<EnqueueWorkflowActionWebhookError, void> {
+    return TE.tryCatch(
+      async () => {
+        await this.webhookActionQueue.add("workflow-action-webhook", event, {
+          ...SHARED_QUEUE_OPTIONS,
+          jobId: event.taskId
+        })
+      },
+      error => {
+        Logger.error(`Failed to enqueue webhook action for task ${event.taskId}`, error)
         return "unknown_error" as const
       }
     )

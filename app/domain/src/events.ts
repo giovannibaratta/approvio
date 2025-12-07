@@ -12,3 +12,13 @@ export interface WorkflowStatusChangedEvent {
   workflowTemplateActions: ReadonlyArray<WorkflowAction>
   timestamp: Date
 }
+
+export interface WorkflowActionEmailEvent {
+  taskId: string
+  workflowId: string
+}
+
+export interface WorkflowActionWebhookEvent {
+  taskId: string
+  workflowId: string
+}
