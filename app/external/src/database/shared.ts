@@ -298,3 +298,10 @@ export function mapAgentToDomain(dbObject: PrismaAgent): Either<AgentKeyDecodeEr
     E.chainW(agentToValidate => AgentFactory.validate(agentToValidate))
   )
 }
+
+export class ConcurrentUpdateError extends Error {
+  constructor() {
+    super("Concurrent update error")
+    this.name = "ConcurrentUpdateError"
+  }
+}

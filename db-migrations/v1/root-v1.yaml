@@ -27,3 +27,5 @@ databaseChangeLog:
       file: v1/create-agent-challenges-table.yaml
   - include:
       file: v1/create-agent-group-memberships-table.yaml
+  - include:
+      file: v1/create-workflow-actions-webhook-tasks-table.yaml

@@ -1,4 +1,3 @@
-import {randomUUID} from "crypto"
 import {Either, isLeft, right} from "fp-ts/lib/Either"
 import {DecorableEntity, PrefixUnion, isDecoratedWith} from "@utils"
 import {
@@ -92,17 +91,12 @@ export class WorkflowActionWebhookTaskFactory {
   }
 
   static newWorkflowActionWebhookTask(
-    data: Omit<
-      WorkflowActionWebhookTaskPending,
-      "id" | "status" | "retryCount" | "createdAt" | "updatedAt" | "errorReason"
-    >
+    data: Omit<WorkflowActionWebhookTaskPending, "status" | "retryCount" | "createdAt" | "updatedAt" | "errorReason">
   ): DecoratedWorkflowActionWebhookTask<{occ: true}> {
-    const uuid = randomUUID()
     const now = new Date()
 
     const baseEntity: WorkflowActionWebhookTaskPending = {
       ...data,
-      id: uuid,
       status: TaskStatus.PENDING,
       retryCount: 0,
       createdAt: now,

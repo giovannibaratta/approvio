@@ -12,6 +12,7 @@ databaseChangeLog:
               ALTER TABLE pkce_sessions SET UNLOGGED;
               ALTER TABLE agent_challenges SET UNLOGGED;
               ALTER TABLE workflow_actions_email_task SET UNLOGGED;
+              ALTER TABLE workflow_actions_webhook_tasks SET UNLOGGED;
               ALTER TABLE votes SET UNLOGGED;
               ALTER TABLE workflows SET UNLOGGED;
               ALTER TABLE workflow_templates SET UNLOGGED;

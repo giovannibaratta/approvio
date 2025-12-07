@@ -80,19 +80,20 @@ model User {
 }
 
 model Workflow {
-  id                        String                     @id @db.Uuid
-  name                      String                     @unique(map: "workflows_name_unique") @db.VarChar
-  description               String?                    @db.VarChar
-  createdAt                 DateTime                   @map("created_at") @db.Timestamp(6)
-  updatedAt                 DateTime                   @map("updated_at") @db.Timestamp(6)
-  status                    String                     @db.VarChar
-  occ                       BigInt
-  recalculationRequired     Boolean                    @map("recalculation_required")
-  workflowTemplateId        String                     @map("workflow_template_id") @db.Uuid
-  expiresAt                 DateTime                   @map("expires_at") @db.Timestamp(6)
-  votes                     Vote[]
-  workflowActionsEmailTasks WorkflowActionsEmailTask[]
-  workflowTemplates         WorkflowTemplate           @relation(fields: [workflowTemplateId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_workflows_workflow_template")
+  id                          String                       @id @db.Uuid
+  name                        String                       @unique(map: "workflows_name_unique") @db.VarChar
+  description                 String?                      @db.VarChar
+  createdAt                   DateTime                     @map("created_at") @db.Timestamp(6)
+  updatedAt                   DateTime                     @map("updated_at") @db.Timestamp(6)
+  status                      String                       @db.VarChar
+  occ                         BigInt
+  recalculationRequired       Boolean                      @map("recalculation_required")
+  workflowTemplateId          String                       @map("workflow_template_id") @db.Uuid
+  expiresAt                   DateTime                     @map("expires_at") @db.Timestamp(6)
+  votes                       Vote[]
+  workflowActionsEmailTasks   WorkflowActionsEmailTask[]
+  workflowActionsWebhookTasks WorkflowActionsWebhookTask[]
+  workflowTemplates           WorkflowTemplate             @relation(fields: [workflowTemplateId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_workflows_workflow_template")
 
   @@map("workflows")
 }
@@ -137,18 +138,20 @@ model Vote {
 }
 
 model WorkflowActionsEmailTask {
-  id            String    @id @db.Uuid
-  workflowId    String    @map("workflow_id") @db.Uuid
-  status        String    @db.VarChar(255)
-  configuration Json
-  retryCount    Int       @default(0) @map("retry_count")
-  createdAt     DateTime  @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime  @map("updated_at") @db.Timestamptz(6)
-  errorReason   String?   @map("error_reason") @db.VarChar(16384)
-  lockedBy      String?   @map("locked_by") @db.VarChar(512)
-  lockedAt      DateTime? @map("locked_at") @db.Timestamptz(6)
-  occ           BigInt
-  workflows     Workflow  @relation(fields: [workflowId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_workflow_actions_email_workflow_id")
+  id          String    @id @db.Uuid
+  workflowId  String    @map("workflow_id") @db.Uuid
+  status      String    @db.VarChar(255)
+  recipients  String[]
+  subject     String    @db.VarChar(512)
+  body        String
+  retryCount  Int       @default(0) @map("retry_count")
+  createdAt   DateTime  @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime  @map("updated_at") @db.Timestamptz(6)
+  errorReason String?   @map("error_reason") @db.VarChar(16384)
+  lockedBy    String?   @map("locked_by") @db.VarChar(512)
+  lockedAt    DateTime? @map("locked_at") @db.Timestamptz(6)
+  occ         BigInt
+  workflows   Workflow  @relation(fields: [workflowId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_workflow_actions_email_workflow_id")
 
   @@map("workflow_actions_email_task")
 }
@@ -226,4 +229,26 @@ model AgentGroupMembership {
   @@index([agentId], map: "idx_agent_group_memberships_agent_id")
   @@index([groupId], map: "idx_agent_group_memberships_group_id")
   @@map("agent_group_memberships")
+}
+
+model WorkflowActionsWebhookTask {
+  id             String    @id @db.Uuid
+  workflowId     String    @map("workflow_id") @db.Uuid
+  status         String    @db.VarChar(255)
+  url            String    @db.VarChar(4096)
+  method         String    @db.VarChar(10)
+  headers        Json?
+  payload        Json?
+  responseStatus Int?      @map("response_status")
+  responseBody   String?   @map("response_body")
+  retryCount     Int       @default(0) @map("retry_count")
+  createdAt      DateTime  @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime  @map("updated_at") @db.Timestamptz(6)
+  errorReason    String?   @map("error_reason") @db.VarChar(16384)
+  lockedBy       String?   @map("locked_by") @db.VarChar(512)
+  lockedAt       DateTime? @map("locked_at") @db.Timestamptz(6)
+  occ            BigInt
+  workflows      Workflow  @relation(fields: [workflowId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_workflow_actions_webhook_workflow_id")
+
+  @@map("workflow_actions_webhook_tasks")
 }

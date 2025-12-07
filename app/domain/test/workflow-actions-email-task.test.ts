@@ -3,7 +3,9 @@ import {DecoratedWorkflowActionEmailTask, TaskStatus, WorkflowActionEmailTaskFac
 describe("WorkflowActionEmailTaskFactory", () => {
   const baseTaskData = {
     workflowId: "workflow-123",
-    configuration: {email: "test@example.com"}
+    recipients: [],
+    subject: "",
+    body: ""
   }
 
   describe("validate", () => {

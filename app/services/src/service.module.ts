@@ -7,7 +7,8 @@ import {GroupMembershipService} from "./group-membership"
 import {SpaceService} from "./space"
 import {UserService} from "./user"
 import {WorkflowService} from "./workflow"
-import {WorkflowRecalculationService} from "./workflow"
+import {WorkflowRecalculationService} from "./workflow/workflow-recalculation.service"
+import {TaskService} from "./task/task.service"
 import {WorkflowTemplateService} from "./workflow-template"
 import {VoteService} from "./vote"
 import {EmailService} from "./email/email.service"
@@ -32,7 +33,8 @@ const services = [
   EmailService,
   AuthService,
   RoleService,
-  QueueService
+  QueueService,
+  TaskService
 ]
 
 const internalServices = [PkceService]

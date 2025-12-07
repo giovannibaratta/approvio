@@ -1,4 +1,3 @@
-import {randomUUID} from "crypto"
 import {Either, isLeft, right} from "fp-ts/lib/Either"
 import {DecorableEntity, PrefixUnion, isDecoratedWith} from "@utils"
 import {
@@ -14,7 +13,9 @@ import {
 export type WorkflowActionEmailTask = Readonly<WorkflowActionEmailTaskData>
 
 interface WorkflowActionEmailTaskData extends WorkflowActionTaskData {
-  configuration: Record<string, unknown>
+  recipients: string[]
+  subject: string
+  body: string
 }
 
 export interface WorkflowActionEmailTaskDecorators {
@@ -66,14 +67,12 @@ export class WorkflowActionEmailTaskFactory {
   }
 
   static newWorkflowActionEmailTask(
-    data: Omit<WorkflowActionEmailTaskData, "id" | "status" | "retryCount" | "createdAt" | "updatedAt" | "errorReason">
+    data: Omit<WorkflowActionEmailTaskData, "status" | "retryCount" | "createdAt" | "updatedAt" | "errorReason">
   ): DecoratedWorkflowActionEmailTask<{occ: true}> {
-    const uuid = randomUUID()
     const now = new Date()
 
     const baseEntity: WorkflowActionEmailTask = {
       ...data,
-      id: uuid,
       status: TaskStatus.PENDING,
       retryCount: 0,
       createdAt: now,

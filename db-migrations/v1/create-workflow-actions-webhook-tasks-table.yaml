@@ -1,10 +1,10 @@
 databaseChangeLog:
   - changeSet:
-      id: create-workflow-actions-email-task-table
+      id: create-workflow-actions-webhook-tasks-table
       author: giovannibaratta
       changes:
         - createTable:
-            tableName: workflow_actions_email_task
+            tableName: workflow_actions_webhook_tasks
             columns:
               - column:
                   name: id
@@ -16,7 +16,7 @@ databaseChangeLog:
                   name: workflow_id
                   type: UUID
                   constraints:
-                    foreignKeyName: fk_workflow_actions_email_workflow_id
+                    foreignKeyName: fk_workflow_actions_webhook_workflow_id
                     references: workflows(id)
                     nullable: false
               - column:
@@ -25,20 +25,27 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
-                  name: recipients
-                  type: text[]
+                  name: url
+                  type: VARCHAR(4096)
                   constraints:
                     nullable: false
               - column:
-                  name: subject
-                  type: VARCHAR(512)
+                  name: method
+                  type: VARCHAR(10)
                   constraints:
                     nullable: false
               - column:
-                  name: body
+                  name: headers
+                  type: JSONB
+              - column:
+                  name: payload
+                  type: JSONB
+              - column:
+                  name: response_status
+                  type: INT
+              - column:
+                  name: response_body
                   type: TEXT
-                  constraints:
-                    nullable: false
               - column:
                   name: retry_count
                   type: INT
