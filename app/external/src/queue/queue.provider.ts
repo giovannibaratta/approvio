@@ -20,7 +20,9 @@ const SHARED_QUEUE_OPTIONS: JobOptions = {
   removeOnFail: {
     age: 604800 // Keep failed jobs for 7 days
   },
-  removeOnComplete: true
+  removeOnComplete: {
+    age: 604800 // Keep completed jobs for 7 days to make the job deduplication work correctly
+  }
 }
 
 @Injectable()
