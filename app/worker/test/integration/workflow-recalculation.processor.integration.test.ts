@@ -1,6 +1,5 @@
-import {WorkerModule} from "../../src/worker.module"
 import {WorkflowRecalculationProcessor} from "../../src/processor/workflow-recalculation.processor"
-import {Test, TestingModule} from "@nestjs/testing"
+import {TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
 import {MockConfigProvider, createMockWorkflowInDb} from "@test/mock-data"
 import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "@test/database"
@@ -9,6 +8,7 @@ import {PrismaClient} from "@prisma/client"
 import {Job} from "bull"
 import {RecalculationJobData} from "@external/queue/queue.provider"
 import {WorkflowStatus} from "@domain"
+import {setupWorkerTestModule} from "./test-helpers"
 
 describe("WorkflowRecalculationProcessor Integration", () => {
   let processor: WorkflowRecalculationProcessor
@@ -21,12 +21,11 @@ describe("WorkflowRecalculationProcessor Integration", () => {
     redisPrefix = prepareRedisPrefix()
 
     try {
-      module = await Test.createTestingModule({
-        imports: [WorkerModule]
-      })
+      const moduleBuilder = setupWorkerTestModule([WorkflowRecalculationProcessor])
         .overrideProvider(ConfigProvider)
         .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix))
-        .compile()
+
+      module = await moduleBuilder.compile()
     } catch (error) {
       console.error(error)
       throw error

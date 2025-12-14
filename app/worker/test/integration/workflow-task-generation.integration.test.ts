@@ -1,6 +1,5 @@
-import {WorkerModule} from "../../src/worker.module"
 import {WorkflowEventsProcessor} from "../../src/processor/workflow-events.processor"
-import {Test, TestingModule} from "@nestjs/testing"
+import {TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
 import {MockConfigProvider, createMockWorkflowTemplateInDb, createMockSpaceInDb} from "@test/mock-data"
 import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "@test/database"
@@ -10,6 +9,7 @@ import {Job} from "bull"
 import {WorkflowStatusChangedEvent, WorkflowStatus, WorkflowActionType, EmailAction, WebhookAction} from "@domain"
 import {randomUUID} from "crypto"
 import {WebhookActionHttpMethod} from "@domain/workflow-actions"
+import {setupWorkerTestModule} from "./test-helpers"
 
 type WorkflowStatusChangedJobData = WorkflowStatusChangedEvent
 
@@ -86,12 +86,11 @@ describe("Workflow Task Generation Integration", () => {
     redisPrefix = prepareRedisPrefix()
 
     try {
-      module = await Test.createTestingModule({
-        imports: [WorkerModule]
-      })
+      const moduleBuilder = setupWorkerTestModule([WorkflowEventsProcessor])
         .overrideProvider(ConfigProvider)
         .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix))
-        .compile()
+
+      module = await moduleBuilder.compile()
     } catch (error) {
       console.error(error)
       throw error
