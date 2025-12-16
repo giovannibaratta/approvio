@@ -29,11 +29,11 @@ This rule describes the available scripts in `package.json` for the `approvio` p
 | `build`                 | `yarn build`                   | Compiles the NestJS application TypeScript code into JavaScript.                                                                                           | Build process logs. Output artifacts are typically placed in a `dist` directory.                                         | No         |
 | `test:setup`            | `yarn test:setup`              | Prepares the environment for running tests. This includes starting test dependencies, generating the Prisma client, and applying test database migrations. | Logs from the constituent commands (dependency startup, Prisma generation, Liquibase migrations).                        | No         |
 | `test`                  | `yarn test`                    | Runs all unit and integration tests (files matching `app/**/*.test.ts`) after performing `test:setup`. Uses environment variables from `.env.test`.        | Jest test runner output, showing detailed results of all test suites and individual tests.                               | No         |
-| `test:single`           | `yarn test:single <file_path>` | Runs a specific test file or pattern after performing `test:setup`. Uses `.env.test`. The path to the test file/pattern must be appended to the command.   | Jest test runner output for the specified test(s).                                                                       | No         |
+| `test <file path>`      | `yarn test <file_path>`        | Runs a specific test file or pattern after performing `test:setup`. Uses `.env.test`. The path to the test file/pattern must be appended to the command.   | Jest test runner output for the specified test(s).                                                                       | No         |
 
 ## Usage Notes
 
 - Scripts like `start` and `start:dev` are long-running processes that will occupy the terminal session. They are intended for active development and application serving.
 - The `deps:*` scripts are used to manage external services required by the application, likely orchestrated with Docker via the `. They are non-blocking.
-- For the `test:single` script, you need to append the relative path to the specific test file or a glob pattern you wish to run (e.g., `yarn test:single app/services/src/user/user.service.test.ts`).
+- For the `test` script, you need to append the relative path to the specific test file or a glob pattern you wish to run (e.g., `yarn test app/services/src/user/user.service.test.ts`).
 - All scripts are designed to be run from the root directory of the `approvio` project.

@@ -40,6 +40,7 @@
     "@nestjs/passport": "11.0.5",
     "@nestjs/platform-express": "11.1.6",
     "@prisma/client": "6.15.0",
+    "axios": "1.11.0",
     "bull": "4.16.5",
     "class-transformer": "0.5.1",
     "class-validator": "0.14.2",
@@ -67,7 +68,6 @@
     "@types/uuid": "11.0.0",
     "@typescript-eslint/eslint-plugin": "8.41.0",
     "@typescript-eslint/parser": "8.41.0",
-    "axios": "1.11.0",
     "chance": "1.1.13",
     "dotenv-cli": "8.0.0",
     "eslint": "8.57.1",
@@ -89,6 +89,8 @@
     "ts-loader": "9.5.4",
     "ts-node": "10.9.2",
     "typescript": "5.9.2",
-    "webpack": "5.101.3"
+    "webpack": "5.101.3",
+    "wiremock": "3.13.2",
+    "wiremock-captain": "4.1.3"
   }
 }

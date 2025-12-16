@@ -1,11 +1,16 @@
 import {Inject, Injectable} from "@nestjs/common"
-import {TASK_REPOSITORY_TOKEN, TaskRepository, TaskCreateError, TaskUpdateError, TaskUpdateChecks} from "./interfaces"
 import {
-  DecoratedWorkflowActionEmailTask,
-  DecoratedWorkflowActionWebhookTask,
-  WorkflowActionEmailTask,
-  WorkflowActionWebhookTask
-} from "@domain"
+  TASK_REPOSITORY_TOKEN,
+  TaskCreateError,
+  TaskGetErrorWebhookTask,
+  TaskLockError,
+  TaskReference,
+  TaskRepository,
+  TaskUpdateChecks,
+  TaskUpdateError
+} from "./interfaces"
+import {DecoratedWorkflowActionWebhookPendingTask, Occ, WorkflowActionTaskDecoratorSelector} from "@domain"
+import {DecoratedWorkflowActionEmailTask, WorkflowActionEmailTask, DecoratedWorkflowActionWebhookTask} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 
 @Injectable()
@@ -23,11 +28,26 @@ export class TaskService {
     return this.taskRepo.updateEmailTask(task, checks)
   }
 
-  createWebhookTask(task: DecoratedWorkflowActionWebhookTask<{occ: true}>): TaskEither<TaskCreateError, void> {
+  createWebhookTask(task: DecoratedWorkflowActionWebhookPendingTask<{occ: true}>): TaskEither<TaskCreateError, void> {
     return this.taskRepo.createWebhookTask(task)
   }
 
-  updateWebhookTask(task: WorkflowActionWebhookTask, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, void> {
+  updateWebhookTask<T extends WorkflowActionTaskDecoratorSelector>(
+    task: DecoratedWorkflowActionWebhookTask<T>,
+    checks: TaskUpdateChecks
+  ): TaskEither<TaskUpdateError, Occ> {
     return this.taskRepo.updateWebhookTask(task, checks)
+  }
+
+  lockTask(taskReference: TaskReference, lockOwner: string): TaskEither<TaskLockError, {occ: bigint}> {
+    return this.taskRepo.lockTask(taskReference, lockOwner)
+  }
+
+  getWebhookTask(taskId: string): TaskEither<TaskGetErrorWebhookTask, DecoratedWorkflowActionWebhookTask<{occ: true}>> {
+    return this.taskRepo.getWebhookTask(taskId)
+  }
+
+  releaseLock(taskReference: TaskReference, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, void> {
+    return this.taskRepo.releaseLock(taskReference, checks)
   }
 }

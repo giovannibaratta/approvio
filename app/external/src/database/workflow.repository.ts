@@ -172,7 +172,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
     const where: Prisma.WorkflowWhereUniqueInput = {id: workflowId, occ: occCheck}
     const include = includeRef?.workflowTemplates ? {workflowTemplates: true} : undefined
 
-    // TODO: try to remove the cast
+    // TODO(long-term): try to remove the cast
     return this.dbClient.workflow.update({where, data, include}) as unknown as Promise<PrismaDecoratedWorkflow<T>>
   }
 

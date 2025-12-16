@@ -13,7 +13,8 @@ import {
   WorkflowAction,
   Workflow,
   EmailAction,
-  WebhookAction
+  WebhookAction,
+  WorkflowActionWebhookTaskValidationError
 } from "@domain"
 import {TaskCreateError, TaskService} from "@services"
 import {pipe} from "fp-ts/function"
@@ -58,7 +59,7 @@ export class WorkflowEventsProcessor {
     workflow: Workflow,
     event: WorkflowStatusChangedEvent,
     index: number
-  ): TE.TaskEither<TaskCreateError, void> {
+  ): TE.TaskEither<TaskCreateError | WorkflowActionWebhookTaskValidationError, void> {
     // We generate a deterministic task ID based on event ID, action type, and index.
     // This allows us to ensure idempotency: if the handler triggers multiple times for the same event,
     // we will generate the same ID.
@@ -119,31 +120,40 @@ export class WorkflowEventsProcessor {
     workflow: Workflow,
     event: WorkflowStatusChangedEvent,
     taskId: string
-  ): TE.TaskEither<TaskCreateError, void> {
-    const task = WorkflowActionWebhookTaskFactory.newWorkflowActionWebhookTask({
-      id: taskId,
-      workflowId: workflow.id,
-      url: action.url,
-      method: action.method,
-      headers: action.headers,
-      payload: {
-        workflowId: workflow.id,
-        workflowName: workflow.name,
-        status: workflow.status,
-        occurredAt: event.timestamp
-      }
-    })
-
+  ): TE.TaskEither<TaskCreateError | WorkflowActionWebhookTaskValidationError, void> {
     return pipe(
-      this.taskService.createWebhookTask(task),
-      TE.orElse(error => {
-        if (error === "task_already_exists") {
-          Logger.warn(`Webhook task ${taskId} already exists, skipping creation.`)
-          return TE.right(undefined)
-        }
-        return TE.left(error)
+      TE.Do,
+      TE.bindW("task", () =>
+        TE.fromEither(
+          WorkflowActionWebhookTaskFactory.newWorkflowActionWebhookTask({
+            id: taskId,
+            workflowId: workflow.id,
+            url: action.url,
+            method: action.method,
+            headers: action.headers,
+            payload: {
+              workflowId: workflow.id,
+              workflowName: workflow.name,
+              status: workflow.status,
+              occurredAt: event.timestamp
+            }
+          })
+        )
+      ),
+      TE.chainFirstW(({task}) => {
+        return pipe(
+          this.taskService.createWebhookTask(task),
+          TE.orElse(error => {
+            Logger.error(`Failed to create webhook task ${taskId}`, error)
+            if (error === "task_already_exists") {
+              Logger.warn(`Webhook task ${taskId} already exists, skipping creation.`)
+              return TE.right(undefined)
+            }
+            return TE.left(error)
+          })
+        )
       }),
-      TE.chain(() =>
+      TE.chainW(({task}) =>
         pipe(
           this.queueService.enqueueWebhookAction({
             taskId: task.id,
@@ -154,7 +164,8 @@ export class WorkflowEventsProcessor {
             return "unknown_error" as const
           })
         )
-      )
+      ),
+      TE.map(() => undefined)
     )
   }
 }

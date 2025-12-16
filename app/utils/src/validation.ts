@@ -26,3 +26,13 @@ export function isValidUrl(url: string): boolean {
     return false
   }
 }
+
+export function isDate(value: unknown): value is Date {
+  if (typeof value !== "object" || value === null) return false
+
+  return value instanceof Date
+}
+
+export function isRecordStringString(value: unknown): value is Record<string, string> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}

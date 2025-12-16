@@ -53,6 +53,8 @@ export type PrefixUnion<TPrefix extends string, TUnion extends string> = `${TPre
  * We can dynamically request and build the user type with the properties we need.
  **************************/
 
+export type GeneratorSelector<T> = Partial<Record<keyof T, boolean>>
+
 /** Helper type that allows has to decorate a base entity using the decorators specified by the user.
  * e.g.  we can have a base entity user that we can decorate with properties like age, name, etc.
  * We can dynamically request and build the user type with the properties we need.
@@ -96,4 +98,9 @@ export function isDecoratedWith<
 /** Type guard to validate that an array is non-empty */
 export function isNonEmptyArray<T>(arr: T[]): arr is [T, ...T[]] {
   return arr.length > 0
+}
+
+/** Helper type that allows to make all properties of an object nullable */
+export type Nullable<T> = {
+  [K in keyof T]: T[K] | null
 }

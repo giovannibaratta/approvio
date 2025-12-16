@@ -105,7 +105,7 @@ In order to update the prima schema after the liquibase migration files has been
 <usage_notes>
 - Scripts like `start` and `start:dev` are long-running processes that will occupy the terminal session. They are intended for active development and application serving.
 - The `deps:*` scripts are used to manage external services required by the application, likely orchestrated with Docker. They are non-blocking.
-- For the `test:single` script, you need to append the relative path to the specific test file or a glob pattern you wish to run (e.g., `yarn test:single app/services/src/user/user.service.test.ts`).
+- For the `test` script, you can append the relative path to the specific test file or a glob pattern you wish to run (e.g., `yarn test app/services/src/user/user.service.test.ts`).
 - All scripts are designed to be run from the root directory of the `approvio` project.
 </usage_notes>
 </available_scripts>

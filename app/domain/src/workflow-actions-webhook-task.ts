@@ -1,166 +1,290 @@
-import {Either, isLeft, right} from "fp-ts/lib/Either"
-import {DecorableEntity, PrefixUnion, isDecoratedWith} from "@utils"
+import {Either, isLeft, left, right} from "fp-ts/lib/Either"
+import {DecorableEntity, PrefixUnion, getStringAsEnum, hasOwnProperty, isRecordStringString, isValidUrl} from "@utils"
 import {
-  Lock,
   TaskStatus,
-  validateLock,
-  validateTaskStatus,
-  validateErrorReason,
-  mapLockErrorWithPrefix,
-  WorkflowActionTaskData
+  WorkflowActionTaskData,
+  WorkflowActionPendingTaskData,
+  WorkflowActionCompletedTaskData,
+  WorkflowActionErrorTaskData,
+  WorkflowActionTaskDecoratorSelector,
+  WorkflowActionTaskDecorators,
+  WorkflowActionTaskFactory,
+  WorkflowActionTaskValidationError
 } from "./workflow-actions-shared"
 import {WebhookActionHttpMethod} from "./workflow-actions"
 
-export type WorkflowActionWebhookTask =
-  | WorkflowActionWebhookTaskPending
-  | WorkflowActionWebhookTaskCompleted
-  | WorkflowActionWebhookTaskError
+export enum ResponseBodyStatus {
+  OK = "OK",
+  MISSING = "MISSING",
+  BINARY_DATA = "BINARY_DATA",
+  TRUNCATED = "TRUNCATED",
+  PROCESSING_FAILED = "PROCESSING_FAILED"
+}
 
-export interface WorkflowActionWebhookTaskData extends WorkflowActionTaskData {
+export type DecoratedWorkflowActionWebhookTask<T extends WorkflowActionTaskDecoratorSelector> = DecorableEntity<
+  WorkflowActionWebhookTaskData,
+  WorkflowActionTaskDecorators,
+  T
+>
+
+export type DecoratedWorkflowActionWebhookPendingTask<T extends WorkflowActionTaskDecoratorSelector> = DecorableEntity<
+  WorkflowActionWebhookPendingTaskData,
+  WorkflowActionTaskDecorators,
+  T
+>
+
+export type DecoratedWorkflowActionWebhookCompletedTask<T extends WorkflowActionTaskDecoratorSelector> =
+  DecorableEntity<WorkflowActionWebhookCompletedTaskData, WorkflowActionTaskDecorators, T>
+
+export type DecoratedWorkflowActionWebhookErrorTask<T extends WorkflowActionTaskDecoratorSelector> = DecorableEntity<
+  WorkflowActionWebhookErrorTaskData,
+  WorkflowActionTaskDecorators,
+  T
+>
+
+export type WorkflowActionWebhookTaskData =
+  | WorkflowActionWebhookPendingTaskData
+  | WorkflowActionWebhookCompletedTaskData
+  | WorkflowActionWebhookErrorTaskData
+
+type WorkflowActionWebhookBaseTaskData = WorkflowActionTaskData & {
   url: string
   method: WebhookActionHttpMethod
   headers?: Record<string, string>
   payload?: unknown
 }
 
-export interface WorkflowActionWebhookTaskPending extends WorkflowActionWebhookTaskData {
-  status: TaskStatus.PENDING
-}
+type WorkflowActionWebhookPendingTaskData = WorkflowActionWebhookBaseTaskData & WorkflowActionPendingTaskData
 
-export interface WorkflowActionWebhookTaskCompleted extends WorkflowActionWebhookTaskData {
-  status: TaskStatus.COMPLETED
-  responseStatus: number
-  responseBody: string
-}
+type WorkflowActionWebhookCompletedTaskData = WorkflowActionWebhookBaseTaskData &
+  WorkflowActionCompletedTaskData & {response: WebhookResponse}
 
-export interface WorkflowActionWebhookTaskError extends WorkflowActionWebhookTaskData {
-  status: TaskStatus.ERROR
-  responseStatus?: number
-  responseBody?: string
-  errorReason: string
-}
-
-export interface WorkflowActionWebhookTaskDecorators {
-  occ: bigint
-  lock: Lock
-}
-
-export type WorkflowActionWebhookTaskDecoratorSelector = Partial<
-  Record<keyof WorkflowActionWebhookTaskDecorators, boolean>
->
-
-export type DecoratedWorkflowActionWebhookTask<T extends WorkflowActionWebhookTaskDecoratorSelector> = DecorableEntity<
-  WorkflowActionWebhookTask,
-  WorkflowActionWebhookTaskDecorators,
-  T
->
-
-export function isDecoratedWorkflowActionWebhookTask<K extends keyof WorkflowActionWebhookTaskDecorators>(
-  task: DecoratedWorkflowActionWebhookTask<WorkflowActionWebhookTaskDecoratorSelector>,
-  key: K,
-  options?: WorkflowActionWebhookTaskDecoratorSelector
-): task is DecoratedWorkflowActionWebhookTask<WorkflowActionWebhookTaskDecoratorSelector & Record<K, true>> {
-  return isDecoratedWith<
-    DecoratedWorkflowActionWebhookTask<WorkflowActionWebhookTaskDecoratorSelector>,
-    WorkflowActionWebhookTaskDecorators,
-    WorkflowActionWebhookTaskDecoratorSelector,
-    keyof WorkflowActionWebhookTaskDecorators
-  >(task, key, options)
-}
-
-export type WorkflowActionWebhookTaskValidationError = PrefixUnion<
-  "workflow_action_webhook_task",
-  UnprefixedWorkflowActionWebhookTaskValidationError
->
-
-type UnprefixedWorkflowActionWebhookTaskValidationError =
-  | "status_invalid"
-  | "error_reason_too_long"
-  | "lock_date_prior_creation"
-  | "lock_by_too_long"
-  | "lock_by_is_empty"
-  | "lock_by_invalid_format"
-
-export class WorkflowActionWebhookTaskFactory {
-  static validate<T extends WorkflowActionWebhookTaskDecoratorSelector>(
-    task: Omit<DecoratedWorkflowActionWebhookTask<T>, "status"> & {
-      status: string
-    }
-  ): Either<WorkflowActionWebhookTaskValidationError, DecoratedWorkflowActionWebhookTask<T>> {
-    return WorkflowActionWebhookTaskFactory.instantiateWorkflowActionWebhook(task)
+type WorkflowActionWebhookErrorTaskData = WorkflowActionWebhookBaseTaskData &
+  WorkflowActionErrorTaskData & {
+    response?: WebhookResponse
   }
 
+export interface WebhookResponse {
+  status: number
+  body?: string
+  bodyStatus: ResponseBodyStatus
+}
+
+export type WorkflowActionWebhookTaskValidationError =
+  | WorkflowActionTaskValidationError
+  | PrefixUnion<"workflow_action_webhook_task", UnprefixedWorkflowActionWebhookTaskValidationError>
+
+type UnprefixedWorkflowActionWebhookTaskValidationError =
+  | "method_invalid"
+  | "completed_with_error_reason"
+  | "completed_with_response_missing"
+  | "response_invalid"
+  | "pending_with_non_zero_retry_count"
+  | "pending_with_error_reason"
+  | "error_with_zero_retry_count"
+  | "error_with_error_reason_missing"
+  | "error_with_optional_response_missing"
+  | "method_missing_or_invalid"
+  | "url_missing_or_invalid"
+  | "url_invalid"
+  | "headers_invalid"
+
+export class WorkflowActionWebhookTaskFactory {
   static newWorkflowActionWebhookTask(
-    data: Omit<WorkflowActionWebhookTaskPending, "status" | "retryCount" | "createdAt" | "updatedAt" | "errorReason">
-  ): DecoratedWorkflowActionWebhookTask<{occ: true}> {
+    data: Omit<
+      WorkflowActionWebhookPendingTaskData,
+      "status" | "retryCount" | "createdAt" | "updatedAt" | "errorReason"
+    >
+  ): Either<WorkflowActionWebhookTaskValidationError, DecoratedWorkflowActionWebhookPendingTask<{occ: true}>> {
     const now = new Date()
 
-    const baseEntity: WorkflowActionWebhookTaskPending = {
+    const entity: DecoratedWorkflowActionWebhookPendingTask<{occ: true}> = {
       ...data,
       status: TaskStatus.PENDING,
       retryCount: 0,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      occ: 0n
     }
 
-    const decoratedEntity: DecoratedWorkflowActionWebhookTask<{occ: true}> = {
-      ...baseEntity,
-      occ: 0n
-    } as DecoratedWorkflowActionWebhookTask<{occ: true}>
+    const validated = WorkflowActionWebhookTaskFactory.validate<{occ: true}>(entity)
 
-    return decoratedEntity
+    if (isLeft(validated)) return validated
+
+    return right(entity)
   }
 
-  private static instantiateWorkflowActionWebhook<T extends WorkflowActionWebhookTaskDecoratorSelector>(
-    dataToBeValidated: Omit<DecoratedWorkflowActionWebhookTask<T>, "status"> & {
-      status: string
+  static toFailedWebhook<T extends WorkflowActionTaskDecoratorSelector>(
+    task: DecoratedWorkflowActionWebhookTask<T>,
+    newData: {
+      response: WebhookResponse | null
+      errorReason: string
     }
   ): Either<WorkflowActionWebhookTaskValidationError, DecoratedWorkflowActionWebhookTask<T>> {
-    const statusValidation = validateTaskStatus(dataToBeValidated.status, "workflow_action_webhook_task_status_invalid")
-    if (isLeft(statusValidation)) return statusValidation
-
-    const errorReasonValidation = validateErrorReason(
-      dataToBeValidated.errorReason,
-      "workflow_action_webhook_task_error_reason_too_long"
-    )
-    if (isLeft(errorReasonValidation)) return errorReasonValidation
-
-    const dataWithTypedStatus = {...dataToBeValidated, status: statusValidation.right}
-
-    const isDecoratedWithOcc = isDecoratedWorkflowActionWebhookTask(
-      dataWithTypedStatus as unknown as DecoratedWorkflowActionWebhookTask<WorkflowActionWebhookTaskDecoratorSelector>,
-      "occ",
-      {
-        occ: true
-      }
-    )
-
-    const isDecoratedWithLock = isDecoratedWorkflowActionWebhookTask(
-      dataWithTypedStatus as unknown as DecoratedWorkflowActionWebhookTask<WorkflowActionWebhookTaskDecoratorSelector>,
-      "lock",
-      {
-        lock: true
-      }
-    )
-
-    if (isDecoratedWithLock) {
-      const lockValidation = validateLock(
-        (dataWithTypedStatus as unknown as {lock: Lock}).lock,
-        dataWithTypedStatus.createdAt
-      )
-      if (isLeft(lockValidation))
-        return mapLockErrorWithPrefix<WorkflowActionWebhookTaskValidationError>(
-          lockValidation.left,
-          "workflow_action_webhook_task"
-        )
+    const newObj = {
+      ...task,
+      updatedAt: new Date(),
+      retryCount: task.retryCount + 1,
+      errorReason: newData.errorReason,
+      optionalResponse: newData.response ? newData.response : undefined
     }
 
-    const task = {
-      ...dataWithTypedStatus,
-      occ: isDecoratedWithOcc ? (dataWithTypedStatus as unknown as {occ: bigint}).occ : undefined,
-      lock: isDecoratedWithLock ? (dataWithTypedStatus as unknown as {lock: Lock}).lock : undefined
-    } as unknown as DecoratedWorkflowActionWebhookTask<T>
-
-    return right(task)
+    return WorkflowActionWebhookTaskFactory.validate({
+      ...newObj,
+      status: TaskStatus.ERROR
+    })
   }
+
+  static toCompletedWebhook<T extends WorkflowActionTaskDecoratorSelector>(
+    task: DecoratedWorkflowActionWebhookTask<T>,
+    newData: {
+      response: WebhookResponse
+    }
+  ): Either<WorkflowActionWebhookTaskValidationError, DecoratedWorkflowActionWebhookTask<T>> {
+    const newObj /*: DecoratedWorkflowActionWebhookTask<T>*/ = {
+      ...task,
+      updatedAt: new Date(),
+      retryCount: task.retryCount + 1,
+      response: newData.response,
+      errorReason: undefined
+    }
+
+    return WorkflowActionWebhookTaskFactory.validate({
+      ...newObj,
+      status: TaskStatus.COMPLETED
+    })
+  }
+
+  static validate<T extends WorkflowActionTaskDecoratorSelector>(
+    dataToBeValidated: object
+  ): Either<WorkflowActionWebhookTaskValidationError, DecoratedWorkflowActionWebhookTask<T>> {
+    const eitherBaseTask = WorkflowActionTaskFactory.validate(dataToBeValidated)
+
+    if (isLeft(eitherBaseTask)) return eitherBaseTask
+
+    const baseTask = eitherBaseTask.right
+
+    // baseTask only contains the properties of WorkflowActionTaskData, hence we can not use it
+    // to validate the webhook task specific properties
+
+    if (!hasOwnProperty(dataToBeValidated, "method") || typeof dataToBeValidated.method !== "string")
+      return left("workflow_action_webhook_task_method_missing_or_invalid")
+
+    const methodValidation = validateMethod(dataToBeValidated.method)
+    if (isLeft(methodValidation)) return methodValidation
+
+    if (!hasOwnProperty(dataToBeValidated, "url") || typeof dataToBeValidated.url !== "string")
+      return left("workflow_action_webhook_task_url_missing_or_invalid")
+
+    if (!isValidUrl(dataToBeValidated.url)) return left("workflow_action_webhook_task_url_invalid")
+
+    let headers: Record<string, string> | undefined = undefined
+    let payload: unknown = undefined
+
+    if (hasOwnProperty(dataToBeValidated, "headers")) {
+      if (dataToBeValidated.headers !== undefined && !isRecordStringString(dataToBeValidated.headers))
+        return left("workflow_action_webhook_task_headers_invalid")
+      headers = dataToBeValidated.headers
+    }
+
+    if (hasOwnProperty(dataToBeValidated, "payload")) payload = dataToBeValidated.payload
+
+    const baseWebhookTask: WorkflowActionWebhookBaseTaskData = {
+      ...baseTask,
+      method: methodValidation.right,
+      url: dataToBeValidated.url,
+      headers,
+      payload
+    }
+
+    if (baseWebhookTask.status === TaskStatus.PENDING) {
+      return WorkflowActionWebhookTaskFactory.validateWorkflowActionWebhookPending({
+        ...baseWebhookTask,
+        status: TaskStatus.PENDING
+      })
+    }
+
+    if (baseWebhookTask.status === TaskStatus.ERROR) {
+      return WorkflowActionWebhookTaskFactory.validateWorkflowActionWebhookError({
+        ...baseWebhookTask,
+        status: TaskStatus.ERROR
+      })
+    }
+
+    if (baseWebhookTask.status === TaskStatus.COMPLETED) {
+      return WorkflowActionWebhookTaskFactory.validateWorkflowActionWebhookCompleted({
+        ...baseWebhookTask,
+        status: TaskStatus.COMPLETED
+      })
+    }
+
+    throw new Error("Invalid task status, this is a bug")
+  }
+
+  private static validateWorkflowActionWebhookCompleted(
+    dataToBeValidated: WorkflowActionWebhookBaseTaskData & {
+      status: TaskStatus.COMPLETED
+    } & {[key: string]: unknown}
+  ): Either<WorkflowActionWebhookTaskValidationError, WorkflowActionWebhookCompletedTaskData> {
+    if (!hasOwnProperty(dataToBeValidated, "response"))
+      return left("workflow_action_webhook_task_completed_with_response_missing" as const)
+
+    const responseValidation = validateResponse(dataToBeValidated.response)
+    if (isLeft(responseValidation)) return responseValidation
+
+    return right({...dataToBeValidated, response: responseValidation.right})
+  }
+
+  private static validateWorkflowActionWebhookPending(
+    dataToBeValidated: WorkflowActionWebhookBaseTaskData & {
+      status: TaskStatus.PENDING
+    } & {[key: string]: unknown}
+  ): Either<WorkflowActionWebhookTaskValidationError, WorkflowActionWebhookPendingTaskData> {
+    return right(dataToBeValidated)
+  }
+
+  private static validateWorkflowActionWebhookError(
+    dataToBeValidated: WorkflowActionWebhookBaseTaskData & {
+      status: TaskStatus.ERROR
+    } & {[key: string]: unknown}
+  ): Either<WorkflowActionWebhookTaskValidationError, WorkflowActionWebhookErrorTaskData> {
+    if (hasOwnProperty(dataToBeValidated, "response") && dataToBeValidated.response !== undefined) {
+      const responseValidation = validateResponse(dataToBeValidated.response)
+      if (isLeft(responseValidation)) return responseValidation
+    }
+
+    return right(dataToBeValidated)
+  }
+}
+
+const validateMethod = (method: string): Either<WorkflowActionWebhookTaskValidationError, WebhookActionHttpMethod> => {
+  const enumMethod = getStringAsEnum(method, WebhookActionHttpMethod)
+  if (enumMethod === undefined) return left("workflow_action_webhook_task_method_invalid")
+  return right(enumMethod)
+}
+
+const validateResponse = (response: unknown): Either<WorkflowActionWebhookTaskValidationError, WebhookResponse> => {
+  if (typeof response !== "object") return left("workflow_action_webhook_task_response_invalid" as const)
+  if (response === null) return left("workflow_action_webhook_task_response_invalid" as const)
+
+  const responseAsObject = response as Record<string, unknown>
+
+  if (responseAsObject.status === undefined || typeof responseAsObject.status !== "number")
+    return left("workflow_action_webhook_task_response_invalid" as const)
+
+  if (responseAsObject.status < 200 || responseAsObject.status > 599)
+    return left("workflow_action_webhook_task_response_invalid" as const)
+
+  if (responseAsObject.bodyStatus === undefined || typeof responseAsObject.bodyStatus !== "string")
+    return left("workflow_action_webhook_task_response_invalid" as const)
+
+  const bodyStatus = getStringAsEnum(responseAsObject.bodyStatus, ResponseBodyStatus)
+  if (bodyStatus === undefined) return left("workflow_action_webhook_task_response_invalid" as const)
+
+  if (bodyStatus === ResponseBodyStatus.OK || bodyStatus === ResponseBodyStatus.TRUNCATED) {
+    if (responseAsObject.body !== undefined) return left("workflow_action_webhook_task_response_invalid" as const)
+    return right({status: responseAsObject.status, bodyStatus, body: responseAsObject.body})
+  }
+
+  return right({status: responseAsObject.status, bodyStatus})
 }
