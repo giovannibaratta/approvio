@@ -233,3 +233,16 @@ services:
         ]
       API_SCOPES_INLINE: |
         []
+
+  wiremock-test:
+    profiles: [test]
+    image: wiremock/wiremock:3.13.2
+    ports:
+      - "9090:8080"
+    environment:
+      - WIREMOCK_OPTIONS=--verbose
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/__admin"]
+      interval: 5s
+      timeout: 3s
+      retries: 5

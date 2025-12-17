@@ -12,6 +12,7 @@ import {TaskService} from "./task/task.service"
 import {WorkflowTemplateService} from "./workflow-template"
 import {VoteService} from "./vote"
 import {EmailService} from "./email/email.service"
+import {WebhookService} from "./webhook/webhook.service"
 import {AuthService, PkceService} from "./auth"
 import {RoleService} from "./role"
 import {QueueService} from "./queue"
@@ -31,6 +32,7 @@ const services = [
   WorkflowTemplateService,
   VoteService,
   EmailService,
+  WebhookService,
   AuthService,
   RoleService,
   QueueService,

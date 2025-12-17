@@ -166,6 +166,8 @@ __metadata:
     typescript: "npm:5.9.2"
     uuid: "npm:13.0.0"
     webpack: "npm:5.101.3"
+    wiremock: "npm:3.13.2"
+    wiremock-captain: "npm:4.1.3"
   languageName: unknown
   linkType: soft
 
@@ -8561,6 +8563,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"npm-java-runner@npm:^2.0.0":
+  version: 2.0.0
+  resolution: "npm-java-runner@npm:2.0.0"
+  checksum: 10/7c65950a38e1f50f2e130a99e801340799348505e22b493fd6fbb0a9a340c6e7733ab4243f38f41bf873ff6f0e1c0d49914d6aeb589562e479bc97e5acccb14f
+  languageName: node
+  linkType: hard
+
 "npm-normalize-package-bin@npm:^2.0.0":
   version: 2.0.0
   resolution: "npm-normalize-package-bin@npm:2.0.0"
@@ -11055,6 +11064,24 @@ __metadata:
   bin:
     node-which: bin/which.js
   checksum: 10/6ec99e89ba32c7e748b8a3144e64bfc74aa63e2b2eacbb61a0060ad0b961eb1a632b08fb1de067ed59b002cec3e21de18299216ebf2325ef0f78e0f121e14e90
+  languageName: node
+  linkType: hard
+
+"wiremock-captain@npm:4.1.3":
+  version: 4.1.3
+  resolution: "wiremock-captain@npm:4.1.3"
+  checksum: 10/6d311450207900594ea29cee34e741e63682e1bedd9ed75efe6b1653f3efc8b6926bbba379c91a9ff45e2adcb565d881f098c476abecfef847ec5fc6ae18a340
+  languageName: node
+  linkType: hard
+
+"wiremock@npm:3.13.2":
+  version: 3.13.2
+  resolution: "wiremock@npm:3.13.2"
+  dependencies:
+    npm-java-runner: "npm:^2.0.0"
+  bin:
+    wiremock: index.js
+  checksum: 10/3411f8e3b63fe940ef368b885916dbca4b9746fcdd60b693d43c1ea51783c6358bd891a94ee2520e1d917d91e63d49433d4aae225548812dc425fcc2f34814fb
   languageName: node
   linkType: hard
 
