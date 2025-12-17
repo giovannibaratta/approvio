@@ -129,8 +129,8 @@ export function toBeRightOf(this: jest.MatcherContext, received: unknown, expect
     pass,
     message: () =>
       pass
-        ? `Expected ${format(received)} not to be right of ${expected}`
-        : `Expected ${format(received)} to be right of ${expected}`
+        ? `Expected ${format(received)} not to be right of ${format(expected)}`
+        : `Expected ${format(received)} to be right of ${format(expected)}`
   }
 }
 
