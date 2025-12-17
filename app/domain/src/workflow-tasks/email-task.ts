@@ -8,7 +8,7 @@ import {
   validateErrorReason,
   mapLockErrorWithPrefix,
   WorkflowActionTaskData
-} from "./workflow-actions-shared"
+} from "./base"
 
 export type WorkflowActionEmailTask = Readonly<WorkflowActionEmailTaskData>
 

@@ -8,8 +8,8 @@ import {
   validateErrorReason,
   mapLockErrorWithPrefix,
   WorkflowActionTaskData
-} from "./workflow-actions-shared"
-import {WebhookActionHttpMethod} from "./workflow-actions"
+} from "./base"
+import {WebhookActionHttpMethod} from "../workflow-actions"
 
 export type WorkflowActionWebhookTask =
   | WorkflowActionWebhookTaskPending
