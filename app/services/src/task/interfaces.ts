@@ -1,9 +1,11 @@
 import {TaskEither} from "fp-ts/TaskEither"
 import {
   DecoratedWorkflowActionEmailTask,
+  DecoratedWorkflowActionWebhookPendingTask,
   DecoratedWorkflowActionWebhookTask,
+  Occ,
   WorkflowActionEmailTask,
-  WorkflowActionWebhookTask
+  WorkflowActionTaskDecoratorSelector
 } from "@domain"
 import {UnknownError} from "@services/error"
 
@@ -23,6 +25,9 @@ export interface TaskUpdateChecks {
 export interface TaskRepository {
   createEmailTask(task: DecoratedWorkflowActionEmailTask<{occ: true}>): TaskEither<TaskCreateError, void>
   updateEmailTask(task: WorkflowActionEmailTask, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, void>
-  createWebhookTask(task: DecoratedWorkflowActionWebhookTask<{occ: true}>): TaskEither<TaskCreateError, void>
-  updateWebhookTask(task: WorkflowActionWebhookTask, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, void>
+  createWebhookTask(task: DecoratedWorkflowActionWebhookPendingTask<{occ: true}>): TaskEither<TaskCreateError, void>
+  updateWebhookTask<T extends WorkflowActionTaskDecoratorSelector>(
+    task: DecoratedWorkflowActionWebhookTask<T>,
+    checks: TaskUpdateChecks
+  ): TaskEither<TaskUpdateError, Occ>
 }

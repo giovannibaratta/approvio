@@ -2,9 +2,12 @@ import {Injectable, Logger} from "@nestjs/common"
 import {TaskCreateError, TaskRepository, TaskUpdateChecks, TaskUpdateError} from "@services/task/interfaces"
 import {
   DecoratedWorkflowActionEmailTask,
+  DecoratedWorkflowActionWebhookPendingTask,
   DecoratedWorkflowActionWebhookTask,
+  Occ,
+  TaskStatus,
   WorkflowActionEmailTask,
-  WorkflowActionWebhookTask
+  WorkflowActionTaskDecoratorSelector
 } from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
@@ -12,7 +15,7 @@ import {DatabaseClient} from "../database/database-client"
 import {Prisma} from "@prisma/client"
 import {ConcurrentUpdateError} from "./shared"
 import {TaskLockedByOtherError, TaskNotFoundError, TaskUnknownError} from "./task.exceptions"
-import {mapToJsonValue} from "./shared/json-mappers"
+import {mapToNullableJsonValue} from "./shared/json-mappers"
 
 @Injectable()
 export class PrismaTaskRepository implements TaskRepository {
@@ -30,7 +33,7 @@ export class PrismaTaskRepository implements TaskRepository {
             recipients: task.recipients,
             subject: task.subject,
             body: task.body,
-            errorReason: task.errorReason,
+            errorReason: task.status === TaskStatus.ERROR ? task.errorReason : undefined,
             createdAt: task.createdAt,
             updatedAt: task.updatedAt,
             occ: task.occ
@@ -59,7 +62,7 @@ export class PrismaTaskRepository implements TaskRepository {
           data: {
             status: task.status,
             retryCount: task.retryCount,
-            errorReason: task.errorReason,
+            errorReason: task.status === TaskStatus.ERROR ? task.errorReason : undefined,
             updatedAt: task.updatedAt,
             occ: {increment: 1}
           }
@@ -77,7 +80,7 @@ export class PrismaTaskRepository implements TaskRepository {
     )
   }
 
-  createWebhookTask(task: DecoratedWorkflowActionWebhookTask<{occ: true}>): TaskEither<TaskCreateError, void> {
+  createWebhookTask(task: DecoratedWorkflowActionWebhookPendingTask<{occ: true}>): TaskEither<TaskCreateError, void> {
     return TE.tryCatch(
       async () => {
         await this.prisma.workflowActionsWebhookTask.create({
@@ -88,11 +91,12 @@ export class PrismaTaskRepository implements TaskRepository {
             url: task.url,
             method: task.method,
             headers: mapHeadersToJsonValue(task.headers),
-            payload: mapPayloadToJsonValue(task.payload),
-            responseStatus: (task as {responseStatus?: number}).responseStatus,
-            responseBody: (task as {responseBody?: string}).responseBody,
+            payload: mapToNullableJsonValue(task.payload),
+            responseStatus: undefined,
+            responseBody: undefined,
+            responseBodyStatus: undefined,
             retryCount: task.retryCount,
-            errorReason: task.errorReason,
+            errorReason: undefined,
             createdAt: task.createdAt,
             updatedAt: task.updatedAt,
             occ: task.occ
@@ -109,10 +113,15 @@ export class PrismaTaskRepository implements TaskRepository {
     )
   }
 
-  updateWebhookTask(task: WorkflowActionWebhookTask, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, void> {
+  updateWebhookTask<T extends WorkflowActionTaskDecoratorSelector>(
+    task: DecoratedWorkflowActionWebhookTask<T>,
+    checks: TaskUpdateChecks
+  ): TaskEither<TaskUpdateError, Occ> {
     return TE.tryCatch(
       async () => {
-        const result = await this.prisma.workflowActionsWebhookTask.updateMany({
+        const {responseStatus, responseBody, responseBodyStatus} = extractResponseAttributes(task)
+
+        const updatedTasks = await this.prisma.workflowActionsWebhookTask.updateManyAndReturn({
           where: {
             id: task.id,
             occ: checks.occ,
@@ -121,15 +130,19 @@ export class PrismaTaskRepository implements TaskRepository {
           data: {
             status: task.status,
             retryCount: task.retryCount,
-            errorReason: task.errorReason,
-            responseStatus: (task as {responseStatus?: number}).responseStatus,
-            responseBody: (task as {responseBody?: string}).responseBody,
+            errorReason: task.status === TaskStatus.ERROR ? task.errorReason : undefined,
+            responseStatus,
+            responseBody,
+            responseBodyStatus,
             updatedAt: task.updatedAt,
             occ: {increment: 1}
           }
         })
 
-        if (result.count === 0) await this.categorizeErrorTypeAndRaise("WorkflowActionsWebhookTask", task.id, checks)
+        if (updatedTasks.length === 0 || updatedTasks[0] === undefined)
+          return await this.categorizeErrorTypeAndRaise("WorkflowActionsWebhookTask", task.id, checks)
+
+        return {occ: updatedTasks[0].occ}
       },
       error => {
         if (error instanceof ConcurrentUpdateError) return "task_concurrent_update" as const
@@ -145,13 +158,21 @@ export class PrismaTaskRepository implements TaskRepository {
     table: Extract<Prisma.ModelName, "WorkflowActionsEmailTask" | "WorkflowActionsWebhookTask">,
     id: string,
     checks: TaskUpdateChecks
-  ) {
+  ): Promise<never> {
+    Logger.error(`Failed to update task ${id}: no records have been updated`)
+
     const retrievers = {
       WorkflowActionsEmailTask: () => this.prisma.workflowActionsEmailTask.findUnique({where: {id}}),
       WorkflowActionsWebhookTask: () => this.prisma.workflowActionsWebhookTask.findUnique({where: {id}})
     }
 
-    const actualTask = await retrievers[table]()
+    let actualTask
+
+    try {
+      actualTask = await retrievers[table]()
+    } catch {
+      throw new TaskUnknownError()
+    }
 
     if (!actualTask) throw new TaskNotFoundError()
     if (actualTask.lockedBy !== checks.lockOwner) throw new TaskLockedByOtherError()
@@ -172,7 +193,26 @@ function mapHeadersToJsonValue(
   return result
 }
 
-function mapPayloadToJsonValue(payload?: unknown): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
-  if (payload === undefined) return Prisma.JsonNull
-  return mapToJsonValue(payload) ?? Prisma.JsonNull
+function extractResponseAttributes(task: DecoratedWorkflowActionWebhookTask<object>) {
+  if (task.status === TaskStatus.ERROR) {
+    return {
+      responseStatus: task.response?.status,
+      responseBody: task.response?.body,
+      responseBodyStatus: task.response?.bodyStatus
+    }
+  }
+
+  if (task.status === TaskStatus.COMPLETED) {
+    return {
+      responseStatus: task.response.status,
+      responseBody: task.response.body,
+      responseBodyStatus: task.response.bodyStatus
+    }
+  }
+
+  return {
+    responseStatus: undefined,
+    responseBody: undefined,
+    responseBodyStatus: undefined
+  }
 }

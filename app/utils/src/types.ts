@@ -1,5 +1,7 @@
 import {hasOwnProperty} from "@utils"
+import {Either} from "fp-ts/lib/Either"
 import {TaskEither} from "fp-ts/TaskEither"
+import * as E from "fp-ts/Either"
 
 /**
  * Extracts the Left type from the TaskEither return type of a specific class method.
@@ -53,6 +55,8 @@ export type PrefixUnion<TPrefix extends string, TUnion extends string> = `${TPre
  * We can dynamically request and build the user type with the properties we need.
  **************************/
 
+export type GeneratorSelector<T> = Partial<Record<keyof T, boolean>>
+
 /** Helper type that allows has to decorate a base entity using the decorators specified by the user.
  * e.g.  we can have a base entity user that we can decorate with properties like age, name, etc.
  * We can dynamically request and build the user type with the properties we need.
@@ -96,4 +100,30 @@ export function isDecoratedWith<
 /** Type guard to validate that an array is non-empty */
 export function isNonEmptyArray<T>(arr: T[]): arr is [T, ...T[]] {
   return arr.length > 0
+}
+
+/** Helper type that allows to make all properties of an object nullable */
+export type Nullable<T> = {
+  [K in keyof T]: T[K] | null
+}
+
+/**
+ * Maps a specific error type to a prefixed error variant.
+ *
+ * This utility function transforms error messages by adding a prefix with an underscore separator,
+ * commonly used in validation pipelines to convert domain-specific errors into namespaced validation errors.
+ *
+ * @param error - The original error string to be prefixed
+ * @param prefix - The prefix to add before the error (joined with underscore)
+ * @returns An Either containing the prefixed error on the Left side, never on the Right side
+ *
+ * @example
+ * ```typescript
+ * const originalError = "invalid_format"
+ * const prefixedError = mapToLeftWithPrefix(originalError, "workflow_action_task")
+ * // Returns: left("workflow_action_task_invalid_format")
+ * ```
+ */
+export function mapToLeftWithPrefix<T extends string, E extends string>(error: T, prefix: string): Either<E, never> {
+  return E.left(`${prefix}_${error}` as E)
 }

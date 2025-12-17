@@ -1,14 +1,17 @@
 import {Prisma} from "@prisma/client"
 
-export function mapToJsonValue(value: unknown): Prisma.InputJsonValue | null {
-  if (value === null || value === undefined) return null
+export function mapToNullableJsonValue(value: unknown): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
+  if (value === null || value === undefined) return Prisma.JsonNull
+
+  return mapToJsonValue(value)
+}
+
+export function mapToJsonValue(value: unknown): Prisma.InputJsonValue {
+  if (value === null || value === undefined) throw new Error("Value cannot be null or undefined")
 
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value
 
   if (Array.isArray(value)) return value.map(mapToJsonValue)
 
-  if (typeof value === "object")
-    return Object.fromEntries(Object.entries(value).map(([key, val]) => [key, mapToJsonValue(val)]))
-
-  return null
+  return Object.fromEntries(Object.entries(value).map(([key, val]) => [key, mapToJsonValue(val)]))
 }

@@ -76,3 +76,8 @@ databaseChangeLog:
                   type: BIGINT
                   constraints:
                     nullable: false
+              - column:
+                  name: response_body_status
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: true

@@ -3,9 +3,9 @@ import {DecoratedWorkflowActionEmailTask, TaskStatus, WorkflowActionEmailTaskFac
 describe("WorkflowActionEmailTaskFactory", () => {
   const baseTaskData = {
     workflowId: "workflow-123",
-    recipients: [],
-    subject: "",
-    body: ""
+    recipients: ["test@example.com"],
+    subject: "Test Subject",
+    body: "Test Body"
   }
 
   describe("validate", () => {
@@ -84,7 +84,7 @@ describe("WorkflowActionEmailTaskFactory", () => {
         const result = WorkflowActionEmailTaskFactory.validate(taskData)
 
         // Expect:
-        expect(result).toBeLeftOf("workflow_action_email_task_status_invalid")
+        expect(result).toBeLeftOf("workflow_action_task_missing_or_invalid_status")
       })
 
       it("should return a validation error when the error reason is too long for a plain data structure", () => {
@@ -103,7 +103,7 @@ describe("WorkflowActionEmailTaskFactory", () => {
         const result = WorkflowActionEmailTaskFactory.validate(taskData)
 
         // Expect:
-        expect(result).toBeLeftOf("workflow_action_email_task_error_reason_too_long")
+        expect(result).toBeLeftOf("workflow_action_task_error_reason_too_long")
       })
 
       it("should return a validation error when the lock date is invalid", () => {
@@ -127,7 +127,7 @@ describe("WorkflowActionEmailTaskFactory", () => {
         const result = WorkflowActionEmailTaskFactory.validate(decoratedTask)
 
         // Expect:
-        expect(result).toBeLeftOf("workflow_action_email_task_lock_date_prior_creation")
+        expect(result).toBeLeftOf("workflow_action_task_lock_date_prior_creation")
       })
 
       it("should return a validation error when the lockedBy is too long", () => {
@@ -150,7 +150,7 @@ describe("WorkflowActionEmailTaskFactory", () => {
         const result = WorkflowActionEmailTaskFactory.validate(decoratedTask)
 
         // Expect:
-        expect(result).toBeLeftOf("workflow_action_email_task_lock_by_too_long")
+        expect(result).toBeLeftOf("workflow_action_task_lock_by_too_long")
       })
 
       it("should return a validation error when the lockedBy is empty", () => {
@@ -173,7 +173,7 @@ describe("WorkflowActionEmailTaskFactory", () => {
         const result = WorkflowActionEmailTaskFactory.validate(decoratedTask)
 
         // Expect:
-        expect(result).toBeLeftOf("workflow_action_email_task_lock_by_is_empty")
+        expect(result).toBeLeftOf("workflow_action_task_lock_by_is_empty")
       })
 
       it("should return a validation error when the lockedBy has an invalid format", () => {
@@ -196,7 +196,7 @@ describe("WorkflowActionEmailTaskFactory", () => {
         const result = WorkflowActionEmailTaskFactory.validate(decoratedTask)
 
         // Expect:
-        expect(result).toBeLeftOf("workflow_action_email_task_lock_by_invalid_format")
+        expect(result).toBeLeftOf("workflow_action_task_lock_by_invalid_format")
       })
     })
   })
