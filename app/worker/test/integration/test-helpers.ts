@@ -3,6 +3,7 @@ import {Test, TestingModuleBuilder} from "@nestjs/testing"
 import {WorkerModule} from "../../src/worker.module"
 import {WorkflowEventsProcessor} from "../../src/processor/workflow-events.processor"
 import {WorkflowActionWebhookProcessor} from "../../src/processor/workflow-action-webhook.processor"
+import {WorkflowActionEmailProcessor} from "../../src/processor/workflow-action-email.processor"
 import {WorkflowRecalculationProcessor} from "../../src/processor/workflow-recalculation.processor"
 import {Process} from "@nestjs/bull"
 import {Injectable} from "@nestjs/common/interfaces"
@@ -10,7 +11,12 @@ import {Injectable} from "@nestjs/common/interfaces"
 /**
  * All worker processors that should be considered for mocking
  */
-const ALL_WORKER_PROCESSORS = [WorkflowEventsProcessor, WorkflowActionWebhookProcessor, WorkflowRecalculationProcessor]
+const ALL_WORKER_PROCESSORS = [
+  WorkflowEventsProcessor,
+  WorkflowActionWebhookProcessor,
+  WorkflowActionEmailProcessor,
+  WorkflowRecalculationProcessor
+]
 
 class MockProcessor {
   @Process()

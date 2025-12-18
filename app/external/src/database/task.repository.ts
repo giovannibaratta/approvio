@@ -6,7 +6,8 @@ import {
   TaskLockError,
   TaskUpdateChecks,
   TaskReference,
-  TaskGetErrorWebhookTask
+  TaskGetErrorWebhookTask,
+  TaskGetErrorEmailTask
 } from "@services/task/interfaces"
 import {
   Occ,
@@ -17,7 +18,12 @@ import {
   Lock
 } from "@domain"
 import {WorkflowActionType} from "@domain"
-import {DecoratedWorkflowActionEmailTask, WorkflowActionEmailTask, DecoratedWorkflowActionWebhookTask} from "@domain"
+import {
+  DecoratedWorkflowActionEmailTask,
+  WorkflowActionEmailTask,
+  DecoratedWorkflowActionWebhookTask,
+  WorkflowActionEmailTaskFactory
+} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
 import {DatabaseClient} from "../database/database-client"
@@ -60,10 +66,10 @@ export class PrismaTaskRepository implements TaskRepository {
     )
   }
 
-  updateEmailTask(task: WorkflowActionEmailTask, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, void> {
+  updateEmailTask(task: WorkflowActionEmailTask, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, Occ> {
     return TE.tryCatch(
       async () => {
-        const result = await this.prisma.workflowActionsEmailTask.updateMany({
+        const updatedTasks = await this.prisma.workflowActionsEmailTask.updateManyAndReturn({
           where: {
             id: task.id,
             occ: checks.occ,
@@ -78,7 +84,10 @@ export class PrismaTaskRepository implements TaskRepository {
           }
         })
 
-        if (result.count === 0) await this.categorizeErrorTypeAndRaise("WorkflowActionsEmailTask", task.id, checks)
+        if (updatedTasks.length === 0 || updatedTasks[0] === undefined)
+          return await this.categorizeErrorTypeAndRaise("WorkflowActionsEmailTask", task.id, checks)
+
+        return {occ: updatedTasks[0].occ}
       },
       error => {
         if (error instanceof ConcurrentUpdateError) return "task_concurrent_update" as const
@@ -191,6 +200,32 @@ export class PrismaTaskRepository implements TaskRepository {
     )
   }
 
+  getEmailTask(taskId: string): TaskEither<TaskGetErrorEmailTask, DecoratedWorkflowActionEmailTask<{occ: true}>> {
+    return pipe(
+      this.getEmailTaskTE(taskId),
+      TE.chainW(rawData => {
+        const {lockedBy, lockedAt, ...rest} = rawData
+
+        if (lockedBy !== null && lockedAt === null) return TE.left("task_lock_inconsistent" as const)
+        if (lockedBy === null && lockedAt !== null) return TE.left("task_lock_inconsistent" as const)
+
+        let lock: Lock | undefined = undefined
+
+        if (lockedBy !== null && lockedAt !== null)
+          lock = {
+            lockedBy,
+            lockedAt
+          }
+
+        return TE.right({
+          ...rest,
+          lock
+        })
+      }),
+      TE.chainW(mappedTask => TE.fromEither(WorkflowActionEmailTaskFactory.validate<{occ: true}>(mappedTask)))
+    )
+  }
+
   private getWebhookTaskTE(taskId: string): TaskEither<TaskGetErrorWebhookTask, PrismaWorkflowActionsWebhookTask> {
     return TE.tryCatch(
       async () => {
@@ -207,6 +242,29 @@ export class PrismaTaskRepository implements TaskRepository {
         }
 
         Logger.error(`Failed to get webhook task ${taskId}`, error)
+        return "unknown_error" as const
+      }
+    )
+  }
+
+  private getEmailTaskTE(
+    taskId: string
+  ): TaskEither<TaskGetErrorEmailTask, Prisma.WorkflowActionsEmailTaskGetPayload<object>> {
+    return TE.tryCatch(
+      async () => {
+        const task = await this.prisma.workflowActionsEmailTask.findUnique({
+          where: {id: taskId}
+        })
+        if (!task) throw new TaskNotFoundError()
+        return task
+      },
+      error => {
+        if (error instanceof TaskNotFoundError) {
+          Logger.warn(`Task ${taskId} not found`)
+          return "task_not_found" as const
+        }
+
+        Logger.error(`Failed to get email task ${taskId}`, error)
         return "unknown_error" as const
       }
     )

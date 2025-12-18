@@ -6,6 +6,7 @@ import {
   DecoratedWorkflowActionEmailTask,
   Occ,
   WorkflowActionWebhookTaskValidationError,
+  WorkflowActionEmailTaskValidationError,
   WorkflowActionTaskDecoratorSelector,
   DecoratedWorkflowActionWebhookPendingTask
 } from "@domain"
@@ -16,11 +17,19 @@ export type TaskConcurrentUpdateError = "task_concurrent_update"
 export type TaskLockedByOtherError = "task_locked_by_other"
 type TaskNotFoundError = "task_not_found"
 type TaskLockInconsistentError = "task_lock_inconsistent"
+
 export type TaskGetErrorWebhookTask =
   | UnknownError
   | WorkflowActionWebhookTaskValidationError
   | TaskNotFoundError
   | TaskLockInconsistentError
+
+export type TaskGetErrorEmailTask =
+  | UnknownError
+  | WorkflowActionEmailTaskValidationError
+  | TaskNotFoundError
+  | TaskLockInconsistentError
+
 export type TaskCreateError = UnknownError | TaskAlreadyExists
 export type TaskUpdateError = UnknownError | TaskConcurrentUpdateError | TaskLockedByOtherError
 export type TaskLockError = TaskNotFoundError | TaskLockedByOtherError | UnknownError
@@ -63,9 +72,9 @@ export interface TaskRepository {
    * Updates an existing email task.
    * @param task The email task data with updated fields.
    * @param checks Concurrency and lock ownership checks.
-   * @returns A TaskEither indicating success or a TaskUpdateError.
+   * @returns A TaskEither containing the updated OCC version or a TaskUpdateError.
    */
-  updateEmailTask(task: WorkflowActionEmailTask, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, void>
+  updateEmailTask(task: WorkflowActionEmailTask, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, Occ>
 
   /**
    * Creates a new webhook task in pending state.
@@ -107,4 +116,11 @@ export interface TaskRepository {
    * @returns A TaskEither containing the decorated webhook task or a TaskGetErrorWebhookTask.
    */
   getWebhookTask(taskId: string): TaskEither<TaskGetErrorWebhookTask, DecoratedWorkflowActionWebhookTask<{occ: true}>>
+
+  /**
+   * Retrieves an email task by its ID.
+   * @param taskId The unique identifier of the email task.
+   * @returns A TaskEither containing the decorated email task or a TaskGetErrorEmailTask.
+   */
+  getEmailTask(taskId: string): TaskEither<TaskGetErrorEmailTask, DecoratedWorkflowActionEmailTask<{occ: true}>>
 }

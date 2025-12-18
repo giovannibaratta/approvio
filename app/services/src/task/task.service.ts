@@ -3,6 +3,7 @@ import {
   TASK_REPOSITORY_TOKEN,
   TaskCreateError,
   TaskGetErrorWebhookTask,
+  TaskGetErrorEmailTask,
   TaskLockError,
   TaskReference,
   TaskRepository,
@@ -24,7 +25,7 @@ export class TaskService {
     return this.taskRepo.createEmailTask(task)
   }
 
-  updateEmailTask(task: WorkflowActionEmailTask, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, void> {
+  updateEmailTask(task: WorkflowActionEmailTask, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, Occ> {
     return this.taskRepo.updateEmailTask(task, checks)
   }
 
@@ -45,6 +46,10 @@ export class TaskService {
 
   getWebhookTask(taskId: string): TaskEither<TaskGetErrorWebhookTask, DecoratedWorkflowActionWebhookTask<{occ: true}>> {
     return this.taskRepo.getWebhookTask(taskId)
+  }
+
+  getEmailTask(taskId: string): TaskEither<TaskGetErrorEmailTask, DecoratedWorkflowActionEmailTask<{occ: true}>> {
+    return this.taskRepo.getEmailTask(taskId)
   }
 
   releaseLock(taskReference: TaskReference, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, void> {

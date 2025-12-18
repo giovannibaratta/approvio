@@ -82,6 +82,37 @@ export class WorkflowActionEmailTaskFactory {
     return WorkflowActionEmailTaskFactory.validate<{occ: true}>(decoratedEntity)
   }
 
+  static toFailedEmail<T extends WorkflowActionEmailTaskDecoratorSelector>(
+    task: DecoratedWorkflowActionEmailTask<T>,
+    newData: {
+      errorReason: string
+    }
+  ): Either<WorkflowActionEmailTaskValidationError, DecoratedWorkflowActionEmailTask<T>> {
+    const newObj = {
+      ...task,
+      updatedAt: new Date(),
+      retryCount: task.retryCount + 1,
+      errorReason: newData.errorReason,
+      status: TaskStatus.ERROR
+    }
+
+    return WorkflowActionEmailTaskFactory.validate(newObj)
+  }
+
+  static toCompletedEmail<T extends WorkflowActionEmailTaskDecoratorSelector>(
+    task: DecoratedWorkflowActionEmailTask<T>
+  ): Either<WorkflowActionEmailTaskValidationError, DecoratedWorkflowActionEmailTask<T>> {
+    const newObj = {
+      ...task,
+      updatedAt: new Date(),
+      retryCount: task.retryCount,
+      errorReason: undefined, // clear error reason if present
+      status: TaskStatus.COMPLETED
+    }
+
+    return WorkflowActionEmailTaskFactory.validate(newObj)
+  }
+
   static validate<T extends WorkflowActionEmailTaskDecoratorSelector>(
     dataToBeValidated: object
   ): Either<WorkflowActionEmailTaskValidationError, DecoratedWorkflowActionEmailTask<T>> {
