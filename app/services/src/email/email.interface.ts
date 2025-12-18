@@ -12,7 +12,6 @@ export interface EmailProviderExternal {
 }
 
 export interface Email {
-  from: string
   to: string | string[]
   subject?: string
   htmlBody: string

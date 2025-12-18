@@ -8,6 +8,7 @@ export interface GenericEmailProviderConfig {
   smtpPassword: string
   smtpEndpoint: string
   smtpPort: number
+  senderEmail: string
   allowSelfSignedCertificates: boolean
 }
 

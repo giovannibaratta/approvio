@@ -2,27 +2,29 @@ import * as nodemailer from "nodemailer"
 import {Email, EmailExternalError, EmailProviderExternal} from "@services"
 import {Injectable, Logger} from "@nestjs/common"
 import {ConfigProvider} from "@external/config"
-import {isSome} from "fp-ts/lib/Option"
+import {EmailProviderConfig} from "@external/config/interfaces"
+import {isNone, isSome, Option} from "fp-ts/lib/Option"
 import {TaskEither} from "fp-ts/lib/TaskEither"
 import * as TE from "fp-ts/lib/TaskEither"
 
 @Injectable()
 export class NodemailerEmailProvider implements EmailProviderExternal {
   private readonly transporter: nodemailer.Transporter | undefined
+  private readonly emailProviderConfig: Option<EmailProviderConfig>
 
   constructor(private readonly configService: ConfigProvider) {
-    const config = this.configService.emailProviderConfig
-    if (isSome(config)) {
+    this.emailProviderConfig = this.configService.emailProviderConfig
+    if (isSome(this.emailProviderConfig)) {
       this.transporter = nodemailer.createTransport({
-        host: config.value.smtpEndpoint,
-        port: config.value.smtpPort,
+        host: this.emailProviderConfig.value.smtpEndpoint,
+        port: this.emailProviderConfig.value.smtpPort,
         secure: true,
         tls: {
-          rejectUnauthorized: !config.value.allowSelfSignedCertificates
+          rejectUnauthorized: !this.emailProviderConfig.value.allowSelfSignedCertificates
         },
         auth: {
-          user: config.value.smtpUsername,
-          pass: config.value.smtpPassword
+          user: this.emailProviderConfig.value.smtpUsername,
+          pass: this.emailProviderConfig.value.smtpPassword
         }
       })
     } else {
@@ -33,15 +35,14 @@ export class NodemailerEmailProvider implements EmailProviderExternal {
 
   sendEmail(email: Email): TaskEither<EmailExternalError, void> {
     const transporter = this.transporter
+    const emailProviderConfig = this.emailProviderConfig
 
-    if (!transporter) {
-      return TE.left("email_capability_not_configured")
-    }
+    if (!transporter || isNone(emailProviderConfig)) return TE.left("email_capability_not_configured")
 
     return TE.tryCatch(
       async () => {
         await transporter.sendMail({
-          from: email.from,
+          from: emailProviderConfig.value.senderEmail,
           to: email.to,
           subject: email.subject,
           html: email.htmlBody

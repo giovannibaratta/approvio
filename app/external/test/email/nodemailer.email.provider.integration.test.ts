@@ -4,6 +4,9 @@ import {NodemailerEmailProvider} from "@external/email/email.provider"
 import {Test, TestingModule} from "@nestjs/testing"
 import {ThirdPartyModule} from "@external"
 import {randomUUID} from "crypto"
+import {ConfigProvider} from "@external/config"
+import {MockConfigProvider} from "@test/mock-data"
+import {isNone} from "fp-ts/lib/Option"
 
 /**
  * The integration test is based on the availability of Mailpit.
@@ -18,20 +21,35 @@ describe("NodemailerEmailProvider", () => {
   let senderUniqueTestIdentifier: string
 
   beforeEach(async () => {
+    const originalEmailConfig = ConfigProvider.validateEmailProviderConfig()
+
+    if (isNone(originalEmailConfig)) throw new Error("Email provider configuration is not valid.")
+
     const mailtpitEnvVariable = process.env.MAILPIT_API_ENDPOINT
 
-    if (!mailtpitEnvVariable) {
+    if (!mailtpitEnvVariable)
       throw new Error("MAILPIT_API_ENDPOINT environment variable is not set. This test requires Mailpit to be running.")
-    }
 
     mailpitEndpoint = mailtpitEnvVariable
 
     senderUniqueTestIdentifier = `${randomUUID()}@localhost.com`
+
     let module: TestingModule
     try {
       module = await Test.createTestingModule({
         imports: [ThirdPartyModule]
-      }).compile()
+      })
+
+        .overrideProvider(ConfigProvider)
+        .useValue(
+          MockConfigProvider.fromOriginalProvider({
+            emailProviderConfig: {
+              ...originalEmailConfig.value,
+              senderEmail: senderUniqueTestIdentifier
+            }
+          })
+        )
+        .compile()
     } catch (error) {
       console.error(error)
       throw error
@@ -52,7 +70,6 @@ describe("NodemailerEmailProvider", () => {
   it("should send an email", async () => {
     // Given
     const email: Email = {
-      from: senderUniqueTestIdentifier,
       to: "recipient123@localhost.com",
       subject: "Integration Test Email",
       htmlBody: "<h1>This is an integration test email</h1>"
@@ -72,7 +89,6 @@ describe("NodemailerEmailProvider", () => {
 
     expect(messages).toHaveLength(1)
     const capturedEmail = messages[0]
-    expect(capturedEmail.From.Address).toBe(email.from)
     expect(capturedEmail.To[0].Address).toBe(email.to)
   })
 })

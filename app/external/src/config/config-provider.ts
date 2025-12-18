@@ -2,7 +2,7 @@ import {Injectable} from "@nestjs/common"
 import {Option} from "fp-ts/lib/Option"
 import * as O from "fp-ts/lib/Option"
 import {ConfigProviderInterface, EmailProviderConfig, JwtConfig, OidcProviderConfig, RedisConfig} from "./interfaces"
-import {isNonEmptyArray} from "@utils"
+import {isEmail, isNonEmptyArray} from "@utils"
 
 @Injectable()
 export class ConfigProvider implements ConfigProviderInterface {
@@ -14,7 +14,7 @@ export class ConfigProvider implements ConfigProviderInterface {
 
   constructor() {
     this.dbConnectionUrl = this.validateConnectionUrl()
-    this.emailProviderConfig = this.validateEmailProviderConfig()
+    this.emailProviderConfig = ConfigProvider.validateEmailProviderConfig()
     this.oidcConfig = this.validateOidcProviderConfig()
     this.jwtConfig = this.validateJwtConfig()
     this.redisConfig = this.validateRedisConfig()
@@ -28,50 +28,43 @@ export class ConfigProvider implements ConfigProviderInterface {
     return connectionUrl
   }
 
-  private validateEmailProviderConfig(): Option<EmailProviderConfig> {
+  static validateEmailProviderConfig(): Option<EmailProviderConfig> {
     const smtpUsername = process.env.SMTP_USERNAME
     const smtpPassword = process.env.SMTP_PASSWORD
     const smtpEndpoint = process.env.SMTP_ENDPOINT
-    const unparsedSmtpPort = process.env.SMTP_PORT
-    const unparsedAllowSelfSignedCertificates = process.env.SMTP_ALLOWED_SELF_SIGNED_CERTIFICATES
+    const smtpPortRaw = process.env.SMTP_PORT
+    const smtpAllowSelfSignedRaw = process.env.SMTP_ALLOWED_SELF_SIGNED_CERTIFICATES
+    const senderEmail = process.env.SMTP_SENDER_EMAIL
 
-    if (!smtpUsername && !smtpPassword && !smtpEndpoint) {
-      return O.none
-    }
+    if (!smtpUsername && !smtpPassword && !smtpEndpoint && !senderEmail) return O.none
 
-    if (!smtpUsername || !smtpPassword || !smtpEndpoint) {
+    if (!smtpUsername || !smtpPassword || !smtpEndpoint || !senderEmail)
       throw new Error("Incomplete email provider configuration")
-    }
 
-    if (smtpUsername.length === 0 || smtpPassword.length === 0 || smtpEndpoint.length === 0) {
+    if (smtpUsername.length === 0 || smtpPassword.length === 0 || smtpEndpoint.length === 0 || senderEmail.length === 0)
       throw new Error("Email provider configuration values cannot be empty")
-    }
 
     let smtpPort: number | undefined
 
-    if (unparsedSmtpPort !== undefined) {
+    if (smtpPortRaw !== undefined) {
       try {
-        smtpPort = parseInt(unparsedSmtpPort)
+        smtpPort = parseInt(smtpPortRaw)
       } catch (error) {
         throw new Error("SMTP_PORT must be a valid number", {cause: error})
       }
 
-      if (smtpPort <= 0 || smtpPort > 65535) {
-        throw new Error("SMTP_PORT must be a valid number between 1 and 65535")
-      }
+      if (smtpPort <= 0 || smtpPort > 65535) throw new Error("SMTP_PORT must be a valid number between 1 and 65535")
     }
 
     let allowSelfSignedCertificates = false
 
-    if (unparsedAllowSelfSignedCertificates !== undefined) {
-      if (
-        unparsedAllowSelfSignedCertificates.toLowerCase() !== "true" &&
-        unparsedAllowSelfSignedCertificates.toLowerCase() !== "false"
-      ) {
+    if (smtpAllowSelfSignedRaw !== undefined) {
+      if (smtpAllowSelfSignedRaw.toLowerCase() !== "true" && smtpAllowSelfSignedRaw.toLowerCase() !== "false")
         throw new Error("SMTP_ALLOWED_SELF_SIGNED_CERTIFICATES must be 'true' or 'false'")
-      }
-      allowSelfSignedCertificates = unparsedAllowSelfSignedCertificates.toLowerCase() === "true"
+      allowSelfSignedCertificates = smtpAllowSelfSignedRaw.toLowerCase() === "true"
     }
+
+    if (!isEmail(senderEmail)) throw new Error("SMTP_SENDER_EMAIL must be a valid email")
 
     return O.some({
       type: "generic",
@@ -79,6 +72,7 @@ export class ConfigProvider implements ConfigProviderInterface {
       smtpPassword,
       smtpEndpoint,
       smtpPort: smtpPort ?? 587,
+      senderEmail,
       allowSelfSignedCertificates
     })
   }

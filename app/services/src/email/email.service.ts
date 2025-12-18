@@ -17,21 +17,15 @@ export class EmailService {
   }
 
   private validateEmail(email: Email): TaskEither<EmailError, Email> {
-    const trimmedFrom = email.from.trim()
     const trimmedTo = Array.isArray(email.to) ? email.to.map(to => to.trim()) : [email.to.trim()]
     const trimmedSubject = email.subject?.trim() || undefined
     const trimmedBody = email.htmlBody.trim()
-
-    if (!isEmail(trimmedFrom)) {
-      return TE.left("email_invalid_from")
-    }
 
     if (trimmedTo.length === 0 || trimmedTo.some(to => !isEmail(to))) {
       return TE.left("email_invalid_to")
     }
 
     return TE.right({
-      from: trimmedFrom,
       to: trimmedTo,
       subject: trimmedSubject,
       htmlBody: trimmedBody
