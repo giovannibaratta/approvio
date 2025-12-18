@@ -95,6 +95,43 @@ export class WorkflowActionWebhookTaskFactory {
     return right(entity)
   }
 
+  static toFailedWebhook<T extends WorkflowActionTaskDecoratorSelector>(
+    task: DecoratedWorkflowActionWebhookTask<T>,
+    newData: {
+      response: HttpResponse | null
+      errorReason: string
+    }
+  ): Either<WorkflowActionWebhookTaskValidationError, DecoratedWorkflowActionWebhookTask<T>> {
+    const newObj = {
+      ...task,
+      updatedAt: new Date(),
+      retryCount: task.retryCount + 1,
+      errorReason: newData.errorReason,
+      response: newData.response ? newData.response : undefined,
+      status: TaskStatus.ERROR
+    }
+
+    return WorkflowActionWebhookTaskFactory.validate(newObj)
+  }
+
+  static toCompletedWebhook<T extends WorkflowActionTaskDecoratorSelector>(
+    task: DecoratedWorkflowActionWebhookTask<T>,
+    newData: {
+      response: HttpResponse
+    }
+  ): Either<WorkflowActionWebhookTaskValidationError, DecoratedWorkflowActionWebhookTask<T>> {
+    const newObj = {
+      ...task,
+      updatedAt: new Date(),
+      retryCount: task.retryCount,
+      response: newData.response,
+      errorReason: undefined,
+      status: TaskStatus.COMPLETED
+    }
+
+    return WorkflowActionWebhookTaskFactory.validate(newObj)
+  }
+
   static validate<T extends WorkflowActionTaskDecoratorSelector>(
     dataToBeValidated: object
   ): Either<WorkflowActionWebhookTaskValidationError, DecoratedWorkflowActionWebhookTask<T>> {
@@ -206,8 +243,8 @@ const validateMethod = (method: string): Either<WorkflowActionWebhookTaskValidat
 }
 
 const validateResponse = (response: unknown): Either<WorkflowActionWebhookTaskValidationError, HttpResponse> => {
+  if (response === null || response === undefined) return left("workflow_action_webhook_task_response_invalid" as const)
   if (typeof response !== "object") return left("workflow_action_webhook_task_response_invalid" as const)
-  if (response === null) return left("workflow_action_webhook_task_response_invalid" as const)
 
   const responseAsObject = response as Record<string, unknown>
 
@@ -224,7 +261,13 @@ const validateResponse = (response: unknown): Either<WorkflowActionWebhookTaskVa
   if (bodyStatus === undefined) return left("workflow_action_webhook_task_response_invalid" as const)
 
   if (bodyStatus === ResponseBodyStatus.OK || bodyStatus === ResponseBodyStatus.TRUNCATED) {
-    if (responseAsObject.body !== undefined) return left("workflow_action_webhook_task_response_invalid" as const)
+    if (
+      responseAsObject.body === undefined ||
+      responseAsObject.body === null ||
+      typeof responseAsObject.body !== "string"
+    )
+      return left("workflow_action_webhook_task_response_invalid" as const)
+
     return right({status: responseAsObject.status, bodyStatus, body: responseAsObject.body})
   }
 

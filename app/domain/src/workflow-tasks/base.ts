@@ -65,7 +65,7 @@ export type Lock = {
 
 export interface WorkflowActionTaskDecorators {
   occ: bigint
-  lock: Lock
+  lock?: Lock
 }
 
 export type WorkflowActionTaskValidationError = PrefixUnion<
@@ -99,7 +99,8 @@ export type LockValidationError =
 export const MAX_LOCK_BY_LENGTH = 1024
 export const MAX_ERROR_REASON_LENGTH = 16384
 
-export function validateLock(lock: Lock, createdAt: Date): Either<LockValidationError, Lock> {
+export function validateLock(lock: Lock | undefined, createdAt: Date): Either<LockValidationError, Lock | undefined> {
+  if (!lock) return right(undefined)
   if (lock.lockedAt < createdAt) return left("lock_date_prior_creation")
   if (lock.lockedBy.length > MAX_LOCK_BY_LENGTH) return left("lock_by_too_long")
   if (lock.lockedBy.trim().length === 0) return left("lock_by_is_empty")

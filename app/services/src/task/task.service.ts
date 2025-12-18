@@ -1,5 +1,14 @@
 import {Inject, Injectable} from "@nestjs/common"
-import {TASK_REPOSITORY_TOKEN, TaskCreateError, TaskRepository, TaskUpdateChecks, TaskUpdateError} from "./interfaces"
+import {
+  TASK_REPOSITORY_TOKEN,
+  TaskCreateError,
+  TaskGetErrorWebhookTask,
+  TaskLockError,
+  TaskReference,
+  TaskRepository,
+  TaskUpdateChecks,
+  TaskUpdateError
+} from "./interfaces"
 import {DecoratedWorkflowActionWebhookPendingTask, Occ, WorkflowActionTaskDecoratorSelector} from "@domain"
 import {DecoratedWorkflowActionEmailTask, WorkflowActionEmailTask, DecoratedWorkflowActionWebhookTask} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
@@ -28,5 +37,17 @@ export class TaskService {
     checks: TaskUpdateChecks
   ): TaskEither<TaskUpdateError, Occ> {
     return this.taskRepo.updateWebhookTask(task, checks)
+  }
+
+  lockTask(taskReference: TaskReference, lockOwner: string): TaskEither<TaskLockError, {occ: bigint}> {
+    return this.taskRepo.lockTask(taskReference, lockOwner)
+  }
+
+  getWebhookTask(taskId: string): TaskEither<TaskGetErrorWebhookTask, DecoratedWorkflowActionWebhookTask<{occ: true}>> {
+    return this.taskRepo.getWebhookTask(taskId)
+  }
+
+  releaseLock(taskReference: TaskReference, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, void> {
+    return this.taskRepo.releaseLock(taskReference, checks)
   }
 }
