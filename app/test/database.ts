@@ -1,5 +1,6 @@
 import {PrismaClient} from "@prisma/client"
 import {randomUUID} from "crypto"
+import {PrismaPg} from "@prisma/adapter-pg"
 // eslint-disable-next-line node/no-unpublished-import
 import Redis from "ioredis"
 
@@ -7,15 +8,11 @@ import Redis from "ioredis"
  * @returns the connection string to the new database
  */
 export async function prepareDatabase(): Promise<string> {
-  const referenceDb = process.env.DATABASE_URL
-  // Create a client connected to the reference database
-  const prismaClient = new PrismaClient({
-    datasources: {
-      db: {
-        url: referenceDb
-      }
-    }
+  const adapter = new PrismaPg({
+    connectionString: process.env.DATABASE_URL
   })
+
+  const prismaClient = new PrismaClient({adapter})
 
   // Generate a unique database name to isolate test runs
   const databaseName = `integration_test_${randomUUID().replace(/-/g, "")}`

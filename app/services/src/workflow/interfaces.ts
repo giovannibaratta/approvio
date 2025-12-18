@@ -121,8 +121,7 @@ export interface ListWorkflowsRequestRepo<TInclude extends WorkflowDecoratorSele
 }
 
 export interface ListWorkflowsRequest<TInclude extends WorkflowDecoratorSelector>
-  extends RequestorAwareRequest,
-    ListWorkflowsRequestRepo<TInclude> {}
+  extends RequestorAwareRequest, ListWorkflowsRequestRepo<TInclude> {}
 
 export interface ListWorkflowsResponse<TInclude extends WorkflowDecoratorSelector> {
   workflows: ReadonlyArray<DecoratedWorkflow<TInclude>>
