@@ -9,7 +9,16 @@ import {
   Group as PrismaGroup,
   Space as PrismaSpace
 } from "@prisma/client"
-import {ApprovalRuleType, UnconstrainedBoundRole, User, WorkflowStatus} from "@domain"
+import {
+  ApprovalRuleType,
+  Group,
+  GroupFactory,
+  OrgRole,
+  UnconstrainedBoundRole,
+  User,
+  UserFactory,
+  WorkflowStatus
+} from "@domain"
 import {mapToDomainVersionedUser} from "@external/database/shared"
 import {isLeft} from "fp-ts/lib/Either"
 // eslint-disable-next-line node/no-unpublished-import
@@ -295,13 +304,23 @@ type PrismaUserWithOrgAdmin = PrismaUser & {
   organizationAdmins: PrismaOrganizationAdmin | null
 }
 
-export async function createMockUserInDb(
-  prisma: PrismaClient,
+export function createMockUserDomain(overrides?: {email?: string}): User {
+  const randomUser = UserFactory.newUser({
+    email: overrides?.email ?? chance.email(),
+    displayName: chance.name(),
+    orgRole: OrgRole.MEMBER
+  })
+
+  if (isLeft(randomUser)) throw new Error("Failed to create user")
+
+  return randomUser.right
+}
+
+export function createMockUserPrismaPayload(
   overrides?: Partial<Omit<Prisma.UserCreateInput, "roles">> & {
-    orgAdmin?: boolean
     roles?: ReadonlyArray<UnconstrainedBoundRole>
   }
-): Promise<PrismaUserWithOrgAdmin> {
+): Prisma.UserCreateInput {
   const randomUser: Prisma.UserCreateInput = {
     id: chance.guid({
       version: 4
@@ -312,15 +331,23 @@ export async function createMockUserInDb(
     createdAt: new Date()
   }
 
-  const {roles, orgAdmin, ...userOverrides} = overrides || {}
-  const data: Prisma.UserCreateInput = {
-    ...randomUser,
-    ...userOverrides,
-    roles: roles ? JSON.parse(JSON.stringify(roles)) : null
-  }
+  const {roles, ...userOverrides} = overrides || {}
 
-  const user = await prisma.user.create({data})
-  if (orgAdmin !== undefined && orgAdmin) {
+  return {...randomUser, ...userOverrides, roles: roles ? JSON.parse(JSON.stringify(roles)) : null}
+}
+
+export async function createMockUserInDb(
+  prisma: PrismaClient,
+  overrides?: Partial<Omit<Prisma.UserCreateInput, "roles">> & {
+    orgAdmin?: boolean
+    roles?: ReadonlyArray<UnconstrainedBoundRole>
+  }
+): Promise<PrismaUserWithOrgAdmin> {
+  const {orgAdmin, ...userOverrides} = overrides || {}
+  const payload = createMockUserPrismaPayload(userOverrides)
+  const user = await prisma.user.create({data: payload})
+
+  if (orgAdmin) {
     await prisma.organizationAdmin.create({
       data: {
         createdAt: new Date(),
@@ -336,9 +363,7 @@ export async function createMockUserInDb(
     include: {organizationAdmins: true}
   })
 
-  if (!userWithOrgAdmin) {
-    throw new Error("Unable to fetch created user")
-  }
+  if (!userWithOrgAdmin) throw new Error("Unable to fetch created user")
 
   return userWithOrgAdmin
 }
@@ -387,6 +412,17 @@ export async function createMockAgentInDb(
   }
 
   return await prisma.agent.create({data})
+}
+
+export function createMockGroupDomain(overrides?: {name?: string}): Group {
+  const randomGroup = GroupFactory.newGroup({
+    name: overrides?.name ?? chance.word(),
+    description: chance.sentence()
+  })
+
+  if (isLeft(randomGroup)) throw new Error("Failed to create group")
+
+  return randomGroup.right
 }
 
 export async function createTestGroup(

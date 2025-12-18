@@ -112,9 +112,8 @@ export class GroupDbRepository implements GroupRepository {
           if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_user")) return "user_not_found"
 
           // Handle OCC conflicts - P2025 means record not found (likely due to OCC mismatch)
-          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025")
             return "concurrency_error"
-          }
 
           Logger.error("Error while creating group. Unknown error", error)
           return "unknown_error"

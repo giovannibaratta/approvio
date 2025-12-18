@@ -160,6 +160,7 @@ export class UserDbRepository implements UserRepository {
         () => this.createUserInDb(this.dbClient, user),
         error => {
           if (isPrismaUniqueConstraintError(error, ["email"])) return "user_already_exists"
+          if (isPrismaUniqueConstraintError(error, ["id"])) return "user_already_exists"
 
           Logger.error("Error while creating user. Unknown error", error)
           return "unknown_error"
