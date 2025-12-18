@@ -8,7 +8,7 @@ import {TaskEither} from "fp-ts/TaskEither"
 import {none, Option, some} from "fp-ts/lib/Option"
 import {pipe} from "fp-ts/lib/function"
 import {DatabaseClient} from "./database-client"
-import {isPrismaForeignKeyConstraintError, isPrismaCheckConstraintError} from "./errors"
+import {isPrismaForeignKeyConstraintError} from "./errors"
 import {traverseArray} from "fp-ts/lib/Either"
 
 @Injectable()
@@ -50,13 +50,7 @@ export class VoteDbRepository implements VoteRepository {
           if (isPrismaForeignKeyConstraintError(error, "fk_votes_workflow")) return "workflow_not_found"
           if (isPrismaForeignKeyConstraintError(error, "fk_votes_user")) return "voter_not_found"
           if (isPrismaForeignKeyConstraintError(error, "fk_votes_agent")) return "voter_not_found"
-          if (isPrismaCheckConstraintError(error, "chk_votes_single_voter")) {
-            Logger.error(
-              `Voter constraint violation for workflow ${vote.workflowId} and voter ${vote.voter.entityId}`,
-              error
-            )
-            return "unknown_error"
-          }
+
           Logger.error(
             `Error saving vote for workflow ${vote.workflowId} and voter ${getNormalizedEntityId(vote.voter)}`,
             error

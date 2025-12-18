@@ -1,36 +1,56 @@
 import {Prisma} from "@prisma/client"
+import {DriverAdapterError, isDriverAdapterError} from "@prisma/driver-adapter-utils"
+
+// Reference for error structure https://github.com/prisma/prisma/blob/7.2.0/packages/driver-adapter-utils/src/types.ts
+//
+// The cause of the DriverAdapterError is a discriminated union of types that can be narrowed down
+// to extract the specific error details.
+
+/**
+ * Helper to safely extract driver-specific details from the adapter error.
+ */
+function getDriverAdapterError(error: Prisma.PrismaClientKnownRequestError): DriverAdapterError | undefined {
+  const adapterError = error.meta?.driverAdapterError
+  if (adapterError && isDriverAdapterError(adapterError)) return adapterError
+  return undefined
+}
 
 export function isPrismaUniqueConstraintError(error: unknown, fields: string[]): boolean {
-  const uniqueFields = new Set(fields)
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") return false
 
-  if (uniqueFields.size !== fields.length) throw new Error("Fields array contains duplicates")
-  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false
-  if (error.code !== "P2002" || !Array.isArray(error.meta?.target)) return false
+  const adapterError = getDriverAdapterError(error)
+  if (!adapterError) return false
 
-  const violatedFields = error.meta.target as string[]
+  const cause = adapterError.cause
+  if (cause.kind !== "UniqueConstraintViolation") return false
+
+  const violatedFields = cause.constraint && "fields" in cause.constraint ? cause.constraint.fields : []
   return fields.length === violatedFields.length && fields.every(field => violatedFields.includes(field))
 }
 
-export function isPrismaForeignKeyConstraintError(error: unknown, constraint: string): boolean {
-  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false
-  if (error.code !== "P2003" || !error.meta?.constraint) return false
+export function isPrismaForeignKeyConstraintError(error: unknown, constraintName: string): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2003") return false
 
-  const violatedField = error.meta.constraint as string
-  return constraint === violatedField
+  const adapterError = getDriverAdapterError(error)
+  if (!adapterError) return false
+
+  const cause = adapterError.cause
+  if (cause.kind !== "ForeignKeyConstraintViolation") return false
+
+  return cause.constraint !== undefined && "index" in cause.constraint && cause.constraint.index === constraintName
 }
 
 export function isPrismaRecordNotFoundError(error: unknown, modelName: Prisma.ModelName): boolean {
-  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false
-  if (error.code !== "P2025" || !error.meta?.modelName) return false
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2025") return false
 
-  const violatedModel = error.meta.modelName as string
+  /**
+   * P2025 "Record not found" is slightly different. Usually, the DB doesn't throw
+   * an error for a missing record (it just returns 0 rows), so Prisma's engine
+   * generates this error.
+   *
+   * Based on your captured debug log, 'modelName' is at the root of 'meta'.
+   */
+  const violatedModel = error.meta?.modelName as string | undefined
+
   return modelName === violatedModel
-}
-
-export function isPrismaCheckConstraintError(error: unknown, constraint: string): boolean {
-  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false
-  if (error.code !== "P2004" || !error.meta?.constraint) return false
-
-  const violatedConstraint = error.meta.constraint as string
-  return constraint === violatedConstraint
 }

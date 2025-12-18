@@ -5,7 +5,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = "postgresql://developer:Safe1!@localhost:5432/approvio?schema=public"
 }
 
 model Databasechangelog {

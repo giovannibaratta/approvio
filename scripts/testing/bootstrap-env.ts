@@ -7,6 +7,7 @@
 
 import axios, {AxiosInstance, isAxiosError} from "axios"
 import {PrismaClient} from "../../generated/prisma/client"
+import {PrismaPg} from "@prisma/adapter-pg"
 import * as crypto from "crypto"
 
 // Configuration
@@ -25,7 +26,11 @@ const VOTER_USER = {
   displayName: "Voter User"
 }
 
-const prisma = new PrismaClient()
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({
+    connectionString: process.env.DATABASE_URL
+  })
+})
 
 // Helper Types
 interface Entity {
