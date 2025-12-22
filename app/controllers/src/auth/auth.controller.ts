@@ -1,4 +1,15 @@
-import {Controller, Get, Post, Res, Logger, UnauthorizedException, Query, Body, HttpCode} from "@nestjs/common"
+import {
+  Controller,
+  Get,
+  Post,
+  Res,
+  Logger,
+  UnauthorizedException,
+  Query,
+  Body,
+  HttpCode,
+  BadRequestException
+} from "@nestjs/common"
 import {Response} from "express"
 import {AuthService, GenerateChallengeRequest} from "@services"
 import {isLeft} from "fp-ts/lib/Either"
@@ -8,12 +19,12 @@ import {GetAuthenticatedEntity} from "../../../main/src/auth"
 import {
   TokenRequest,
   TokenResponse,
-  AuthMessageResponse,
+  SuccessfulAuthResponse,
+  FailedAuthResponse,
   AgentChallengeRequest,
   AgentChallengeResponse,
   AgentTokenResponse
 } from "@approvio/api"
-
 import {
   mapAgentChallengeRequestToService,
   mapChallengeToApiResponse,
@@ -25,6 +36,7 @@ import {
 } from "./agent-auth.mappers"
 import {pipe} from "fp-ts/lib/function"
 import {AuthenticatedEntity} from "@domain"
+import {generateErrorPayload} from "@controllers/error"
 
 /**
  * ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -155,13 +167,20 @@ export class AuthController {
 
   @PublicRoute()
   @Get("success")
-  async success(): Promise<AuthMessageResponse> {
-    return {message: "Authentication successful. Use the code and state to generate a JWT token."}
+  async success(@Query("code") code: string, @Query("state") state: string): Promise<SuccessfulAuthResponse> {
+    if (!code) throw new BadRequestException(generateErrorPayload("MISSING_CODE", "missing code"))
+    if (!state) throw new BadRequestException(generateErrorPayload("MISSING_STATE", "missing state"))
+    return {
+      message: "Authentication successful. Use the code and state to generate a JWT token.",
+      code: code,
+      state: state,
+      b64encoded: Buffer.from(`${code}:${state}`, "utf-8").toString("base64")
+    }
   }
 
   @PublicRoute()
   @Get("error")
-  async error(): Promise<AuthMessageResponse> {
+  async error(): Promise<FailedAuthResponse> {
     return {message: "Authentication failed. Please try again."}
   }
 

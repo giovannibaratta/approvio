@@ -7,6 +7,7 @@ import {cleanDatabase, prepareDatabase} from "@test/database"
 import {ConfigProvider} from "@external/config"
 import {MockConfigProvider} from "@test/mock-data"
 import {PrismaClient} from "@prisma/client"
+import "expect-more-jest"
 
 describe("Auth Integration", () => {
   let app: INestApplication
@@ -76,11 +77,14 @@ describe("Auth Integration", () => {
 
   describe("GET /auth/success", () => {
     it("should return success message for stateless flow", async () => {
-      const response = await request(app.getHttpServer()).get("/auth/success")
+      const response = await request(app.getHttpServer()).get("/auth/success?code=123&state=456")
 
       expect(response).toHaveStatusCode(200)
-      expect(response.body).toEqual({
-        message: "Authentication successful. Use the code and state to generate a JWT token."
+      expect(response.body).toMatchObject({
+        message: "Authentication successful. Use the code and state to generate a JWT token.",
+        code: expect.toBeString(),
+        state: expect.toBeString(),
+        b64encoded: expect.toBeString()
       })
     })
   })

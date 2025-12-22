@@ -100,10 +100,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@approvio/api@npm:0.0.17":
-  version: 0.0.17
-  resolution: "@approvio/api@npm:0.0.17"
-  checksum: 10/67eb3bf7f79c68437a30c88db9ecd77f9753209dfc9d86a6e7e7541ad16bda78788e2dba49fac2c8cb115690f1828fb995f2ee3bf495d187f7b3606bd21f9a41
+"@approvio/api@npm:0.0.18":
+  version: 0.0.18
+  resolution: "@approvio/api@npm:0.0.18"
+  checksum: 10/44420111f4b05893fedc2779548ca14c514ef14cb8a21ab19d462202abc9a76b6b2adf65fce3498a2aa8254f7024be68104eb364cfeb29189706f577959707d8
   languageName: node
   linkType: hard
 
@@ -111,7 +111,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@approvio/backend@workspace:."
   dependencies:
-    "@approvio/api": "npm:0.0.17"
+    "@approvio/api": "npm:0.0.18"
     "@nestjs/bull": "npm:11.0.4"
     "@nestjs/cli": "npm:11.0.14"
     "@nestjs/common": "npm:11.1.9"
@@ -150,7 +150,7 @@ __metadata:
     fp-ts: "npm:2.16.11"
     ioredis: "npm:5.8.2"
     jest: "npm:29.7.0"
-    node-loader: "npm:^2.1.0"
+    node-loader: "npm:2.1.0"
     nodemailer: "npm:7.0.11"
     openid-client: "npm:6.8.1"
     passport: "npm:0.7.0"
@@ -9081,7 +9081,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"node-loader@npm:^2.1.0":
+"node-loader@npm:2.1.0":
   version: 2.1.0
   resolution: "node-loader@npm:2.1.0"
   dependencies:
