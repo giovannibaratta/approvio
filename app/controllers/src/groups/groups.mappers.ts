@@ -1,11 +1,11 @@
 import {Group as GroupApi, GroupCreate, ListGroupEntities200Response, ListGroups200Response} from "@approvio/api"
-import {EntityType} from "@controllers/shared/types"
 import {
   AuthenticatedEntity,
   DESCRIPTION_MAX_LENGTH,
   Group as GroupDomain,
   GroupWithEntitiesCount,
   Membership,
+  MembershipEntity,
   NAME_MAX_LENGTH
 } from "@domain"
 import {
@@ -554,8 +554,31 @@ function mapMembershipToListEntitiesItemApi(membership: Membership): ListGroupEn
   return {
     entity: {
       entityId: membership.getEntityId(),
-      entityType: membership.entity.type === "user" ? EntityType.HUMAN : EntityType.SYSTEM
+      entityType: mapToEntityType(membership.entity)
     },
     addedAt: membership.createdAt.toISOString()
   }
+}
+
+function mapToEntityType(membershipEntity: MembershipEntity): EntityType {
+  let entityType: EntityType
+
+  switch (membershipEntity.type) {
+    case "user":
+      entityType = EntityType.HUMAN
+      break
+    case "agent":
+      entityType = EntityType.SYSTEM
+      break
+  }
+
+  return entityType
+}
+
+// OpenApi generator does not support the generation of types for extensible enums.
+// These enums should be keep in sync with the enums defined in the OpenAPI spec.
+
+export enum EntityType {
+  HUMAN = "human",
+  SYSTEM = "system"
 }
