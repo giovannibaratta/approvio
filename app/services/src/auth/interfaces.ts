@@ -6,7 +6,15 @@ import {
   AgentChallengeJwtValidationError,
   AgentChallengeProcessingError,
   AgentChallengeValidationError,
-  DecoratedAgentChallenge
+  DecoratedAgentChallenge,
+  RefreshToken,
+  DecoratedRefreshToken,
+  RefreshTokenValidationError,
+  RefreshTokenEligibilityError,
+  UsedUserRefreshToken,
+  UsedAgentRefreshToken,
+  DecoratedUnusedUserRefreshToken,
+  DecoratedUnusedAgentRefreshToken
 } from "@domain"
 import {AgentGetError, UnknownError} from "@services"
 import {PrefixUnion} from "@utils/types"
@@ -139,4 +147,76 @@ export interface AgentChallengeRepository {
   persistChallenge(challenge: AgentChallenge): TaskEither<AgentChallengeCreateError, AgentChallenge>
   getChallengeByNonce(nonce: string): TaskEither<GetChallengeByNonceError, DecoratedAgentChallenge<{occ: true}>>
   updateChallenge(challenge: DecoratedAgentChallenge<{occ: true}>): TaskEither<AgentChallengeUpdateError, void>
+}
+
+export type RefreshTokenCreateError = RefreshTokenValidationError | UnknownError
+export type RefreshTokenGetError = "refresh_token_not_found" | RefreshTokenValidationError | UnknownError
+export type RefreshTokenUpdateError = "refresh_token_concurrent_update" | RefreshTokenValidationError | UnknownError
+export type RefreshTokenRevokeError = RefreshTokenValidationError | UnknownError
+
+export type RefreshTokenRefreshError =
+  | "refresh_token_not_found"
+  | "refresh_token_entity_mismatch"
+  | "refresh_token_concurrent_update"
+  | AgentTokenError
+  | RefreshTokenEligibilityError
+  | RefreshTokenValidationError
+  | UnknownError
+
+export const REFRESH_TOKEN_REPOSITORY_TOKEN = "REFRESH_TOKEN_REPOSITORY_TOKEN"
+
+export interface RefreshTokenRepository {
+  /**
+   * Creates and persists a new refresh token in the repository.
+   *
+   * @param token - The refresh token domain object to create
+   * @returns TaskEither with RefreshTokenCreateError on failure, or the created RefreshToken on success
+   */
+  createToken(token: RefreshToken): TaskEither<RefreshTokenCreateError, RefreshToken>
+
+  /**
+   * Retrieves a refresh token by its SHA-256 hash.
+   *
+   * @param tokenHash - The SHA-256 hash of the refresh token value
+   * @returns TaskEither with RefreshTokenGetError on failure, or the decorated refresh token with OCC on success
+   */
+  getByTokenHash(tokenHash: string): TaskEither<RefreshTokenGetError, DecoratedRefreshToken<{occ: true}>>
+
+  /**
+   * Atomically creates a new active refresh token for a user and marks the old token as used.
+   * Uses optimistic concurrency control to ensure the old token hasn't been modified.
+   *
+   * @param newTokenToPersist - The new active refresh token to create
+   * @param oldTokenToUpdate - The old token to mark as used and link to the new token
+   * @param occCheckOldToken - The expected OCC value of the old token for concurrency control
+   * @returns TaskEither with RefreshTokenUpdateError on failure, or void on success
+   */
+  persistNewTokenUpdateOldForUser(
+    newTokenToPersist: DecoratedUnusedUserRefreshToken<{occ: true}>,
+    oldTokenToUpdate: UsedUserRefreshToken,
+    occCheckOldToken: bigint
+  ): TaskEither<RefreshTokenUpdateError, void>
+
+  /**
+   * Atomically creates a new active refresh token for an agent and marks the old token as used.
+   * Uses optimistic concurrency control to ensure the old token hasn't been modified.
+   *
+   * @param newTokenToPersist - The new active refresh token to create
+   * @param oldTokenToUpdate - The old token to mark as used and link to the new token
+   * @param occCheckOldToken - The expected OCC value of the old token for concurrency control
+   * @returns TaskEither with RefreshTokenUpdateError on failure, or void on success
+   */
+  persistNewTokenUpdateOldForAgent(
+    newTokenToPersist: DecoratedUnusedAgentRefreshToken<{occ: true}>,
+    oldTokenToUpdate: UsedAgentRefreshToken,
+    occCheckOldToken: bigint
+  ): TaskEither<RefreshTokenUpdateError, void>
+
+  /**
+   * Revokes all refresh tokens in a family by marking them as revoked.
+   *
+   * @param familyId - The family identifier of tokens to revoke
+   * @returns TaskEither with RefreshTokenUpdateError on failure, or void on success
+   */
+  revokeFamily(familyId: string): TaskEither<RefreshTokenUpdateError, void>
 }
