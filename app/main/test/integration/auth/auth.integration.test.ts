@@ -1,5 +1,5 @@
 import {Test, TestingModule} from "@nestjs/testing"
-import {INestApplication} from "@nestjs/common"
+import {HttpStatus, INestApplication} from "@nestjs/common"
 import * as request from "supertest"
 import {AppModule} from "@app/app.module"
 import {DatabaseClient} from "@external/database"
@@ -63,14 +63,14 @@ describe("Auth Integration", () => {
         .get("/auth/callback")
         .query({code: testCode, state: testState})
 
-      expect(response).toHaveStatusCode(302)
+      expect(response).toHaveStatusCode(HttpStatus.FOUND)
       expect(response.headers.location).toBe(`/auth/success?code=${testCode}&state=${testState}`)
     })
 
     it("should redirect to error if missing code or state", async () => {
       const response = await request(app.getHttpServer()).get("/auth/callback")
 
-      expect(response).toHaveStatusCode(302)
+      expect(response).toHaveStatusCode(HttpStatus.FOUND)
       expect(response.headers.location).toBe("/auth/error")
     })
   })
@@ -102,9 +102,11 @@ describe("Auth Integration", () => {
 
   describe("POST /auth/token", () => {
     it("should return unauthorized without required parameters", async () => {
+      // When: No required parameters
       const response = await request(app.getHttpServer()).post("/auth/token")
 
-      expect(response).toHaveStatusCode(401)
+      // Expect
+      expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
     })
 
     it("should return unauthorized with invalid PKCE verification", async () => {
@@ -114,7 +116,7 @@ describe("Auth Integration", () => {
         codeVerifier: "invalid-verifier"
       })
 
-      expect(response).toHaveStatusCode(401)
+      expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
     })
   })
 
@@ -122,7 +124,7 @@ describe("Auth Integration", () => {
     it("should return unauthorized without authentication token", async () => {
       const response = await request(app.getHttpServer()).get("/auth/info")
 
-      expect(response).toHaveStatusCode(401)
+      expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
     })
 
     it("should return unauthorized with invalid authentication token", async () => {
@@ -130,7 +132,7 @@ describe("Auth Integration", () => {
         .get("/auth/info")
         .set("Authorization", "Bearer invalid-jwt-token")
 
-      expect(response).toHaveStatusCode(401)
+      expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
     })
   })
 })

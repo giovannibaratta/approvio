@@ -1,15 +1,4 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Res,
-  Logger,
-  UnauthorizedException,
-  Query,
-  Body,
-  HttpCode,
-  BadRequestException
-} from "@nestjs/common"
+import {Controller, Get, Post, Res, Logger, Query, Body, HttpCode, BadRequestException} from "@nestjs/common"
 import {Response} from "express"
 import {AuthService, GenerateChallengeRequest} from "@services"
 import {isLeft} from "fp-ts/lib/Either"
@@ -37,6 +26,8 @@ import {
 import {pipe} from "fp-ts/lib/function"
 import {AuthenticatedEntity} from "@domain"
 import {generateErrorPayload} from "@controllers/error"
+import {generateErrorResponseForGenerateToken, mapToTokenResponse} from "./auth.mappers"
+import {validateGenerateTokenRequest} from "./auth.validators"
 
 /**
  * ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -147,22 +138,22 @@ export class AuthController {
   @PublicRoute()
   @Post("token")
   async generateToken(@Body() body: TokenRequest): Promise<TokenResponse> {
-    if (!body) throw new UnauthorizedException("Missing required parameters")
+    const runOidcLogin = (req: TokenRequest) => this.authService.completeOidcLogin(req.code, req.state)
 
-    const {code, state} = body
-
-    if (!code || !state) throw new UnauthorizedException("Missing required parameters")
-
-    Logger.verbose(`Generating token for code: ${code} and state: ${state}`)
-
-    const result = await this.authService.completeOidcLogin(code, state)()
+    const result = await pipe(
+      body,
+      TE.right,
+      TE.chainW(raw => TE.fromEither(validateGenerateTokenRequest(raw))),
+      TE.chainW(validated => runOidcLogin(validated)),
+      TE.map(mapToTokenResponse)
+    )()
 
     if (isLeft(result)) {
       Logger.error("OIDC login completion failed", result.left)
-      throw new UnauthorizedException("Failed to generate token")
+      throw generateErrorResponseForGenerateToken(result.left, "Failed to generate token")
     }
 
-    return {token: result.right}
+    return result.right
   }
 
   @PublicRoute()
@@ -221,12 +212,13 @@ export class AuthController {
       validateRequest,
       TE.fromEither,
       TE.map(extractAssertion),
-      TE.chainW(exchangeToken)
+      TE.chainW(exchangeToken),
+      TE.map(mapTokenToApiResponse)
     )()
 
     if (isLeft(result))
       throw generateErrorResponseForAgentTokenExchange(result.left, "Failed to exchange JWT assertion for token")
 
-    return mapTokenToApiResponse(result.right)
+    return result.right
   }
 }
