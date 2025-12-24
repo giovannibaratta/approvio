@@ -10,8 +10,8 @@ import {
   DecoratedRefreshToken,
   RefreshTokenStatus,
   UsedUserRefreshToken,
-  DecoratedUnusedUserRefreshToken,
-  DecoratedUnusedAgentRefreshToken,
+  DecoratedActiveUserRefreshToken,
+  DecoratedActiveAgentRefreshToken,
   UsedAgentRefreshToken,
   RefreshTokenValidationError,
   RefreshTokenDecoratorSelector
@@ -69,7 +69,7 @@ export class RefreshTokenDbRepository implements RefreshTokenRepository {
   }
 
   persistNewTokenUpdateOldForUser(
-    newTokenToPersist: DecoratedUnusedUserRefreshToken<{occ: true}>,
+    newTokenToPersist: DecoratedActiveUserRefreshToken<{occ: true}>,
     oldTokenToUpdate: UsedUserRefreshToken,
     occCheckOldToken: bigint
   ): TaskEither<RefreshTokenUpdateError, void> {
@@ -77,7 +77,7 @@ export class RefreshTokenDbRepository implements RefreshTokenRepository {
   }
 
   persistNewTokenUpdateOldForAgent(
-    newTokenToPersist: DecoratedUnusedAgentRefreshToken<{occ: true}>,
+    newTokenToPersist: DecoratedActiveAgentRefreshToken<{occ: true}>,
     oldTokenToUpdate: UsedAgentRefreshToken,
     occCheckOldToken: bigint
   ): TaskEither<RefreshTokenUpdateError, void> {

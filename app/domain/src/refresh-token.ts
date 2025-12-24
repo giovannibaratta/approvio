@@ -15,12 +15,18 @@ import {User} from "./user"
 import {Agent} from "./agent"
 import {EntityType} from "./entityType"
 
+/**
+ * Refresh token status enum
+ */
 export enum RefreshTokenStatus {
-  UNUSED = "unused",
+  ACTIVE = "active",
   USED = "used",
   REVOKED = "revoked"
 }
 
+/**
+ * Validation errors for refresh tokens
+ */
 export type RefreshTokenValidationError = PrefixUnion<
   "refresh_token",
   | "expire_before_create"
@@ -82,8 +88,8 @@ interface AgentProps {
   readonly agentId: string
 }
 
-export interface UnusedStatusProps {
-  readonly status: RefreshTokenStatus.UNUSED
+export interface ActiveStatusProps {
+  readonly status: RefreshTokenStatus.ACTIVE
 }
 
 export interface UsedStatusProps {
@@ -108,20 +114,20 @@ export type DecoratedRefreshToken<T extends RefreshTokenDecoratorSelector> = Dec
   T
 >
 
-export type DecoratedUnusedUserRefreshToken<T extends RefreshTokenDecoratorSelector> = DecoratedRefreshToken<T> &
-  UnusedUserRefreshToken
-export type DecoratedUnusedAgentRefreshToken<T extends RefreshTokenDecoratorSelector> = DecoratedRefreshToken<T> &
-  UnusedAgentRefreshToken
+export type DecoratedActiveUserRefreshToken<T extends RefreshTokenDecoratorSelector> = DecoratedRefreshToken<T> &
+  ActiveUserRefreshToken
+export type DecoratedActiveAgentRefreshToken<T extends RefreshTokenDecoratorSelector> = DecoratedRefreshToken<T> &
+  ActiveAgentRefreshToken
 
 export type RefreshToken = RefreshTokenBase & EntityProps & StatusProps
 
-type StatusProps = UnusedStatusProps | UsedStatusProps | RevokedStatusProps
+type StatusProps = ActiveStatusProps | UsedStatusProps | RevokedStatusProps
 type EntityProps = UserProps | AgentProps
 
 type AgentRefreshToken = RefreshToken & AgentProps
 type UserRefreshToken = RefreshToken & UserProps
-type UnusedUserRefreshToken = UserRefreshToken & UnusedStatusProps
-type UnusedAgentRefreshToken = AgentRefreshToken & UnusedStatusProps
+type ActiveUserRefreshToken = UserRefreshToken & ActiveStatusProps
+type ActiveAgentRefreshToken = AgentRefreshToken & ActiveStatusProps
 type UsedRefreshToken = RefreshToken & UsedStatusProps
 type RevokedRefreshToken = RefreshToken & RevokedStatusProps
 export type UsedUserRefreshToken = UsedRefreshToken & UserProps
@@ -136,29 +142,32 @@ export type UsedAgentRefreshToken = UsedRefreshToken & AgentProps
 export const GRACE_PERIOD_SECONDS = 30
 export const REFRESH_TOKEN_EXPIRY_DAYS = 30
 
+/**
+ * Factory class for creating and validating refresh tokens
+ */
 export class RefreshTokenFactory {
   /**
-   * Create a new refresh token for a user
+   * Create a new user refresh token
    */
   static createForUser(
     user: User,
     familyId?: string
-  ): E.Either<RefreshTokenValidationError, DecoratedUnusedUserRefreshToken<{occ: true}> & {tokenValue: string}> {
+  ): E.Either<RefreshTokenValidationError, DecoratedActiveUserRefreshToken<{occ: true}> & {tokenValue: string}> {
     const {tokenValue, ...tokenBaseProps} = RefreshTokenFactory.generateTokenBaseProps(familyId)
 
-    const token: UnusedUserRefreshToken = {
+    const token: ActiveUserRefreshToken = {
       ...tokenBaseProps,
       entityType: EntityType.USER,
       userId: user.id,
-      status: RefreshTokenStatus.UNUSED
+      status: RefreshTokenStatus.ACTIVE
     }
 
     return pipe(
       {...token, occ: 0n},
       RefreshTokenFactory.validate<{occ: true}>,
-      E.map((t): DecoratedUnusedUserRefreshToken<{occ: true}> & {tokenValue: string} => {
+      E.map((t): DecoratedActiveUserRefreshToken<{occ: true}> & {tokenValue: string} => {
         return {
-          ...(t as DecoratedUnusedUserRefreshToken<{occ: true}>),
+          ...(t as DecoratedActiveUserRefreshToken<{occ: true}>),
           tokenValue
         }
       })
@@ -171,14 +180,14 @@ export class RefreshTokenFactory {
   static createForAgent(
     agent: Agent,
     familyId?: string
-  ): E.Either<RefreshTokenValidationError, DecoratedUnusedAgentRefreshToken<{occ: true}> & {tokenValue: string}> {
+  ): E.Either<RefreshTokenValidationError, DecoratedActiveAgentRefreshToken<{occ: true}> & {tokenValue: string}> {
     const {tokenValue, ...tokenBaseProps} = RefreshTokenFactory.generateTokenBaseProps(familyId)
 
-    const token: UnusedAgentRefreshToken = {
+    const token: ActiveAgentRefreshToken = {
       ...tokenBaseProps,
       entityType: EntityType.AGENT,
       agentId: agent.id,
-      status: RefreshTokenStatus.UNUSED
+      status: RefreshTokenStatus.ACTIVE
     }
 
     return pipe(
@@ -187,7 +196,7 @@ export class RefreshTokenFactory {
       E.chainW(data => RefreshTokenFactory.validate(data, {occ: true})),
       E.map(t => {
         return {
-          ...(t as DecoratedUnusedAgentRefreshToken<{occ: true}>),
+          ...(t as DecoratedActiveAgentRefreshToken<{occ: true}>),
           tokenValue
         }
       })
@@ -302,10 +311,10 @@ export class RefreshTokenFactory {
     let eitherStatusProps: E.Either<RefreshTokenValidationError, StatusProps>
 
     switch (data.status) {
-      case RefreshTokenStatus.UNUSED:
-        eitherStatusProps = RefreshTokenFactory.validateUnusedStatusProps({
+      case RefreshTokenStatus.ACTIVE:
+        eitherStatusProps = RefreshTokenFactory.validateActiveStatusProps({
           ...data,
-          status: RefreshTokenStatus.UNUSED
+          status: RefreshTokenStatus.ACTIVE
         })
         break
       case RefreshTokenStatus.USED:
@@ -325,13 +334,13 @@ export class RefreshTokenFactory {
     return eitherStatusProps
   }
 
-  private static validateUnusedStatusProps(
-    data: unknown & {status: RefreshTokenStatus.UNUSED}
-  ): E.Either<RefreshTokenValidationError, UnusedStatusProps> {
+  private static validateActiveStatusProps(
+    data: unknown & {status: RefreshTokenStatus.ACTIVE}
+  ): E.Either<RefreshTokenValidationError, ActiveStatusProps> {
     if (typeof data !== "object" || data === null) return E.left("refresh_token_invalid_structure" as const)
 
     return E.right({
-      status: RefreshTokenStatus.UNUSED
+      status: RefreshTokenStatus.ACTIVE
     })
   }
 

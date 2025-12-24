@@ -1,5 +1,17 @@
-import {Controller, Get, Post, Res, Logger, Query, Body, HttpCode, BadRequestException} from "@nestjs/common"
-import {Response} from "express"
+import {
+  Controller,
+  Get,
+  Post,
+  Res,
+  Logger,
+  Query,
+  Body,
+  HttpCode,
+  BadRequestException,
+  Headers,
+  Req
+} from "@nestjs/common"
+import {Response, Request} from "express"
 import {AuthService, GenerateChallengeRequest} from "@services"
 import {isLeft} from "fp-ts/lib/Either"
 import * as TE from "fp-ts/TaskEither"
@@ -12,7 +24,8 @@ import {
   FailedAuthResponse,
   AgentChallengeRequest,
   AgentChallengeResponse,
-  AgentTokenResponse
+  AgentTokenResponse,
+  RefreshTokenRequest
 } from "@approvio/api"
 import {
   mapAgentChallengeRequestToService,
@@ -26,8 +39,17 @@ import {
 import {pipe} from "fp-ts/lib/function"
 import {AuthenticatedEntity} from "@domain"
 import {generateErrorPayload} from "@controllers/error"
-import {generateErrorResponseForGenerateToken, mapToTokenResponse} from "./auth.mappers"
-import {validateGenerateTokenRequest} from "./auth.validators"
+import {
+  validateGenerateTokenRequest,
+  validateRefreshAgentTokenRequest,
+  validateRefreshTokenRequest
+} from "./auth.validators"
+import {
+  generateErrorResponseForGenerateToken,
+  generateErrorResponseForRefreshAgentToken,
+  generateErrorResponseForRefreshUserToken,
+  mapToTokenResponse
+} from "./auth.mappers"
 
 /**
  * ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -218,6 +240,58 @@ export class AuthController {
 
     if (isLeft(result))
       throw generateErrorResponseForAgentTokenExchange(result.left, "Failed to exchange JWT assertion for token")
+
+    return result.right
+  }
+
+  @PublicRoute()
+  @Post("refresh")
+  @HttpCode(200)
+  async refreshUserToken(@Body() body: RefreshTokenRequest): Promise<TokenResponse> {
+    const refreshUserToken = (refreshToken: string) => this.authService.refreshTokenForUser(refreshToken)
+
+    const result = await pipe(
+      body,
+      TE.right,
+      TE.chainW(rawBody => TE.fromEither(validateRefreshTokenRequest(rawBody))),
+      TE.chainW(validatedBody => refreshUserToken(validatedBody.refreshToken)),
+      TE.map(serviceResult => mapToTokenResponse(serviceResult))
+    )()
+
+    if (isLeft(result)) {
+      Logger.error("User token refresh failed", result.left)
+      throw generateErrorResponseForRefreshUserToken(result.left, "Failed to refresh token")
+    }
+
+    return result.right
+  }
+
+  @PublicRoute()
+  @Post("agents/refresh")
+  @HttpCode(200)
+  async refreshAgentToken(
+    @Body() body: RefreshTokenRequest,
+    @Headers("DPoP") dpop: string,
+    @Req() request: Request
+  ): Promise<TokenResponse> {
+    const refreshAgentToken = (refreshToken: string, dpopJkt: string) =>
+      this.authService.refreshTokenForAgent(refreshToken, dpopJkt, {
+        expectedMethod: "POST",
+        expectedUrl: `${request.protocol}://${request.get("host") ?? ""}${request.originalUrl}`
+      })
+
+    const result = await pipe(
+      body,
+      TE.right,
+      TE.chainW(rawBody => TE.fromEither(validateRefreshAgentTokenRequest(rawBody, dpop))),
+      TE.chainW(validatedBody => refreshAgentToken(validatedBody.refreshToken, validatedBody.dpopJkt)),
+      TE.map(serviceResult => mapToTokenResponse(serviceResult))
+    )()
+
+    if (isLeft(result)) {
+      Logger.error("Agent token refresh failed", result.left)
+      throw generateErrorResponseForRefreshAgentToken(result.left, "Failed to refresh token")
+    }
 
     return result.right
   }

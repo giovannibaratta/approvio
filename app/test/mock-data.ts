@@ -7,8 +7,10 @@ import {
   WorkflowTemplate as PrismaWorkflowTemplate,
   Workflow as PrismaWorkflow,
   Group as PrismaGroup,
-  Space as PrismaSpace
+  Space as PrismaSpace,
+  RefreshToken as PrismaRefreshToken
 } from "@prisma/client"
+import {randomBytes} from "crypto"
 import {
   ApprovalRuleType,
   Group,
@@ -33,6 +35,7 @@ import {
 } from "@external/config"
 import {Option} from "fp-ts/lib/Option"
 import * as O from "fp-ts/lib/Option"
+import {createSha256Hash} from "@utils"
 
 const chance = Chance()
 
@@ -643,4 +646,115 @@ export async function createMockSpaceInDb(
 
   const space = await prisma.space.create({data})
   return space
+}
+
+/**
+ * Creates a mock refresh token in the database for a given user.
+ *
+ * @param prisma - Prisma client for database operations
+ * @param params - Parameters for creating the refresh token
+ * @param params.userId - The user ID to associate the token with
+ * @param params.status - Token status (active, used, revoked)
+ * @param params.expiresInSeconds - How long until the token expires (default: 3600)
+ * @param params.createdAt - When the token was created (default: now)
+ * @param params.familyId - Family ID for token revocation (auto-generated if not provided)
+ * @returns Promise<{token: PrismaRefreshToken; plainToken: string; familyId: string}> - The created token and plain token value
+ */
+export async function createMockRefreshTokenInDb(
+  prisma: PrismaClient,
+  params: {
+    userId?: string
+    agentId?: string
+    status: "active" | "used" | "revoked"
+    expiresInSeconds?: number
+    createdAt?: Date
+    familyId?: string
+  }
+): Promise<{token: PrismaRefreshToken; plainToken: string; tokenId: string; familyId: string}> {
+  if (!params.userId && !params.agentId) throw new Error("Must provide either userId or agentId")
+
+  const plainToken = randomBytes(32).toString("hex")
+  const tokenHash = createSha256Hash(plainToken)
+  const familyId = params.familyId || chance.guid()
+  const createdAt = params.createdAt || chance.date()
+  const expiresAt = new Date(createdAt.getTime() + (params.expiresInSeconds || chance.integer({min: 1800})) * 1000)
+
+  // Prepare additional data for status-specific fields
+  const extraData: {usedAt?: Date | null; nextTokenId?: string | null} = {}
+  if (params.status === "used") {
+    extraData.usedAt = new Date(createdAt.getTime() + 1000) // Used 1 second after creation
+    extraData.nextTokenId = chance.guid()
+  }
+
+  const token = await prisma.refreshToken.create({
+    data: {
+      id: chance.guid(),
+      tokenHash,
+      familyId,
+      userId: params.userId,
+      agentId: params.agentId,
+      status: params.status,
+      expiresAt,
+      createdAt,
+      occ: 0,
+      ...extraData
+    }
+  })
+
+  return {token, plainToken, tokenId: token.id, familyId}
+}
+
+/**
+ * Creates a user with a refresh token in the database.
+ *
+ * @param prisma - Prisma client for database operations
+ * @param params - Parameters for creating user and token
+ * @param params.expiresInSeconds - How long until the token expires (default: 3600)
+ * @param params.status - Token status (default: "active")
+ * @param params.createdAt - When the token was created (default: now)
+ * @param params.userOverrides - Overrides for user creation
+ * @returns Promise<{user: User; plainToken: string; refreshToken: PrismaRefreshToken; familyId: string}> - The created user and token
+ */
+export async function createUserWithRefreshToken(
+  prisma: PrismaClient,
+  params: {
+    tokenOverrides?: {
+      expiresInSeconds?: number
+      status?: "active" | "used" | "revoked"
+      createdAt?: Date
+    }
+    userOverrides?: Parameters<typeof createDomainMockUserInDb>[1]
+  } = {}
+): Promise<{
+  user: User
+  token: {
+    plainToken: string
+    refreshToken: PrismaRefreshToken
+    familyId: string
+    tokenId: string
+  }
+}> {
+  const user = await createDomainMockUserInDb(prisma, params.userOverrides)
+
+  const {
+    token: refreshToken,
+    plainToken,
+    tokenId,
+    familyId
+  } = await createMockRefreshTokenInDb(prisma, {
+    userId: user.id,
+    status: params.tokenOverrides?.status || "active",
+    expiresInSeconds: params.tokenOverrides?.expiresInSeconds,
+    createdAt: params.tokenOverrides?.createdAt
+  })
+
+  return {
+    user,
+    token: {
+      plainToken,
+      refreshToken,
+      familyId,
+      tokenId
+    }
+  }
 }

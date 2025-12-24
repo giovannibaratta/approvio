@@ -5,9 +5,10 @@ import {AppModule} from "@app/app.module"
 import {DatabaseClient} from "@external/database"
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {ConfigProvider} from "@external/config"
-import {MockConfigProvider} from "@test/mock-data"
+import {MockConfigProvider, createUserWithRefreshToken} from "@test/mock-data"
 import {PrismaClient} from "@prisma/client"
 import "expect-more-jest"
+import {GRACE_PERIOD_SECONDS, RefreshTokenStatus} from "@domain"
 
 describe("Auth Integration", () => {
   let app: INestApplication
@@ -40,6 +41,25 @@ describe("Auth Integration", () => {
     await prisma.$disconnect()
     await app.close()
   })
+
+  // Helper to create a user and a refresh token
+  const setupUserWithRefreshToken = async (
+    expiresInSeconds = 3600,
+    status: "active" | "used" | "revoked" = "active",
+    createdAt = new Date()
+  ) => {
+    return await createUserWithRefreshToken(prisma, {
+      tokenOverrides: {
+        expiresInSeconds,
+        status,
+        createdAt
+      },
+      userOverrides: {
+        displayName: "Test User",
+        email: "test@example.com"
+      }
+    })
+  }
 
   describe("GET /auth/login", () => {
     it("should redirect to OIDC provider with PKCE parameters", async () => {
@@ -133,6 +153,72 @@ describe("Auth Integration", () => {
         .set("Authorization", "Bearer invalid-jwt-token")
 
       expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
+    })
+  })
+
+  describe("POST /auth/refresh", () => {
+    it("should return new tokens for valid refresh token", async () => {
+      // Given: A user with a valid active refresh token
+      const {token} = await setupUserWithRefreshToken()
+      const {plainToken, tokenId} = token
+
+      // When: Requesting refresh
+      const response = await request(app.getHttpServer()).post("/auth/refresh").send({refreshToken: plainToken})
+
+      // Expect: the API call is successful
+      expect(response).toHaveStatusCode(HttpStatus.OK)
+      expect(response.body).toMatchObject({
+        accessToken: expect.toBeString(),
+        refreshToken: expect.toBeString()
+      })
+      expect(response.body.refreshToken).not.toBe(plainToken)
+
+      // Expect: the refresh token is marked as used
+      const usedToken = await prisma.refreshToken.findUnique({where: {id: tokenId}})
+      expect(usedToken?.status).toBe(RefreshTokenStatus.USED)
+
+      // Expect: the token can be used to query the endpoints
+      // When: Use JWT token to access /auth/info endpoint
+      const infoResponse = await request(app.getHttpServer())
+        .get("/auth/info")
+        .set("Authorization", `Bearer ${response.body.accessToken}`)
+
+      // Expect: User info endpoint returns entity type
+      expect(infoResponse).toHaveStatusCode(200)
+    })
+
+    it("should return 400 for expired refresh token", async () => {
+      // Given: A user with an expired refresh token
+      // Create at -2h, Expire at -1h (duration 1h). So it is valid at creation, but expired now.
+      const createdAt = new Date(Date.now() - 7200 * 1000)
+      const {token} = await setupUserWithRefreshToken(3600, "active", createdAt)
+      const {plainToken} = token
+
+      // When: Requesting refresh
+      const response = await request(app.getHttpServer()).post("/auth/refresh").send({refreshToken: plainToken})
+
+      // Expect
+      expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      expect(response.body).toHaveErrorCode("REFRESH_TOKEN_EXPIRED")
+    })
+
+    it("should return 400 and revoke family for used refresh token (Reuse Detection)", async () => {
+      // Given: A user with a USED refresh token that was used outside the grace period
+      const createdAt = new Date(Date.now() - (GRACE_PERIOD_SECONDS + 1) * 1000)
+      const {token} = await setupUserWithRefreshToken(3600, "used", createdAt)
+      const {plainToken, familyId} = token
+
+      // When: Requesting refresh with used token
+      const response = await request(app.getHttpServer()).post("/auth/refresh").send({refreshToken: plainToken})
+
+      // Expect error
+      expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
+      expect(response.body).toHaveErrorCode("REFRESH_TOKEN_REUSE_DETECTED")
+
+      // TODO: Verify Family Revocation: All tokens in family should be REVOKED
+      // Expect: The family is marked as revoked
+      const family = await prisma.refreshToken.findMany({where: {familyId}})
+      expect(family?.every(token => token.status === RefreshTokenStatus.REVOKED)).toBe(true)
     })
   })
 })
