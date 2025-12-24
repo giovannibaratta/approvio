@@ -6,11 +6,34 @@ import {
   AgentChallengeJwtValidationError,
   AgentChallengeProcessingError,
   AgentChallengeValidationError,
-  DecoratedAgentChallenge
+  DecoratedAgentChallenge,
+  RefreshToken,
+  DecoratedRefreshToken,
+  RefreshTokenValidationError,
+  RefreshTokenEligibilityError,
+  UsedUserRefreshToken,
+  DecoratedActiveUserRefreshToken,
+  UsedAgentRefreshToken,
+  DecoratedActiveAgentRefreshToken
 } from "@domain"
-import {AgentGetError, UnknownError} from "@services"
+import {AgentGetError, AutoRegisterError, OrganizationAdminCreateError, UnknownError, UserGetError} from "@services"
 import {PrefixUnion} from "@utils/types"
 import {TaskEither} from "fp-ts/lib/TaskEither"
+import {DpopValidationError} from "@utils/dpop"
+
+export type AuthError =
+  | PrefixUnion<
+      "auth",
+      | "user_not_found_in_system"
+      | "token_generation_failed"
+      | "authorization_url_generation_failed"
+      | "missing_email_from_oidc_provider"
+    >
+  | UserGetError
+  | AutoRegisterError
+  | OrganizationAdminCreateError
+  | OidcError
+  | PkceError
 
 export type PkceError = PrefixUnion<
   "pkce",
@@ -139,4 +162,45 @@ export interface AgentChallengeRepository {
   persistChallenge(challenge: AgentChallenge): TaskEither<AgentChallengeCreateError, AgentChallenge>
   getChallengeByNonce(nonce: string): TaskEither<GetChallengeByNonceError, DecoratedAgentChallenge<{occ: true}>>
   updateChallenge(challenge: DecoratedAgentChallenge<{occ: true}>): TaskEither<AgentChallengeUpdateError, void>
+}
+
+export type RefreshTokenCreateError = RefreshTokenValidationError | UnknownError
+export type RefreshTokenGetError = "refresh_token_not_found" | RefreshTokenValidationError | UnknownError
+export type RefreshTokenUpdateError = "refresh_token_concurrent_update" | RefreshTokenValidationError | UnknownError
+export type RefreshTokenRevokeError = RefreshTokenValidationError | UnknownError
+
+export type RefreshTokenRefreshError =
+  | "refresh_token_not_found"
+  | "refresh_token_entity_mismatch"
+  | "refresh_token_concurrent_update"
+  | DpopValidationError
+  | AgentTokenError
+  | RefreshTokenEligibilityError
+  | AuthError
+  | RefreshTokenValidationError
+  | UnknownError
+
+export const REFRESH_TOKEN_REPOSITORY_TOKEN = "REFRESH_TOKEN_REPOSITORY_TOKEN"
+
+export interface RefreshTokenRepository {
+  createToken(token: RefreshToken): TaskEither<RefreshTokenCreateError, RefreshToken>
+  getByTokenHash(tokenHash: string): TaskEither<RefreshTokenGetError, DecoratedRefreshToken<{occ: true}>>
+  // TODO: Docstring me
+  persistNewTokenUpdateOldForUser(
+    newTokenToPersist: DecoratedActiveUserRefreshToken<{occ: true}>,
+    oldTokenToUpdate: UsedUserRefreshToken,
+    occCheckOldToken: bigint
+  ): TaskEither<RefreshTokenUpdateError, void>
+  // TODO: Docstring me
+  persistNewTokenUpdateOldForAgent(
+    newTokenToPersist: DecoratedActiveAgentRefreshToken<{occ: true}>,
+    oldTokenToUpdate: UsedAgentRefreshToken,
+    occCheckOldToken: bigint
+  ): TaskEither<RefreshTokenUpdateError, void>
+  revokeFamily(familyId: string): TaskEither<RefreshTokenUpdateError, void>
+}
+
+export interface TokenPair {
+  accessToken: string
+  refreshToken: string
 }

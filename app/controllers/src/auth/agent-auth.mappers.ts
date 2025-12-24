@@ -1,5 +1,11 @@
 import {AgentChallengeRequest, AgentChallengeResponse, AgentTokenResponse} from "@approvio/api"
-import {GenerateChallengeRequest, AgentChallengeCreateError, AgentTokenError} from "@services"
+import {
+  GenerateChallengeRequest,
+  AgentChallengeCreateError,
+  AgentTokenError,
+  TokenPair,
+  RefreshTokenCreateError
+} from "@services"
 import * as E from "fp-ts/Either"
 import {
   BadRequestException,
@@ -77,9 +83,12 @@ export const mapChallengeToApiResponse = (encryptedChallenge: string): AgentChal
 /**
  * Maps service token result to API response
  */
-export const mapTokenToApiResponse = (token: string): AgentTokenResponse => {
+export const mapTokenToApiResponse = (tokenPair: TokenPair): AgentTokenResponse => {
+  const {accessToken, refreshToken} = tokenPair
+
   return {
-    token
+    accessToken,
+    refreshToken
   }
 }
 
@@ -145,7 +154,7 @@ export const generateErrorResponseForChallengeRequest = (
  * Maps token exchange errors to HTTP exceptions
  */
 export const generateErrorResponseForAgentTokenExchange = (
-  error: AgentTokenError | JwtAssertionValidationError,
+  error: AgentTokenError | JwtAssertionValidationError | RefreshTokenCreateError,
   context: string
 ): HttpException => {
   const errorCode = error.toUpperCase()
@@ -192,8 +201,28 @@ export const generateErrorResponseForAgentTokenExchange = (
     case "agent_role_scope_incompatible_with_template":
     case "agent_invalid_occ":
     case "agent_role_entity_type_role_restriction":
+    case "refresh_token_invalid_structure":
+    case "refresh_token_expire_before_create":
+    case "refresh_token_invalid_agent_id":
+    case "refresh_token_invalid_created_at":
+    case "refresh_token_invalid_dpop_jkt":
+    case "refresh_token_invalid_entity_type":
+    case "refresh_token_invalid_expires_at":
+    case "refresh_token_invalid_family_id":
+    case "refresh_token_invalid_id":
+    case "refresh_token_invalid_next_token_id":
+    case "refresh_token_invalid_status":
+    case "refresh_token_invalid_token_hash":
+    case "refresh_token_invalid_used_at":
+    case "refresh_token_invalid_user_id":
+    case "refresh_token_missing_entity_id":
+    case "refresh_token_missing_entity_type":
+    case "refresh_token_used_before_create":
+    case "refresh_token_missing_occ":
       Logger.error(`${context}: data inconsistency error - ${error}`)
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid data inconsistency`))
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: data inconsistency detected`)
+      )
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: unknown error`))
     case "agent_challenge_not_found":

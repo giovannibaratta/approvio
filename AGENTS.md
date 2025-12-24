@@ -40,6 +40,7 @@ Each application layer has its own AGENTS.md file with specific guidance, when y
 <tests>
 - Inside the 'it' block, use the Given:[context], When, Expect pattern (use comments to divide the code in logic sections, leave spaces around the sections)
 - When testing a specific functionality, group tests in bad cases and good cases using the describe block
+- Don't use conditional assertions
 </tests>
 </style_guide>
 

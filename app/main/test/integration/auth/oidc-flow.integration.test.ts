@@ -10,6 +10,7 @@ import {MockConfigProvider, createMockUserInDb} from "@test/mock-data"
 import {PrismaClient} from "@prisma/client"
 import "@utils/matchers"
 import {simulateOidcAuthorization, OidcMockUser} from "@test/oidc-test-helpers"
+import "expect-more-jest"
 
 /**
  * ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -207,14 +208,15 @@ describe("OIDC Flow Integration", () => {
 
       // Expect: Valid JWT token is returned
       expect(tokenResponse).toHaveStatusCode(201)
-      expect(tokenResponse.body).toHaveProperty("token")
-      expect(typeof tokenResponse.body.token).toBe("string")
-      expect(tokenResponse.body.token.length).toBeGreaterThan(0)
+      expect(tokenResponse.body).toMatchObject({
+        accessToken: expect.toBeVisibleString(),
+        refreshToken: expect.toBeVisibleString()
+      })
 
       // When: Use JWT token to access /auth/info endpoint
       const infoResponse = await request(app.getHttpServer())
         .get("/auth/info")
-        .set("Authorization", `Bearer ${tokenResponse.body.token}`)
+        .set("Authorization", `Bearer ${tokenResponse.body.accessToken}`)
 
       // Expect: User info endpoint returns entity type
       expect(infoResponse).toHaveStatusCode(200)

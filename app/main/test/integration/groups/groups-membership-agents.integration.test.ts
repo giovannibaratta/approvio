@@ -1,6 +1,6 @@
 import {AddGroupEntitiesRequest, ListGroupEntities200Response, RemoveGroupEntitiesRequest} from "@approvio/api"
 import {AppModule} from "@app/app.module"
-import {EntityType, GROUPS_ENDPOINT_ROOT} from "@controllers"
+import {GROUPS_ENDPOINT_ROOT} from "@controllers"
 import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
@@ -16,6 +16,7 @@ import {UserWithToken} from "@test/types"
 import {TokenPayloadBuilder} from "@services"
 import {mapAgentToDomain} from "@external/database/shared"
 import {isLeft} from "fp-ts/lib/Either"
+import {EntityType} from "@controllers/groups/groups.mappers"
 
 type AgentWithToken = {
   agent: PrismaAgent

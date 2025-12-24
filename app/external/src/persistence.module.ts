@@ -11,7 +11,8 @@ import {
   WorkflowTemplateDbRepository,
   VoteDbRepository,
   PkceSessionDbRepository,
-  PrismaTaskRepository
+  PrismaTaskRepository,
+  RefreshTokenDbRepository
 } from "./database/"
 import {GroupDbRepository} from "./database"
 import {
@@ -28,7 +29,7 @@ import {
   QUEUE_PROVIDER_TOKEN
 } from "@services"
 import {TASK_REPOSITORY_TOKEN} from "@services/task/interfaces"
-import {PKCE_SESSION_REPOSITORY_TOKEN} from "@services/auth"
+import {PKCE_SESSION_REPOSITORY_TOKEN, REFRESH_TOKEN_REPOSITORY_TOKEN} from "@services/auth"
 import {ConfigModule} from "./config.module"
 import {QueueModule} from "./queue/queue.module"
 import {BullQueueProvider} from "./queue/queue.provider"
@@ -98,6 +99,11 @@ const taskRepository = {
   useClass: PrismaTaskRepository
 }
 
+const refreshTokenRepository = {
+  provide: REFRESH_TOKEN_REPOSITORY_TOKEN,
+  useClass: RefreshTokenDbRepository
+}
+
 const repositories = [
   agentRepository,
   agentChallengeRepository,
@@ -110,7 +116,8 @@ const repositories = [
   workflowTemplateRepository,
   voteRepository,
   pkceSessionRepository,
-  taskRepository
+  taskRepository,
+  refreshTokenRepository
 ]
 
 @Module({

@@ -10,6 +10,7 @@ import {MockConfigProvider} from "@test/mock-data"
 import {PrismaClient} from "@prisma/client"
 import "@utils/matchers"
 import {simulateOidcAuthorization, OidcMockUser} from "@test/oidc-test-helpers"
+import "expect-more-jest"
 
 /**
  * ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -101,8 +102,10 @@ describe("OIDC Auto-Registration Integration", () => {
 
       // Expect: JWT token is successfully generated
       expect(tokenResponse).toHaveStatusCode(201)
-      expect(tokenResponse.body).toHaveProperty("token")
-      expect(typeof tokenResponse.body.token).toBe("string")
+      expect(tokenResponse.body).toMatchObject({
+        accessToken: expect.toBeVisibleString(),
+        refreshToken: expect.toBeVisibleString()
+      })
 
       // Expect: User was auto-registered in the database
       const createdUsers = await prisma.user.findMany()
@@ -118,7 +121,7 @@ describe("OIDC Auto-Registration Integration", () => {
       // Expect: User can access authenticated endpoints with admin role
       const infoResponse = await request(app.getHttpServer())
         .get("/auth/info")
-        .set("Authorization", `Bearer ${tokenResponse.body.token}`)
+        .set("Authorization", `Bearer ${tokenResponse.body.accessToken}`)
 
       expect(infoResponse).toHaveStatusCode(200)
       expect(infoResponse.body).toEqual({entityType: "user"})
@@ -177,7 +180,10 @@ describe("OIDC Auto-Registration Integration", () => {
 
       // Expect: JWT token is successfully generated
       expect(tokenResponse).toHaveStatusCode(201)
-      expect(tokenResponse.body).toHaveProperty("token")
+      expect(tokenResponse.body).toMatchObject({
+        accessToken: expect.toBeVisibleString(),
+        refreshToken: expect.toBeVisibleString()
+      })
 
       // Expect: Second user was auto-registered in the database
       const allUsers = await prisma.user.findMany()
@@ -194,7 +200,7 @@ describe("OIDC Auto-Registration Integration", () => {
       // Expect: Second user can access authenticated endpoints as regular member
       const infoResponse = await request(app.getHttpServer())
         .get("/auth/info")
-        .set("Authorization", `Bearer ${tokenResponse.body.token}`)
+        .set("Authorization", `Bearer ${tokenResponse.body.accessToken}`)
 
       expect(infoResponse).toHaveStatusCode(200)
       expect(infoResponse.body).toEqual({entityType: "user"})
@@ -202,7 +208,7 @@ describe("OIDC Auto-Registration Integration", () => {
   })
 
   describe("Existing User Flow", () => {
-    it("should continue to work normally for users that already exist", async () => {
+    it("should be able to login and generate a token", async () => {
       // Given: User already exists in the database
       const userEmail = "existing-user@example.com"
       const displayName = "Existing User"
@@ -247,7 +253,10 @@ describe("OIDC Auto-Registration Integration", () => {
 
       // Expect: JWT token is successfully generated
       expect(tokenResponse).toHaveStatusCode(201)
-      expect(tokenResponse.body).toHaveProperty("token")
+      expect(tokenResponse.body).toMatchObject({
+        accessToken: expect.toBeVisibleString(),
+        refreshToken: expect.toBeVisibleString()
+      })
 
       // Expect: No new users were created (existing user was used)
       const allUsers = await prisma.user.findMany()
@@ -258,7 +267,7 @@ describe("OIDC Auto-Registration Integration", () => {
       // Expect: User can access authenticated endpoints
       const infoResponse = await request(app.getHttpServer())
         .get("/auth/info")
-        .set("Authorization", `Bearer ${tokenResponse.body.token}`)
+        .set("Authorization", `Bearer ${tokenResponse.body.accessToken}`)
 
       expect(infoResponse).toHaveStatusCode(200)
       expect(infoResponse.body).toEqual({entityType: "user"})

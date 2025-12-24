@@ -7,7 +7,7 @@ import {
   Group as GroupApi
 } from "@approvio/api"
 import {AppModule} from "@app/app.module"
-import {EntityType, GROUPS_ENDPOINT_ROOT} from "@controllers"
+import {GROUPS_ENDPOINT_ROOT} from "@controllers"
 import {DESCRIPTION_MAX_LENGTH} from "@domain"
 import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
@@ -22,6 +22,7 @@ import {createDomainMockUserInDb, createMockUserInDb, MockConfigProvider} from "
 import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import {MAX_LIMIT, TokenPayloadBuilder} from "@services"
+import {EntityType} from "@controllers/groups/groups.mappers"
 
 async function createTestGroup(prisma: PrismaClient, name: string, description?: string): Promise<PrismaGroup> {
   const group = await prisma.group.create({

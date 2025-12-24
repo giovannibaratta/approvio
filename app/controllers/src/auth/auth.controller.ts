@@ -4,13 +4,14 @@ import {
   Post,
   Res,
   Logger,
-  UnauthorizedException,
   Query,
   Body,
   HttpCode,
-  BadRequestException
+  BadRequestException,
+  Headers,
+  Req
 } from "@nestjs/common"
-import {Response} from "express"
+import {Response, Request} from "express"
 import {AuthService, GenerateChallengeRequest} from "@services"
 import {isLeft} from "fp-ts/lib/Either"
 import * as TE from "fp-ts/TaskEither"
@@ -23,7 +24,8 @@ import {
   FailedAuthResponse,
   AgentChallengeRequest,
   AgentChallengeResponse,
-  AgentTokenResponse
+  AgentTokenResponse,
+  RefreshTokenRequest
 } from "@approvio/api"
 import {
   mapAgentChallengeRequestToService,
@@ -37,6 +39,17 @@ import {
 import {pipe} from "fp-ts/lib/function"
 import {AuthenticatedEntity} from "@domain"
 import {generateErrorPayload} from "@controllers/error"
+import {
+  validateGenerateTokenRequest,
+  validateRefreshAgentTokenRequest,
+  validateRefreshTokenRequest
+} from "./auth.validators"
+import {
+  generateErrorResponseForGenerateToken,
+  generateErrorResponseForRefreshAgentToken,
+  generateErrorResponseForRefreshUserToken,
+  mapToTokenResponse
+} from "./auth.mappers"
 
 /**
  * ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -147,22 +160,22 @@ export class AuthController {
   @PublicRoute()
   @Post("token")
   async generateToken(@Body() body: TokenRequest): Promise<TokenResponse> {
-    if (!body) throw new UnauthorizedException("Missing required parameters")
+    const runOidcLogin = (req: TokenRequest) => this.authService.completeOidcLogin(req.code, req.state)
 
-    const {code, state} = body
-
-    if (!code || !state) throw new UnauthorizedException("Missing required parameters")
-
-    Logger.verbose(`Generating token for code: ${code} and state: ${state}`)
-
-    const result = await this.authService.completeOidcLogin(code, state)()
+    const result = await pipe(
+      body,
+      TE.right,
+      TE.chainW(raw => TE.fromEither(validateGenerateTokenRequest(raw))),
+      TE.chainW(validated => runOidcLogin(validated)),
+      TE.map(mapToTokenResponse)
+    )()
 
     if (isLeft(result)) {
       Logger.error("OIDC login completion failed", result.left)
-      throw new UnauthorizedException("Failed to generate token")
+      throw generateErrorResponseForGenerateToken(result.left, "Failed to generate token")
     }
 
-    return {token: result.right}
+    return result.right
   }
 
   @PublicRoute()
@@ -221,12 +234,65 @@ export class AuthController {
       validateRequest,
       TE.fromEither,
       TE.map(extractAssertion),
-      TE.chainW(exchangeToken)
+      TE.chainW(exchangeToken),
+      TE.map(mapTokenToApiResponse)
     )()
 
     if (isLeft(result))
       throw generateErrorResponseForAgentTokenExchange(result.left, "Failed to exchange JWT assertion for token")
 
-    return mapTokenToApiResponse(result.right)
+    return result.right
+  }
+
+  @PublicRoute()
+  @Post("refresh")
+  @HttpCode(200)
+  async refreshUserToken(@Body() body: RefreshTokenRequest): Promise<TokenResponse> {
+    const refreshUserToken = (refreshToken: string) => this.authService.refreshTokenForUser(refreshToken)
+
+    const result = await pipe(
+      body,
+      TE.right,
+      TE.chainW(rawBody => TE.fromEither(validateRefreshTokenRequest(rawBody))),
+      TE.chainW(validatedBody => refreshUserToken(validatedBody.refreshToken)),
+      TE.map(serviceResult => mapToTokenResponse(serviceResult))
+    )()
+
+    if (isLeft(result)) {
+      Logger.error("User token refresh failed", result.left)
+      throw generateErrorResponseForRefreshUserToken(result.left, "Failed to refresh token")
+    }
+
+    return result.right
+  }
+
+  @PublicRoute()
+  @Post("agents/refresh")
+  @HttpCode(200)
+  async refreshAgentToken(
+    @Body() body: RefreshTokenRequest,
+    @Headers("DPoP") dpop: string,
+    @Req() request: Request
+  ): Promise<TokenResponse> {
+    const refreshAgentToken = (refreshToken: string, dpopJkt: string) =>
+      this.authService.refreshTokenForAgent(refreshToken, dpopJkt, {
+        expectedMethod: "POST",
+        expectedUrl: `${request.protocol}://${request.get("host") ?? ""}${request.originalUrl}`
+      })
+
+    const result = await pipe(
+      body,
+      TE.right,
+      TE.chainW(rawBody => TE.fromEither(validateRefreshAgentTokenRequest(rawBody, dpop))),
+      TE.chainW(validatedBody => refreshAgentToken(validatedBody.refreshToken, validatedBody.dpopJkt)),
+      TE.map(serviceResult => mapToTokenResponse(serviceResult))
+    )()
+
+    if (isLeft(result)) {
+      Logger.error("Agent token refresh failed", result.left)
+      throw generateErrorResponseForRefreshAgentToken(result.left, "Failed to refresh token")
+    }
+
+    return result.right
   }
 }

@@ -11,11 +11,15 @@ import {AgentFactory, AgentWithPrivateKey} from "@domain"
 import {AgentChallengeRequest} from "@approvio/api"
 import {JwtService} from "@nestjs/jwt"
 
-import {constants, privateDecrypt, sign} from "crypto"
+import {constants, privateDecrypt, sign, randomUUID} from "crypto"
+import * as jose from "jose"
 import "expect-more-jest"
 import "@utils/matchers"
 import {isLeft} from "fp-ts/lib/Either"
 import {JwtAssertionTokenRequest} from "@controllers/auth/agent-auth.mappers"
+import {createMockRefreshTokenInDb} from "@test/mock-data"
+import {RefreshTokenStatus, GRACE_PERIOD_SECONDS} from "@domain"
+import {createSha256Hash} from "@utils"
 
 describe("Agent Authentication Integration", () => {
   let app: INestApplication
@@ -370,11 +374,13 @@ describe("Agent Authentication Integration", () => {
 
           // Expect
           expect(response).toHaveStatusCode(200)
-          expect(response.body).toHaveProperty("token")
-          expect(typeof response.body.token).toBe("string")
+          expect(response.body).toMatchObject({
+            accessToken: expect.toBeVisibleString(),
+            refreshToken: expect.toBeVisibleString()
+          })
 
           // Verify JWT token content
-          const decodedToken = jwtService.decode(response.body.token) as Record<string, unknown>
+          const decodedToken = jwtService.decode(response.body.accessToken) as Record<string, unknown>
           expect(decodedToken).toHaveProperty("sub", testAgent.agentName)
           expect(decodedToken).toHaveProperty("entityType", "agent")
           expect(decodedToken).toHaveProperty("name", testAgent.agentName)
@@ -392,7 +398,7 @@ describe("Agent Authentication Integration", () => {
           // Verify token can be used to authenticate
           const infoResponse = await supertest(app.getHttpServer())
             .get("/auth/info")
-            .set("Authorization", `Bearer ${response.body.token}`)
+            .set("Authorization", `Bearer ${response.body.accessToken}`)
 
           expect(infoResponse).toHaveStatusCode(200)
           expect(infoResponse.body).toHaveProperty("entityType", "agent")
@@ -415,12 +421,171 @@ describe("Agent Authentication Integration", () => {
 
           // Expect
           expect(response).toHaveStatusCode(200)
-          expect(response.body).toHaveProperty("token")
-          expect(typeof response.body.token).toBe("string")
+          expect(response.body).toMatchObject({
+            accessToken: expect.toBeVisibleString(),
+            refreshToken: expect.toBeVisibleString()
+          })
 
           // Verify JWT token content matches
-          const decodedToken = jwtService.decode(response.body.token) as Record<string, unknown>
+          const decodedToken = jwtService.decode(response.body.accessToken) as Record<string, unknown>
           expect(decodedToken).toHaveProperty("name", testAgent.agentName)
+        })
+      })
+
+      describe("POST /auth/agents/refresh", () => {
+        const refreshEndpoint = "/auth/agents/refresh"
+        const host = "localhost:3000"
+        const expectedHtu = `http://${host}${refreshEndpoint}`
+
+        const createDpopJwt = async (
+          privateKeyPem: string,
+          publicKeyPem: string,
+          payload: jose.JWTPayload
+        ): Promise<string> => {
+          const privateKey = await jose.importPKCS8(privateKeyPem, "RS256")
+          const publicKey = await jose.importSPKI(publicKeyPem, "RS256")
+          const jwk = await jose.exportJWK(publicKey)
+
+          return await new jose.SignJWT(payload)
+            .setProtectedHeader({
+              alg: "RS256",
+              typ: "dpop+jwt",
+              jwk: jwk
+            })
+            .setIssuedAt()
+            .setJti(randomUUID())
+            .sign(privateKey)
+        }
+
+        const setupAgentWithRefreshToken = async (
+          expiresInSeconds = 3600,
+          status: "active" | "used" | "revoked" = "active",
+          createdAt = new Date()
+        ) => {
+          return await createMockRefreshTokenInDb(prisma, {
+            agentId: testAgent.id,
+            status,
+            expiresInSeconds,
+            createdAt
+          })
+        }
+
+        it("should return new tokens for valid refresh token and DPoP", async () => {
+          // Given: Agent with active refresh token
+          const {plainToken, tokenId} = await setupAgentWithRefreshToken()
+
+          // Create valid DPoP
+          const dpopJwt = await createDpopJwt(testAgent.privateKey, testAgent.publicKey, {
+            htm: "POST",
+            htu: expectedHtu
+          })
+
+          // When: Requesting refresh
+          const response = await supertest(app.getHttpServer())
+            .post(refreshEndpoint)
+            .set("Host", host)
+            .set("DPoP", dpopJwt)
+            .send({refreshToken: plainToken})
+
+          // Expect
+          expect(response).toHaveStatusCode(HttpStatus.OK)
+          expect(response.body).toMatchObject({
+            accessToken: expect.toBeString(),
+            refreshToken: expect.toBeString()
+          })
+          expect(response.body.refreshToken).not.toBe(plainToken)
+
+          // Verify token became used
+          const usedToken = await prisma.refreshToken.findUnique({where: {id: tokenId}})
+          expect(usedToken?.status).toBe(RefreshTokenStatus.USED)
+        })
+
+        it("should return 400/401 when DPoP is invalid", async () => {
+          // Given: Agent with active refresh token
+          const {plainToken} = await setupAgentWithRefreshToken()
+
+          // Create DPoP signed with WRONG key
+          const otherKey = await jose.generateKeyPair("RS256", {extractable: true})
+          const otherPrivateKeyPem = await jose.exportPKCS8(otherKey.privateKey)
+          const dpopJwt = await createDpopJwt(otherPrivateKeyPem, testAgent.publicKey, {
+            htm: "POST",
+            htu: expectedHtu
+          })
+
+          // When: Requesting refresh
+          const response = await supertest(app.getHttpServer())
+            .post(refreshEndpoint)
+            .set("Host", host)
+            .set("DPoP", dpopJwt)
+            .send({refreshToken: plainToken})
+
+          // Expect
+          expect(response).not.toHaveStatusCode(HttpStatus.OK)
+          expect(response.body).toHaveErrorCode("DPOP_INVALID_SIGNATURE")
+        })
+
+        it("should return 400 for expired refresh token", async () => {
+          // Given: Expired token
+          const createdAt = new Date(Date.now() - 7200 * 1000)
+          const {plainToken} = await setupAgentWithRefreshToken(3600, "active", createdAt)
+
+          // DPoP
+          const dpopJwt = await createDpopJwt(testAgent.privateKey, testAgent.publicKey, {
+            htm: "POST",
+            htu: expectedHtu
+          })
+
+          // When
+          const response = await supertest(app.getHttpServer())
+            .post(refreshEndpoint)
+            .set("Host", host)
+            .set("DPoP", dpopJwt)
+            .send({refreshToken: plainToken})
+
+          // Expect
+          expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+          expect(response.body).toHaveErrorCode("REFRESH_TOKEN_EXPIRED")
+        })
+
+        it("should return 409 and revoke family for used refresh token (Reuse Detection)", async () => {
+          // Given: Used token outside grace period
+          const createdAt = new Date(Date.now() - (GRACE_PERIOD_SECONDS + 1) * 1000)
+          const {plainToken, familyId} = await setupAgentWithRefreshToken(3600, "used", createdAt)
+
+          // Create another active token in same family to verify revocation
+          await prisma.refreshToken.create({
+            data: {
+              id: randomUUID(),
+              tokenHash: createSha256Hash("sibling-token"),
+              familyId: familyId,
+              agentId: testAgent.id,
+              status: "active",
+              expiresAt: new Date(Date.now() + 3600000),
+              createdAt: new Date(),
+              occ: BigInt(0)
+            }
+          })
+
+          // DPoP
+          const dpopJwt = await createDpopJwt(testAgent.privateKey, testAgent.publicKey, {
+            htm: "POST",
+            htu: expectedHtu
+          })
+
+          // When
+          const response = await supertest(app.getHttpServer())
+            .post(refreshEndpoint)
+            .set("Host", host)
+            .set("DPoP", dpopJwt)
+            .send({refreshToken: plainToken})
+
+          // Expect
+          expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
+          expect(response.body).toHaveErrorCode("REFRESH_TOKEN_REUSE_DETECTED")
+
+          // Expect family revocation
+          const family = await prisma.refreshToken.findMany({where: {familyId}})
+          expect(family?.every(token => token.status === RefreshTokenStatus.REVOKED)).toBe(true)
         })
       })
     })

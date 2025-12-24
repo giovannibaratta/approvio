@@ -1,15 +1,22 @@
 import {Injectable, Inject, Logger} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
-import {UserService, AutoRegisterOidcUserRequest, AutoRegisterError} from "../user/user.service"
-import {OrganizationAdminCreateError} from "../organization-admin/interfaces"
+import {UserService, AutoRegisterOidcUserRequest} from "../user/user.service"
 import {PkceService} from "./pkce.service"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
 import {UserGetError} from "../user/interfaces"
-import {PrefixUnion} from "@utils"
 import {ConfigProvider} from "@external/config/config-provider"
-import {Agent, AgentChallenge, AgentChallengeFactory, DecoratedAgentChallenge, User} from "@domain"
+import {
+  Agent,
+  AgentChallenge,
+  AgentChallengeFactory,
+  DecoratedAgentChallenge,
+  User,
+  RefreshTokenFactory,
+  canTokenBeRefreshed,
+  RefreshToken
+} from "@domain"
 import {
   OIDC_PROVIDER_TOKEN,
   OidcProvider,
@@ -19,34 +26,28 @@ import {
   OidcUserInfo,
   PkceData,
   PkceChallenge,
-  PkceError,
   AGENT_CHALLENGE_REPOSITORY_TOKEN,
   AgentChallengeRepository,
   AgentChallengeCreateError,
-  AgentTokenError
+  AgentTokenError,
+  REFRESH_TOKEN_REPOSITORY_TOKEN,
+  RefreshTokenRepository,
+  RefreshTokenRefreshError,
+  TokenPair,
+  RefreshTokenCreateError,
+  AuthError
 } from "./interfaces"
 import {TokenPayloadBuilder} from "./auth-token"
 import {AgentService} from "@services/agent"
+import {createSha256Hash, validateDpopJwt} from "@utils"
+
+const ACCESS_TOKEN_EXPIRY_SECONDS = 60 * 60 // 1 hour
 
 export interface OidcUser {
   oidcSubjectId: string
   email: string
   displayName?: string
 }
-
-export type AuthError =
-  | PrefixUnion<
-      "auth",
-      | "user_not_found_in_system"
-      | "token_generation_failed"
-      | "authorization_url_generation_failed"
-      | "missing_email_from_oidc_provider"
-    >
-  | UserGetError
-  | AutoRegisterError
-  | OrganizationAdminCreateError
-  | OidcError
-  | PkceError
 
 @Injectable()
 export class AuthService {
@@ -62,7 +63,9 @@ export class AuthService {
     private readonly oidcClient: OidcProvider,
     @Inject(AGENT_CHALLENGE_REPOSITORY_TOKEN)
     private readonly challengeRepo: AgentChallengeRepository,
-    private readonly agentService: AgentService
+    private readonly agentService: AgentService,
+    @Inject(REFRESH_TOKEN_REPOSITORY_TOKEN)
+    private readonly refreshTokenRepo: RefreshTokenRepository
   ) {
     const {audience, issuer} = this.configProvider.jwtConfig
 
@@ -76,7 +79,7 @@ export class AuthService {
         const tokenPayload = TokenPayloadBuilder.fromUser(user, {
           issuer: this.issuer,
           audience: [this.audience],
-          expiresInSeconds: 60 * 60 // 1 hour
+          expiresInSeconds: ACCESS_TOKEN_EXPIRY_SECONDS
         })
 
         const token = this.jwtService.sign(tokenPayload)
@@ -147,7 +150,10 @@ export class AuthService {
     )
   }
 
-  private authenticateWithOidc(code: string, pkceData: PkceData): TaskEither<AuthError, string> {
+  private authenticateWithOidc(
+    code: string,
+    pkceData: PkceData
+  ): TaskEither<AuthError | RefreshTokenCreateError, TokenPair> {
     const mapUserInfoToOidcUser = (userInfo: OidcUserInfo): TE.TaskEither<AuthError, OidcUser> => {
       if (!userInfo.email) {
         Logger.warn("OIDC provider did not return email claim")
@@ -168,7 +174,18 @@ export class AuthService {
       TE.chainW(tokenResponse => this.getUserInfoFromProvider(tokenResponse.access_token)),
       TE.chainW(mapUserInfoToOidcUser),
       TE.chainW(oidcUser => this.authenticateOrRegisterOidcUser(oidcUser)),
-      TE.chainW(user => this.generateJwtToken(user))
+      TE.chainW(user =>
+        pipe(
+          TE.Do,
+          TE.bindW("accessToken", () => this.generateJwtToken(user)),
+          TE.bindW("refreshToken", () => TE.fromEither(RefreshTokenFactory.createForUser(user))),
+          TE.chainFirstW(({refreshToken}) => this.refreshTokenRepo.createToken(refreshToken)),
+          TE.map(({accessToken, refreshToken}) => ({
+            accessToken,
+            refreshToken: refreshToken.tokenValue as string
+          }))
+        )
+      )
     )
   }
 
@@ -219,7 +236,7 @@ export class AuthService {
     )
   }
 
-  completeOidcLogin(code: string, state: string): TaskEither<AuthError, string> {
+  completeOidcLogin(code: string, state: string): TaskEither<AuthError | RefreshTokenCreateError, TokenPair> {
     return pipe(
       this.pkceService.retrieveAndConsumePkceData(state),
       TE.chainW(pkceData => this.authenticateWithOidc(code, pkceData))
@@ -253,7 +270,7 @@ export class AuthService {
         const tokenPayload = TokenPayloadBuilder.fromAgent(agent, {
           issuer: this.issuer,
           audience: [this.audience],
-          expiresInSeconds: 60 * 60 // 1 hour
+          expiresInSeconds: ACCESS_TOKEN_EXPIRY_SECONDS
         })
 
         const token = this.jwtService.sign(tokenPayload)
@@ -267,7 +284,7 @@ export class AuthService {
     )
   }
 
-  exchangeJwtAssertionForToken(jwtAssertion: string): TaskEither<AgentTokenError, string> {
+  exchangeJwtAssertionForToken(jwtAssertion: string): TaskEither<AgentTokenError | RefreshTokenCreateError, TokenPair> {
     // Marks the challenge as used in the database to prevent replay attacks
     const markChallengeAsUsed = (challenge: DecoratedAgentChallenge<{occ: true}>) => {
       return pipe(
@@ -298,7 +315,110 @@ export class AuthService {
       // Mark challenge as used
       TE.chainFirstW(({truthChallenge}) => markChallengeAsUsed(truthChallenge)),
       // Generate access token
-      TE.chainW(({agent}) => generateToken(agent))
+      TE.bindW("accessToken", ({agent}) => generateToken(agent)),
+      TE.bindW("refreshToken", ({agent}) => TE.fromEither(RefreshTokenFactory.createForAgent(agent))),
+      TE.chainFirstW(({refreshToken}) => this.refreshTokenRepo.createToken(refreshToken)),
+      TE.map(({accessToken, refreshToken}) => ({
+        accessToken,
+        refreshToken: refreshToken.tokenValue
+      }))
+    )
+  }
+
+  /**
+   * Refresh access token for a user using refresh token
+   */
+  refreshTokenForUser(refreshTokenValue: string): TaskEither<RefreshTokenRefreshError, TokenPair> {
+    const tokenHash = createSha256Hash(refreshTokenValue)
+
+    return pipe(
+      TE.Do,
+      TE.bindW("refreshTimestamp", () => TE.right(new Date())),
+      TE.bindW("storedToken", () => this.refreshTokenRepo.getByTokenHash(tokenHash)),
+      TE.bindW("oldTokenTyped", ({storedToken}) => {
+        if (!RefreshTokenFactory.isUserToken(storedToken)) return TE.left("refresh_token_entity_mismatch" as const)
+        return TE.right(storedToken)
+      }),
+      TE.chainFirstW(({refreshTimestamp, oldTokenTyped}) =>
+        this.validateTokenRefreshEligibilityOrRevoke(oldTokenTyped, refreshTimestamp)
+      ),
+      TE.bindW("user", ({oldTokenTyped}) => this.userService.getUserByIdentifier(oldTokenTyped.userId)),
+      TE.bindW("newAccessToken", ({user}) => this.generateJwtToken(user)),
+      TE.bindW("refreshedToken", ({user, oldTokenTyped}) =>
+        TE.fromEither(RefreshTokenFactory.createForUser(user, oldTokenTyped.familyId))
+      ),
+      TE.bindW("usedToken", ({oldTokenTyped, refreshedToken}) =>
+        TE.fromEither(RefreshTokenFactory.markAsUsedForUser(oldTokenTyped, refreshedToken.id))
+      ),
+      TE.chainFirstW(({refreshedToken, usedToken, oldTokenTyped}) =>
+        this.refreshTokenRepo.persistNewTokenUpdateOldForUser(refreshedToken, usedToken, oldTokenTyped.occ)
+      ),
+      // Return token pair
+      TE.map(({newAccessToken, refreshedToken}) => ({
+        accessToken: newAccessToken,
+        refreshToken: refreshedToken.tokenValue
+      }))
+    )
+  }
+
+  /**
+   * Refresh access token for an agent using refresh token (with DPoP validation)
+   */
+  refreshTokenForAgent(
+    refreshTokenValue: string,
+    dpopJkt: string,
+    jwtValidationProps: {expectedMethod: string; expectedUrl: string}
+  ): TaskEither<RefreshTokenRefreshError, TokenPair> {
+    const tokenHash = createSha256Hash(refreshTokenValue)
+
+    return pipe(
+      TE.Do,
+      TE.bindW("refreshTimestamp", () => TE.right(new Date())),
+      TE.bindW("storedToken", () => this.refreshTokenRepo.getByTokenHash(tokenHash)),
+      TE.bindW("oldTokenTyped", ({storedToken}) => {
+        if (!RefreshTokenFactory.isAgentToken(storedToken)) return TE.left("refresh_token_entity_mismatch" as const)
+        return TE.right(storedToken)
+      }),
+      TE.chainFirstW(({refreshTimestamp, oldTokenTyped}) =>
+        this.validateTokenRefreshEligibilityOrRevoke(oldTokenTyped, refreshTimestamp)
+      ),
+      TE.bindW("agent", ({oldTokenTyped}) => this.agentService.getAgentById(oldTokenTyped.agentId)),
+      TE.chainFirstW(({agent}) => validateDpopJwt(dpopJkt, agent.publicKey, jwtValidationProps)),
+      TE.bindW("newAccessToken", ({agent}) => this.generateJwtTokenForAgent(agent)),
+      TE.bindW("refreshedToken", ({agent, oldTokenTyped}) =>
+        TE.fromEither(RefreshTokenFactory.createForAgent(agent, oldTokenTyped.familyId))
+      ),
+      TE.bindW("usedToken", ({refreshedToken, oldTokenTyped}) =>
+        TE.fromEither(RefreshTokenFactory.markAsUsedForAgent(oldTokenTyped, refreshedToken.id))
+      ),
+      TE.chainFirstW(({refreshedToken, usedToken, oldTokenTyped}) =>
+        this.refreshTokenRepo.persistNewTokenUpdateOldForAgent(refreshedToken, usedToken, oldTokenTyped.occ)
+      ),
+      TE.map(({newAccessToken, refreshedToken}) => ({
+        accessToken: newAccessToken,
+        refreshToken: refreshedToken.tokenValue
+      }))
+    )
+  }
+
+  private validateTokenRefreshEligibilityOrRevoke(
+    oldTokenTyped: RefreshToken,
+    refreshTimestamp: Date
+  ): TaskEither<RefreshTokenRefreshError, true> {
+    return pipe(
+      canTokenBeRefreshed(oldTokenTyped, refreshTimestamp),
+      TE.fromEither,
+      TE.orElseW(error => {
+        if (error !== "refresh_token_reuse_detected") return TE.left(error)
+
+        Logger.warn(`Reuse detection: Revoking token family ${oldTokenTyped.familyId}`)
+        return pipe(
+          this.refreshTokenRepo.revokeFamily(oldTokenTyped.familyId),
+          // Even if the revoke operation is successful, we still want to return the error
+          // as the overall operation
+          TE.chainW(() => TE.left(error))
+        )
+      })
     )
   }
 }
