@@ -78,11 +78,10 @@ export class AuthService {
       async () => {
         const tokenPayload = TokenPayloadBuilder.fromUser(user, {
           issuer: this.issuer,
-          audience: [this.audience],
-          expiresInSeconds: ACCESS_TOKEN_EXPIRY_SECONDS
+          audience: [this.audience]
         })
 
-        const token = this.jwtService.sign(tokenPayload)
+        const token = this.jwtService.sign(tokenPayload, {expiresIn: ACCESS_TOKEN_EXPIRY_SECONDS})
         Logger.log(`JWT token generated for user: ${user.id}`)
         return token
       },
@@ -182,7 +181,7 @@ export class AuthService {
           TE.chainFirstW(({refreshToken}) => this.refreshTokenRepo.createToken(refreshToken)),
           TE.map(({accessToken, refreshToken}) => ({
             accessToken,
-            refreshToken: refreshToken.tokenValue as string
+            refreshToken: refreshToken.tokenValue
           }))
         )
       )
@@ -269,11 +268,10 @@ export class AuthService {
       async () => {
         const tokenPayload = TokenPayloadBuilder.fromAgent(agent, {
           issuer: this.issuer,
-          audience: [this.audience],
-          expiresInSeconds: ACCESS_TOKEN_EXPIRY_SECONDS
+          audience: [this.audience]
         })
 
-        const token = this.jwtService.sign(tokenPayload)
+        const token = this.jwtService.sign(tokenPayload, {expiresIn: ACCESS_TOKEN_EXPIRY_SECONDS})
         Logger.log(`JWT token generated for agent: ${agent.agentName}`)
         return token
       },

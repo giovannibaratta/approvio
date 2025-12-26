@@ -118,16 +118,11 @@ export class TokenPayloadBuilder {
     orgRole?: OrgRole
     issuer: string
     audience: string[]
-    expiresInSeconds?: number
-    notBeforeSeconds?: number
   }): TokenPayloadForSigning {
-    const now = Math.floor(Date.now() / 1000)
-
     return {
       iss: data.issuer,
       sub: data.sub,
       aud: data.audience,
-      ...(data.notBeforeSeconds !== undefined && {nbf: now + data.notBeforeSeconds}),
 
       // IANA registered claims
       email: data.email,
@@ -150,8 +145,6 @@ export class TokenPayloadBuilder {
     options: {
       issuer: string
       audience: string[]
-      expiresInSeconds?: number
-      notBeforeSeconds?: number
     }
   ): TokenPayloadForSigning {
     return TokenPayloadBuilder.from({
@@ -161,9 +154,7 @@ export class TokenPayloadBuilder {
       email: user.email,
       orgRole: user.orgRole,
       issuer: options.issuer,
-      audience: options.audience,
-      expiresInSeconds: options?.expiresInSeconds,
-      notBeforeSeconds: options?.notBeforeSeconds
+      audience: options.audience
     })
   }
 
@@ -178,8 +169,6 @@ export class TokenPayloadBuilder {
     options: {
       issuer: string
       audience: string[]
-      expiresInSeconds?: number
-      notBeforeSeconds?: number
     }
   ): TokenPayloadForSigning {
     return TokenPayloadBuilder.from({
@@ -188,9 +177,7 @@ export class TokenPayloadBuilder {
       displayName: agent.agentName,
       // Agents don't have email
       issuer: options.issuer,
-      audience: options.audience,
-      expiresInSeconds: options?.expiresInSeconds,
-      notBeforeSeconds: options?.notBeforeSeconds
+      audience: options.audience
     })
   }
 }
