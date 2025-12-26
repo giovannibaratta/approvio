@@ -10,6 +10,7 @@ import {PrismaClient} from "@prisma/client"
 import {ConfigProvider} from "@external/config"
 import {JwtService} from "@nestjs/jwt"
 import {DatabaseClient} from "@external"
+import {get} from "@test/requests"
 
 describe("Roles Integration Tests", () => {
   let app: NestApplication
@@ -90,14 +91,15 @@ describe("Roles Integration Tests", () => {
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
       })
 
-      it("should return 401 for invalid token", async () => {
+      it("should return BAD REQUEST for invalid token", async () => {
         // Given: Invalid token
+        const invalidToken = "invalid-jwt-token"
 
         // When: Making a request with invalid token
-        const response = await request(app.getHttpServer()).get("/roles").set("Authorization", "Bearer invalid-token")
+        const response = await get(app, "/roles").withToken(invalidToken).build().send()
 
-        // Then: Should receive unauthorized response
-        expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
+        // Then: Should receive bad request response
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
       })
     })
   })

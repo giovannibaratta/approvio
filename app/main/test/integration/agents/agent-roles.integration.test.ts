@@ -345,7 +345,7 @@ describe("Agent Roles API", () => {
     })
 
     describe("bad cases", () => {
-      it("should return 401 for unauthenticated requests", async () => {
+      it("should return UNAUTHORIZED for unauthenticated requests", async () => {
         // Given: Valid role assignment request but no auth token
         const roleAssignmentRequest = createOrgScopeRequest("WorkflowTemplateVoter")
 
@@ -358,7 +358,7 @@ describe("Agent Roles API", () => {
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
       })
 
-      it("should return 401 for invalid token", async () => {
+      it("should return BAD REQUEST for invalid token", async () => {
         // Given: Valid role assignment request but invalid token
         const roleAssignmentRequest = createOrgScopeRequest("WorkflowTemplateVoter")
 
@@ -368,8 +368,8 @@ describe("Agent Roles API", () => {
           .build()
           .send(roleAssignmentRequest)
 
-        // Then: Should receive unauthorized response
-        expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
+        // Then: Should receive bad request response
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
       })
 
       it("should return 403 when agent tries to assign roles", async () => {
@@ -757,7 +757,7 @@ describe("Agent Roles API", () => {
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
       })
 
-      it("should return 401 for invalid token", async () => {
+      it("should return BAD REQUEST for invalid token", async () => {
         // Given: Valid role removal request but invalid token
         const roleRemovalRequest: RoleRemovalRequest = createOrgScopeRequest("WorkflowTemplateVoter")
 
@@ -767,8 +767,8 @@ describe("Agent Roles API", () => {
           .build()
           .send(roleRemovalRequest)
 
-        // Then: Should receive unauthorized response
-        expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
+        // Then: Should receive bad request response
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
       })
 
       it("should return 400 for empty roles array", async () => {

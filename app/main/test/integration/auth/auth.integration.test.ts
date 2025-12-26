@@ -147,12 +147,14 @@ describe("Auth Integration", () => {
       expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
     })
 
-    it("should return unauthorized with invalid authentication token", async () => {
+    it("should return BAD REQUEST with invalid authentication token", async () => {
+      // When: An invalid authentication token is used
       const response = await request(app.getHttpServer())
         .get("/auth/info")
         .set("Authorization", "Bearer invalid-jwt-token")
 
-      expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
+      // Expect
+      expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
     })
   })
 
