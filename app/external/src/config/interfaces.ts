@@ -25,6 +25,7 @@ export interface JwtConfig {
   trustedIssuers: [string, ...string[]]
   issuer: string
   audience: string
+  accessTokenExpirationSec?: number
 }
 
 export interface RedisConfig {

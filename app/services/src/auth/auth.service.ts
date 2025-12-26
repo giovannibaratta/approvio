@@ -53,6 +53,7 @@ export interface OidcUser {
 export class AuthService {
   private readonly audience: string
   private readonly issuer: string
+  private readonly accessTokenExpirationSec: number
 
   constructor(
     private readonly jwtService: JwtService,
@@ -67,10 +68,11 @@ export class AuthService {
     @Inject(REFRESH_TOKEN_REPOSITORY_TOKEN)
     private readonly refreshTokenRepo: RefreshTokenRepository
   ) {
-    const {audience, issuer} = this.configProvider.jwtConfig
+    const {audience, issuer, accessTokenExpirationSec} = this.configProvider.jwtConfig
 
     this.audience = audience
     this.issuer = issuer
+    this.accessTokenExpirationSec = accessTokenExpirationSec ?? ACCESS_TOKEN_EXPIRY_SECONDS
   }
 
   generateJwtToken(user: User): TaskEither<AuthError, string> {
@@ -81,7 +83,7 @@ export class AuthService {
           audience: [this.audience]
         })
 
-        const token = this.jwtService.sign(tokenPayload, {expiresIn: ACCESS_TOKEN_EXPIRY_SECONDS})
+        const token = this.jwtService.sign(tokenPayload, {expiresIn: this.accessTokenExpirationSec})
         Logger.log(`JWT token generated for user: ${user.id}`)
         return token
       },
@@ -271,7 +273,7 @@ export class AuthService {
           audience: [this.audience]
         })
 
-        const token = this.jwtService.sign(tokenPayload, {expiresIn: ACCESS_TOKEN_EXPIRY_SECONDS})
+        const token = this.jwtService.sign(tokenPayload, {expiresIn: this.accessTokenExpirationSec})
         Logger.log(`JWT token generated for agent: ${agent.agentName}`)
         return token
       },

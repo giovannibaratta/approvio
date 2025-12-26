@@ -130,6 +130,7 @@ export class ConfigProvider implements ConfigProviderInterface {
     const trustedIssuersEnv = process.env.JWT_TRUSTED_ISSUERS
     const issuerEnv = process.env.JWT_ISSUER
     const audienceEnv = process.env.JWT_AUDIENCE
+    const accessTokenExpirationSecRaw = process.env.JWT_ACCESS_TOKEN_EXPIRATION_SEC
 
     if (!jwtSecret) throw new Error("JWT_SECRET is not defined")
     if (jwtSecret.length === 0) throw new Error("JWT_SECRET cannot be empty")
@@ -148,11 +149,21 @@ export class ConfigProvider implements ConfigProviderInterface {
 
     if (audienceEnv === undefined || audienceEnv.length <= 0) throw new Error("JWT_AUDIENCE is not defined")
 
+    let accessTokenExpirationSec: number | undefined
+
+    if (accessTokenExpirationSecRaw !== undefined) {
+      accessTokenExpirationSec = parseInt(accessTokenExpirationSecRaw, 10)
+
+      if (isNaN(accessTokenExpirationSec)) throw new Error("JWT_ACCESS_TOKEN_EXPIRATION_SEC must be a valid number")
+      if (accessTokenExpirationSec <= 0) throw new Error("JWT_ACCESS_TOKEN_EXPIRATION_SEC must be greater than 0")
+    }
+
     return {
       secret: jwtSecret,
       trustedIssuers,
       issuer: issuerEnv,
-      audience: audienceEnv
+      audience: audienceEnv,
+      accessTokenExpirationSec
     }
   }
 
