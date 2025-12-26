@@ -215,7 +215,6 @@ describe("Auth Integration", () => {
       expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
       expect(response.body).toHaveErrorCode("REFRESH_TOKEN_REUSE_DETECTED")
 
-      // TODO: Verify Family Revocation: All tokens in family should be REVOKED
       // Expect: The family is marked as revoked
       const family = await prisma.refreshToken.findMany({where: {familyId}})
       expect(family?.every(token => token.status === RefreshTokenStatus.REVOKED)).toBe(true)
