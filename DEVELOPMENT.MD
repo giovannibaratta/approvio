@@ -45,7 +45,7 @@ yarn db:migrate
 yarn db:update-schema
 
 # Start development server
-yarn start:dev
+yarn start:backend:dev
 ```
 
 ### Testing

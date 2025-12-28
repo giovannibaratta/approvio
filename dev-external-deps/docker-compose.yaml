@@ -1,5 +1,3 @@
-version: "3.8"
-
 volumes:
   # Ephemeral volume used to store Mailpit self-signed TLS certificates
   mailpit_certs_test:
