@@ -133,6 +133,15 @@ services:
   oidc-server-mock-dev:
     profiles: [dev]
     image: ghcr.io/soluto/oidc-server-mock:latest
+    # Force platform to avoid issues with arm64
+    platform: linux/amd64
+    healthcheck:
+      # Health checks doesn't seem to work as expected
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 2s
+      timeout: 10s
+      retries: 5
+      start_period: 5s
     ports:
       - "4010:8080"
     environment:
@@ -198,6 +207,15 @@ services:
   oidc-server-mock-test:
     profiles: [test]
     image: ghcr.io/soluto/oidc-server-mock:latest
+    # Force platform to avoid issues with arm64
+    platform: linux/amd64
+    healthcheck:
+      # Health checks doesn't seem to work as expected
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/health"]
+      interval: 2s
+      timeout: 10s
+      retries: 5
+      start_period: 5s
     ports:
       - "4011:8080"
     environment:
