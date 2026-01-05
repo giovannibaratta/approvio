@@ -5,7 +5,7 @@ import {
   RoleRemovalRequest
 } from "@approvio/api"
 import {GetAuthenticatedEntity} from "@app/auth"
-import {Body, Controller, Delete, HttpCode, HttpStatus, Param, Post, Put, Res} from "@nestjs/common"
+import {Body, Controller, Delete, HttpCode, HttpStatus, Logger, Param, Post, Put, Res} from "@nestjs/common"
 import {
   AgentService,
   RegisterAgentRequest,
@@ -50,7 +50,13 @@ export class AgentsController {
       {agentData: request, requestor: entity},
       agentRegistrationApiToServiceModel,
       TE.fromEither,
-      TE.chainW(serviceRegisterAgent)
+      TE.chainW(serviceRegisterAgent),
+      TE.chainFirstW(() =>
+        TE.fromIO(() => {
+          Logger.log(`Agent ${request.agentName} registered successfully`)
+        })
+      ),
+      TE.orElseFirstW(error => TE.fromIO(() => Logger.warn(`Failed to register agent ${request.agentName}: ${error}`)))
     )()
 
     if (isLeft(eitherAgent)) throw generateErrorResponseForRegisterAgent(eitherAgent.left, "Failed to register agent")
