@@ -25,7 +25,8 @@ import {
   AgentChallengeRequest,
   AgentChallengeResponse,
   AgentTokenResponse,
-  RefreshTokenRequest
+  RefreshTokenRequest,
+  AgentTokenRequest
 } from "@approvio/api"
 import {
   mapAgentChallengeRequestToService,
@@ -33,8 +34,8 @@ import {
   mapTokenToApiResponse,
   generateErrorResponseForChallengeRequest,
   generateErrorResponseForAgentTokenExchange,
-  JwtAssertionTokenRequest,
-  validateJwtAssertionTokenRequest
+  validateAgentTokenRequest,
+  validateAgentChallengeRequest
 } from "./agent-auth.mappers"
 import {pipe} from "fp-ts/lib/function"
 import {AuthenticatedEntity} from "@domain"
@@ -205,13 +206,14 @@ export class AuthController {
   @PublicRoute()
   @Post("agents/challenge")
   @HttpCode(200)
-  async generateAgentChallenge(@Body() request: AgentChallengeRequest): Promise<AgentChallengeResponse> {
+  async generateAgentChallenge(@Body() request: unknown): Promise<AgentChallengeResponse> {
     const mapRequest = (req: AgentChallengeRequest) => mapAgentChallengeRequestToService(req)
     const generateChallenge = (req: GenerateChallengeRequest) => this.authService.generateAgentChallenge(req)
 
     const result = await pipe(
       request,
       TE.right,
+      TE.chainW(r => TE.fromEither(validateAgentChallengeRequest(r))),
       TE.chainW(r => TE.fromEither(mapRequest(r))),
       TE.chainW(r => generateChallenge(r))
     )()
@@ -225,8 +227,8 @@ export class AuthController {
   @Post("agents/token")
   @HttpCode(200)
   async exchangeAgentToken(@Body() request: unknown): Promise<AgentTokenResponse> {
-    const validateRequest = (req: unknown) => validateJwtAssertionTokenRequest(req)
-    const extractAssertion = (validatedReq: JwtAssertionTokenRequest) => validatedReq.client_assertion
+    const validateRequest = (req: unknown) => validateAgentTokenRequest(req)
+    const extractAssertion = (validatedReq: AgentTokenRequest) => validatedReq.clientAssertion
     const exchangeToken = (assertion: string) => this.authService.exchangeJwtAssertionForToken(assertion)
 
     const result = await pipe(

@@ -1,4 +1,4 @@
-import {AgentChallengeRequest, AgentChallengeResponse, AgentTokenResponse} from "@approvio/api"
+import {AgentChallengeRequest, AgentChallengeResponse, AgentTokenRequest, AgentTokenResponse} from "@approvio/api"
 import {
   GenerateChallengeRequest,
   AgentChallengeCreateError,
@@ -19,12 +19,6 @@ import {generateErrorPayload} from "@controllers/error"
 
 type ChallengeRequestValidationError = "request_invalid_agent_name"
 
-export interface JwtAssertionTokenRequest {
-  grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer"
-  client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-  client_assertion: string
-}
-
 type JwtAssertionValidationError =
   | "request_invalid_grant_type"
   | "request_invalid_client_assertion_type"
@@ -34,27 +28,43 @@ type JwtAssertionValidationError =
 /**
  * Validates JWT assertion token request structure and required OAuth 2.0 parameters
  */
-export const validateJwtAssertionTokenRequest = (
+export const validateAgentTokenRequest = (
   request: unknown
-): E.Either<JwtAssertionValidationError, JwtAssertionTokenRequest> => {
+): E.Either<JwtAssertionValidationError, AgentTokenRequest> => {
   if (!request || typeof request !== "object") return E.left("request_invalid_client_assertion_format")
 
-  if (!("grant_type" in request) || request.grant_type !== "urn:ietf:params:oauth:grant-type:jwt-bearer")
+  if (!("grantType" in request) || request["grantType"] !== "urn:ietf:params:oauth:grant-type:jwt-bearer")
     return E.left("request_invalid_grant_type")
 
   if (
-    !("client_assertion_type" in request) ||
-    request.client_assertion_type !== "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+    !("clientAssertionType" in request) ||
+    request["clientAssertionType"] !== "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
   )
     return E.left("request_invalid_client_assertion_type")
 
-  if (!("client_assertion" in request) || !request.client_assertion || typeof request.client_assertion !== "string")
+  if (!("clientAssertion" in request) || !request["clientAssertion"] || typeof request["clientAssertion"] !== "string")
     return E.left("request_missing_client_assertion")
 
   return E.right({
-    grant_type: request.grant_type,
-    client_assertion_type: request.client_assertion_type,
-    client_assertion: request.client_assertion
+    grantType: request["grantType"],
+    clientAssertionType: request["clientAssertionType"],
+    clientAssertion: request["clientAssertion"]
+  })
+}
+
+/**
+ * Validates challenge request structure and required parameters
+ */
+export const validateAgentChallengeRequest = (
+  request: unknown
+): E.Either<ChallengeRequestValidationError, AgentChallengeRequest> => {
+  if (!request || typeof request !== "object") return E.left("request_invalid_agent_name")
+
+  if (!("agentName" in request) || !request["agentName"] || typeof request["agentName"] !== "string")
+    return E.left("request_invalid_agent_name")
+
+  return E.right({
+    agentName: request["agentName"]
   })
 }
 

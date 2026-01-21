@@ -440,42 +440,22 @@ export class AgentChallengeFactory {
     const now = Math.floor(Date.now() / 1000)
 
     // Required claims validation
-    if (typeof payload.iss !== "string") {
-      return left("agent_challenge_missing_required_claim" as const)
-    }
-    if (typeof payload.sub !== "string") {
-      return left("agent_challenge_missing_required_claim" as const)
-    }
-    if (typeof payload.aud !== "string") {
-      return left("agent_challenge_missing_required_claim" as const)
-    }
-    if (typeof payload.exp !== "number") {
-      return left("agent_challenge_missing_required_claim" as const)
-    }
-    if (typeof payload.jti !== "string") {
-      return left("agent_challenge_missing_required_claim" as const)
-    }
+    if (typeof payload.iss !== "string") return left("agent_challenge_missing_required_claim" as const)
+    if (typeof payload.sub !== "string") return left("agent_challenge_missing_required_claim" as const)
+    if (typeof payload.aud !== "string") return left("agent_challenge_missing_required_claim" as const)
+    if (typeof payload.exp !== "number") return left("agent_challenge_missing_required_claim" as const)
+    if (typeof payload.jti !== "string") return left("agent_challenge_missing_required_claim" as const)
 
     // Validate claim values
-    if (payload.iss !== expectedIssuer) {
-      return left("agent_challenge_invalid_claim_value" as const)
-    }
-    if (payload.sub !== expectedIssuer) {
-      return left("agent_challenge_invalid_claim_value" as const)
-    }
-    if (payload.aud !== expectedAudience) {
-      return left("agent_challenge_invalid_claim_value" as const)
-    }
+    if (payload.iss !== expectedIssuer) return left("agent_challenge_invalid_claim_value" as const)
+    if (payload.sub !== expectedIssuer) return left("agent_challenge_invalid_claim_value" as const)
+    if (payload.aud !== expectedAudience) return left("agent_challenge_invalid_claim_value" as const)
 
     // Validate expiration
-    if (payload.exp <= now) {
-      return left("agent_challenge_jwt_expired" as const)
-    }
+    if (payload.exp <= now) return left("agent_challenge_jwt_expired" as const)
 
     // Validate not before (if present)
-    if (typeof payload.nbf === "number" && payload.nbf > now) {
-      return left("agent_challenge_jwt_not_yet_valid" as const)
-    }
+    if (typeof payload.nbf === "number" && payload.nbf > now) return left("agent_challenge_jwt_not_yet_valid" as const)
 
     return right({
       iss: payload.iss,

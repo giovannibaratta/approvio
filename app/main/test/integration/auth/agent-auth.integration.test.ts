@@ -8,7 +8,7 @@ import {ConfigProvider} from "@external/config"
 import {MockConfigProvider} from "@test/mock-data"
 import {PrismaClient} from "@prisma/client"
 import {AgentFactory, AgentWithPrivateKey} from "@domain"
-import {AgentChallengeRequest} from "@approvio/api"
+import {AgentChallengeRequest, AgentTokenRequest} from "@approvio/api"
 import {JwtService} from "@nestjs/jwt"
 
 import {constants, privateDecrypt, sign, randomUUID} from "crypto"
@@ -16,7 +16,6 @@ import * as jose from "jose"
 import "expect-more-jest"
 import "@utils/matchers"
 import {isLeft} from "fp-ts/lib/Either"
-import {JwtAssertionTokenRequest} from "@controllers/auth/agent-auth.mappers"
 import {createMockRefreshTokenInDb} from "@test/mock-data"
 import {RefreshTokenStatus, GRACE_PERIOD_SECONDS} from "@domain"
 import {createSha256Hash} from "@utils"
@@ -232,11 +231,11 @@ describe("Agent Authentication Integration", () => {
 
     describe("JWT assertion flow (RFC 7523)", () => {
       describe("bad cases", () => {
-        it("should return 400 when grant_type is missing", async () => {
-          // Given: JWT assertion request without grant_type
+        it("should return 400 when grantType is missing", async () => {
+          // Given: JWT assertion request without grantType
           const jwtTokenRequest = {
-            client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-            client_assertion: "some-jwt"
+            clientAssertionType: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            clientAssertion: "some-jwt"
           }
 
           // When
@@ -247,12 +246,12 @@ describe("Agent Authentication Integration", () => {
           expect(response.body).toHaveErrorCode("REQUEST_INVALID_GRANT_TYPE")
         })
 
-        it("should return 400 when client_assertion_type is invalid", async () => {
+        it("should return 400 when clientAssertionType is invalid", async () => {
           // Given: JWT assertion request with invalid assertion type
           const jwtTokenRequest = {
-            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            client_assertion_type: "invalid-type",
-            client_assertion: "some-jwt"
+            grantType: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            clientAssertionType: "invalid-type",
+            clientAssertion: "some-jwt"
           }
 
           // When
@@ -263,11 +262,11 @@ describe("Agent Authentication Integration", () => {
           expect(response.body).toHaveErrorCode("REQUEST_INVALID_CLIENT_ASSERTION_TYPE")
         })
 
-        it("should return 400 when client_assertion is missing", async () => {
-          // Given: JWT assertion request without client_assertion
+        it("should return 400 when clientAssertion is missing", async () => {
+          // Given: JWT assertion request without clientAssertion
           const jwtTokenRequest = {
-            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+            grantType: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            clientAssertionType: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
           }
 
           // When
@@ -280,10 +279,10 @@ describe("Agent Authentication Integration", () => {
 
         it("should return 400 when JWT assertion is malformed", async () => {
           // Given: JWT assertion request with malformed JWT
-          const jwtTokenRequest: JwtAssertionTokenRequest = {
-            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-            client_assertion: "invalid-jwt-format"
+          const jwtTokenRequest: AgentTokenRequest = {
+            grantType: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            clientAssertionType: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            clientAssertion: "invalid-jwt-format"
           }
 
           // When
@@ -304,10 +303,10 @@ describe("Agent Authentication Integration", () => {
           // Tamper with signature
           const tamperedJwt = `${parts[0]}.${parts[1]}.${Buffer.from("invalid-signature").toString("base64url")}`
 
-          const jwtTokenRequest: JwtAssertionTokenRequest = {
-            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-            client_assertion: tamperedJwt
+          const jwtTokenRequest: AgentTokenRequest = {
+            grantType: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            clientAssertionType: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            clientAssertion: tamperedJwt
           }
 
           // When
@@ -323,10 +322,10 @@ describe("Agent Authentication Integration", () => {
           const {nonce} = await generateChallengeAndGetPayload()
           const expiredJwt = createJwtAssertion(nonce, Math.floor(Date.now() / 1000) - 10) // 10 seconds ago
 
-          const jwtTokenRequest: JwtAssertionTokenRequest = {
-            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-            client_assertion: expiredJwt
+          const jwtTokenRequest: AgentTokenRequest = {
+            grantType: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            clientAssertionType: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            clientAssertion: expiredJwt
           }
 
           // When
@@ -342,10 +341,10 @@ describe("Agent Authentication Integration", () => {
           const nonExistentNonce = "non-existent-nonce-12345678901234567890123456789012"
           const jwtAssertion = createJwtAssertion(nonExistentNonce)
 
-          const jwtTokenRequest: JwtAssertionTokenRequest = {
-            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-            client_assertion: jwtAssertion
+          const jwtTokenRequest: AgentTokenRequest = {
+            grantType: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            clientAssertionType: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            clientAssertion: jwtAssertion
           }
 
           // When
@@ -363,10 +362,10 @@ describe("Agent Authentication Integration", () => {
           const {nonce} = await generateChallengeAndGetPayload()
           const jwtAssertion = createJwtAssertion(nonce)
 
-          const jwtTokenRequest: JwtAssertionTokenRequest = {
-            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-            client_assertion: jwtAssertion
+          const jwtTokenRequest: AgentTokenRequest = {
+            grantType: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            clientAssertionType: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            clientAssertion: jwtAssertion
           }
 
           // When
@@ -409,10 +408,10 @@ describe("Agent Authentication Integration", () => {
           const {nonce} = await generateChallengeAndGetPayload()
           const jwtAssertion = createJwtAssertion(nonce)
 
-          const jwtTokenRequest: JwtAssertionTokenRequest = {
-            grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            client_assertion_type: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
-            client_assertion: jwtAssertion
+          const jwtTokenRequest: AgentTokenRequest = {
+            grantType: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            clientAssertionType: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            clientAssertion: jwtAssertion
             // Note: Agent name is extracted from JWT issuer claim automatically
           }
 
