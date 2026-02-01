@@ -7,7 +7,7 @@ import {
   RoleRemovalRequest
 } from "@approvio/api"
 import {GetAuthenticatedEntity} from "@app/auth"
-import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
+import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Logger, Param, Post, Put, Query, Res} from "@nestjs/common"
 import {
   ListUsersRequest,
   UserService,
@@ -58,12 +58,15 @@ export class UsersController {
       createUserApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceCreateUser),
-      TE.map(data => data.id)
+      TE.map(data => data.id),
+      TE.chainFirstW(userId =>
+        TE.fromIO(() => {
+          Logger.log(`User created successfully with id ${userId} (${request.email})`)
+        })
+      )
     )()
 
-    if (isLeft(eitherUserId)) {
-      throw generateErrorResponseForCreateUser(eitherUserId.left, "Failed to create user")
-    }
+    if (isLeft(eitherUserId)) throw generateErrorResponseForCreateUser(eitherUserId.left, "Failed to create user")
 
     const userId = eitherUserId.right
     const location = `${response.req.protocol}://${response.req.headers.host}${response.req.url}/${userId}`
