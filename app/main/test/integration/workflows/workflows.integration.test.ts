@@ -829,6 +829,18 @@ describe("Workflows API", () => {
         expect(body.pagination.page).toEqual(1)
         expect(body.pagination.limit).toEqual(10)
       })
+
+      it("should return the workflows with also the workflow template", async () => {
+        // When: a request is sent to list workflows with a valid include
+        const response = await get(app, `${endpoint}?include=workflow-template`).withToken(orgAdminUser.token).build()
+
+        // Expect: a 200 OK status and all workflows in the response
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        expect(body.data).toHaveLength(2)
+        expect(body.data[0]?.ref?.workflowTemplate).not.toBeNull()
+        expect(body.data[1]?.ref?.workflowTemplate).not.toBeNull()
+      })
     })
 
     describe("bad cases", () => {
@@ -838,6 +850,15 @@ describe("Workflows API", () => {
 
         // Expect: a 401 Unauthorized status
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
+      })
+
+      it("should return 400 BAD_REQUEST for invalid include", async () => {
+        // When: a request is sent to list workflows with an invalid include
+        const response = await get(app, `${endpoint}?include=invalid`).withToken(orgAdminUser.token).build()
+
+        // Expect: a 400 BAD_REQUEST status with REQUEST_INVALID_INCLUDE error code
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("REQUEST_INVALID_INCLUDE")
       })
     })
   })

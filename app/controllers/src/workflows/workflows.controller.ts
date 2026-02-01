@@ -18,9 +18,16 @@ import {
   generateErrorResponseForCanVote,
   generateErrorResponseForCastVote,
   validateWorkflowCreateRequest,
-  validateApiRequest
+  validateApiRequest,
+  validateListWorkflowsParams,
+  validateGetWorkflowParams
 } from "./workflows.mappers"
-import {Workflow as WorkflowApi, CanVoteResponse as CanVoteResponseApi, ListWorkflows200Response} from "@approvio/api"
+import {
+  Workflow as WorkflowApi,
+  CanVoteResponse as CanVoteResponseApi,
+  ListWorkflows200Response,
+  WorkflowInclude
+} from "@approvio/api"
 
 export const WORKFLOWS_ENDPOINT_ROOT = "workflows"
 
@@ -63,49 +70,47 @@ export class WorkflowsController {
 
   @Get(":identifier")
   async getWorkflow(@Param("identifier") identifier: string, @Query("include") include?: string): Promise<WorkflowApi> {
-    const workflowDecoratorSelector = includeOptionsToWorkflowDecoratorSelector(include)
-
-    const getWorkflowService = (request: string) =>
-      this.workflowService.getWorkflowByIdentifier(request, workflowDecoratorSelector)
-
     const eitherWorkflow = await pipe(
-      identifier,
-      TE.right,
-      TE.chainW(getWorkflowService),
-      TE.map(workflow => mapWorkflowToApi(workflow, workflowDecoratorSelector))
+      TE.Do,
+      TE.bindW("params", () => TE.fromEither(validateGetWorkflowParams({include}))),
+      TE.bindW("workflowDecoratorSelector", ({params}) =>
+        TE.right(includeArrayToWorkflowDecoratorSelector(params.include))
+      ),
+      TE.chainW(({workflowDecoratorSelector}) =>
+        this.workflowService.getWorkflowByIdentifier(identifier, workflowDecoratorSelector)
+      ),
+      TE.map(workflow => mapWorkflowToApi(workflow))
     )()
 
-    if (isLeft(eitherWorkflow)) {
-      throw generateErrorResponseForGetWorkflow(eitherWorkflow.left, "Failed to get workflow")
-    }
+    if (isLeft(eitherWorkflow)) throw generateErrorResponseForGetWorkflow(eitherWorkflow.left, "Failed to get workflow")
 
     return eitherWorkflow.right
   }
 
   @Get()
   async listWorkflows(
-    @Query("page") page: string = "1",
-    @Query("limit") limit: string = "20",
+    @Query("page") page: unknown,
+    @Query("limit") limit: unknown,
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
-    @Query("include") include?: string,
-    @Query("include-only-non-terminal-state") includeOnlyNonTerminalState?: string
+    @Query("include") include?: unknown,
+    @Query("include-only-non-terminal-state") includeOnlyNonTerminalState?: unknown
   ): Promise<ListWorkflows200Response> {
-    const pageNum = parseInt(page, 10) || 1
-    const limitNum = parseInt(limit, 10) || 20
-    const workflowDecoratorSelector = includeOptionsToWorkflowDecoratorSelector(include)
-    const includeOnlyNonTerminalStateBool = includeOnlyNonTerminalState === "true"
-
-    const request = {
-      pagination: {page: pageNum, limit: limitNum},
-      include: workflowDecoratorSelector,
-      requestor,
-      filters: includeOnlyNonTerminalStateBool ? {includeOnlyNonTerminalState: true} : undefined
-    }
-
     const eitherWorkflows = await pipe(
-      request,
-      TE.right,
-      TE.chainW(req => this.workflowService.listWorkflows(req)),
+      TE.Do,
+      TE.bindW("params", () =>
+        TE.fromEither(validateListWorkflowsParams({page, limit, include, includeOnlyNonTerminalState}))
+      ),
+      TE.bindW("workflowDecoratorSelector", ({params}) =>
+        TE.right(includeArrayToWorkflowDecoratorSelector(params.include))
+      ),
+      TE.chainW(({params, workflowDecoratorSelector}) =>
+        this.workflowService.listWorkflows({
+          pagination: {page: params.page ?? 1, limit: params.limit ?? 20},
+          include: workflowDecoratorSelector,
+          requestor,
+          filters: params.includeOnlyNonTerminalState ? {includeOnlyNonTerminalState: true} : undefined
+        })
+      ),
       TE.map(mapWorkflowListToApi)
     )()
 
@@ -163,11 +168,10 @@ export class WorkflowsController {
   }
 }
 
-function includeOptionsToWorkflowDecoratorSelector(include?: string): WorkflowDecoratorSelector | undefined {
+function includeArrayToWorkflowDecoratorSelector(include?: WorkflowInclude[]): WorkflowDecoratorSelector | undefined {
   if (!include) return undefined
-  const split = include.split(",").map(s => s.trim())
 
   return {
-    workflowTemplate: split.includes("workflow-template")
+    workflowTemplate: include.includes("workflow-template")
   }
 }
