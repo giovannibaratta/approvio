@@ -2,10 +2,11 @@ import {
   AgentRegistrationRequest,
   AgentRegistrationResponse,
   RoleAssignmentRequest,
-  RoleRemovalRequest
+  RoleRemovalRequest,
+  AgentGet200Response
 } from "@approvio/api"
 import {GetAuthenticatedEntity} from "@app/auth"
-import {Body, Controller, Delete, HttpCode, HttpStatus, Logger, Param, Post, Put, Res} from "@nestjs/common"
+import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Logger, Param, Post, Put, Res} from "@nestjs/common"
 import {
   AgentService,
   RegisterAgentRequest,
@@ -23,7 +24,9 @@ import {
   generateErrorResponseForRegisterAgent,
   generateErrorResponseForAgentRoleAssignment,
   generateErrorResponseForAgentRoleRemoval,
-  mapAgentToRegistrationResponse
+  generateErrorResponseForGetAgent,
+  mapAgentToRegistrationResponse,
+  mapAgentToApi
 } from "./agents.mappers"
 import {validateRoleAssignmentRequest, validateRoleRemovalRequest} from "../shared/mappers"
 import {AuthenticatedEntity} from "@domain"
@@ -36,6 +39,16 @@ export class AgentsController {
     private readonly agentService: AgentService,
     private readonly roleService: RoleService
   ) {}
+
+  @Get(":idOrName")
+  @HttpCode(HttpStatus.OK)
+  async getAgent(@Param("idOrName") idOrName: string): Promise<AgentGet200Response> {
+    const eitherAgent = await this.agentService.getAgent(idOrName)()
+
+    if (isLeft(eitherAgent)) throw generateErrorResponseForGetAgent(eitherAgent.left, "Failed to fetch agent details")
+
+    return mapAgentToApi(eitherAgent.right)
+  }
 
   @Post("register")
   @HttpCode(HttpStatus.CREATED)

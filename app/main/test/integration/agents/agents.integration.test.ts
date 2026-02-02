@@ -10,11 +10,14 @@ import {cleanDatabase, prepareDatabase} from "@test/database"
 import {createDomainMockUserInDb, MockConfigProvider} from "@test/mock-data"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
-import {post} from "@test/requests"
+import {get, post} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import "expect-more-jest"
 import "@utils/matchers"
 import {TokenPayloadBuilder} from "@services"
+import {Chance} from "chance"
+
+const chance = new Chance()
 
 describe("Agents API", () => {
   let app: NestApplication
@@ -219,6 +222,20 @@ describe("Agents API", () => {
         // Expect: Bad request due to validation
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
       })
+
+      it("should reject agent name that is a UUID", async () => {
+        // Given: Agent name that is a valid UUID
+        const request: AgentRegistrationRequest = {
+          agentName: "550e8400-e29b-41d4-a716-446655440000"
+        }
+
+        // When: Posting to registration endpoint as admin
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(request)
+
+        // Expect: Bad request error
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("AGENT_NAME_CANNOT_BE_UUID")
+      })
     })
 
     describe("Authentication cases", () => {
@@ -253,6 +270,98 @@ describe("Agents API", () => {
           privateKey: expect.toBeString(),
           createdAt: expect.toBeString()
         })
+      })
+    })
+  })
+
+  describe("GET /agents/:idOrName", () => {
+    let existingAgent: {id: string; agentName: string}
+
+    beforeEach(async () => {
+      existingAgent = {
+        id: chance.guid(),
+        agentName: chance.word()
+      }
+      await prisma.agent.create({
+        data: {
+          id: existingAgent.id,
+          agentName: existingAgent.agentName,
+          base64PublicKey: "dGVzdC1wdWJsaWMta2V5",
+          createdAt: new Date(),
+          occ: BigInt(0)
+        }
+      })
+    })
+
+    describe("Good cases", () => {
+      it("should fetch agent details by ID", async () => {
+        // When: Fetching agent by ID
+        const response = await get(app, `/${AGENTS_ENDPOINT_ROOT}/${existingAgent.id}`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send()
+
+        // Expect: Successful retrieval
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        expect(response.body).toMatchObject({
+          id: existingAgent.id,
+          agentName: existingAgent.agentName,
+          publicKey: expect.toBeString(),
+          createdAt: expect.toBeString()
+        })
+      })
+
+      it("should fetch agent details by name", async () => {
+        // When: Fetching agent by name
+        const response = await get(app, `/${AGENTS_ENDPOINT_ROOT}/${existingAgent.agentName}`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send()
+
+        // Expect: Successful retrieval
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        expect(response.body).toMatchObject({
+          id: existingAgent.id,
+          agentName: existingAgent.agentName,
+          publicKey: expect.toBeString(),
+          createdAt: expect.toBeString()
+        })
+      })
+    })
+
+    describe("Bad cases", () => {
+      it("should return 404 NOT FOUND if agent does not exist (by ID)", async () => {
+        // When: Fetching non-existent agent by ID
+        const response = await get(app, `/${AGENTS_ENDPOINT_ROOT}/${chance.guid()}`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send()
+
+        // Expect: Not found error
+        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
+        expect(response.body).toHaveErrorCode("AGENT_NOT_FOUND")
+      })
+
+      it("should return 404 NOT FOUND if agent does not exist (by name)", async () => {
+        // When: Fetching non-existent agent by name
+        const response = await get(app, `/${AGENTS_ENDPOINT_ROOT}/non-existent-agent`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send()
+
+        // Expect: Not found error
+        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
+        expect(response.body).toHaveErrorCode("AGENT_NOT_FOUND")
+      })
+    })
+
+    describe("Authentication cases", () => {
+      it("should return 401 UNAUTHORIZED if no token is provided", async () => {
+        // When: Fetching without authentication token
+        const response = await get(app, `/${AGENTS_ENDPOINT_ROOT}/${existingAgent.id}`).build().send()
+
+        // Expect: Unauthorized error
+        expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
       })
     })
   })

@@ -25,7 +25,7 @@ interface AgentCreateData {
   agentName: string
 }
 
-type AgentNameValidationError = PrefixUnion<"agent", "name_empty" | "name_too_long">
+type AgentNameValidationError = PrefixUnion<"agent", "name_empty" | "name_too_long" | "name_cannot_be_uuid">
 type IdValidationError = PrefixUnion<"agent", "invalid_uuid">
 type KeyGenerationError = PrefixUnion<"agent", "key_generation_failed">
 type OccValidationError = PrefixUnion<"agent", "invalid_occ">
@@ -220,6 +220,7 @@ export class AgentFactory {
   private static validateAgentName(agentName: string): Either<AgentNameValidationError, string> {
     if (!agentName || agentName.trim().length === 0) return left("agent_name_empty")
     if (agentName.length > AGENT_NAME_MAX_LENGTH) return left("agent_name_too_long")
+    if (isUUIDv4(agentName)) return left("agent_name_cannot_be_uuid")
     return right(agentName)
   }
 

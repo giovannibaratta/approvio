@@ -151,6 +151,7 @@ export const generateErrorResponseForChallengeRequest = (
     case "agent_role_scope_incompatible_with_template":
     case "agent_invalid_occ":
     case "agent_role_entity_type_role_restriction":
+    case "agent_name_cannot_be_uuid":
       Logger.error(`${context}: data inconsistency error - ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: data inconsistency error`)
@@ -229,6 +230,7 @@ export const generateErrorResponseForAgentTokenExchange = (
     case "refresh_token_missing_entity_type":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
+    case "agent_name_cannot_be_uuid":
       Logger.error(`${context}: data inconsistency error - ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: data inconsistency detected`)

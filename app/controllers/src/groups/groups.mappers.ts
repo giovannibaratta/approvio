@@ -200,6 +200,7 @@ export function generateErrorResponseForCreateGroup(error: CreateGroupError, con
     case "agent_role_unknown_role_name":
     case "agent_role_scope_incompatible_with_template":
     case "agent_invalid_occ":
+    case "agent_name_cannot_be_uuid":
     case "role_entity_type_role_restriction":
     case "agent_role_entity_type_role_restriction":
       return new InternalServerErrorException(
@@ -352,6 +353,7 @@ export function generateErrorResponseForAddMembersToGroup(
     case "agent_invalid_occ":
     case "role_entity_type_role_restriction":
     case "agent_role_entity_type_role_restriction":
+    case "agent_name_cannot_be_uuid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -451,6 +453,7 @@ export function generateErrorResponseForRemoveMembersFromGroup(
     case "agent_invalid_occ":
     case "role_entity_type_role_restriction":
     case "agent_role_entity_type_role_restriction":
+    case "agent_name_cannot_be_uuid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -539,6 +542,7 @@ export function generateErrorResponseForListMembersInGroup(
     case "agent_invalid_occ":
     case "role_entity_type_role_restriction":
     case "agent_role_entity_type_role_restriction":
+    case "agent_name_cannot_be_uuid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)

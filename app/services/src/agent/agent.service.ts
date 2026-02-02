@@ -7,6 +7,7 @@ import {TaskEither} from "fp-ts/TaskEither"
 import {AGENT_REPOSITORY_TOKEN, AgentRepository, AgentRegistrationError, AgentGetError} from "./interfaces"
 import {AuthenticatedEntity} from "@domain"
 import {AuthorizationError} from "@services/error"
+import {isUUIDv4} from "@utils"
 
 @Injectable()
 export class AgentService {
@@ -29,6 +30,10 @@ export class AgentService {
     }
 
     return pipe(request, validateAndCreateAgent, TE.fromEither, TE.chainFirstW(persistAgent))
+  }
+
+  getAgent(idOrName: string): TaskEither<AgentGetError, Agent> {
+    return isUUIDv4(idOrName) ? this.getAgentById(idOrName) : this.getAgentByName(idOrName)
   }
 
   getAgentByName(agentName: string): TaskEither<AgentGetError, Agent> {

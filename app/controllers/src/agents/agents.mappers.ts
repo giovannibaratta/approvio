@@ -1,5 +1,5 @@
-import {AgentRegistrationRequest, AgentRegistrationResponse} from "@approvio/api"
-import {AgentWithPrivateKey, AuthenticatedEntity} from "@domain"
+import {AgentRegistrationRequest, AgentRegistrationResponse, AgentGet200Response} from "@approvio/api"
+import {Agent, AgentWithPrivateKey, AuthenticatedEntity} from "@domain"
 import {
   BadRequestException,
   ConflictException,
@@ -10,7 +10,13 @@ import {
   NotFoundException,
   UnprocessableEntityException
 } from "@nestjs/common"
-import {RegisterAgentRequest, AgentRegistrationError, AgentRoleAssignmentError, AgentRoleRemovalError} from "@services"
+import {
+  RegisterAgentRequest,
+  AgentRegistrationError,
+  AgentRoleAssignmentError,
+  AgentRoleRemovalError,
+  AgentGetError
+} from "@services"
 import {Either, right} from "fp-ts/Either"
 import {generateErrorPayload} from "../error"
 import {RoleAssignmentValidationError, RoleRemovalValidationError} from "@controllers/shared"
@@ -35,12 +41,22 @@ export function mapAgentToRegistrationResponse(agent: AgentWithPrivateKey): Agen
   }
 }
 
+export function mapAgentToApi(agent: Agent): AgentGet200Response {
+  return {
+    id: agent.id,
+    agentName: agent.agentName,
+    publicKey: Buffer.from(agent.publicKey).toString("base64"),
+    createdAt: agent.createdAt.toISOString()
+  }
+}
+
 export function generateErrorResponseForRegisterAgent(error: AgentRegistrationError, context: string): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (error) {
     case "agent_name_empty":
     case "agent_name_too_long":
+    case "agent_name_cannot_be_uuid":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid agent name`))
     case "agent_name_already_exists":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: Agent with this name already exists`))
@@ -78,6 +94,47 @@ export function generateErrorResponseForRegisterAgent(error: AgentRegistrationEr
       )
     case "requestor_not_authorized":
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Requestor not authorized`))
+  }
+}
+
+export function generateErrorResponseForGetAgent(error: AgentGetError, context: string): HttpException {
+  const errorCode = error.toUpperCase()
+
+  switch (error) {
+    case "agent_not_found":
+      return new NotFoundException(generateErrorPayload(errorCode, `${context}: Agent not found`))
+    case "agent_key_decode_error":
+    case "agent_invalid_uuid":
+    case "agent_name_empty":
+    case "agent_name_too_long":
+    case "agent_role_name_empty":
+    case "agent_role_name_too_long":
+    case "agent_role_name_invalid_characters":
+    case "agent_role_permissions_empty":
+    case "agent_role_permission_invalid":
+    case "agent_role_invalid_scope":
+    case "agent_role_resource_id_invalid":
+    case "agent_role_resource_required_for_scope":
+    case "agent_role_resource_not_allowed_for_scope":
+    case "agent_role_invalid_uuid":
+    case "agent_role_assignments_empty":
+    case "agent_role_assignments_exceed_maximum":
+    case "agent_role_unknown_role_name":
+    case "agent_role_scope_incompatible_with_template":
+    case "agent_role_invalid_structure":
+    case "agent_invalid_occ":
+    case "agent_name_cannot_be_uuid":
+    case "agent_role_total_roles_exceed_maximum":
+    case "agent_role_entity_type_role_restriction":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
+      )
+    case "unknown_error":
+      Logger.error(`${context}: An expected error occurred: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
+      )
   }
 }
 
@@ -156,6 +213,7 @@ export function generateErrorResponseForAgentRoleAssignment(
     case "agent_role_scope_incompatible_with_template":
     case "agent_role_invalid_structure":
     case "agent_invalid_occ":
+    case "agent_name_cannot_be_uuid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -254,6 +312,7 @@ export function generateErrorResponseForAgentRoleRemoval(
     case "agent_role_scope_incompatible_with_template":
     case "agent_role_invalid_structure":
     case "agent_invalid_occ":
+    case "agent_name_cannot_be_uuid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)

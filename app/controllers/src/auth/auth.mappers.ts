@@ -169,6 +169,7 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
     case "refresh_token_missing_entity_type":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
+    case "agent_name_cannot_be_uuid":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: internal data inconsistency`)
       )
@@ -336,6 +337,7 @@ export function generateErrorResponseForRefreshAgentToken(
     case "refresh_token_missing_entity_type":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
+    case "agent_name_cannot_be_uuid":
       Logger.error(`Internal data inconsistency: ${errorCode}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)

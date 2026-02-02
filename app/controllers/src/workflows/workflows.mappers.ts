@@ -625,6 +625,7 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "agent_role_entity_type_role_restriction":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
+    case "agent_name_cannot_be_uuid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -770,6 +771,7 @@ export function generateErrorResponseForCastVote(
     case "agent_role_entity_type_role_restriction":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
+    case "agent_name_cannot_be_uuid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
