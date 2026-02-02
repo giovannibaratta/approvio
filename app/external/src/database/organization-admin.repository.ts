@@ -32,7 +32,7 @@ export class OrganizationAdminDbRepository implements OrganizationAdminRepositor
     return pipe(params, this.getObjectsTask(), TE.chainEitherKW(this.mapToOrganizationAdminsList(params)))
   }
 
-  removeOrganizationAdmin(userId: string): TaskEither<OrganizationAdminRemoveError, void> {
+  removeOrganizationAdminIfNotLast(userId: string): TaskEither<OrganizationAdminRemoveError, void> {
     return pipe(
       userId,
       this.deleteObjectTask(),
@@ -40,7 +40,7 @@ export class OrganizationAdminDbRepository implements OrganizationAdminRepositor
     )
   }
 
-  removeOrganizationAdminByEmail(email: string): TaskEither<OrganizationAdminRemoveError, void> {
+  removeOrganizationAdminByEmailIfNotLast(email: string): TaskEither<OrganizationAdminRemoveError, void> {
     return pipe(
       email,
       this.deleteObjectByEmailTask(),
@@ -112,10 +112,25 @@ export class OrganizationAdminDbRepository implements OrganizationAdminRepositor
   ): TaskEither<OrganizationAdminRemoveError, number> {
     return TE.tryCatchK(
       async () => {
-        const result = await this.dbClient.organizationAdmin.deleteMany({where: whereClause})
-        return result.count
+        const count = await this.dbClient.$transaction(
+          async tx => {
+            const deleted = await tx.organizationAdmin.deleteMany({where: whereClause})
+            const remaining = await tx.organizationAdmin.count({})
+
+            if (remaining < 1) throw new EmptyOrganizationAdminError()
+            return deleted.count
+          },
+          {
+            // We want strong consistency to avoid race conditions and leave the organization
+            // in an invalid state (0 admins)
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable
+          }
+        )
+
+        return count
       },
       error => {
+        if (error instanceof EmptyOrganizationAdminError) return "organization_admin_is_last" as const
         Logger.error("Error while removing organization admin. Unknown error", error)
         return "unknown_error" as const
       }
@@ -141,5 +156,11 @@ export class OrganizationAdminDbRepository implements OrganizationAdminRepositor
         }))
       )
     }
+  }
+}
+
+class EmptyOrganizationAdminError extends Error {
+  constructor() {
+    super("Organization admin is empty")
   }
 }

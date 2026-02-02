@@ -481,6 +481,46 @@ describe("Organization Admin API", () => {
         })
         expect(orgAdminDbObject).toBeDefined()
       })
+
+      it("should return 409 when removing the last organization admin", async () => {
+        // Given
+        const requestBody: OrganizationAdminRemove = {
+          userId: orgAdminUser.user.id
+        }
+
+        // When
+        const response = await del(app, `${endpoint}/${organizationName}/admins`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
+
+        // Validate side effects - admin should not be removed
+        const orgAdminDbObject = await prisma.organizationAdmin.findMany({})
+        expect(orgAdminDbObject).toHaveLength(1)
+      })
+
+      it("should return 409 when removing the last organization admin by email", async () => {
+        // Given
+        const requestBody: OrganizationAdminRemove = {
+          userId: orgAdminUser.user.email
+        }
+
+        // When
+        const response = await del(app, `${endpoint}/${organizationName}/admins`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
+
+        // Validate side effects - admin should not be removed
+        const orgAdminDbObject = await prisma.organizationAdmin.findMany({})
+        expect(orgAdminDbObject).toHaveLength(1)
+      })
     })
   })
 })

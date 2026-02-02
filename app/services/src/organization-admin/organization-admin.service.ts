@@ -89,9 +89,8 @@ export class OrganizationAdminService {
 
     // Wrap repository calls in lambdas to preserve "this" context and discriminate identifier type
     const removeAdmin = (req: RemoveOrganizationAdminRequest) => {
-      if (isUUIDv4(req.identifier)) return this.orgAdminRepo.removeOrganizationAdmin(req.identifier)
-
-      if (isEmail(req.identifier)) return this.orgAdminRepo.removeOrganizationAdminByEmail(req.identifier)
+      if (isUUIDv4(req.identifier)) return this.orgAdminRepo.removeOrganizationAdminIfNotLast(req.identifier)
+      if (isEmail(req.identifier)) return this.orgAdminRepo.removeOrganizationAdminByEmailIfNotLast(req.identifier)
 
       return TE.left("invalid_identifier_format" as const)
     }

@@ -177,5 +177,9 @@ export function generateErrorResponseForRemoveOrganizationAdmin(
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
+    case "organization_admin_is_last":
+      return new ConflictException(
+        generateErrorPayload(errorCode, `${context}: Cannot remove the last organization admin`)
+      )
   }
 }

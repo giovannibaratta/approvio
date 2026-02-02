@@ -23,6 +23,7 @@ export type OrganizationAdminRemoveError =
   | "organization_not_found"
   | "organization_admin_not_found"
   | "invalid_identifier_format"
+  | "organization_admin_is_last"
   | AuthorizationError
   | UnknownError
 
@@ -40,8 +41,8 @@ export interface OrganizationAdminRepository {
   listOrganizationAdmins(
     params: ListOrganizationAdminsRepoRequest
   ): TaskEither<OrganizationAdminListError, PaginatedOrganizationAdminsList>
-  removeOrganizationAdmin(userId: string): TaskEither<OrganizationAdminRemoveError, void>
-  removeOrganizationAdminByEmail(email: string): TaskEither<OrganizationAdminRemoveError, void>
+  removeOrganizationAdminIfNotLast(userId: string): TaskEither<OrganizationAdminRemoveError, void>
+  removeOrganizationAdminByEmailIfNotLast(email: string): TaskEither<OrganizationAdminRemoveError, void>
 }
 
 export interface ListOrganizationAdminsRepoRequest {
