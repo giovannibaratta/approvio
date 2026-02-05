@@ -32,6 +32,16 @@ export interface GroupRepository {
   getGroupByName(data: GetGroupByNameRepo): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>>
   getGroupIdByName(groupName: string): TaskEither<GetGroupRepoError, string>
   listGroups(data: ListGroupsRepo): TaskEither<ListGroupsRepoError, ListGroupsResult>
+  /**
+   * Get all groups the user is a member of
+   * @param userId The user ID
+   */
+  getGroupsByUserId(userId: string): TaskEither<GetGroupRepoError, Group[]>
+  /**
+   * Get all groups the agent is a member of
+   * @param agentId The agent ID
+   */
+  getGroupsByAgentId(agentId: string): TaskEither<GetGroupRepoError, Group[]>
 }
 
 export interface CreateGroupWithMembershipAndUpdateUserRepo {

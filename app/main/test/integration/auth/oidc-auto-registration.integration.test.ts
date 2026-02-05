@@ -124,7 +124,7 @@ describe("OIDC Auto-Registration Integration", () => {
         .set("Authorization", `Bearer ${tokenResponse.body.accessToken}`)
 
       expect(infoResponse).toHaveStatusCode(200)
-      expect(infoResponse.body).toEqual({entityType: "user"})
+      expect(infoResponse.body).toMatchObject({entityType: "user"})
     }, 20000)
   })
 
@@ -203,7 +203,7 @@ describe("OIDC Auto-Registration Integration", () => {
         .set("Authorization", `Bearer ${tokenResponse.body.accessToken}`)
 
       expect(infoResponse).toHaveStatusCode(200)
-      expect(infoResponse.body).toEqual({entityType: "user"})
+      expect(infoResponse.body).toMatchObject({entityType: "user"})
     }, 20000)
   })
 
@@ -270,7 +270,7 @@ describe("OIDC Auto-Registration Integration", () => {
         .set("Authorization", `Bearer ${tokenResponse.body.accessToken}`)
 
       expect(infoResponse).toHaveStatusCode(200)
-      expect(infoResponse.body).toEqual({entityType: "user"})
+      expect(infoResponse.body).toMatchObject({entityType: "user"})
     }, 20000)
   })
 })

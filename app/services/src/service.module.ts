@@ -13,7 +13,7 @@ import {WorkflowTemplateService} from "./workflow-template"
 import {VoteService} from "./vote"
 import {EmailService} from "./email/email.service"
 import {WebhookService} from "./webhook/webhook.service"
-import {AuthService, PkceService} from "./auth"
+import {AuthService, PkceService, IdentityService} from "./auth"
 import {RoleService} from "./role"
 import {QueueService} from "./queue"
 import {ConfigModule} from "@external/config.module"
@@ -36,7 +36,8 @@ const services = [
   AuthService,
   RoleService,
   QueueService,
-  TaskService
+  TaskService,
+  IdentityService
 ]
 
 const internalServices = [PkceService]

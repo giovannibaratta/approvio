@@ -143,6 +143,14 @@ export class GroupService {
       TE.chainW(repoListGroups)
     )
   }
+
+  getUserGroups(userId: string): TaskEither<GetGroupRepoError, Group[]> {
+    return this.groupRepo.getGroupsByUserId(userId)
+  }
+
+  getAgentGroups(agentId: string): TaskEither<GetGroupRepoError, Group[]> {
+    return this.groupRepo.getGroupsByAgentId(agentId)
+  }
 }
 
 export interface CreateGroupRequest extends RequestorAwareRequest {

@@ -5,7 +5,7 @@ import {AppModule} from "@app/app.module"
 import {DatabaseClient} from "@external/database"
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {ConfigProvider} from "@external/config"
-import {MockConfigProvider, createUserWithRefreshToken} from "@test/mock-data"
+import {MockConfigProvider, createMockGroupInDb, createUserWithRefreshToken} from "@test/mock-data"
 import {PrismaClient} from "@prisma/client"
 import "expect-more-jest"
 import {GRACE_PERIOD_SECONDS, RefreshTokenStatus} from "@domain"
@@ -155,6 +155,67 @@ describe("Auth Integration", () => {
 
       // Expect
       expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+    })
+
+    it("should return groups for the authenticated user and respect isolation", async () => {
+      // Given: A user with a valid access token
+      const {user, token} = await setupUserWithRefreshToken()
+      const refreshResponse = await request(app.getHttpServer())
+        .post("/auth/refresh")
+        .send({refreshToken: token.plainToken})
+      const validAccessToken = refreshResponse.body.accessToken
+
+      // Given: Two groups, one with the user and one without
+      const group1 = await createMockGroupInDb(prisma)
+      await createMockGroupInDb(prisma)
+
+      await prisma.groupMembership.create({
+        data: {
+          groupId: group1.id,
+          userId: user.id,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        }
+      })
+
+      // When: Requesting info
+      const response = await request(app.getHttpServer())
+        .get("/auth/info")
+        .set("Authorization", `Bearer ${validAccessToken}`)
+
+      // Expect
+      expect(response).toHaveStatusCode(200)
+      expect(response.body).toMatchObject({
+        entityType: "user",
+        groups: [
+          {
+            groupId: group1.id,
+            groupName: group1.name
+          }
+        ]
+      })
+      expect(response.body.groups).toHaveLength(1)
+    })
+
+    it("should return empty groups when user has no memberships", async () => {
+      // Given: A user with no memberships
+      const {token} = await setupUserWithRefreshToken()
+      const refreshResponse = await request(app.getHttpServer())
+        .post("/auth/refresh")
+        .send({refreshToken: token.plainToken})
+      const validAccessToken = refreshResponse.body.accessToken
+
+      // When: Requesting info
+      const response = await request(app.getHttpServer())
+        .get("/auth/info")
+        .set("Authorization", `Bearer ${validAccessToken}`)
+
+      // Expect
+      expect(response).toHaveStatusCode(200)
+      expect(response.body).toMatchObject({
+        entityType: "user",
+        groups: []
+      })
     })
   })
 

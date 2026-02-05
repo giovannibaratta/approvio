@@ -5,7 +5,7 @@ import {AppModule} from "@app/app.module"
 import {DatabaseClient} from "@external/database"
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {ConfigProvider} from "@external/config"
-import {MockConfigProvider} from "@test/mock-data"
+import {createMockGroupInDb, MockConfigProvider} from "@test/mock-data"
 import {PrismaClient} from "@prisma/client"
 import {AgentFactory, AgentWithPrivateKey} from "@domain"
 import {AgentChallengeRequest, AgentTokenRequest} from "@approvio/api"
@@ -401,6 +401,74 @@ describe("Agent Authentication Integration", () => {
 
           expect(infoResponse).toHaveStatusCode(200)
           expect(infoResponse.body).toHaveProperty("entityType", "agent")
+        })
+
+        it("should return groups for the authenticated agent and respect isolation", async () => {
+          // Given: An agent with a valid access token
+          const {nonce} = await generateChallengeAndGetPayload()
+          const jwtAssertion = createJwtAssertion(nonce)
+          const tokenResponse = await supertest(app.getHttpServer()).post(tokenEndpoint).send({
+            grantType: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            clientAssertionType: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            clientAssertion: jwtAssertion
+          })
+          expect(tokenResponse).toHaveStatusCode(200)
+          const validAccessToken = tokenResponse.body.accessToken
+
+          // Given: Two groups, one with the agent and one without
+          const group1 = await createMockGroupInDb(prisma)
+          await createMockGroupInDb(prisma)
+
+          await prisma.agentGroupMembership.create({
+            data: {
+              groupId: group1.id,
+              agentId: testAgent.id,
+              createdAt: new Date(),
+              updatedAt: new Date()
+            }
+          })
+
+          // When: Requesting info
+          const infoResponse = await supertest(app.getHttpServer())
+            .get("/auth/info")
+            .set("Authorization", `Bearer ${validAccessToken}`)
+
+          // Expect
+          expect(infoResponse).toHaveStatusCode(200)
+          expect(infoResponse.body).toMatchObject({
+            entityType: "agent",
+            groups: [
+              {
+                groupId: group1.id,
+                groupName: group1.name
+              }
+            ]
+          })
+          expect(infoResponse.body.groups).toHaveLength(1)
+        })
+
+        it("should return empty groups when agent has no memberships", async () => {
+          // Given: An agent with no memberships
+          const {nonce} = await generateChallengeAndGetPayload()
+          const jwtAssertion = createJwtAssertion(nonce)
+          const tokenResponse = await supertest(app.getHttpServer()).post(tokenEndpoint).send({
+            grantType: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+            clientAssertionType: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            clientAssertion: jwtAssertion
+          })
+          const validAccessToken = tokenResponse.body.accessToken
+
+          // When: Requesting info
+          const infoResponse = await supertest(app.getHttpServer())
+            .get("/auth/info")
+            .set("Authorization", `Bearer ${validAccessToken}`)
+
+          // Expect
+          expect(infoResponse).toHaveStatusCode(200)
+          expect(infoResponse.body).toMatchObject({
+            entityType: "agent",
+            groups: []
+          })
         })
 
         it("should work by extracting agent name from JWT issuer claim", async () => {

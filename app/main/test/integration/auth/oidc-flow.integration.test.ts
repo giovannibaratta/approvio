@@ -220,7 +220,7 @@ describe("OIDC Flow Integration", () => {
 
       // Expect: User info endpoint returns entity type
       expect(infoResponse).toHaveStatusCode(200)
-      expect(infoResponse.body).toEqual({entityType: "user"})
+      expect(infoResponse.body).toMatchObject({entityType: "user"})
     }, 20000)
   })
 })

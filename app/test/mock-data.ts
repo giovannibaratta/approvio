@@ -610,7 +610,7 @@ export async function createMockGroupInDb(
 ): Promise<PrismaGroup> {
   const randomGroup: Prisma.GroupCreateInput = {
     id: chance.guid({version: 4}),
-    name: chance.company(),
+    name: chance.word({length: 10}) + "-" + chance.integer({min: 1, max: 1000}),
     description: chance.sentence(),
     createdAt: new Date(),
     updatedAt: new Date(),

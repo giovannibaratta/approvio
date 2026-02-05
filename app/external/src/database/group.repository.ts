@@ -19,6 +19,7 @@ import {isLeft} from "fp-ts/lib/Either"
 import * as TE from "fp-ts/lib/TaskEither"
 import {TaskEither} from "fp-ts/lib/TaskEither"
 import {pipe} from "fp-ts/lib/function"
+import * as RA from "fp-ts/ReadonlyArray"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 import {DatabaseClient} from "./database-client"
 import {mapToDomainVersionedGroupWithEntities} from "./shared"
@@ -39,6 +40,7 @@ interface ListOptions {
 export type PrismaGroupWithCount = PrismaGroup & {
   _count: {
     groupMemberships: number
+    agentGroupMemberships: number
   }
 }
 
@@ -79,7 +81,8 @@ export class GroupDbRepository implements GroupRepository {
                 // Include count for mapping later
                 _count: {
                   select: {
-                    groupMemberships: true
+                    groupMemberships: true,
+                    agentGroupMemberships: true
                   }
                 }
               }
@@ -151,6 +154,84 @@ export class GroupDbRepository implements GroupRepository {
     )
   }
 
+  getGroupsByUserId(userId: string): TaskEither<GetGroupRepoError, Group[]> {
+    return pipe(
+      userId,
+      TE.right,
+      TE.chainW(this.getGroupsByUserIdTask()),
+      TE.chainEitherKW(groups =>
+        pipe(groups, RA.traverse(E.Applicative)(mapToDomainVersionedGroupWithEntities), E.map(RA.toArray))
+      )
+    )
+  }
+
+  private getGroupsByUserIdTask(): (userId: string) => TaskEither<GetGroupRepoError, PrismaGroupWithCount[]> {
+    return userId =>
+      TE.tryCatchK(
+        () =>
+          this.dbClient.group.findMany({
+            where: {
+              groupMemberships: {
+                some: {
+                  userId
+                }
+              }
+            },
+            include: {
+              _count: {
+                select: {
+                  groupMemberships: true,
+                  agentGroupMemberships: true
+                }
+              }
+            }
+          }),
+        error => {
+          Logger.error("Error while retrieving user groups. Unknown error", error)
+          return "unknown_error" as const
+        }
+      )()
+  }
+
+  getGroupsByAgentId(agentId: string): TaskEither<GetGroupRepoError, Group[]> {
+    return pipe(
+      agentId,
+      TE.right,
+      TE.chainW(this.getGroupsByAgentIdTask()),
+      TE.chainEitherKW(groups =>
+        pipe(groups, RA.traverse(E.Applicative)(mapToDomainVersionedGroupWithEntities), E.map(RA.toArray))
+      )
+    )
+  }
+
+  private getGroupsByAgentIdTask(): (agentId: string) => TaskEither<GetGroupRepoError, PrismaGroupWithCount[]> {
+    return agentId =>
+      TE.tryCatchK(
+        () =>
+          this.dbClient.group.findMany({
+            where: {
+              agentGroupMemberships: {
+                some: {
+                  agentId
+                }
+              }
+            },
+            include: {
+              _count: {
+                select: {
+                  groupMemberships: true,
+                  agentGroupMemberships: true
+                }
+              }
+            }
+          }),
+        error => {
+          Logger.error("Error while retrieving agent groups. Unknown error", error)
+          return "unknown_error" as const
+        }
+      )()
+  }
+
   private getGroup(request: GetObjectTaskRequest): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
     return pipe(
       request,
@@ -216,7 +297,8 @@ export class GroupDbRepository implements GroupRepository {
             include: {
               _count: {
                 select: {
-                  groupMemberships: true
+                  groupMemberships: true,
+                  agentGroupMemberships: true
                 }
               }
             }
@@ -247,7 +329,8 @@ export class GroupDbRepository implements GroupRepository {
             include: {
               _count: {
                 select: {
-                  groupMemberships: true
+                  groupMemberships: true,
+                  agentGroupMemberships: true
                 }
               }
             }

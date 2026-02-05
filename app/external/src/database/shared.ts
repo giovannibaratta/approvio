@@ -78,7 +78,7 @@ export function mapToDomainVersionedGroupWithEntities(
     id: dbObject.id,
     name: dbObject.name,
     updatedAt: dbObject.updatedAt,
-    entitiesCount: dbObject._count.groupMemberships
+    entitiesCount: dbObject._count.groupMemberships + dbObject._count.agentGroupMemberships
   }
 
   return pipe(

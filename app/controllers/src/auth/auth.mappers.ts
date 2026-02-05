@@ -1,4 +1,4 @@
-import {AuthError, RefreshTokenCreateError, RefreshTokenRefreshError, TokenPair} from "@services"
+import {AuthError, GetGroupRepoError, RefreshTokenCreateError, RefreshTokenRefreshError, TokenPair} from "@services"
 import {
   GenerateTokenRequestValidationError,
   RefreshAgentTokenRequestValidationError,
@@ -12,8 +12,9 @@ import {
   Logger,
   UnauthorizedException
 } from "@nestjs/common"
-import {TokenResponse} from "@approvio/api"
+import {GetEntityInfo200Response, TokenResponse} from "@approvio/api"
 import {generateErrorPayload} from "@controllers/error"
+import {AuthenticatedEntity, Group} from "@domain"
 
 type RefreshUserTokenError = RefreshTokenRequestValidationError | RefreshTokenRefreshError
 type RefreshAgentTokenError = RefreshAgentTokenRequestValidationError | RefreshTokenRefreshError
@@ -436,5 +437,35 @@ export function generateErrorResponseForGenerateToken(error: GenerateTokenError,
       return new ConflictException(generateErrorPayload(errorCode, `${context}: ${errorCode}`))
     case "requestor_not_authorized":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: ${errorCode}`))
+  }
+}
+
+export function mapToEntityInfoResponse(entity: AuthenticatedEntity, groups: Group[]): GetEntityInfo200Response {
+  return {
+    entityType: entity.entityType,
+    groups: groups.map(g => ({
+      groupId: g.id,
+      groupName: g.name
+    }))
+  }
+}
+
+export function generateErrorResponseForEntityInfo(error: GetGroupRepoError, context: string): HttpException {
+  const errorCode = error.toUpperCase()
+
+  switch (error) {
+    case "unknown_error":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: unknown error`))
+    case "group_not_found":
+    case "group_name_empty":
+    case "group_name_too_long":
+    case "group_name_invalid_characters":
+    case "group_update_before_create":
+    case "group_description_too_long":
+    case "group_entities_count_invalid":
+      Logger.error(`Internal data inconsistency: ${errorCode}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
+      )
   }
 }

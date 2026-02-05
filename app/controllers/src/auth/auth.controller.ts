@@ -12,7 +12,7 @@ import {
   Req
 } from "@nestjs/common"
 import {Response, Request} from "express"
-import {AuthService, GenerateChallengeRequest} from "@services"
+import {AuthService, GenerateChallengeRequest, IdentityService} from "@services"
 import {isLeft} from "fp-ts/lib/Either"
 import * as TE from "fp-ts/TaskEither"
 import {PublicRoute} from "../../../main/src/auth/jwt.authguard"
@@ -26,7 +26,8 @@ import {
   AgentChallengeResponse,
   AgentTokenResponse,
   RefreshTokenRequest,
-  AgentTokenRequest
+  AgentTokenRequest,
+  GetUserInfo200Response
 } from "@approvio/api"
 import {
   mapAgentChallengeRequestToService,
@@ -49,7 +50,9 @@ import {
   generateErrorResponseForGenerateToken,
   generateErrorResponseForRefreshAgentToken,
   generateErrorResponseForRefreshUserToken,
-  mapToTokenResponse
+  generateErrorResponseForEntityInfo,
+  mapToTokenResponse,
+  mapToEntityInfoResponse
 } from "./auth.mappers"
 
 /**
@@ -128,7 +131,10 @@ import {
  */
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly identityService: IdentityService
+  ) {}
 
   @PublicRoute()
   @Get("login")
@@ -199,8 +205,17 @@ export class AuthController {
   }
 
   @Get("info")
-  async getUserInfo(@GetAuthenticatedEntity() authenticatedEntity: AuthenticatedEntity): Promise<{entityType: string}> {
-    return {entityType: authenticatedEntity.entityType}
+  async getEntityInfo(
+    @GetAuthenticatedEntity() authenticatedEntity: AuthenticatedEntity
+  ): Promise<GetUserInfo200Response> {
+    const result = await pipe(
+      this.identityService.getIdentityGroups(authenticatedEntity),
+      TE.map(groups => mapToEntityInfoResponse(authenticatedEntity, groups))
+    )()
+
+    if (isLeft(result)) throw generateErrorResponseForEntityInfo(result.left, "Failed to fetch entity groups")
+
+    return result.right
   }
 
   @PublicRoute()
