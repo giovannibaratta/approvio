@@ -10,7 +10,7 @@ import {pipe} from "fp-ts/lib/function"
 import {DatabaseClient} from "./database-client"
 import {chainNullableToLeft} from "./utils"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
-import {mapAgentToDomain, mapToDomainVersionedAgent} from "./shared"
+import {mapAgentToDomain, mapRolesToPrisma, mapToDomainVersionedAgent} from "./shared"
 
 @Injectable()
 export class AgentDbRepository implements AgentRepository {
@@ -52,9 +52,9 @@ export class AgentDbRepository implements AgentRepository {
     return TE.tryCatchK(
       async () => {
         const updatedAgent = await this.dbClient.agent.update({
-          where: {id: agent.id, occ: Number(agent.occ)},
+          where: {id: agent.id, occ: agent.occ},
           data: {
-            roles: agent.roles as unknown as Prisma.InputJsonValue, // Prisma JSON serialization
+            roles: mapRolesToPrisma(agent.roles),
             occ: {
               increment: 1
             }
@@ -62,9 +62,7 @@ export class AgentDbRepository implements AgentRepository {
         })
 
         const mappedAgent = mapAgentToDomain(updatedAgent)
-        if (E.isLeft(mappedAgent)) {
-          throw new Error("Failed to map updated agent to domain")
-        }
+        if (E.isLeft(mappedAgent)) throw new Error("Failed to map updated agent to domain")
 
         return mappedAgent.right
       },

@@ -24,7 +24,8 @@ import {
   WorkflowDecoratorSelector,
   OrgRole,
   AgentFactory,
-  AgentValidationError
+  AgentValidationError,
+  UnconstrainedBoundRole
 } from "@domain"
 import {
   Agent as PrismaAgent,
@@ -303,5 +304,43 @@ export class ConcurrentUpdateError extends Error {
   constructor() {
     super("Concurrent update error")
     this.name = "ConcurrentUpdateError"
+  }
+}
+
+export function mapRolesToPrisma(roles: Iterable<UnconstrainedBoundRole>): Prisma.JsonArray {
+  return [...roles].map(role => mapRoleToPrisma(role))
+}
+
+function mapRoleToPrisma(role: UnconstrainedBoundRole): Prisma.JsonObject {
+  return {
+    name: role.name,
+    resourceType: role.resourceType,
+    permissions: [...role.permissions],
+    scopeType: role.scopeType,
+    scope: mapScopeToPrisma(role.scope)
+  }
+}
+
+function mapScopeToPrisma(scope: UnconstrainedBoundRole["scope"]): Prisma.JsonObject {
+  switch (scope.type) {
+    case "group":
+      return {
+        type: scope.type,
+        groupId: scope.groupId
+      }
+    case "space":
+      return {
+        type: scope.type,
+        spaceId: scope.spaceId
+      }
+    case "workflow_template":
+      return {
+        type: scope.type,
+        workflowTemplateId: scope.workflowTemplateId
+      }
+    case "org":
+      return {
+        type: scope.type
+      }
   }
 }

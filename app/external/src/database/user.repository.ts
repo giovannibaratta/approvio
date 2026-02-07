@@ -17,7 +17,7 @@ import {TaskEither} from "fp-ts/lib/TaskEither"
 import {pipe} from "fp-ts/lib/function"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 import {DatabaseClient} from "./database-client"
-import {mapToDomainUserSummary, mapToDomainVersionedUser, mapUserToDomain} from "./shared"
+import {mapRolesToPrisma, mapToDomainUserSummary, mapToDomainVersionedUser, mapUserToDomain} from "./shared"
 import {areAllRights, chainNullableToLeft} from "./utils"
 import {isLeft} from "fp-ts/lib/Either"
 import * as E from "fp-ts/lib/Either"
@@ -97,10 +97,10 @@ export class UserDbRepository implements UserRepository {
   updateUser(user: Versioned<User>): TaskEither<UserUpdateError, User> {
     return TE.tryCatchK(
       async (): Promise<User> => {
-        const updatedUser = (await this.dbClient.user.update({
-          where: {id: user.id, occ: Number(user.occ)},
+        const updatedUser = await this.dbClient.user.update({
+          where: {id: user.id, occ: user.occ},
           data: {
-            roles: user.roles as unknown as Prisma.InputJsonValue, // Prisma JSON serialization
+            roles: mapRolesToPrisma(user.roles),
             occ: {
               increment: 1
             }
@@ -108,12 +108,10 @@ export class UserDbRepository implements UserRepository {
           include: {
             organizationAdmins: true
           }
-        })) as PrismaUserWithOrgAdmin
+        })
 
         const mappedUser = mapUserToDomain(updatedUser)
-        if (E.isLeft(mappedUser)) {
-          throw new Error("Failed to map updated user to domain")
-        }
+        if (E.isLeft(mappedUser)) throw new Error("Failed to map updated user to domain")
 
         return mappedUser.right
       },

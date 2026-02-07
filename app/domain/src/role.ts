@@ -108,7 +108,7 @@ export interface RoleTemplate<RType extends ResourceType = ResourceType> {
  * A bound role is a role definition that is applied to a scope (that defines to which resources
  * the permissions applies). It extends RoleTemplate with the full scope information.
  */
-export interface BoundRole<RType extends ResourceType = ResourceType> extends RoleTemplate<RType> {
+export type BoundRole<RType extends ResourceType = ResourceType> = RoleTemplate<RType> & {
   readonly scope: RoleScope & {type: ResourceScopePermissionBinding[RType]["scopeType"]}
 }
 

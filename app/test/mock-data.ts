@@ -36,6 +36,7 @@ import {
 import {Option} from "fp-ts/lib/Option"
 import * as O from "fp-ts/lib/Option"
 import {createSha256Hash} from "@utils"
+import {POSTGRES_BIGINT_LOWER_BOUND} from "@external/database/constants"
 
 const chance = Chance()
 
@@ -330,7 +331,7 @@ export function createMockUserPrismaPayload(
     }),
     displayName: chance.name(),
     email: chance.email(),
-    occ: 0,
+    occ: POSTGRES_BIGINT_LOWER_BOUND,
     createdAt: new Date()
   }
 
@@ -411,7 +412,7 @@ export async function createMockAgentInDb(
     agentName,
     base64PublicKey: Buffer.from(keyPair.publicKey).toString("base64"),
     createdAt: new Date(),
-    occ: 0
+    occ: POSTGRES_BIGINT_LOWER_BOUND
   }
 
   return await prisma.agent.create({data})
@@ -696,7 +697,7 @@ export async function createMockRefreshTokenInDb(
       status: params.status,
       expiresAt,
       createdAt,
-      occ: 0,
+      occ: POSTGRES_BIGINT_LOWER_BOUND,
       ...extraData
     }
   })
