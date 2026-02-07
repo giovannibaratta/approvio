@@ -1,5 +1,6 @@
 Testing if workflow works
 Another important change
+Now we are generating the prisma schema
 
 # Approvio Backend
 
