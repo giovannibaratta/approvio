@@ -1,0 +1,15 @@
+{
+  "inputs": [
+    "./package.json"
+  ],
+  "output": "./THIRD-PARTY-LICENSES.txt",
+  "overwrite": true,
+  "eol": "lf",
+  "ci": true,
+  "no-spinner": true,
+  "omitVersions": false,
+  "replace": {
+    "libphonenumber-js": "./node_modules/libphonenumber-js/LICENSE",
+    "pause@0.0.1": "./node_modules/pause/Readme.md"
+  }
+}
