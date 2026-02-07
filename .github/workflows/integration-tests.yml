@@ -1,0 +1,39 @@
+name: Approvio Integration Tests
+
+on:
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  validate:
+    name: Lint, Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Needed for yarn 4
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "yarn"
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Generate Prisma Client
+        run: yarn prisma:generate
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Build
+        run: yarn build
+
+      - name: Integration Tests
+        run: yarn test
