@@ -2,7 +2,7 @@
   "name": "@approvio/backend",
   "version": "0.0.1",
   "author": "Giovanni Baratta",
-  "license": "MIT",
+  "license": "PolyForm Noncommercial License 1.0.0",
   "engines": {
     "node": "22"
   },
