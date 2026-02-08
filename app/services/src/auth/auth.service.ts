@@ -206,7 +206,7 @@ export class AuthService {
             authUrl.searchParams.append("response_type", "code")
             authUrl.searchParams.append("client_id", oidcConfig.clientId)
             authUrl.searchParams.append("redirect_uri", oidcConfig.redirectUri)
-            authUrl.searchParams.append("scope", "openid profile email")
+            authUrl.searchParams.append("scope", oidcConfig.scopes || "openid profile email")
             authUrl.searchParams.append("state", pkceChallenge.state)
             authUrl.searchParams.append("code_challenge", pkceChallenge.codeChallenge)
             authUrl.searchParams.append("code_challenge_method", "S256")
