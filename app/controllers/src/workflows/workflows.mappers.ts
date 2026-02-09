@@ -5,7 +5,8 @@ import {
   CastVoteRequest,
   CastVoteServiceError,
   CanVoteError,
-  ListWorkflowsResponse
+  ListWorkflowsResponse,
+  FindVotesError
 } from "@services"
 import {eitherParseOptionalBoolean, eitherParseInt, ExtractLeftFromMethod} from "@utils"
 import {Either, right, left, map} from "fp-ts/Either"
@@ -17,7 +18,9 @@ import {
   Workflow as WorkflowApi,
   ListWorkflowsParams,
   GetWorkflowParams,
-  WorkflowInclude
+  WorkflowInclude,
+  GetWorkflowVotes200Response,
+  WorkflowVote
 } from "@approvio/api"
 import * as E from "fp-ts/Either"
 import {
@@ -37,7 +40,8 @@ import {
   DecoratedWorkflow,
   isDecoratedWorkflow,
   VoteValidationError,
-  WorkflowDecoratorSelector
+  WorkflowDecoratorSelector,
+  Vote
 } from "@domain"
 import {mapWorkflowTemplateToApi} from "@controllers/workflow-templates"
 import {pipe} from "fp-ts/lib/function"
@@ -782,5 +786,80 @@ export function generateErrorResponseForCastVote(
     case "entity_not_in_required_group":
     case "workflow_template_not_active":
       return new UnprocessableEntityException(generateErrorPayload(errorCode, `${context}: Cannot cast vote`))
+  }
+}
+
+/** Map the domain model to the API model */
+export function mapVoteListToApi(votes: ReadonlyArray<Vote>): GetWorkflowVotes200Response {
+  return {
+    votes: votes.map(vote => {
+      const apiVote: WorkflowVote = {
+        voterId: vote.voter.entityId,
+        voterType: vote.voter.entityType === "user" ? "USER" : "AGENT",
+        voteType: vote.type,
+        reason: vote.reason,
+        timestamp: vote.castedAt.toISOString(),
+        votedForGroups: vote.type === "APPROVE" ? [...vote.votedForGroups] : undefined
+      }
+      return apiVote
+    })
+  }
+}
+
+export function generateErrorResponseForListVotes(error: FindVotesError, context: string): HttpException {
+  switch (error) {
+    case "workflow_not_found":
+      return new NotFoundException(generateErrorPayload("WORKFLOW_NOT_FOUND", `${context}: Workflow not found`))
+    case "unknown_error":
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
+      )
+    case "vote_invalid_group_id":
+    case "vote_invalid_voter_id":
+    case "vote_invalid_voter_type":
+    case "vote_invalid_vote_type":
+    case "vote_missing_voter_entity":
+    case "vote_conflicting_voter_entities":
+    case "vote_invalid_workflow_id":
+    case "vote_reason_too_long":
+    case "vote_voted_for_groups_required":
+    case "approval_rule_and_rule_must_have_rules":
+    case "approval_rule_group_rule_invalid_group_id":
+    case "approval_rule_group_rule_invalid_min_count":
+    case "approval_rule_invalid_rule_type":
+    case "approval_rule_malformed_content":
+    case "approval_rule_max_rule_nesting_exceeded":
+    case "approval_rule_or_rule_must_have_rules":
+    case "workflow_action_recipients_empty":
+    case "workflow_action_recipients_invalid_email":
+    case "workflow_action_type_invalid":
+    case "workflow_action_url_invalid":
+    case "workflow_action_method_invalid":
+    case "workflow_description_too_long":
+    case "workflow_expires_at_in_the_past":
+    case "workflow_name_empty":
+    case "workflow_name_invalid_characters":
+    case "workflow_name_too_long":
+    case "workflow_status_invalid":
+    case "workflow_template_description_too_long":
+    case "workflow_template_expires_in_hours_invalid":
+    case "workflow_template_name_empty":
+    case "workflow_template_name_invalid_characters":
+    case "workflow_template_name_too_long":
+    case "workflow_template_status_invalid":
+    case "workflow_template_update_before_create":
+    case "workflow_template_version_invalid_format":
+    case "workflow_template_version_invalid_number":
+    case "workflow_template_version_too_long":
+    case "workflow_template_space_id_invalid_uuid":
+    case "workflow_update_before_create":
+    case "workflow_workflow_template_id_invalid_uuid":
+    case "workflow_template_active_is_not_latest":
+    case "workflow_action_missing_http_method":
+    case "workflow_action_headers_invalid":
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
+      )
   }
 }

@@ -21,7 +21,7 @@ import {QueueService} from "../queue/queue.service"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
-import {PersistVoteError, GetLatestVoteError, VOTE_REPOSITORY_TOKEN, VoteRepository} from "./interfaces"
+import {PersistVoteError, GetLatestVoteError, VOTE_REPOSITORY_TOKEN, VoteRepository, FindVotesError} from "./interfaces"
 import {sequenceS} from "fp-ts/lib/Apply"
 import {GROUP_MEMBERSHIP_REPOSITORY_TOKEN, GroupMembershipRepository} from "@services/group-membership"
 import {isNone, Option} from "fp-ts/lib/Option"
@@ -142,6 +142,18 @@ export class VoteService {
         Logger.warn(`Failed to enqueue recalculation for workflow ${vote.workflowId}, vote persisted successfully`)
         return TE.right(undefined)
       })
+    )
+  }
+
+  /**
+   * Lists all votes for a given workflow.
+   * @param workflowId The ID of the workflow.
+   * @returns A TaskEither with a list of votes or an error.
+   */
+  listVotes(workflowId: string): TaskEither<FindVotesError | WorkflowGetError, ReadonlyArray<Vote>> {
+    return pipe(
+      this.workflowService.getWorkflowByIdentifier(workflowId),
+      TE.chainW(() => this.voteRepo.getVotesByWorkflowId(workflowId))
     )
   }
 }
