@@ -18,11 +18,9 @@ export interface OidcProviderConfig {
   clientSecret: string
   redirectUri: string
   allowInsecure?: boolean
-  override?: {
-    authorizationEndpoint: string
-    tokenEndpoint: string
-    userinfoEndpoint: string
-  }
+  authorizationEndpoint?: string
+  tokenEndpoint?: string
+  userinfoEndpoint?: string
   scopes?: string
 }
 

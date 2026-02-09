@@ -44,14 +44,35 @@ export class OidcBootstrapService implements OnApplicationBootstrap {
       TE.chainW((oidcConfig: OidcProviderConfig) =>
         TE.tryCatch(
           async () => {
-            if (oidcConfig.override) {
+            // Check if manual configuration is provided
+            const hasManualConfig =
+              oidcConfig.authorizationEndpoint || oidcConfig.tokenEndpoint || oidcConfig.userinfoEndpoint
+
+            if (hasManualConfig) {
+              if (
+                !oidcConfig.authorizationEndpoint ||
+                !oidcConfig.tokenEndpoint ||
+                !oidcConfig.userinfoEndpoint
+              ) {
+                const missing = []
+                if (!oidcConfig.authorizationEndpoint) missing.push("OIDC_AUTHORIZATION_ENDPOINT")
+                if (!oidcConfig.tokenEndpoint) missing.push("OIDC_TOKEN_ENDPOINT")
+                if (!oidcConfig.userinfoEndpoint) missing.push("OIDC_USERINFO_ENDPOINT")
+
+                throw new Error(
+                  `Incomplete manual OIDC configuration. If providing manual endpoints, all of authorization, token, and userinfo endpoints must be specified. Missing: ${missing.join(
+                    ", "
+                  )}`
+                )
+              }
+
               this.logger.log(`Initializing OIDC configuration manually for issuer ${oidcConfig.issuerUrl}`)
 
               const serverMetadata = {
                 issuer: oidcConfig.issuerUrl,
-                authorization_endpoint: oidcConfig.override.authorizationEndpoint,
-                token_endpoint: oidcConfig.override.tokenEndpoint,
-                userinfo_endpoint: oidcConfig.override.userinfoEndpoint
+                authorization_endpoint: oidcConfig.authorizationEndpoint,
+                token_endpoint: oidcConfig.tokenEndpoint,
+                userinfo_endpoint: oidcConfig.userinfoEndpoint
               }
 
               return new client.Configuration(serverMetadata, oidcConfig.clientId, oidcConfig.clientSecret)

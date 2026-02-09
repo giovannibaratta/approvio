@@ -88,14 +88,15 @@ export class ConfigProvider implements ConfigProviderInterface {
     const userinfoEndpoint = process.env.OIDC_USERINFO_ENDPOINT
     const scopes = process.env.OIDC_SCOPES
 
-    let override: OidcProviderConfig["override"] | undefined = undefined
-
-    if (!issuerUrl || !clientId || !clientSecret || !redirectUri)
+    if (!issuerUrl || !clientId || !clientSecret || !redirectUri) {
       throw new Error("Incomplete OIDC provider configuration")
+    }
 
-    if (issuerUrl.length === 0 || clientId.length === 0 || clientSecret.length === 0 || redirectUri.length === 0)
+    if (issuerUrl.length === 0 || clientId.length === 0 || clientSecret.length === 0 || redirectUri.length === 0) {
       throw new Error("OIDC provider configuration values cannot be empty")
+    }
 
+    // Validate URL format
     try {
       new URL(issuerUrl)
     } catch {
@@ -108,35 +109,28 @@ export class ConfigProvider implements ConfigProviderInterface {
       throw new Error("OIDC_REDIRECT_URI must be a valid URL")
     }
 
-    // Either all attributes are provided or none, mix is considered an error.
-    if (authorizationEndpoint && tokenEndpoint && userinfoEndpoint) {
+    if (authorizationEndpoint) {
       try {
         new URL(authorizationEndpoint)
       } catch {
         throw new Error("OIDC_AUTHORIZATION_ENDPOINT must be a valid URL")
       }
+    }
 
+    if (tokenEndpoint) {
       try {
         new URL(tokenEndpoint)
       } catch {
         throw new Error("OIDC_TOKEN_ENDPOINT must be a valid URL")
       }
+    }
 
+    if (userinfoEndpoint) {
       try {
         new URL(userinfoEndpoint)
       } catch {
         throw new Error("OIDC_USERINFO_ENDPOINT must be a valid URL")
       }
-
-      override = {
-        authorizationEndpoint,
-        tokenEndpoint,
-        userinfoEndpoint
-      }
-    } else if (authorizationEndpoint || tokenEndpoint || userinfoEndpoint) {
-      throw new Error(
-        "Incomplete manual OIDC configuration. If providing manual endpoints, all of authorization, token, and userinfo endpoints must be specified."
-      )
     }
 
     let allowInsecure = false
@@ -157,7 +151,9 @@ export class ConfigProvider implements ConfigProviderInterface {
       clientSecret,
       redirectUri,
       allowInsecure,
-      override,
+      authorizationEndpoint,
+      tokenEndpoint,
+      userinfoEndpoint,
       scopes
     }
   }

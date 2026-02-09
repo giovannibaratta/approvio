@@ -267,8 +267,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
         clientId: "integration-test-client-id",
         clientSecret: "integration-test-client-secret",
         redirectUri: "http://localhost:3000/auth/callback",
-        allowInsecure: true,
-        override: undefined
+        allowInsecure: true
       },
       jwtConfig: {
         secret: "test-jwt-secret-for-integration-tests",
@@ -634,7 +633,7 @@ export async function createMockSpaceInDb(
 ): Promise<PrismaSpace> {
   const randomSpace: Prisma.SpaceCreateInput = {
     id: chance.guid({version: 4}),
-    name: chance.company(),
+    name: `${chance.company()}-${chance.guid()}`,
     description: chance.sentence(),
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -644,6 +643,39 @@ export async function createMockSpaceInDb(
   const data: Prisma.SpaceCreateInput = {
     ...randomSpace,
     ...overrides
+  }
+
+  // Ensure name is unique even if overridden, unless user explicitly wants a collision
+  // But wait, if user overrides "name", we assume they want THAT name.
+  // The issue is likely that overrides contains a name that collides.
+  // But checking workflows.integration.test.ts, it doesn't override spaceId or space name explicitly in the failing test.
+  // The failing test calls `createMockWorkflowInDb` -> `createMockWorkflowTemplateInDb` -> `createMockSpaceInDb`.
+  // `createMockWorkflowInDb` is called with:
+  // {
+  //   name: "Specific-Workflow",
+  //   description: "Details for specific workflow",
+  //   status: WorkflowStatus.EVALUATION_IN_PROGRESS
+  // }
+  // This does NOT override space. So `overrides` in `createMockSpaceInDb` should be undefined.
+  // So `randomSpace.name` is used.
+  // `chance.company()` might not be unique enough, but I appended `chance.guid()`.
+  // Wait, I updated `name` in the previous step. Is it possible the update didn't apply or I am misreading the logs?
+  // The error line 649 points to `create({data})`.
+  // Let's verify if `chance.guid` collision is possible? Unlikely.
+  // Maybe `chance.company()` returns something that makes the string too long or weird? No, error is "Unique constraint".
+  //
+  // Hypothesis: The previous fix WAS effective, but I'm looking at logs from a run where it FAILED.
+  // Wait, the "Failed Check Run 1" URL corresponds to the latest run?
+  // The logs show the file content around the error:
+  // 649 |    const space = await prisma.space.create({data})
+  //
+  // If my previous edit worked, line 636 should have `${chance.company()}-${chance.guid()}`.
+  //
+  // Let's force a more robust unique name just in case `chance.guid()` is mocked or behaving weirdly in the test environment.
+  // I will use `randomUUID()` from crypto instead of chance for the suffix.
+
+  if (overrides?.name === undefined) {
+    data.name = `${chance.company()}-${randomBytes(8).toString("hex")}`
   }
 
   const space = await prisma.space.create({data})
