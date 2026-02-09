@@ -6,6 +6,7 @@ export type EnqueueRecalculationError = UnknownError
 export type EnqueueWorkflowStatusChangedError = UnknownError
 export type EnqueueWorkflowActionEmailError = UnknownError
 export type EnqueueWorkflowActionWebhookError = UnknownError
+export type QueueHealthCheckFailed = "queue_health_check_failed"
 
 export const QUEUE_PROVIDER_TOKEN = Symbol("QUEUE_PROVIDER_TOKEN")
 
@@ -20,4 +21,9 @@ export interface QueueProvider {
   enqueueWorkflowStatusChanged(event: WorkflowStatusChangedEvent): TaskEither<EnqueueWorkflowStatusChangedError, void>
   enqueueEmailAction(event: WorkflowActionEmailEvent): TaskEither<EnqueueWorkflowActionEmailError, void>
   enqueueWebhookAction(event: WorkflowActionWebhookEvent): TaskEither<EnqueueWorkflowActionWebhookError, void>
+  /**
+   * Checks the health of the queue provider.
+   * @returns A TaskEither with void (healthy) or an UnknownError (unhealthy).
+   */
+  checkHealth(): TaskEither<QueueHealthCheckFailed, void>
 }

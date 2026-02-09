@@ -14,6 +14,7 @@ import {
   EnqueueWorkflowActionEmailError,
   EnqueueWorkflowActionWebhookError,
   EnqueueWorkflowStatusChangedError,
+  QueueHealthCheckFailed,
   QueueProvider
 } from "@services"
 import {WorkflowStatusChangedEvent, WorkflowActionEmailEvent, WorkflowActionWebhookEvent} from "@domain"
@@ -113,6 +114,22 @@ export class BullQueueProvider implements QueueProvider {
       error => {
         Logger.error(`Failed to enqueue webhook action for task ${event.taskId}`, error)
         return "unknown_error" as const
+      }
+    )
+  }
+
+  checkHealth(): TaskEither<QueueHealthCheckFailed, void> {
+    return TE.tryCatch(
+      async () => {
+        // The ping function does not throw an error when the connection is not available, it just
+        // block the execution. The timeout is needed to return without waiting for the ping
+        // response.
+        const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Redis ping timeout")), 2000))
+        await Promise.race([this.queue.client.ping(), timeout])
+      },
+      error => {
+        Logger.error("Failed to check redis connection", error)
+        return "queue_health_check_failed" as const
       }
     )
   }

@@ -953,9 +953,7 @@ describe("Workflows API", () => {
         const nonExistentId = randomUUID()
 
         // When: listing votes
-        const response = await get(app, `${endpoint}/${nonExistentId}/votes`)
-          .withToken(orgAdminUser.token)
-          .build()
+        const response = await get(app, `${endpoint}/${nonExistentId}/votes`).withToken(orgAdminUser.token).build()
 
         // Expect: 404 Not Found
         expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
