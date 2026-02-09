@@ -267,7 +267,8 @@ export class MockConfigProvider implements ConfigProviderInterface {
         clientId: "integration-test-client-id",
         clientSecret: "integration-test-client-secret",
         redirectUri: "http://localhost:3000/auth/callback",
-        allowInsecure: true
+        allowInsecure: true,
+        override: undefined
       },
       jwtConfig: {
         secret: "test-jwt-secret-for-integration-tests",

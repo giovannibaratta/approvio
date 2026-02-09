@@ -44,6 +44,19 @@ export class OidcBootstrapService implements OnApplicationBootstrap {
       TE.chainW((oidcConfig: OidcProviderConfig) =>
         TE.tryCatch(
           async () => {
+            if (oidcConfig.override) {
+              this.logger.log(`Initializing OIDC configuration manually for issuer ${oidcConfig.issuerUrl}`)
+
+              const serverMetadata = {
+                issuer: oidcConfig.issuerUrl,
+                authorization_endpoint: oidcConfig.override.authorizationEndpoint,
+                token_endpoint: oidcConfig.override.tokenEndpoint,
+                userinfo_endpoint: oidcConfig.override.userinfoEndpoint
+              }
+
+              return new client.Configuration(serverMetadata, oidcConfig.clientId, oidcConfig.clientSecret)
+            }
+
             this.logger.log(`Initializing OIDC discovery from ${oidcConfig.issuerUrl}`)
 
             const options: client.DiscoveryRequestOptions = {
@@ -65,8 +78,12 @@ export class OidcBootstrapService implements OnApplicationBootstrap {
             return config
           },
           error => {
-            this.logger.error("OIDC discovery initialization failed", error)
+            this.logger.error("OIDC initialization failed", error)
             if (error instanceof Error) {
+              if (error.message.includes("Incomplete manual OIDC configuration")) {
+                throw error
+              }
+
               if (error.message.includes("network") || error.message.includes("timeout")) {
                 return "oidc_network_error" as const
               }
