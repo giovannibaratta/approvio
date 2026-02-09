@@ -20,13 +20,16 @@ import {
   validateWorkflowCreateRequest,
   validateApiRequest,
   validateListWorkflowsParams,
-  validateGetWorkflowParams
+  validateGetWorkflowParams,
+  mapVoteListToApi,
+  generateErrorResponseForListVotes
 } from "./workflows.mappers"
 import {
   Workflow as WorkflowApi,
   CanVoteResponse as CanVoteResponseApi,
   ListWorkflows200Response,
-  WorkflowInclude
+  WorkflowInclude,
+  GetWorkflowVotes200Response
 } from "@approvio/api"
 
 export const WORKFLOWS_ENDPOINT_ROOT = "workflows"
@@ -165,6 +168,19 @@ export class WorkflowsController {
 
     if (isLeft(eitherVote))
       throw generateErrorResponseForCastVote(eitherVote.left, `Failed to cast vote for workflow ${workflowId}`)
+  }
+
+  @Get(":workflowId/votes")
+  async listVotes(@Param("workflowId") workflowId: string): Promise<GetWorkflowVotes200Response> {
+    const serviceListVotes = (wId: string) => this.voteService.listVotes(wId)
+
+    const eitherVotes = await pipe(workflowId, serviceListVotes, TE.map(mapVoteListToApi))()
+
+    if (isLeft(eitherVotes)) {
+      throw generateErrorResponseForListVotes(eitherVotes.left, `Failed to list votes for workflow ${workflowId}`)
+    }
+
+    return eitherVotes.right
   }
 }
 

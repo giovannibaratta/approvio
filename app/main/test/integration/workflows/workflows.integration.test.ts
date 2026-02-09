@@ -3,7 +3,8 @@ import {
   Workflow as WorkflowApi,
   WorkflowCreate,
   WorkflowVoteRequest as WorkflowVoteRequestApi,
-  ListWorkflows200Response
+  ListWorkflows200Response,
+  GetWorkflowVotes200Response
 } from "@approvio/api"
 import {AppModule} from "@app/app.module"
 import {WORKFLOWS_ENDPOINT_ROOT} from "@controllers"
@@ -859,6 +860,106 @@ describe("Workflows API", () => {
         // Expect: a 400 BAD_REQUEST status with REQUEST_INVALID_INCLUDE error code
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("REQUEST_INVALID_INCLUDE")
+      })
+    })
+  })
+
+  describe("GET /workflows/:workflowId/votes", () => {
+    let workflowWithVotes: PrismaWorkflow
+    let workflowTemplate: PrismaWorkflowTemplate
+
+    beforeEach(async () => {
+      workflowTemplate = await createMockWorkflowTemplateInDb(prisma, {
+        approvalRule: {
+          type: ApprovalRuleType.GROUP_REQUIREMENT,
+          groupId: mockGroupId1,
+          minCount: 1
+        }
+      })
+
+      workflowWithVotes = await createMockWorkflowInDb(prisma, {
+        name: "Workflow-With-Votes",
+        description: "Votes Test",
+        status: WorkflowStatus.EVALUATION_IN_PROGRESS,
+        workflowTemplateId: workflowTemplate.id
+      })
+
+      await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id)
+
+      // Add voter roles
+      const voterRole = SystemRole.createWorkflowTemplateVoterRole({
+        type: "workflow_template",
+        workflowTemplateId: workflowTemplate.id
+      })
+      const roleForDb = JSON.parse(JSON.stringify(voterRole))
+      await prisma.user.update({
+        where: {id: orgMemberUser.user.id},
+        data: {roles: [roleForDb]}
+      })
+
+      // Cast a vote
+      const voteRequest: WorkflowVoteRequestApi = {
+        voteType: {
+          type: "APPROVE",
+          votedForGroups: [mockGroupId1]
+        },
+        reason: "Looks good"
+      }
+      await post(app, `${endpoint}/${workflowWithVotes.id}/vote`)
+        .withToken(orgMemberUser.token)
+        .build()
+        .send(voteRequest)
+    })
+
+    describe("good cases", () => {
+      it("should list votes for a workflow (as OrgAdmin)", async () => {
+        // When: a request is sent to list votes
+        const response = await get(app, `${endpoint}/${workflowWithVotes.id}/votes`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect: 200 OK and list of votes
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: GetWorkflowVotes200Response = response.body
+        expect(body.votes).toHaveLength(1)
+        expect(body.votes[0]).toMatchObject({
+          voterId: orgMemberUser.user.id,
+          voterType: "USER",
+          voteType: "APPROVE",
+          reason: "Looks good"
+        })
+        expect(body.votes[0]?.votedForGroups).toEqual([mockGroupId1])
+      })
+
+      it("should return empty list if no votes cast", async () => {
+        // Given: a workflow with no votes
+        const emptyWorkflow = await createMockWorkflowInDb(prisma, {
+          name: "Empty-Workflow"
+        })
+
+        // When: listing votes
+        const response = await get(app, `${endpoint}/${emptyWorkflow.id}/votes`).withToken(orgAdminUser.token).build()
+
+        // Expect: 200 OK and empty list
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: GetWorkflowVotes200Response = response.body
+        expect(body.votes).toHaveLength(0)
+      })
+    })
+
+    describe("bad cases", () => {
+      it("should return 404 NOT_FOUND (WORKFLOW_NOT_FOUND) when listing votes for non-existent workflow", async () => {
+        // Given: a non-existent workflow ID
+        const nonExistentId = randomUUID()
+
+        // When: listing votes
+        const response = await get(app, `${endpoint}/${nonExistentId}/votes`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect: 404 Not Found
+        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
+        expect(response.body).toHaveErrorCode("WORKFLOW_NOT_FOUND")
       })
     })
   })
