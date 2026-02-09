@@ -12,7 +12,8 @@ import {
   VoteDbRepository,
   PkceSessionDbRepository,
   PrismaTaskRepository,
-  RefreshTokenDbRepository
+  RefreshTokenDbRepository,
+  PrismaHealthRepository
 } from "./database/"
 import {GroupDbRepository} from "./database"
 import {
@@ -26,7 +27,8 @@ import {
   VOTE_REPOSITORY_TOKEN,
   WORKFLOW_REPOSITORY_TOKEN,
   WORKFLOW_TEMPLATE_REPOSITORY_TOKEN,
-  QUEUE_PROVIDER_TOKEN
+  QUEUE_PROVIDER_TOKEN,
+  HEALTH_REPOSITORY_TOKEN
 } from "@services"
 import {TASK_REPOSITORY_TOKEN} from "@services/task/interfaces"
 import {PKCE_SESSION_REPOSITORY_TOKEN, REFRESH_TOKEN_REPOSITORY_TOKEN} from "@services/auth"
@@ -104,6 +106,11 @@ const refreshTokenRepository = {
   useClass: RefreshTokenDbRepository
 }
 
+const healthRepository = {
+  provide: HEALTH_REPOSITORY_TOKEN,
+  useClass: PrismaHealthRepository
+}
+
 const repositories = [
   agentRepository,
   agentChallengeRepository,
@@ -117,7 +124,8 @@ const repositories = [
   voteRepository,
   pkceSessionRepository,
   taskRepository,
-  refreshTokenRepository
+  refreshTokenRepository,
+  healthRepository
 ]
 
 @Module({

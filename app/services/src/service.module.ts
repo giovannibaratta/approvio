@@ -16,6 +16,7 @@ import {WebhookService} from "./webhook/webhook.service"
 import {AuthService, PkceService, IdentityService} from "./auth"
 import {RoleService} from "./role"
 import {QueueService} from "./queue"
+import {HealthService} from "./health"
 import {ConfigModule} from "@external/config.module"
 import {ConfigProvider} from "@external/config"
 import {JwtModule} from "@nestjs/jwt"
@@ -37,7 +38,8 @@ const services = [
   RoleService,
   QueueService,
   TaskService,
-  IdentityService
+  IdentityService,
+  HealthService
 ]
 
 const internalServices = [PkceService]
