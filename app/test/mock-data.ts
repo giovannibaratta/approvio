@@ -634,7 +634,7 @@ export async function createMockSpaceInDb(
 ): Promise<PrismaSpace> {
   const randomSpace: Prisma.SpaceCreateInput = {
     id: chance.guid({version: 4}),
-    name: chance.company(),
+    name: chance.company() + "-" + chance.integer({min: 1, max: 1000}),
     description: chance.sentence(),
     createdAt: new Date(),
     updatedAt: new Date(),
