@@ -1,5 +1,6 @@
 import {GetAuthenticatedEntity} from "@app/auth"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
+import {logSuccess} from "@utils"
 import {
   WorkflowTemplateService,
   CreateWorkflowTemplateRequest,
@@ -51,7 +52,8 @@ export class WorkflowTemplatesController {
       createWorkflowTemplateApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceCreateWorkflowTemplate),
-      TE.map(mapWorkflowTemplateToApi)
+      TE.map(mapWorkflowTemplateToApi),
+      logSuccess("Workflow template created", "WorkflowTemplatesController", t => ({id: t.id}))
     )()
 
     if (isLeft(eitherWorkflowTemplate)) {
@@ -87,7 +89,8 @@ export class WorkflowTemplatesController {
       request,
       TE.right,
       TE.chainW(req => this.workflowTemplateService.listWorkflowTemplates(req)),
-      TE.map(mapWorkflowTemplateListToApi)
+      TE.map(mapWorkflowTemplateListToApi),
+      logSuccess("Workflow templates listed", "WorkflowTemplatesController", r => ({count: r.pagination.total}))
     )()
 
     if (isLeft(eitherWorkflowTemplates)) {
@@ -108,7 +111,8 @@ export class WorkflowTemplatesController {
       templateId,
       TE.right,
       TE.chainW(getWorkflowTemplateService),
-      TE.map(versioned => mapWorkflowTemplateToApi(versioned))
+      TE.map(versioned => mapWorkflowTemplateToApi(versioned)),
+      logSuccess("Workflow template retrieved", "WorkflowTemplatesController", t => ({id: t.id}))
     )()
 
     if (isLeft(eitherWorkflowTemplate)) {
@@ -132,7 +136,8 @@ export class WorkflowTemplatesController {
       updateWorkflowTemplateApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceUpdateWorkflowTemplate),
-      TE.map(mapWorkflowTemplateToApi)
+      TE.map(mapWorkflowTemplateToApi),
+      logSuccess("Workflow template updated", "WorkflowTemplatesController", t => ({id: t.id}))
     )()
 
     if (isLeft(eitherWorkflowTemplate))
@@ -161,7 +166,8 @@ export class WorkflowTemplatesController {
       request,
       TE.right,
       TE.chainW(req => this.workflowTemplateService.deprecateWorkflowTemplate(req)),
-      TE.map(mapWorkflowTemplateToApi)
+      TE.map(mapWorkflowTemplateToApi),
+      logSuccess("Workflow template deprecated", "WorkflowTemplatesController", t => ({id: t.id}))
     )()
 
     if (isLeft(eitherResult))

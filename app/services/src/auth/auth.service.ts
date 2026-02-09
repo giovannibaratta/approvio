@@ -39,7 +39,7 @@ import {
 } from "./interfaces"
 import {TokenPayloadBuilder} from "./auth-token"
 import {AgentService} from "@services/agent"
-import {createSha256Hash, validateDpopJwt} from "@utils"
+import {createSha256Hash, validateDpopJwt, logSuccess} from "@utils"
 
 const ACCESS_TOKEN_EXPIRY_SECONDS = 60 * 60 // 1 hour
 
@@ -186,7 +186,8 @@ export class AuthService {
             refreshToken: refreshToken.tokenValue
           }))
         )
-      )
+      ),
+      logSuccess("OIDC authentication successful", "AuthService")
     )
   }
 
@@ -261,7 +262,8 @@ export class AuthService {
       TE.Do,
       TE.bindW("agent", () => this.agentService.getAgentByName(request.agentName)),
       TE.bindW("challenge", ({agent}) => TE.fromEither(AgentChallengeFactory.create({agentName: agent.agentName}))),
-      TE.chainW(({agent, challenge}) => createAndStoreChallenge(agent, challenge))
+      TE.chainW(({agent, challenge}) => createAndStoreChallenge(agent, challenge)),
+      logSuccess("Agent challenge generated", "AuthService", () => ({agentName: request.agentName}))
     )
   }
 
@@ -321,7 +323,8 @@ export class AuthService {
       TE.map(({accessToken, refreshToken}) => ({
         accessToken,
         refreshToken: refreshToken.tokenValue
-      }))
+      })),
+      logSuccess("Agent token exchanged", "AuthService")
     )
   }
 
@@ -357,7 +360,8 @@ export class AuthService {
       TE.map(({newAccessToken, refreshedToken}) => ({
         accessToken: newAccessToken,
         refreshToken: refreshedToken.tokenValue
-      }))
+      })),
+      logSuccess("User token refreshed", "AuthService")
     )
   }
 
@@ -397,7 +401,8 @@ export class AuthService {
       TE.map(({newAccessToken, refreshedToken}) => ({
         accessToken: newAccessToken,
         refreshToken: refreshedToken.tokenValue
-      }))
+      })),
+      logSuccess("Agent token refreshed", "AuthService")
     )
   }
 

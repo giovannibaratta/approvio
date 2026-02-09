@@ -17,7 +17,6 @@ import {
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
-import * as E from "fp-ts/Either"
 import * as TE from "fp-ts/lib/TaskEither"
 import {
   agentRegistrationApiToServiceModel,
@@ -30,6 +29,7 @@ import {
 } from "./agents.mappers"
 import {validateRoleAssignmentRequest, validateRoleRemovalRequest} from "../shared/mappers"
 import {AuthenticatedEntity} from "@domain"
+import {logSuccess} from "@utils"
 
 export const AGENTS_ENDPOINT_ROOT = "agents"
 
@@ -43,7 +43,10 @@ export class AgentsController {
   @Get(":idOrName")
   @HttpCode(HttpStatus.OK)
   async getAgent(@Param("idOrName") idOrName: string): Promise<AgentGet200Response> {
-    const eitherAgent = await this.agentService.getAgent(idOrName)()
+    const eitherAgent = await pipe(
+      this.agentService.getAgent(idOrName),
+      logSuccess("Agent retrieved", "AgentsController", agent => ({agentId: agent.id}))
+    )()
 
     if (isLeft(eitherAgent)) throw generateErrorResponseForGetAgent(eitherAgent.left, "Failed to fetch agent details")
 
@@ -64,12 +67,8 @@ export class AgentsController {
       agentRegistrationApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceRegisterAgent),
-      TE.chainFirstW(() =>
-        TE.fromIO(() => {
-          Logger.log(`Agent ${request.agentName} registered successfully`)
-        })
-      ),
-      TE.orElseFirstW(error => TE.fromIO(() => Logger.warn(`Failed to register agent ${request.agentName}: ${error}`)))
+      logSuccess("Agent registered", "AgentsController", agent => ({agentName: agent.agentName})),
+      TE.orElseFirstW(error => TE.fromIO(() => Logger.error(`Failed to register agent ${request.agentName}: ${error}`)))
     )()
 
     if (isLeft(eitherAgent)) throw generateErrorResponseForRegisterAgent(eitherAgent.left, "Failed to register agent")
@@ -93,15 +92,17 @@ export class AgentsController {
       roles: req.roles,
       requestor
     })
-    const assignTole = (req: AssignRolesToAgentRequest) => this.roleService.assignRolesToAgent(req)
+    const assignRole = (req: AssignRolesToAgentRequest) => this.roleService.assignRolesToAgent(req)
 
     const eitherResult = await pipe(
-      request,
-      E.right,
-      E.chainW(validateRoleAssignmentRequest),
-      E.map(mapToServiceModel),
-      TE.fromEither,
-      TE.chainW(assignTole)
+      TE.Do,
+      TE.bindW("validatedRequest", () => TE.fromEither(validateRoleAssignmentRequest(request))),
+      TE.bindW("serviceRequest", ({validatedRequest}) => TE.right(mapToServiceModel(validatedRequest))),
+      TE.chainFirstW(({serviceRequest}) => assignRole(serviceRequest)),
+      logSuccess("Roles assigned to agent", "AgentsController", ({serviceRequest}) => ({
+        agentId,
+        roles: serviceRequest.roles.map(role => `${role.scope}-${role.roleName}`)
+      }))
     )()
 
     if (isLeft(eitherResult))
@@ -123,12 +124,14 @@ export class AgentsController {
     const removeRole = (req: RemoveRolesFromAgentRequest) => this.roleService.removeRolesFromAgent(req)
 
     const eitherResult = await pipe(
-      request,
-      E.right,
-      E.chainW(validateRoleRemovalRequest),
-      E.map(mapToServiceModel),
-      TE.fromEither,
-      TE.chainW(removeRole)
+      TE.Do,
+      TE.bindW("validatedRequest", () => TE.fromEither(validateRoleRemovalRequest(request))),
+      TE.bindW("serviceRequest", ({validatedRequest}) => TE.right(mapToServiceModel(validatedRequest))),
+      TE.chainFirstW(({serviceRequest}) => removeRole(serviceRequest)),
+      logSuccess("Roles removed from agent", "AgentsController", ({serviceRequest}) => ({
+        agentId,
+        roles: serviceRequest.roles.map(role => `${role.scope}-${role.roleName}`)
+      }))
     )()
 
     if (isLeft(eitherResult))

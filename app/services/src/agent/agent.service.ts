@@ -7,7 +7,7 @@ import {TaskEither} from "fp-ts/TaskEither"
 import {AGENT_REPOSITORY_TOKEN, AgentRepository, AgentRegistrationError, AgentGetError} from "./interfaces"
 import {AuthenticatedEntity} from "@domain"
 import {AuthorizationError} from "@services/error"
-import {isUUIDv4} from "@utils"
+import {isUUIDv4, logSuccess} from "@utils"
 
 @Injectable()
 export class AgentService {
@@ -29,11 +29,21 @@ export class AgentService {
       })
     }
 
-    return pipe(request, validateAndCreateAgent, TE.fromEither, TE.chainFirstW(persistAgent))
+    return pipe(
+      request,
+      validateAndCreateAgent,
+      TE.fromEither,
+      TE.chainFirstW(persistAgent),
+      logSuccess("Agent registered", "AgentService", agent => ({agentName: agent.agentName}))
+    )
   }
 
   getAgent(idOrName: string): TaskEither<AgentGetError, Agent> {
-    return isUUIDv4(idOrName) ? this.getAgentById(idOrName) : this.getAgentByName(idOrName)
+    const getAgentResult = isUUIDv4(idOrName) ? this.getAgentById(idOrName) : this.getAgentByName(idOrName)
+    return pipe(
+      getAgentResult,
+      logSuccess("Agent retrieved", "AgentService", agent => ({agentId: agent.id}))
+    )
   }
 
   getAgentByName(agentName: string): TaskEither<AgentGetError, Agent> {

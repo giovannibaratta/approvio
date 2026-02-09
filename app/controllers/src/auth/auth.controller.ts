@@ -54,6 +54,7 @@ import {
   mapToTokenResponse,
   mapToEntityInfoResponse
 } from "./auth.mappers"
+import {logSuccess} from "@utils"
 
 /**
  * ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -139,7 +140,10 @@ export class AuthController {
   @PublicRoute()
   @Get("login")
   async login(@Res() res: Response): Promise<void> {
-    const result = await this.authService.initiateOidcLogin()()
+    const result = await pipe(
+      this.authService.initiateOidcLogin(),
+      logSuccess("OIDC login initiated", "AuthController")
+    )()
 
     if (isLeft(result)) {
       Logger.error("Failed to initiate OIDC login", result.left)
@@ -174,7 +178,8 @@ export class AuthController {
       TE.right,
       TE.chainW(raw => TE.fromEither(validateGenerateTokenRequest(raw))),
       TE.chainW(validated => runOidcLogin(validated)),
-      TE.map(mapToTokenResponse)
+      TE.map(mapToTokenResponse),
+      logSuccess("Token generated", "AuthController")
     )()
 
     if (isLeft(result)) {
@@ -230,7 +235,8 @@ export class AuthController {
       TE.right,
       TE.chainW(r => TE.fromEither(validateAgentChallengeRequest(r))),
       TE.chainW(r => TE.fromEither(mapRequest(r))),
-      TE.chainW(r => generateChallenge(r))
+      TE.chainW(r => generateChallenge(r)),
+      logSuccess("Agent challenge generated", "AuthController")
     )()
 
     if (isLeft(result)) throw generateErrorResponseForChallengeRequest(result.left, "Failed to generate challenge")
@@ -252,7 +258,8 @@ export class AuthController {
       TE.fromEither,
       TE.map(extractAssertion),
       TE.chainW(exchangeToken),
-      TE.map(mapTokenToApiResponse)
+      TE.map(mapTokenToApiResponse),
+      logSuccess("Agent token exchanged", "AuthController")
     )()
 
     if (isLeft(result))
@@ -272,7 +279,8 @@ export class AuthController {
       TE.right,
       TE.chainW(rawBody => TE.fromEither(validateRefreshTokenRequest(rawBody))),
       TE.chainW(validatedBody => refreshUserToken(validatedBody.refreshToken)),
-      TE.map(serviceResult => mapToTokenResponse(serviceResult))
+      TE.map(serviceResult => mapToTokenResponse(serviceResult)),
+      logSuccess("User token refreshed", "AuthController")
     )()
 
     if (isLeft(result)) {
@@ -302,7 +310,8 @@ export class AuthController {
       TE.right,
       TE.chainW(rawBody => TE.fromEither(validateRefreshAgentTokenRequest(rawBody, dpop))),
       TE.chainW(validatedBody => refreshAgentToken(validatedBody.refreshToken, validatedBody.dpopJkt)),
-      TE.map(serviceResult => mapToTokenResponse(serviceResult))
+      TE.map(serviceResult => mapToTokenResponse(serviceResult)),
+      logSuccess("Agent token refreshed", "AuthController")
     )()
 
     if (isLeft(result)) {

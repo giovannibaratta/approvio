@@ -6,6 +6,7 @@ import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
 import * as TE from "fp-ts/lib/TaskEither"
+import {logSuccess} from "@utils"
 import {
   createWorkflowApiToServiceModel,
   generateErrorResponseForCreateWorkflow,
@@ -58,7 +59,8 @@ export class WorkflowsController {
       TE.bindW("serviceRequest", ({validatedApiRequest, requestor}) =>
         TE.fromEither(createWorkflowApiToServiceModel({workflowData: validatedApiRequest, requestor}))
       ),
-      TE.chainW(({serviceRequest}) => serviceCreateWorkflow(serviceRequest))
+      TE.chainW(({serviceRequest}) => serviceCreateWorkflow(serviceRequest)),
+      logSuccess("Workflow created", "WorkflowsController", w => ({id: w.id}))
     )()
 
     if (isLeft(eitherWorkflow)) {
@@ -82,7 +84,8 @@ export class WorkflowsController {
       TE.chainW(({workflowDecoratorSelector}) =>
         this.workflowService.getWorkflowByIdentifier(identifier, workflowDecoratorSelector)
       ),
-      TE.map(workflow => mapWorkflowToApi(workflow))
+      TE.map(workflow => mapWorkflowToApi(workflow)),
+      logSuccess("Workflow retrieved", "WorkflowsController", w => ({id: w.id}))
     )()
 
     if (isLeft(eitherWorkflow)) throw generateErrorResponseForGetWorkflow(eitherWorkflow.left, "Failed to get workflow")
@@ -114,7 +117,8 @@ export class WorkflowsController {
           filters: params.includeOnlyNonTerminalState ? {includeOnlyNonTerminalState: true} : undefined
         })
       ),
-      TE.map(mapWorkflowListToApi)
+      TE.map(mapWorkflowListToApi),
+      logSuccess("Workflows listed", "WorkflowsController", r => ({count: r.data.length}))
     )()
 
     if (isLeft(eitherWorkflows)) {
@@ -136,7 +140,8 @@ export class WorkflowsController {
       {workflowId, requestor},
       TE.right,
       TE.chainW(serviceCanVote),
-      TE.map(mapCanVoteResponseToApi)
+      TE.map(mapCanVoteResponseToApi),
+      logSuccess("Can vote check", "WorkflowsController", r => ({workflowId, canVote: r.canVote}))
     )()
 
     if (isLeft(eitherCanVoteResponse)) {
@@ -163,7 +168,12 @@ export class WorkflowsController {
       TE.bindW("serviceRequest", ({validatedRequest}) =>
         TE.fromEither(createCastVoteApiToServiceModel({workflowId, request: validatedRequest, requestor}))
       ),
-      TE.chainW(({serviceRequest}) => serviceCastVote(serviceRequest))
+      TE.chainW(({serviceRequest}) => serviceCastVote(serviceRequest)),
+      logSuccess("Vote cast", "WorkflowsController", vote => ({
+        workflowId,
+        voteType: vote.type,
+        voter: `${vote.voter.entityType}-${vote.voter.entityId}`
+      }))
     )()
 
     if (isLeft(eitherVote))
@@ -174,7 +184,12 @@ export class WorkflowsController {
   async listVotes(@Param("workflowId") workflowId: string): Promise<GetWorkflowVotes200Response> {
     const serviceListVotes = (wId: string) => this.voteService.listVotes(wId)
 
-    const eitherVotes = await pipe(workflowId, serviceListVotes, TE.map(mapVoteListToApi))()
+    const eitherVotes = await pipe(
+      workflowId,
+      serviceListVotes,
+      TE.map(mapVoteListToApi),
+      logSuccess("Votes listed", "WorkflowsController", votes => ({count: votes.votes.length}))
+    )()
 
     if (isLeft(eitherVotes)) {
       throw generateErrorResponseForListVotes(eitherVotes.left, `Failed to list votes for workflow ${workflowId}`)

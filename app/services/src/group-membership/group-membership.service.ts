@@ -17,7 +17,7 @@ import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 import {Versioned} from "@domain"
 import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
 import {AgentRepository, AGENT_REPOSITORY_TOKEN} from "@services/agent/interfaces"
-import {isUUIDv4} from "@utils"
+import {isUUIDv4, logSuccess} from "@utils"
 import * as A from "fp-ts/Array"
 import {pipe} from "fp-ts/function"
 import {isLeft} from "fp-ts/lib/Either"
@@ -151,7 +151,8 @@ export class GroupMembershipService {
       TE.bindW("group", ({validatedRequestor, groupMembershipData, membershipsToAdd}) =>
         simulateAddMemberships(validatedRequestor, groupMembershipData, membershipsToAdd)
       ),
-      TE.chainW(({group, membershipsToAdd}) => persistMemberships(group, membershipsToAdd))
+      TE.chainW(({group, membershipsToAdd}) => persistMemberships(group, membershipsToAdd)),
+      logSuccess("Members added to group", "GroupMembershipService", () => ({groupId: request.groupId}))
     )
   }
 
@@ -208,7 +209,8 @@ export class GroupMembershipService {
       TE.chainW(({validatedRequestor, membershipData}) =>
         simulateRemoveMemberships(validatedRequestor, membershipData)
       ),
-      TE.chainW(removeMemberships)
+      TE.chainW(removeMemberships),
+      logSuccess("Entities removed from group", "GroupMembershipService", () => ({groupId: request.groupId}))
     )
   }
 

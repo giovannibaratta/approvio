@@ -25,7 +25,7 @@ import {PersistVoteError, GetLatestVoteError, VOTE_REPOSITORY_TOKEN, VoteReposit
 import {sequenceS} from "fp-ts/lib/Apply"
 import {GROUP_MEMBERSHIP_REPOSITORY_TOKEN, GroupMembershipRepository} from "@services/group-membership"
 import {isNone, Option} from "fp-ts/lib/Option"
-import {DistributiveOmit} from "@utils"
+import {DistributiveOmit, logSuccess} from "@utils"
 import {isRight} from "fp-ts/lib/Either"
 
 @Injectable()
@@ -129,7 +129,8 @@ export class VoteService {
           VoteFactory.newVote(voteData),
           TE.fromEither,
           TE.chainW(vote => this.voteRepo.persistVoteAndMarkWorkflowRecalculation(vote)),
-          TE.chainFirstW(this.enqueueRecalculationBestEffort)
+          TE.chainFirstW(this.enqueueRecalculationBestEffort),
+          logSuccess("Vote cast", "VoteService", vote => ({id: vote.id, workflowId: vote.workflowId}))
         )
       })
     )
@@ -153,7 +154,8 @@ export class VoteService {
   listVotes(workflowId: string): TaskEither<FindVotesError | WorkflowGetError, ReadonlyArray<Vote>> {
     return pipe(
       this.workflowService.getWorkflowByIdentifier(workflowId),
-      TE.chainW(() => this.voteRepo.getVotesByWorkflowId(workflowId))
+      TE.chainW(() => this.voteRepo.getVotesByWorkflowId(workflowId)),
+      logSuccess("Votes listed", "VoteService", votes => ({count: votes.length}))
     )
   }
 }

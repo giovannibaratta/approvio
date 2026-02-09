@@ -21,6 +21,7 @@ import {
 } from "./organization-admin.mappers"
 import {GetAuthenticatedEntity} from "@app/auth"
 import {AuthenticatedEntity} from "@domain"
+import {logSuccess} from "@utils"
 
 export const ORGANIZATION_ADMIN_ENDPOINT_ROOT = "organization"
 
@@ -45,7 +46,8 @@ export class OrganizationAdminController {
       addOrganizationAdminApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceAddAdmin),
-      TE.map(data => data.id)
+      TE.map(data => data.id),
+      logSuccess("Organization admin added", "OrganizationAdminController", id => ({id}))
     )()
 
     if (isLeft(eitherAdminId))
@@ -70,7 +72,10 @@ export class OrganizationAdminController {
       {organizationName, page, limit},
       listOrganizationAdminsApiToServiceModel,
       TE.fromEither,
-      TE.chainW(serviceListAdmins)
+      TE.chainW(serviceListAdmins),
+      logSuccess("Organization admins listed", "OrganizationAdminController", result => ({
+        count: result.admins.length
+      }))
     )()
 
     if (isLeft(eitherAdminsList))
@@ -94,7 +99,8 @@ export class OrganizationAdminController {
       {organizationName, removeData: request, requestor},
       removeOrganizationAdminApiToServiceModel,
       TE.fromEither,
-      TE.chainW(serviceRemoveAdmin)
+      TE.chainW(serviceRemoveAdmin),
+      logSuccess("Organization admin removed", "OrganizationAdminController", () => ({identifier: request.userId}))
     )()
 
     if (isLeft(eitherResult))

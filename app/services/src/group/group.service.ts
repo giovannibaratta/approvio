@@ -16,7 +16,7 @@ import {AuthorizationError} from "@services/error"
 import {MembershipAddError} from "@services/group-membership"
 import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 import {Versioned} from "@domain"
-import {isUUIDv4} from "@utils"
+import {isUUIDv4, logSuccess} from "@utils"
 import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
@@ -78,7 +78,8 @@ export class GroupService {
       TE.bindW("membership", ({updatedUser}) => createMembership(updatedUser)),
       TE.chainW(({group, updatedUser, user, membership}) =>
         persistGroupWithMembershipAndUpdateUser({group, user: updatedUser, userOcc: user.occ, membership})
-      )
+      ),
+      logSuccess("Group created", "GroupService", group => ({id: group.id, name: group.name}))
     )
   }
 
@@ -115,7 +116,8 @@ export class GroupService {
       TE.bindW("requestor", () => validateRequestor()),
       TE.bindW("groupId", () => resolveGroupId(groupIdentifier)),
       TE.bindW("authorizedGroupId", ({requestor, groupId}) => checkPermissions(requestor, groupId)),
-      TE.chainW(({authorizedGroupId}) => fetchGroupData(authorizedGroupId))
+      TE.chainW(({authorizedGroupId}) => fetchGroupData(authorizedGroupId)),
+      logSuccess("Group retrieved", "GroupService", group => ({id: group.id}))
     )
   }
 
@@ -140,7 +142,8 @@ export class GroupService {
       TE.bindW("request", () => TE.right(request)),
       TE.bindW("validatedRequestor", validateRequestor),
       TE.map(({validatedRequestor}) => buildRepoRequest(validatedRequestor)),
-      TE.chainW(repoListGroups)
+      TE.chainW(repoListGroups),
+      logSuccess("Groups listed", "GroupService", result => ({count: result.groups.length, total: result.total}))
     )
   }
 

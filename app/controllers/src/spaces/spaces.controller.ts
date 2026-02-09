@@ -16,6 +16,7 @@ import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
 import * as TE from "fp-ts/lib/TaskEither"
 import {AuthenticatedEntity} from "@domain"
+import {logSuccess} from "@utils"
 
 export const SPACES_ENDPOINT_ROOT = "spaces"
 
@@ -36,7 +37,8 @@ export class SpacesController {
       {request, requestor},
       createSpaceApiToServiceModel,
       TE.fromEither,
-      TE.chainW(serviceCreateSpace)
+      TE.chainW(serviceCreateSpace),
+      logSuccess("Space created", "SpacesController", space => ({id: space.id}))
     )()
 
     if (isLeft(eitherSpace)) throw generateErrorResponseForCreateSpace(eitherSpace.left, "Create space")
@@ -65,7 +67,14 @@ export class SpacesController {
 
     const serviceListSpaces = (request: ListSpacesRequest) => this.spaceService.listSpaces(request)
 
-    const eitherSpaces = await pipe(validateAndParseParams(pageQuery, limitQuery), TE.chainW(serviceListSpaces))()
+    const eitherSpaces = await pipe(
+      validateAndParseParams(pageQuery, limitQuery),
+      TE.chainW(serviceListSpaces),
+      logSuccess("Spaces listed", "SpacesController", result => ({
+        count: result.spaces.length,
+        total: result.total
+      }))
+    )()
 
     if (isLeft(eitherSpaces)) throw generateErrorResponseForListSpaces(eitherSpaces.left, "List spaces")
     return mapListSpacesResultToApi(eitherSpaces.right)
@@ -79,7 +88,12 @@ export class SpacesController {
   ): Promise<SpaceApi> {
     const serviceGetSpace = (request: GetSpaceRequest) => this.spaceService.getSpace(request)
 
-    const eitherSpace = await pipe({spaceId, requestor}, TE.right, TE.chainW(serviceGetSpace))()
+    const eitherSpace = await pipe(
+      {spaceId, requestor},
+      TE.right,
+      TE.chainW(serviceGetSpace),
+      logSuccess("Space retrieved", "SpacesController", space => ({id: space.id}))
+    )()
 
     if (isLeft(eitherSpace)) throw generateErrorResponseForGetSpace(eitherSpace.left, "Get space")
 
@@ -94,7 +108,12 @@ export class SpacesController {
   ): Promise<void> {
     const serviceDeleteSpace = (request: DeleteSpaceRequest) => this.spaceService.deleteSpace(request)
 
-    const eitherResult = await pipe({spaceId, requestor}, TE.right, TE.chainW(serviceDeleteSpace))()
+    const eitherResult = await pipe(
+      {spaceId, requestor},
+      TE.right,
+      TE.chainW(serviceDeleteSpace),
+      logSuccess("Space deleted", "SpacesController", () => ({spaceId}))
+    )()
 
     if (isLeft(eitherResult)) throw generateErrorResponseForDeleteSpace(eitherResult.left, "Delete space")
   }

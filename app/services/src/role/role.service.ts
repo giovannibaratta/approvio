@@ -16,6 +16,7 @@ import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
+import {logSuccess} from "@utils"
 import {
   ListRoleTemplatesError,
   ListRoleTemplatesResult,
@@ -45,7 +46,10 @@ export class RoleService {
    * This is a read-only operation that returns hardcoded role templates.
    */
   listRoleTemplates(): TaskEither<ListRoleTemplatesError, ListRoleTemplatesResult> {
-    return TE.right(SystemRole.getAllSystemRoleTemplates())
+    return pipe(
+      TE.right(SystemRole.getAllSystemRoleTemplates()),
+      logSuccess("Role templates listed", "RoleService", result => ({count: result.length}))
+    )
   }
 
   /**
@@ -158,7 +162,8 @@ export class RoleService {
       TE.bindW("targetUser", ({request}) => this.userRoleRepo.getUserById(request.userId)),
       TE.chainEitherKW(({targetUser, boundRolesToAssign}) => UserFactory.assignRoles(targetUser, boundRolesToAssign)),
       TE.chainW(updatedUser => this.userRoleRepo.updateUser(updatedUser)),
-      TE.map(() => undefined)
+      TE.map(() => undefined),
+      logSuccess("Roles assigned to user", "RoleService", () => ({userId: request.userId}))
     )
   }
 
@@ -203,7 +208,8 @@ export class RoleService {
         AgentFactory.assignRoles<{occ: true}>(currentAgent, boundRolesToAssign)
       ),
       TE.chainW(updatedAgent => this.agentRoleRepo.updateAgent(updatedAgent)),
-      TE.map(() => undefined)
+      TE.map(() => undefined),
+      logSuccess("Roles assigned to agent", "RoleService", () => ({agentId: request.agentId}))
     )
   }
 
@@ -246,7 +252,8 @@ export class RoleService {
       TE.bindW("targetUser", ({request}) => this.userRoleRepo.getUserById(request.userId)),
       TE.chainEitherKW(({targetUser, boundRolesToRemove}) => UserFactory.removeRoles(targetUser, boundRolesToRemove)),
       TE.chainW(updatedUser => this.userRoleRepo.updateUser(updatedUser)),
-      TE.map(() => undefined)
+      TE.map(() => undefined),
+      logSuccess("Roles removed from user", "RoleService", () => ({userId: request.userId}))
     )
   }
 
@@ -291,7 +298,8 @@ export class RoleService {
         AgentFactory.removeRoles<{occ: true}>(currentAgent, boundRolesToRemove)
       ),
       TE.chainW(updatedAgent => this.agentRoleRepo.updateAgent(updatedAgent)),
-      TE.map(() => undefined)
+      TE.map(() => undefined),
+      logSuccess("Roles removed from agent", "RoleService", () => ({agentId: request.agentId}))
     )
   }
 }
