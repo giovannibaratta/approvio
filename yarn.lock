@@ -164,6 +164,7 @@ __metadata:
     pretty-format: "npm:30.2.0"
     prisma: "npm:7.3.0"
     prisma-case-format: "npm:2.2.1"
+    rate-limiter-flexible: "npm:9.1.1"
     reflect-metadata: "npm:0.2.2"
     rxjs: "npm:7.8.2"
     supertest: "npm:7.2.2"
@@ -9909,6 +9910,13 @@ __metadata:
   version: 1.2.1
   resolution: "range-parser@npm:1.2.1"
   checksum: 10/ce21ef2a2dd40506893157970dc76e835c78cf56437e26e19189c48d5291e7279314477b06ac38abd6a401b661a6840f7b03bd0b1249da9b691deeaa15872c26
+  languageName: node
+  linkType: hard
+
+"rate-limiter-flexible@npm:9.1.1":
+  version: 9.1.1
+  resolution: "rate-limiter-flexible@npm:9.1.1"
+  checksum: 10/3acdd92f9e2664d9ac5cbdbb8fb62933fbb8e881dd7d5aca13ea6bd44a057a05e2ffb75eb3f366033a66ee5b22ef61a3b1d3fae310bf6a306857ad67c767fe04
   languageName: node
   linkType: hard
 

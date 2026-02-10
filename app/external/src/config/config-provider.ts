@@ -1,7 +1,16 @@
 import {Injectable} from "@nestjs/common"
 import {Option} from "fp-ts/lib/Option"
 import * as O from "fp-ts/lib/Option"
-import {ConfigProviderInterface, EmailProviderConfig, JwtConfig, OidcProviderConfig, RedisConfig} from "./interfaces"
+import {
+  ConfigProviderInterface,
+  DEFAULT_RATE_LIMIT_DURATION_IN_SECONDS,
+  DEFAULT_RATE_LIMIT_ENTITY_POINTS,
+  EmailProviderConfig,
+  JwtConfig,
+  OidcProviderConfig,
+  RateLimitConfig,
+  RedisConfig
+} from "./interfaces"
 import {isEmail, isNonEmptyArray} from "@utils"
 
 @Injectable()
@@ -11,6 +20,7 @@ export class ConfigProvider implements ConfigProviderInterface {
   readonly oidcConfig: OidcProviderConfig
   readonly jwtConfig: JwtConfig
   readonly redisConfig: RedisConfig
+  readonly rateLimitConfig: RateLimitConfig
 
   constructor() {
     this.dbConnectionUrl = this.validateConnectionUrl()
@@ -18,6 +28,7 @@ export class ConfigProvider implements ConfigProviderInterface {
     this.oidcConfig = this.validateOidcProviderConfig()
     this.jwtConfig = this.validateJwtConfig()
     this.redisConfig = this.validateRedisConfig()
+    this.rateLimitConfig = this.validateRateLimitConfig()
   }
 
   private validateConnectionUrl(): string {
@@ -205,33 +216,77 @@ export class ConfigProvider implements ConfigProviderInterface {
   }
 
   private validateRedisConfig(): RedisConfig {
-    const host = process.env.REDIS_HOST
-    const unparsedPort = process.env.REDIS_PORT
-    const unparsedDb = process.env.REDIS_DB || "0"
-    const prefix = process.env.REDIS_PREFIX
+    return this.readRedisConfig({
+      host: "REDIS_HOST",
+      port: "REDIS_PORT",
+      db: "REDIS_DB",
+      prefix: "REDIS_PREFIX"
+    })
+  }
 
-    if (host === undefined) throw new Error("REDIS_HOST not defined")
-    if (unparsedPort === undefined) throw new Error("REDIS_PORT is not defined")
+  private validateRateLimitConfig(): RateLimitConfig {
+    const pointsRaw = process.env.RATE_LIMIT_POINTS
+    const durationRaw = process.env.RATE_LIMIT_DURATION
 
-    let port: number
+    let points = DEFAULT_RATE_LIMIT_ENTITY_POINTS
 
-    try {
-      port = parseInt(unparsedPort, 10)
-    } catch (error) {
-      throw new Error("REDIS_PORT must be a valid number", {cause: error})
+    if (pointsRaw) {
+      points = parseInt(pointsRaw, 10)
+      if (isNaN(points) || points <= 0) throw new Error("RATE_LIMIT_POINTS must be a valid number > 0")
     }
 
-    if (port <= 0 || port > 65535) throw new Error("REDIS_PORT must be a valid number between 1 and 65535")
+    let durationInSeconds = DEFAULT_RATE_LIMIT_DURATION_IN_SECONDS
 
-    let db: number
-
-    try {
-      db = parseInt(unparsedDb, 10)
-    } catch (error) {
-      throw new Error("REDIS_DB must be a valid number", {cause: error})
+    if (durationRaw) {
+      durationInSeconds = parseInt(durationRaw, 10)
+      if (isNaN(durationInSeconds) || durationInSeconds <= 0)
+        throw new Error("RATE_LIMIT_DURATION must be a valid number > 0")
     }
 
-    if (db < 0 || db > 15) throw new Error("REDIS_DB must be a valid number between 0 and 15")
+    const redis = this.readRedisConfig(
+      {
+        host: "RATE_LIMIT_REDIS_HOST",
+        port: "RATE_LIMIT_REDIS_PORT",
+        db: "RATE_LIMIT_REDIS_DB",
+        prefix: "RATE_LIMIT_REDIS_PREFIX"
+      },
+      this.redisConfig
+    )
+
+    return {
+      points,
+      durationInSeconds,
+      redis: {
+        ...redis,
+        prefix: redis.prefix || "rl"
+      }
+    }
+  }
+
+  private readRedisConfig(
+    envVars: {
+      host: string
+      port: string
+      db: string
+      prefix: string
+    },
+    defaults?: RedisConfig
+  ): RedisConfig {
+    const host = process.env[envVars.host] || defaults?.host
+    const unparsedPort = process.env[envVars.port] || defaults?.port.toString()
+    const unparsedDb = process.env[envVars.db] || defaults?.db.toString() || "0"
+    const prefix = process.env[envVars.prefix] || defaults?.prefix
+
+    if (host === undefined) throw new Error(`${envVars.host} is not defined`)
+    if (unparsedPort === undefined || unparsedPort === "") throw new Error("port is not defined")
+
+    const port: number = parseInt(unparsedPort, 10)
+
+    if (isNaN(port) || port <= 0 || port > 65535)
+      throw new Error(`${envVars.port} must be a valid number between 1 and 65535`)
+
+    const db: number = parseInt(unparsedDb, 10)
+    if (isNaN(db) || db < 0 || db > 15) throw new Error(`${envVars.db} must be a valid number between 0 and 15`)
 
     return {
       host,
