@@ -2,7 +2,7 @@ import {Module} from "@nestjs/common"
 import {AgentService} from "./agent"
 import {GroupService} from "./group"
 import {OrganizationAdminService} from "./organization-admin"
-import {PersistenceModule, ThirdPartyModule, QueueModule} from "@external"
+import {PersistenceModule, ThirdPartyModule, QueueModule, RateLimiterModule} from "@external"
 import {GroupMembershipService} from "./group-membership"
 import {SpaceService} from "./space"
 import {UserService} from "./user"
@@ -20,6 +20,7 @@ import {HealthService} from "./health"
 import {ConfigModule} from "@external/config.module"
 import {ConfigProvider} from "@external/config"
 import {JwtModule} from "@nestjs/jwt"
+import {RateLimiterService} from "./rate-limiter"
 
 const services = [
   AgentService,
@@ -39,7 +40,8 @@ const services = [
   QueueService,
   TaskService,
   IdentityService,
-  HealthService
+  HealthService,
+  RateLimiterService
 ]
 
 const internalServices = [PkceService]
@@ -55,7 +57,7 @@ const jwtModule = JwtModule.registerAsync({
 })
 
 @Module({
-  imports: [PersistenceModule, ThirdPartyModule, ConfigModule, QueueModule, jwtModule],
+  imports: [PersistenceModule, ThirdPartyModule, ConfigModule, QueueModule, jwtModule, RateLimiterModule],
   providers: [...internalServices, ...services],
   exports: [...services]
 })

@@ -31,7 +31,8 @@ import {
   EmailProviderConfig,
   JwtConfig,
   OidcProviderConfig,
-  RedisConfig
+  RedisConfig,
+  RateLimitConfig
 } from "@external/config"
 import {Option} from "fp-ts/lib/Option"
 import * as O from "fp-ts/lib/Option"
@@ -254,10 +255,16 @@ export class MockConfigProvider implements ConfigProviderInterface {
   oidcConfig: OidcProviderConfig
   jwtConfig: JwtConfig
   redisConfig: RedisConfig
+  rateLimitConfig: RateLimitConfig
 
   private constructor(
     originalProvider?: ConfigProvider,
-    mocks: {dbConnectionUrl?: string; emailProviderConfig?: EmailProviderConfig; redisPrefix?: string} = {}
+    mocks: {
+      dbConnectionUrl?: string
+      emailProviderConfig?: EmailProviderConfig
+      redisPrefix?: string
+      rateLimitConfig?: RateLimitConfig
+    } = {}
   ) {
     const provider: ConfigProviderInterface = originalProvider ?? {
       dbConnectionUrl: "postgresql://test:test@localhost:5433/postgres?schema=public",
@@ -280,6 +287,15 @@ export class MockConfigProvider implements ConfigProviderInterface {
         host: "localhost",
         port: 1234,
         db: 5
+      },
+      rateLimitConfig: {
+        points: 100,
+        durationInSeconds: 1,
+        redis: {
+          host: "localhost",
+          port: 1234,
+          db: 5
+        }
       }
     }
 
@@ -290,6 +306,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
     this.jwtConfig = provider.jwtConfig
     this.redisConfig =
       mocks.redisPrefix !== undefined ? {...provider.redisConfig, prefix: mocks.redisPrefix} : provider.redisConfig
+    this.rateLimitConfig = mocks.rateLimitConfig || provider.rateLimitConfig
   }
 
   static fromDbConnectionUrl(dbConnectionUrl: string, redisPrefix?: string): MockConfigProvider {
@@ -298,7 +315,12 @@ export class MockConfigProvider implements ConfigProviderInterface {
   }
 
   static fromOriginalProvider(
-    mocks: {dbConnectionUrl?: string; emailProviderConfig?: EmailProviderConfig; redisPrefix?: string} = {}
+    mocks: {
+      dbConnectionUrl?: string
+      emailProviderConfig?: EmailProviderConfig
+      redisPrefix?: string
+      rateLimitConfig?: RateLimitConfig
+    } = {}
   ): MockConfigProvider {
     const provider = new ConfigProvider()
     return new MockConfigProvider(provider, mocks)
