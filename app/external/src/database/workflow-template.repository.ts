@@ -233,6 +233,16 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
     )
   }
 
+  countWorkflowTemplatesBySpaceId(spaceId: string): TaskEither<UnknownError, number> {
+    return TE.tryCatch(
+      () => this.dbClient.workflowTemplate.count({where: {spaceId}}),
+      error => {
+        Logger.error("Error counting workflow templates", error)
+        return "unknown_error"
+      }
+    )
+  }
+
   private atomicUpdateAndCreateTask(): (data: {
     existingTemplate: Versioned<WorkflowTemplate>
     newTemplate: WorkflowTemplate

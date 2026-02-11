@@ -20,7 +20,8 @@ import {
   WorkflowRepository,
   WorkflowUpdateError,
   ListWorkflowsRequest,
-  ListWorkflowsResponse
+  ListWorkflowsResponse,
+  UnknownError
 } from "@services"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
@@ -140,6 +141,24 @@ export class WorkflowDbRepository implements WorkflowRepository {
       TE.right,
       TE.chainW(this.updateWorkflowTask<PrismaWorkflowDecoratorSelector>()),
       TE.chainEitherKW(result => mapWorkflowToDomain(result, prismaInclude))
+    )
+  }
+
+  countActiveWorkflowsByTemplateId(templateId: string): TaskEither<UnknownError, number> {
+    return TE.tryCatch(
+      () =>
+        this.dbClient.workflow.count({
+          where: {
+            workflowTemplateId: templateId,
+            status: {
+              notIn: WORKFLOW_TERMINAL_STATUSES
+            }
+          }
+        }),
+      error => {
+        Logger.error("Error counting active workflows", error)
+        return "unknown_error"
+      }
     )
   }
 
