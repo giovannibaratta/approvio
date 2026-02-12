@@ -1,6 +1,6 @@
 databaseChangeLog:
   - changeSet:
-      id: 6db0ccdc-c96c-474a-a549-d4df7c848207
+      id: 20260208132753-set-db-as-template
       author: Giovanni Baratta
       comment: Set database as tempalte
       changes:

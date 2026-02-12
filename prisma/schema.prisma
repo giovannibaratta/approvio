@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Databasechangelog {
-  id            String   @db.VarChar(255)
+  id            String   @db.VarChar(255) @id
   author        String   @db.VarChar(255)
   filename      String   @db.VarChar(255)
   dateexecuted  DateTime @db.Timestamp(6)
@@ -24,7 +24,6 @@ model Databasechangelog {
   deploymentId  String?  @map("deployment_id") @db.VarChar(10)
 
   @@map("databasechangelog")
-  @@ignore
 }
 
 model Databasechangeloglock {

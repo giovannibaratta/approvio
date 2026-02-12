@@ -1,10 +1,10 @@
 databaseChangeLog:
   - changeSet:
-      id: create-organization-admins-table
+      id: 20260208132755-create-users-table
       author: giovannibaratta
       changes:
         - createTable:
-            tableName: organization_admins
+            tableName: users
             columns:
               - column:
                   name: id
@@ -13,19 +13,31 @@ databaseChangeLog:
                     primaryKey: true
                     nullable: false
               - column:
-                  name: email
-                  type: varchar(512)
+                  name: display_name
+                  type: varchar
                   constraints:
                     nullable: false
-                    foreignKeyName: fk_organization_admins_user
-                    references: users(email)
-                    deleteCascade: true
+              - column:
+                  name: email
+                  type: varchar
+                  constraints:
+                    nullable: false
               - column:
                   name: created_at
                   type: timestamp
                   constraints:
                     nullable: false
+              - column:
+                  name: roles
+                  type: json
+                  constraints:
+                    nullable: true
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
         - addUniqueConstraint:
-            tableName: organization_admins
+            tableName: users
             columnNames: email
-            constraintName: organization_admins_email_unique
+            constraintName: users_email_unique

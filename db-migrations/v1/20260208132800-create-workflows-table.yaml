@@ -1,10 +1,10 @@
 databaseChangeLog:
   - changeSet:
-      id: create-groups-table
+      id: 20260208132800-create-workflows-table
       author: giovannibaratta
       changes:
         - createTable:
-            tableName: groups
+            tableName: workflows
             columns:
               - column:
                   name: id
@@ -31,11 +31,34 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
+                  name: status
+                  type: varchar
+                  constraints:
+                    nullable: false
+              - column:
                   name: occ
                   type: bigint
                   constraints:
                     nullable: false
+              - column:
+                  name: recalculation_required
+                  type: boolean
+                  constraints:
+                    nullable: false
+              - column:
+                  name: workflow_template_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                    foreignKeyName: fk_workflows_workflow_template_id
+                    references: workflow_templates(id)
+                    deleteCascade: true
+              - column:
+                  name: expires_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
         - addUniqueConstraint:
-            tableName: groups
+            tableName: workflows
             columnNames: name
-            constraintName: groups_name_unique
+            constraintName: workflows_name_unique

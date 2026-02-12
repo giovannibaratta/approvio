@@ -1,6 +1,6 @@
 databaseChangeLog:
   - changeSet:
-      id: create-pkce-sessions-table
+      id: 20260208132803-create-pkce-sessions-table
       author: giovannibaratta
       changes:
         - createTable:

@@ -1,0 +1,43 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260208132756-create-agents-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: agents
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: agent_name
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: base64_public_key
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamp
+                  constraints:
+                    nullable: false
+              - column:
+                  name: roles
+                  type: json
+                  constraints:
+                    nullable: true
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: agents
+            columnNames: agent_name
+            constraintName: agents_agent_name_unique

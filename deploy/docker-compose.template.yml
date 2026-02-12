@@ -1,0 +1,139 @@
+# This is not a production ready docker-compose file. It is intended for development or local testing only.
+# The docker-compose has been developed to be executed with Podman and podman-compose, unfortunately
+# some features do not work as intended in podman-compose, hence the need to have this overly-complicated
+# and hacky way to manage the dependencies.
+
+volumes:
+  # Ephemeral volumes to store Redis data
+  redis_dev_data:
+  # Shared volume for startup coordination
+  status-check:
+
+services:
+  db:
+    image: postgres:17.4
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "6432:5432"
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "7379:6379"
+    volumes:
+      - redis_dev_data:/data
+    command: redis-server --appendonly no
+
+  wait-for-deps:
+    # This service is used to wait for the database and redis to be ready
+    # It is not a service that is meant to be run in production
+    # It is a hacky way to manage the dependencies.
+    image: alpine:latest
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    volumes:
+      - status-check:/status
+    command: >-
+      sh -c "
+        rm -f /status/deps-ready /status/ready &&
+        apk add --no-cache postgresql-client redis &&
+        until PGPASSWORD='${POSTGRES_PASSWORD}' psql -h db -U '${POSTGRES_USER}' -d '${POSTGRES_DB}' -c 'SELECT 1'; do echo 'Waiting for DB...'; sleep 2; done &&
+        until redis-cli -h redis -p 6379 ping; do echo 'Waiting for Redis...'; sleep 2; done &&
+        # The migration-init container will wait on this file to be created before performing the migration
+        touch /status/deps-ready
+      "
+    depends_on:
+      - db
+      - redis
+
+  migration-init:
+    image: ghcr.io/${REGISTRY_USER}/approvio-migrations:${VERSION}
+    user: root
+    depends_on:
+      - wait-for-deps
+      - db
+      - redis
+    environment:
+      LIQUIBASE_COMMAND_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
+      LIQUIBASE_COMMAND_USERNAME: ${POSTGRES_USER}
+      LIQUIBASE_COMMAND_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - status-check:/status
+    # The backend and the worker will wait for the /status/ready file to be created before attempting to start the services.
+    command: >-
+      sh -c "sleep 10; while [ ! -f /status/deps-ready ]; do echo 'Waiting for deps...'; sleep 2; done; /liquibase/docker-entrypoint.sh update && touch /status/ready"
+
+  backend:
+    image: ghcr.io/${REGISTRY_USER}/approvio-backend:${VERSION}
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_TRUSTED_ISSUERS: ${JWT_TRUSTED_ISSUERS}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      ENV: ${ENV}
+      LOG_LEVEL: ${LOG_LEVEL}
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI}
+      OIDC_ALLOW_INSECURE: ${OIDC_ALLOW_INSECURE}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+    ports:
+      - "4000:3000"
+    volumes:
+      - status-check:/status
+    depends_on:
+      - migration-init
+      - db
+      - redis
+      - wait-for-deps
+    command: >-
+      sh -c "
+        # Wait for the wait-for-deps container to start and clean the status files from the previous run
+        sleep 10;
+        while [ ! -f /status/ready ]; do echo 'Waiting for migration...'; sleep 5; done;
+        exec node dist/backend/main.js
+      "
+
+  worker:
+    image: ghcr.io/${REGISTRY_USER}/approvio-worker:${VERSION}
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_TRUSTED_ISSUERS: ${JWT_TRUSTED_ISSUERS}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_AUDIENCE: ${JWT_AUDIENCE}
+      ENV: ${ENV}
+      LOG_LEVEL: ${LOG_LEVEL}
+      OIDC_ISSUER_URL: ${OIDC_ISSUER_URL}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI}
+      OIDC_ALLOW_INSECURE: ${OIDC_ALLOW_INSECURE}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+    volumes:
+      - status-check:/status
+    depends_on:
+      - migration-init
+      - db
+      - redis
+      - wait-for-deps
+    command: >-
+      sh -c "
+        # Wait for the wait-for-deps container to start and clean the status files from the previous run
+        sleep 10;
+        while [ ! -f /status/ready ]; do echo 'Waiting for migration...'; sleep 5; done;
+        exec node dist/worker/main
+      "
