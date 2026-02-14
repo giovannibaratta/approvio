@@ -6,7 +6,7 @@ import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
 import {TaskEither} from "fp-ts/TaskEither"
-import {isUUIDv4, isEmail} from "@utils"
+import {isUUIDv4, isEmail, logSuccess} from "@utils"
 import {
   ORGANIZATION_ADMIN_REPOSITORY_TOKEN,
   OrganizationAdminCreateError,
@@ -48,7 +48,8 @@ export class OrganizationAdminService {
       validateUserEntity(request.requestor),
       E.chainW(requestor => validateRequest(request, requestor)),
       TE.fromEither,
-      TE.chainW(persistAdmin)
+      TE.chainW(persistAdmin),
+      logSuccess("Organization admin added", "OrganizationAdminService", admin => ({email: admin.email}))
     )
   }
 
@@ -74,7 +75,13 @@ export class OrganizationAdminService {
         limit: params.limit
       })
 
-    return pipe(request, validateRequest, TE.fromEither, TE.chainW(fetchAdmins))
+    return pipe(
+      request,
+      validateRequest,
+      TE.fromEither,
+      TE.chainW(fetchAdmins),
+      logSuccess("Organization admins listed", "OrganizationAdminService", result => ({count: result.admins.length}))
+    )
   }
 
   removeOrganizationAdmin(
@@ -99,7 +106,8 @@ export class OrganizationAdminService {
       validateUserEntity(request.requestor),
       E.chainW(requestor => validateRequest(request, requestor)),
       TE.fromEither,
-      TE.chainW(() => removeAdmin(request))
+      TE.chainW(() => removeAdmin(request)),
+      logSuccess("Organization admin removed", "OrganizationAdminService", () => ({identifier: request.identifier}))
     )
   }
 }

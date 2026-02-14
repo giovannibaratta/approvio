@@ -7,7 +7,7 @@ import * as E from "fp-ts/Either"
 import {TaskEither} from "fp-ts/TaskEither"
 import {USER_REPOSITORY_TOKEN, UserCreateError, UserGetError, UserRepository} from "./interfaces"
 import {Versioned} from "@domain"
-import {isEmail, isUUIDv4} from "@utils"
+import {isEmail, isUUIDv4, logSuccess} from "@utils"
 import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 import {PaginatedUsersList, UserListError} from "./interfaces"
 
@@ -37,7 +37,8 @@ export class UserService {
       validateUserEntity(request.requestor),
       E.chainW(requestor => validateRequest(request, requestor)),
       TE.fromEither,
-      TE.chainW(persistUser)
+      TE.chainW(persistUser),
+      logSuccess("User created", "UserService", user => ({id: user.id}))
     )
   }
 
@@ -51,7 +52,12 @@ export class UserService {
     const repoGetUser = (value: string) =>
       isUuid ? this.userRepo.getUserById(value) : this.userRepo.getUserByEmail(value)
 
-    return pipe(userIdentifier, TE.right, TE.chainW(repoGetUser))
+    return pipe(
+      userIdentifier,
+      TE.right,
+      TE.chainW(repoGetUser),
+      logSuccess("User retrieved", "UserService", user => ({id: user.id}))
+    )
   }
 
   listUsers(request: ListUsersRequest): TaskEither<UserListError, PaginatedUsersList> {
@@ -69,7 +75,10 @@ export class UserService {
       if (!search.match(/^[a-zA-Z0-9@.%_+.\s-]+$/)) return TE.left("search_term_invalid_characters")
     }
 
-    return this.userRepo.listUsers({search, page, limit})
+    return pipe(
+      this.userRepo.listUsers({search, page, limit}),
+      logSuccess("Users listed", "UserService", result => ({count: result.users.length}))
+    )
   }
 
   /**
@@ -110,7 +119,8 @@ export class UserService {
     return pipe(
       this.userRepo.hasAnyOrganizationAdmins(),
       TE.chainW(hasAdmins => createUserFromOidcClaims(!hasAdmins)),
-      TE.chainW(user => persistUser(user))
+      TE.chainW(user => persistUser(user)),
+      logSuccess("User auto-registered", "UserService", user => ({id: user.id}))
     )
   }
 }

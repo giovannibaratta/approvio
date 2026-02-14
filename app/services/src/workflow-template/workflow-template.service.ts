@@ -4,6 +4,7 @@ import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as O from "fp-ts/Option"
+import {logSuccess} from "@utils"
 import {
   WorkflowTemplate,
   WorkflowTemplateFactory,
@@ -62,12 +63,16 @@ export class WorkflowTemplateService {
         })
       ),
       TE.fromEither,
-      TE.chainW(workflowTemplate => this.workflowTemplateRepository.createWorkflowTemplate(workflowTemplate))
+      TE.chainW(workflowTemplate => this.workflowTemplateRepository.createWorkflowTemplate(workflowTemplate)),
+      logSuccess("Workflow template created", "WorkflowTemplateService", t => ({id: t.id}))
     )
   }
 
   getWorkflowTemplateById(templateId: string): TaskEither<WorkflowTemplateGetError, Versioned<WorkflowTemplate>> {
-    return this.workflowTemplateRepository.getWorkflowTemplateById(templateId)
+    return pipe(
+      this.workflowTemplateRepository.getWorkflowTemplateById(templateId),
+      logSuccess("Workflow template retrieved", "WorkflowTemplateService", t => ({id: t.id}))
+    )
   }
 
   getLatestWorkflowTemplateByName(
@@ -131,7 +136,8 @@ export class WorkflowTemplateService {
           existingTemplate: deprecatedVersionWithOcc,
           newTemplate: newVersion
         })
-      )
+      ),
+      logSuccess("Workflow template updated", "WorkflowTemplateService", t => ({id: t.id}))
     )
   }
 
@@ -265,7 +271,8 @@ export class WorkflowTemplateService {
       }),
       TE.chainW(({deprecatedVersionWithOcc}) =>
         this.workflowTemplateRepository.updateWorkflowTemplate(deprecatedVersionWithOcc)
-      )
+      ),
+      logSuccess("Workflow template deprecated", "WorkflowTemplateService", t => ({id: t.id}))
     )
   }
 
@@ -275,7 +282,8 @@ export class WorkflowTemplateService {
     return pipe(
       validateUserEntity(request.requestor),
       TE.fromEither,
-      TE.chainW(() => this.workflowTemplateRepository.listWorkflowTemplates(request))
+      TE.chainW(() => this.workflowTemplateRepository.listWorkflowTemplates(request)),
+      logSuccess("Workflow templates listed", "WorkflowTemplateService", r => ({count: r.pagination.total}))
     )
   }
 }

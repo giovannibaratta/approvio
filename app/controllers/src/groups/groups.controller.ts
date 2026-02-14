@@ -49,6 +49,7 @@ import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/lib/function"
 import * as TE from "fp-ts/lib/TaskEither"
 import {AuthenticatedEntity} from "@domain"
+import {logSuccess} from "@utils"
 
 export const GROUPS_ENDPOINT_ROOT = "groups"
 const MAX_LIMIT = 100
@@ -74,7 +75,8 @@ export class GroupsController {
       {request, requestor},
       createGroupApiToServiceModel,
       TE.fromEither,
-      TE.chainW(serviceCreateGroup)
+      TE.chainW(serviceCreateGroup),
+      logSuccess("Group created", "GroupsController", group => ({id: group.id}))
     )()
 
     if (isLeft(eitherGroup)) throw generateErrorResponseForCreateGroup(eitherGroup.left, "Failed to create group")
@@ -92,7 +94,12 @@ export class GroupsController {
   ): Promise<ListGroups200Response> {
     // Wrap in a lambda to preserve the "this" context
     const serviceListGroups = (request: ListGroupsRequest) => this.groupService.listGroups(request)
-    const eitherGroups = await pipe({page, limit, requestor}, TE.right, TE.chainW(serviceListGroups))()
+    const eitherGroups = await pipe(
+      {page, limit, requestor},
+      TE.right,
+      TE.chainW(serviceListGroups),
+      logSuccess("Groups listed", "GroupsController", result => ({count: result.groups.length}))
+    )()
     if (isLeft(eitherGroups)) throw generateErrorResponseForListGroups(eitherGroups.left, "Failed to list groups")
     return mapListGroupsResultToApi(eitherGroups.right)
   }
@@ -104,7 +111,12 @@ export class GroupsController {
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<GroupApi> {
     const serviceGetGroup = (request: GetGroupByIdentifierRequest) => this.groupService.getGroupByIdentifier(request)
-    const eitherGroup = await pipe({groupIdentifier, requestor}, TE.right, TE.chainW(serviceGetGroup))()
+    const eitherGroup = await pipe(
+      {groupIdentifier, requestor},
+      TE.right,
+      TE.chainW(serviceGetGroup),
+      logSuccess("Group retrieved", "GroupsController", group => ({id: group.id}))
+    )()
     if (isLeft(eitherGroup))
       throw generateErrorResponseForGetGroup(eitherGroup.left, `Failed to get group ${groupIdentifier}`)
     return mapGroupWithEntitiesCountToApi(eitherGroup.right)
@@ -132,7 +144,8 @@ export class GroupsController {
       {groupId, requestor},
       TE.right,
       TE.chainW(serviceListUsers),
-      TE.map(data => mapListGroupMembersResultToApi(page, limit, data))
+      TE.map(data => mapListGroupMembersResultToApi(page, limit, data)),
+      logSuccess("Group members listed", "GroupsController", result => ({count: result.entities.length}))
     )()
 
     if (isLeft(eitherResult))
@@ -163,7 +176,8 @@ export class GroupsController {
       addUserRequests,
       TE.right,
       TE.chainW(serviceAddMembers),
-      TE.map(mapGroupWithMembershipToApi)
+      TE.map(mapGroupWithMembershipToApi),
+      logSuccess("Group entities added", "GroupsController", group => ({id: group.id}))
     )()
 
     if (isLeft(eitherResult)) {
@@ -196,7 +210,8 @@ export class GroupsController {
       removeMembersRequest,
       TE.right,
       TE.chainW(serviceRemoveMembers),
-      TE.map(mapGroupWithMembershipToApi)
+      TE.map(mapGroupWithMembershipToApi),
+      logSuccess("Group entities removed", "GroupsController", group => ({id: group.id}))
     )()
 
     if (isLeft(eitherResult)) {

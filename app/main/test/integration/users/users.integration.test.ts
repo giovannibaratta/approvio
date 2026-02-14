@@ -42,7 +42,7 @@ describe("Users API", () => {
       throw error
     }
 
-    app = module.createNestApplication()
+    app = module.createNestApplication({logger: ["error", "warn"]})
     prisma = module.get(DatabaseClient)
     const jwtService = module.get(JwtService)
     const configProvider = module.get(ConfigProvider)

@@ -1,7 +1,8 @@
 import {NestFactory} from "@nestjs/core"
 import {globalValidationPipe} from "./validation-pipe"
 import {AppModule} from "./app.module"
-import {ConsoleLogger, LogLevel} from "@nestjs/common"
+import {LogLevel} from "@nestjs/common"
+import {CustomLogger} from "./logging/custom-logger"
 
 async function bootstrap() {
   const logLevels: LogLevel[] = ["log", "error", "warn"]
@@ -11,9 +12,8 @@ async function bootstrap() {
     logLevels.push("debug")
   }
 
-  const logger = new ConsoleLogger({
+  const logger = new CustomLogger("backend", {
     timestamp: true,
-    prefix: "backend",
     logLevels
   })
 

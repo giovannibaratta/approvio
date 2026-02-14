@@ -16,6 +16,7 @@ import {Versioned} from "@domain"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
+import {logSuccess} from "@utils"
 import {
   CreateSpaceRepoError,
   CreateSpaceRequest,
@@ -87,7 +88,8 @@ export class SpaceService {
       TE.bindW("updatedUser", ({user, space}) => addManagePermissions({user, space})),
       TE.chainW(({space, updatedUser, user}) =>
         persistSpaceWithUserPermissions({space, updatedUser, userOcc: user.occ})
-      )
+      ),
+      logSuccess("Space created", "SpaceService", space => ({id: space.id, name: space.name}))
     )
   }
 
@@ -117,7 +119,8 @@ export class SpaceService {
       TE.Do,
       TE.bindW("requestor", () => validateRequestor()),
       TE.bindW("authorizedSpaceId", ({requestor}) => checkPermissions(requestor, request.spaceId)),
-      TE.chainW(({authorizedSpaceId}) => fetchSpaceData(authorizedSpaceId))
+      TE.chainW(({authorizedSpaceId}) => fetchSpaceData(authorizedSpaceId)),
+      logSuccess("Space retrieved", "SpaceService", space => ({id: space.id}))
     )
   }
 
@@ -138,7 +141,11 @@ export class SpaceService {
     return pipe(
       validateUserEntity(request.requestor),
       TE.fromEither,
-      TE.chainW(() => this.spaceRepo.listSpaces({page, limit}))
+      TE.chainW(() => this.spaceRepo.listSpaces({page, limit})),
+      logSuccess("Spaces listed", "SpaceService", result => ({
+        count: result.spaces.length,
+        total: result.total
+      }))
     )
   }
 
@@ -161,7 +168,10 @@ export class SpaceService {
     }
 
     const deleteSpaceData = (spaceId: string): TaskEither<DeleteSpaceError, void> => {
-      return this.spaceRepo.deleteSpace({spaceId})
+      return pipe(
+        this.spaceRepo.deleteSpace({spaceId}),
+        logSuccess("Space deleted", "SpaceService", () => ({spaceId}))
+      )
     }
 
     return pipe(

@@ -7,7 +7,7 @@ import {
   RoleRemovalRequest
 } from "@approvio/api"
 import {GetAuthenticatedEntity} from "@app/auth"
-import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Logger, Param, Post, Put, Query, Res} from "@nestjs/common"
+import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
 import {
   ListUsersRequest,
   UserService,
@@ -33,6 +33,7 @@ import {
 } from "./users.mappers"
 import {validateRoleAssignmentRequest, validateRoleRemovalRequest} from "../shared/mappers"
 import {AuthenticatedEntity} from "@domain"
+import {logSuccess} from "@utils"
 
 export const USERS_ENDPOINT_ROOT = "users"
 
@@ -59,11 +60,7 @@ export class UsersController {
       TE.fromEither,
       TE.chainW(serviceCreateUser),
       TE.map(data => data.id),
-      TE.chainFirstW(userId =>
-        TE.fromIO(() => {
-          Logger.log(`User created successfully with id ${userId} (${request.email})`)
-        })
-      )
+      logSuccess("User created", "UsersController", id => ({id, email: request.email}))
     )()
 
     if (isLeft(eitherUserId)) throw generateErrorResponseForCreateUser(eitherUserId.left, "Failed to create user")
@@ -87,7 +84,8 @@ export class UsersController {
       mapToServiceRequest,
       TE.fromEither,
       TE.chainW(requestToService),
-      TE.map(mapUsersToApi)
+      TE.map(mapUsersToApi),
+      logSuccess("Users listed", "UsersController", result => ({count: result.users.length}))
     )()
 
     if (isLeft(eitherUsers)) throw generateErrorResponseForListUsers(eitherUsers.left, "Failed to list users")
@@ -98,7 +96,10 @@ export class UsersController {
   @Get(":userIdentifier")
   @HttpCode(HttpStatus.OK)
   async getUser(@Param("userIdentifier") userIdentifier: string): Promise<UserApi> {
-    const eitherUser = await this.userService.getUserByIdentifier(userIdentifier)()
+    const eitherUser = await pipe(
+      this.userService.getUserByIdentifier(userIdentifier),
+      logSuccess("User retrieved", "UsersController", user => ({id: user.id}))
+    )()
 
     if (isLeft(eitherUser)) {
       throw generateErrorResponseForGetUser(eitherUser.left, "Failed to get user")
@@ -128,7 +129,8 @@ export class UsersController {
       E.chainW(validateRoleAssignmentRequest),
       E.map(mapToServiceModel),
       TE.fromEither,
-      TE.chainW(assignRole)
+      TE.chainW(assignRole),
+      logSuccess("Roles assigned to user", "UsersController", () => ({userId}))
     )()
 
     if (isLeft(eitherResult))
@@ -155,7 +157,8 @@ export class UsersController {
       E.chainW(validateRoleRemovalRequest),
       E.map(mapToServiceModel),
       TE.fromEither,
-      TE.chainW(removeRole)
+      TE.chainW(removeRole),
+      logSuccess("Roles removed from user", "UsersController", () => ({userId}))
     )()
 
     if (isLeft(eitherResult))
