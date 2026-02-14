@@ -16,7 +16,7 @@ A scalable approval management system built with NestJS and TypeScript.
 
 ## Agent Skills
 
-Use the following skills to assist with tasks:
+Always USE the following skills to assist with tasks:
 
 - **`codebase-queries`**: For understanding architecture, finding files, and layer responsibilities.
 - **`code-review`**: For coding standards, style guides, and layer-specific conventions and performing code reviews after completing the task.
