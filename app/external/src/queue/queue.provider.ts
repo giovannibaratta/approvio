@@ -1,4 +1,4 @@
-import {Injectable, Logger} from "@nestjs/common"
+import {Injectable, Logger, OnModuleDestroy} from "@nestjs/common"
 import {InjectQueue} from "@nestjs/bull"
 import {Queue, JobOptions} from "bull"
 import * as TE from "fp-ts/TaskEither"
@@ -38,7 +38,7 @@ const SHARED_QUEUE_OPTIONS: JobOptions = {
 }
 
 @Injectable()
-export class BullQueueProvider implements QueueProvider {
+export class BullQueueProvider implements QueueProvider, OnModuleDestroy {
   constructor(
     @InjectQueue(WORKFLOW_STATUS_RECALCULATION_QUEUE)
     private readonly queue: Queue<RecalculationJobData>,
@@ -132,5 +132,13 @@ export class BullQueueProvider implements QueueProvider {
         return "queue_health_check_failed" as const
       }
     )
+  }
+  async onModuleDestroy() {
+    await Promise.all([
+      this.queue.close(),
+      this.statusChangedQueue.close(),
+      this.emailActionQueue.close(),
+      this.webhookActionQueue.close()
+    ])
   }
 }

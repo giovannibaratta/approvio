@@ -1,6 +1,6 @@
 databaseChangeLog:
   - changeSet:
-      id: create-workflow-templates-table
+      id: 20260208132759-create-workflow-templates-table
       author: giovannibaratta
       changes:
         - createTable:

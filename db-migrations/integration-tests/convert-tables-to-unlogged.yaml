@@ -1,6 +1,7 @@
 databaseChangeLog:
   - changeSet:
-      id: convert-tables-to-unlogged
+      # This is a fake timestamp, it will never collide with a production migration
+      id: 20000101000000-convert-tables-to-unlogged
       author: system
       comment: Convert all tables to UNLOGGED for improved test performance
       changes:

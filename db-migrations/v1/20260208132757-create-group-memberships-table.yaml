@@ -1,6 +1,6 @@
 databaseChangeLog:
   - changeSet:
-      id: create-group-memberships-table
+      id: 20260208132757-create-group-memberships-table
       author: giovannibaratta
       changes:
         - createTable:

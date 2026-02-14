@@ -1,0 +1,10 @@
+FROM liquibase/liquibase:4.31.1
+
+# Copy migrations
+COPY db-migrations /liquibase/changelog
+
+# Set default properties
+COPY db-migrations/prod.liquibase.docker.properties /liquibase/liquibase.docker.properties
+
+# Run update by default
+CMD ["update"]

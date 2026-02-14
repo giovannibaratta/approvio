@@ -23,6 +23,7 @@ async function bootstrap() {
   app.enableCors({
     exposedHeaders: ["Location"]
   })
+  app.enableShutdownHooks()
   await app.listen(3000)
 }
 

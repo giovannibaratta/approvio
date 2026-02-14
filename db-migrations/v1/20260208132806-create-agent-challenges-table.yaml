@@ -1,6 +1,6 @@
 databaseChangeLog:
   - changeSet:
-      id: create-agent-challenges-table
+      id: 20260208132806-create-agent-challenges-table
       author: giovannibaratta
       changes:
         - createTable:

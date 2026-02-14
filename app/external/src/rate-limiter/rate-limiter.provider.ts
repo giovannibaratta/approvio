@@ -51,7 +51,7 @@ export class RedisRateLimiterProvider implements RateLimiterProvider, OnModuleIn
   }
 
   onModuleDestroy() {
-    this.getRedisClient().disconnect()
+    this.redisClient?.disconnect()
   }
 
   private getRedisClient(): Redis {

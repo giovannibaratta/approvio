@@ -84,3 +84,4 @@ For detailed information about the system architecture and components:
 - [Workflow Templates](./docs/workflow-templates.md) - Template creation and management
 - [Workflows](./docs/workflows.md) - Workflow execution and lifecycle
 - [Permissions System](./docs/permissions.md) - User roles and access control
+- [Deployment](./deploy/README.md) - Containerization and deployment guide

@@ -1,6 +1,6 @@
 databaseChangeLog:
   - changeSet:
-      id: create-spaces-table
+      id: 20260208132758-create-spaces-table
       author: giovannibaratta
       changes:
         - createTable:

@@ -1,6 +1,6 @@
 databaseChangeLog:
   - changeSet:
-      id: create-refresh-tokens-table
+      id: 20260208132804-create-refresh-tokens-table
       author: giovannibaratta
       changes:
         - createTable:

@@ -9,11 +9,14 @@ import {MockConfigProvider} from "@test/mock-data"
 import {get} from "@test/requests"
 import {PrismaClient} from "@prisma/client"
 import {DatabaseClient} from "@external"
+import {HEALTH_REPOSITORY_TOKEN, HealthRepository} from "@services/health"
+import * as TE from "fp-ts/TaskEither"
 
 describe("Health API", () => {
   let app: NestApplication
   let prisma: PrismaClient
   let redisPrefix: string
+  let healthRepository: HealthRepository
 
   beforeEach(async () => {
     const isolatedDb = await prepareDatabase()
@@ -34,6 +37,7 @@ describe("Health API", () => {
 
     app = module.createNestApplication()
     prisma = module.get(DatabaseClient)
+    healthRepository = module.get(HEALTH_REPOSITORY_TOKEN)
     await app.init()
   }, 30000)
 
@@ -44,50 +48,29 @@ describe("Health API", () => {
     await app.close()
   })
 
-  it("should return 200 OK with status OK when dependencies are healthy", async () => {
-    const response = await get(app, "/health").build()
+  describe("Good cases", () => {
+    it("should return 200 OK with status OK when dependencies are healthy", async () => {
+      const response = await get(app, "/health").build()
 
-    expect(response).toHaveStatusCode(HttpStatus.OK)
-    const body: HealthResponse = response.body
-    expect(body.status).toEqual("OK")
-  })
-})
-
-describe("Health API - Bad Cases", () => {
-  let app: NestApplication
-
-  beforeEach(async () => {
-    let module: TestingModule
-    try {
-      module = await Test.createTestingModule({
-        imports: [AppModule]
-      })
-        .overrideProvider(ConfigProvider)
-        .useValue(
-          MockConfigProvider.fromOriginalProvider({
-            dbConnectionUrl: "postgresql://invalid:invalid@localhost:5432/nonexistent"
-          })
-        )
-        .compile()
-    } catch (error) {
-      console.error(error)
-      throw error
-    }
-
-    app = module.createNestApplication()
-    await app.init()
-  }, 30000)
-
-  afterEach(async () => {
-    await app.close()
+      expect(response).toHaveStatusCode(HttpStatus.OK)
+      const body: HealthResponse = response.body
+      expect(body.status).toEqual("OK")
+    })
   })
 
   it("should return 503 Service Unavailable when database connection fails", async () => {
-    const response = await get(app, "/health").build()
+    // Given: an initially healthy app
+    let response = await get(app, "/health").build()
+    expect(response).toHaveStatusCode(HttpStatus.OK)
 
+    // When: the database connection fails
+    jest.spyOn(healthRepository, "checkDatabaseConnection").mockReturnValue(TE.left("db_health_check_failed"))
+    response = await get(app, "/health").build()
+
+    // Expect: 503 Service Unavailable with status DEPENDENCY_ERROR and a message
     expect(response).toHaveStatusCode(HttpStatus.SERVICE_UNAVAILABLE)
     const body: HealthResponse = response.body
     expect(body.status).toEqual("DEPENDENCY_ERROR")
-    expect(body.message).toBeDefined()
+    expect(body.message).toEqual("DB_HEALTH_CHECK_FAILED")
   })
 })

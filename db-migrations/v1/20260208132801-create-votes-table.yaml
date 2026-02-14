@@ -1,6 +1,6 @@
 databaseChangeLog:
   - changeSet:
-      id: create-votes-table
+      id: 20260208132801-create-votes-table
       author: giovannibaratta
       changes:
         - createTable:

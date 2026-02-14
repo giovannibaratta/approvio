@@ -1,0 +1,34 @@
+# Git
+.git
+.gitignore
+
+# Dependencies
+node_modules
+
+# Build Output
+dist
+coverage
+
+# Environment Variables
+.env
+.env.*
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Logs
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# Temporary Files
+.idea
+.vscode
+*.swp
+*.swo
+
+# Test Migrations
+db-migrations/integration-tests
+db-migrations/test-root-changelog.yaml
+db-migrations/integration-test.liquibase.docker.properties

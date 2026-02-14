@@ -1,6 +1,6 @@
 databaseChangeLog:
   - changeSet:
-      id: create-workflow-actions-webhook-tasks-table
+      id: 20260208132808-create-workflow-actions-webhook-tasks-table
       author: giovannibaratta
       changes:
         - createTable:
