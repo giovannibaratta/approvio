@@ -46,21 +46,20 @@ export class RolePermissionChecker {
     if (roleScope.type !== requestedScope.type) return false
 
     // For space scopes, check spaceId match
-    if (roleScope.type === "space" && requestedScope.type === "space") {
+    if (roleScope.type === "space" && requestedScope.type === "space")
       return roleScope.spaceId === requestedScope.spaceId
-    }
 
     // For group scopes, check groupId match
-    if (roleScope.type === "group" && requestedScope.type === "group") {
+    if (roleScope.type === "group" && requestedScope.type === "group")
       return roleScope.groupId === requestedScope.groupId
-    }
 
     // For workflow template scopes, check workflowTemplateId match
-    if (roleScope.type === "workflow_template" && requestedScope.type === "workflow_template") {
+    if (roleScope.type === "workflow_template" && requestedScope.type === "workflow_template")
       return roleScope.workflowTemplateId === requestedScope.workflowTemplateId
-    }
 
-    return true
+    // The conditions above should cover all possible cases, but to be sure
+    // we default to false.
+    return false
   }
 
   static hasGroupPermission(
