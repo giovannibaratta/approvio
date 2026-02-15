@@ -15,7 +15,8 @@ import {
   User,
   RefreshTokenFactory,
   canTokenBeRefreshed,
-  RefreshToken
+  RefreshToken,
+  AuthenticatedEntity
 } from "@domain"
 import {
   OIDC_PROVIDER_TOKEN,
@@ -35,13 +36,16 @@ import {
   RefreshTokenRefreshError,
   TokenPair,
   RefreshTokenCreateError,
-  AuthError
+  AuthError,
+  StepUpTokenRequest
 } from "./interfaces"
 import {TokenPayloadBuilder} from "./auth-token"
 import {AgentService} from "@services/agent"
 import {createSha256Hash, validateDpopJwt, logSuccess} from "@utils"
+import {v4 as uuidv4} from "uuid"
 
 const ACCESS_TOKEN_EXPIRY_SECONDS = 60 * 60 // 1 hour
+const STEP_UP_TOKEN_EXPIRY_SECONDS = 60 * 2 // 2 minutes
 
 export interface OidcUser {
   oidcSubjectId: string
@@ -75,15 +79,25 @@ export class AuthService {
     this.accessTokenExpirationSec = accessTokenExpirationSec ?? ACCESS_TOKEN_EXPIRY_SECONDS
   }
 
-  generateJwtToken(user: User): TaskEither<AuthError, string> {
+  generateJwtToken(
+    user: User,
+    stepUpContext?: {acr: string; operation: string; resource: string; jti: string; expiresIn: number}
+  ): TaskEither<AuthError, string> {
     return TE.tryCatch(
       async () => {
         const tokenPayload = TokenPayloadBuilder.fromUser(user, {
           issuer: this.issuer,
-          audience: [this.audience]
+          audience: [this.audience],
+          ...(stepUpContext && {
+            acr: stepUpContext.acr,
+            operation: stepUpContext.operation,
+            resource: stepUpContext.resource,
+            jti: stepUpContext.jti
+          })
         })
 
-        const token = this.jwtService.sign(tokenPayload, {expiresIn: this.accessTokenExpirationSec})
+        const expiresIn = stepUpContext ? stepUpContext.expiresIn : this.accessTokenExpirationSec
+        const token = this.jwtService.sign(tokenPayload, {expiresIn})
         Logger.log(`JWT token generated for user: ${user.id}`)
         return token
       },
@@ -424,6 +438,40 @@ export class AuthService {
           TE.chainW(() => TE.left(error))
         )
       })
+    )
+  }
+
+  // Validate IDP Token by calling verifyToken on OIDC Provider
+  private validateIdpToken(idpToken: string): TaskEither<AuthError, void> {
+    return pipe(
+      this.oidcClient.verifyToken(idpToken),
+      TE.mapLeft(error => {
+        Logger.error(`IDP Token verification failed: ${error}`)
+        return "auth_step_up_token_verification_failed" as const
+      }),
+      TE.map(() => undefined)
+    )
+  }
+
+  exchangeStepUpToken(request: StepUpTokenRequest, requestor: AuthenticatedEntity): TaskEither<AuthError, string> {
+    if (requestor.entityType !== "user") {
+      // Agents likely don't do step-up in this flow, or if they do, logic might differ.
+      // Assuming only users step up for now.
+      return TE.left("auth_invalid_step_up_token" as const)
+    }
+
+    return pipe(
+      this.validateIdpToken(request.idpToken),
+      TE.chainW(() =>
+        this.generateJwtToken(requestor.user, {
+          acr: "step-up", // Or derived from IDP token
+          operation: request.operation,
+          resource: request.resourceId,
+          jti: uuidv4(),
+          expiresIn: STEP_UP_TOKEN_EXPIRY_SECONDS
+        })
+      ),
+      logSuccess("Step-up token exchanged", "AuthService")
     )
   }
 }
