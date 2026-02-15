@@ -2,6 +2,15 @@ import {User, Agent, Versioned, UnconstrainedBoundRole} from "@domain"
 
 export type AuthenticatedEntity = AuthenticatedUser | AuthenticatedAgent
 
+/**
+ * Contextual information regarding the authentication event, specifically for step-up authentication.
+ * This includes details like the operation being authorized, the resource involved, and the authentication context reference (ACR).
+ *
+ * @property jti - The unique identifier of the JWT.
+ * @property operation - The specific operation (e.g., 'vote') authorized by this token.
+ * @property resource - The resource identifier (e.g., workflow ID) this token is bound to.
+ * @property acr - Authentication Context Class Reference, indicating the level of assurance.
+ */
 export interface StepUpContext {
   jti: string
   operation: string
@@ -12,13 +21,15 @@ export interface StepUpContext {
 export type AuthenticatedUser = {
   entityType: "user"
   user: Versioned<User>
-  stepUpContext?: StepUpContext
+  // This field contains IDP-specific authentication context.
+  // It is typed as unknown here to decouple the domain from specific Auth implementation details,
+  // but it is expected to hold a StepUpContext at runtime for step-up scenarios.
+  authContext?: unknown
 }
 
 export type AuthenticatedAgent = {
   entityType: "agent"
   agent: Agent
-  stepUpContext?: StepUpContext
 }
 
 export interface EntityReference {

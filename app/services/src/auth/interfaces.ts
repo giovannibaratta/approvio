@@ -29,6 +29,7 @@ export type AuthError =
       | "authorization_url_generation_failed"
       | "missing_email_from_oidc_provider"
       | "invalid_step_up_token"
+      | "step_up_token_verification_failed"
     >
   | UserGetError
   | AutoRegisterError
@@ -256,4 +257,20 @@ export interface StepUpTokenRequest {
   idpToken: string
   resourceId: string
   operation: string
+}
+
+/**
+ * Contextual information regarding the authentication event, specifically for step-up authentication.
+ * This includes details like the operation being authorized, the resource involved, and the authentication context reference (ACR).
+ *
+ * @property jti - The unique identifier of the JWT.
+ * @property operation - The specific operation (e.g., 'vote') authorized by this token.
+ * @property resource - The resource identifier (e.g., workflow ID) this token is bound to.
+ * @property acr - Authentication Context Class Reference, indicating the level of assurance.
+ */
+export interface StepUpContext {
+  jti: string
+  operation: string
+  resource: string
+  acr?: string
 }

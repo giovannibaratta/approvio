@@ -447,7 +447,7 @@ export class AuthService {
       this.oidcClient.verifyToken(idpToken),
       TE.mapLeft(error => {
         Logger.error(`IDP Token verification failed: ${error}`)
-        return "auth_invalid_step_up_token" as const
+        return "auth_step_up_token_verification_failed" as const
       }),
       TE.map(() => undefined)
     )

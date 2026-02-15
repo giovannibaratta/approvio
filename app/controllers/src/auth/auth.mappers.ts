@@ -54,6 +54,7 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
     case "user_not_found":
     case "request_invalid_user_identifier":
     case "auth_invalid_step_up_token":
+    case "auth_step_up_token_verification_failed":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
     case "refresh_token_reuse_detected":
     case "refresh_token_concurrent_update":
@@ -174,8 +175,9 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_name_cannot_be_uuid":
+      Logger.error(`Internal data inconsistency: ${errorCode}`)
       return new InternalServerErrorException(
-        generateErrorPayload(errorCode, `${context}: internal data inconsistency`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
   }
 }
@@ -265,6 +267,7 @@ export function generateErrorResponseForGenerateToken(error: GenerateTokenError,
     case "pkce_code_already_used":
     case "user_not_found":
     case "auth_invalid_step_up_token":
+    case "auth_step_up_token_verification_failed":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: ${errorCode}`))
     case "pkce_code_concurrency_conflict":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: ${errorCode}`))
@@ -284,6 +287,7 @@ export function generateErrorResponseForStepUpToken(error: StepUpTokenError, con
     case "request_missing_operation":
     case "request_invalid_operation":
     case "auth_invalid_step_up_token":
+    case "auth_step_up_token_verification_failed":
     case "auth_user_not_found_in_system":
     case "user_not_found":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
@@ -341,6 +345,7 @@ export function generateErrorResponseForRefreshAgentToken(
     case "request_invalid_user_identifier":
     case "request_invalid_dpop_jkt":
     case "auth_invalid_step_up_token":
+    case "auth_step_up_token_verification_failed":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
     case "refresh_token_concurrent_update":
     case "refresh_token_reuse_detected":

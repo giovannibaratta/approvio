@@ -9,7 +9,9 @@ import {
   AgentValidationError,
   AuthenticatedEntity,
   createEntityReference,
-  getEntityRoles
+  getEntityRoles,
+  AuthenticatedUser,
+  StepUpContext
 } from "@domain"
 import {Inject, Injectable, Logger} from "@nestjs/common"
 import {UnknownError, AuthorizationError} from "@services/error"
@@ -104,16 +106,13 @@ export class VoteService {
   private isStepUpRequired(entity: AuthenticatedEntity): TaskEither<UnknownError, boolean> {
     if (entity.entityType !== "user") return TE.right(false)
 
-    return pipe(
-      this.groupRepo.getGroupsByUserId(entity.user.id),
-      TE.map(groups =>
-        groups.some(g => g.name.toLowerCase().includes("vp") || g.name.toLowerCase().includes("finance"))
-      ),
-      TE.mapLeft(err => {
-        Logger.error(`Failed to fetch groups for step-up check: ${err}`)
-        return "unknown_error" as const
-      })
-    )
+    // TODO: This logic needs to be connected to the Workflow Template rules.
+    // The current implementation is a placeholder.
+    // The step-up requirement should be determined by checking if the user belongs to a group
+    // that is configured to require step-up for the specific workflow/template.
+    // This will require extending the Workflow Template schema to include step-up configuration.
+
+    return TE.right(false)
   }
 
   /**
@@ -153,21 +152,28 @@ export class VoteService {
   }
 
   private validateStepUpAndPersistVote(request: CastVoteRequest): TaskEither<CastVoteServiceError, Vote> {
-    if (request.requestor.entityType !== "user" || !request.requestor.stepUpContext) {
+    if (request.requestor.entityType !== "user") {
+        return TE.left("step_up_required")
+    }
+
+    const authUser = request.requestor as AuthenticatedUser
+    const stepUpContext = authUser.authContext as StepUpContext | undefined
+
+    if (!stepUpContext) {
       return TE.left("step_up_required")
     }
-    const ctx = request.requestor.stepUpContext
-    if (ctx.operation !== "vote" || ctx.resource !== request.workflowId) {
+
+    if (stepUpContext.operation !== "vote" || stepUpContext.resource !== request.workflowId) {
       return TE.left("invalid_step_up_token")
     }
 
     return pipe(
-      this.stepUpTokenRepo.isTokenUsed(ctx.jti),
+      this.stepUpTokenRepo.isTokenUsed(stepUpContext.jti),
       TE.mapLeft(() => "unknown_error" as const),
       TE.chainW(used => {
         if (used) return TE.left("step_up_token_already_used" as const)
         return pipe(
-          this.stepUpTokenRepo.markTokenAsUsed(ctx.jti, 120), // 2 mins TTL matches token expiry
+          this.stepUpTokenRepo.markTokenAsUsed(stepUpContext.jti, 120), // 2 mins TTL matches token expiry
           TE.mapLeft(() => "unknown_error" as const)
         )
       }),
