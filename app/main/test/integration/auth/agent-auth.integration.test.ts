@@ -5,9 +5,9 @@ import {AppModule} from "@app/app.module"
 import {DatabaseClient} from "@external/database"
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {ConfigProvider} from "@external/config"
-import {createMockGroupInDb, MockConfigProvider} from "@test/mock-data"
+import {createMockGroupInDb, MockConfigProvider, MockKeyPool, createMockAgentInDb} from "@test/mock-data"
 import {PrismaClient} from "@prisma/client"
-import {AgentFactory, AgentWithPrivateKey} from "@domain"
+import {AgentWithPrivateKey} from "@domain"
 import {AgentChallengeRequest, AgentTokenRequest} from "@approvio/api"
 import {JwtService} from "@nestjs/jwt"
 
@@ -15,7 +15,6 @@ import {constants, privateDecrypt, sign, randomUUID} from "crypto"
 import * as jose from "jose"
 import "expect-more-jest"
 import "@utils/matchers"
-import {isLeft} from "fp-ts/lib/Either"
 import {createMockRefreshTokenInDb} from "@test/mock-data"
 import {RefreshTokenStatus, GRACE_PERIOD_SECONDS} from "@domain"
 import {createSha256Hash} from "@utils"
@@ -27,7 +26,8 @@ describe("Agent Authentication Integration", () => {
   let configProvider: ConfigProvider
   let testAgent: AgentWithPrivateKey
 
-  beforeEach(async () => {
+  // Use beforeAll for heavy setup (database, app)
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
 
     let module: TestingModule
@@ -48,26 +48,33 @@ describe("Agent Authentication Integration", () => {
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
 
-    // Create a test agent for authentication tests
-    const agentResult = AgentFactory.create({agentName: "test-agent"})
-    if (isLeft(agentResult)) throw new Error("Failed to create test agent")
-    testAgent = agentResult.right
+    await app.init()
+  }, 60000)
 
-    await prisma.agent.create({
-      data: {
-        id: testAgent.id,
-        agentName: testAgent.agentName,
-        base64PublicKey: Buffer.from(testAgent.publicKey).toString("base64"),
-        createdAt: testAgent.createdAt,
-        occ: BigInt(0)
-      }
+  // Use beforeEach for lightweight data setup
+  beforeEach(async () => {
+    // Create a test agent for authentication tests using pre-generated keys from the pool
+    const keyPair = MockKeyPool.getKeyPairByIndex(0)
+
+    const agent = await createMockAgentInDb(prisma, {
+      agentName: "test-agent",
+      keyPair: keyPair
     })
 
-    await app.init()
-  }, 20000)
+    // Manually construct AgentWithPrivateKey since createMockAgentInDb returns PrismaAgent
+    testAgent = {
+      ...agent,
+      privateKey: keyPair.privateKey,
+      publicKey: keyPair.publicKey,
+      roles: []
+    }
+  })
 
   afterEach(async () => {
     await cleanDatabase(prisma)
+  })
+
+  afterAll(async () => {
     await prisma.$disconnect()
     await app.close()
   })
@@ -571,10 +578,11 @@ describe("Agent Authentication Integration", () => {
           // Given: Agent with active refresh token
           const {plainToken} = await setupAgentWithRefreshToken()
 
-          // Create DPoP signed with WRONG key
-          const otherKey = await jose.generateKeyPair("RS256", {extractable: true})
-          const otherPrivateKeyPem = await jose.exportPKCS8(otherKey.privateKey)
-          const dpopJwt = await createDpopJwt(otherPrivateKeyPem, testAgent.publicKey, {
+          // Create DPoP signed with WRONG key (from the pool to be fast)
+          // Use index 1 (different from index 0 used for agent)
+          const otherKey = MockKeyPool.getKeyPairByIndex(1)
+
+          const dpopJwt = await createDpopJwt(otherKey.privateKey, testAgent.publicKey, {
             htm: "POST",
             htu: expectedHtu
           })
