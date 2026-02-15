@@ -1,4 +1,4 @@
-import {UnconstrainedBoundRole, RoleScope} from "../src/role"
+import {RoleScope} from "../src/role"
 import {RolePermissionChecker} from "../src/permission-checker"
 
 describe("RolePermissionChecker Vulnerability Check", () => {
@@ -7,15 +7,7 @@ describe("RolePermissionChecker Vulnerability Check", () => {
     const unknownScope = {
       type: "unknown_scope_type",
       someId: "123"
-    } as any as RoleScope
-
-    const roleWithUnknownScope: UnconstrainedBoundRole = {
-      name: "TestRole",
-      resourceType: "group", // doesn't matter much here
-      permissions: ["read"],
-      scopeType: "group", // doesn't matter much here
-      scope: unknownScope
-    } as any as UnconstrainedBoundRole
+    } as unknown as RoleScope
 
     // If I have a role with "unknown_scope_type" and I request access to "unknown_scope_type"
     // The current implementation will fall through the specific checks and return TRUE.
@@ -31,6 +23,7 @@ describe("RolePermissionChecker Vulnerability Check", () => {
     // No, `hasGroupPermission` expects GroupScope.
 
     // Let's try to access the private method directly for this vulnerability proof.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const hasMatch = (RolePermissionChecker as any).scopeMatches(unknownScope, unknownScope)
 
     // CURRENT BEHAVIOR: It returns false (FAIL CLOSED)
