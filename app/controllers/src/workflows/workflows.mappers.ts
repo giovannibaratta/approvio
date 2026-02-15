@@ -786,6 +786,14 @@ export function generateErrorResponseForCastVote(
     case "entity_not_in_required_group":
     case "workflow_template_not_active":
       return new UnprocessableEntityException(generateErrorPayload(errorCode, `${context}: Cannot cast vote`))
+    case "step_up_required":
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Step-up authentication required`))
+    case "invalid_step_up_token":
+      return new ForbiddenException(
+        generateErrorPayload(errorCode, `${context}: Invalid step-up token for this operation`)
+      )
+    case "step_up_token_already_used":
+      return new ConflictException(generateErrorPayload(errorCode, `${context}: Step-up token has already been used`))
   }
 }
 

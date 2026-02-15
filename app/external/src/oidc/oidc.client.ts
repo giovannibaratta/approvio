@@ -103,4 +103,12 @@ export class OidcClient implements OidcProvider {
       }
     )
   }
+
+  verifyToken(token: string): TaskEither<OidcError, OidcUserInfo> {
+    // For now, we verify by fetching user info.
+    // This assumes the token provided is a valid Access Token.
+    // In a future iteration, we should support validating ID Tokens via signature verification
+    // if the input is an ID Token.
+    return this.getUserInfo(token)
+  }
 }

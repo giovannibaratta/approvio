@@ -28,6 +28,7 @@ export type AuthError =
       | "token_generation_failed"
       | "authorization_url_generation_failed"
       | "missing_email_from_oidc_provider"
+      | "invalid_step_up_token"
     >
   | UserGetError
   | AutoRegisterError
@@ -151,6 +152,7 @@ export interface OidcProvider {
   getAuthorizationEndpoint(): TaskEither<OidcError, string>
   exchangeCodeForTokens(request: OidcTokenRequest): TaskEither<OidcError, OidcTokenResponse>
   getUserInfo(accessToken: string): TaskEither<OidcError, OidcUserInfo>
+  verifyToken(token: string): TaskEither<OidcError, OidcUserInfo>
 }
 
 export type GetChallengeByNonceError =
@@ -241,4 +243,17 @@ export interface RefreshTokenRepository {
 export interface TokenPair {
   accessToken: string
   refreshToken: string
+}
+
+export const STEP_UP_TOKEN_REPOSITORY_TOKEN = "STEP_UP_TOKEN_REPOSITORY_TOKEN"
+
+export interface StepUpTokenRepository {
+  markTokenAsUsed(jti: string, ttlSeconds: number): TaskEither<UnknownError, void>
+  isTokenUsed(jti: string): TaskEither<UnknownError, boolean>
+}
+
+export interface StepUpTokenRequest {
+  idpToken: string
+  resourceId: string
+  operation: string
 }

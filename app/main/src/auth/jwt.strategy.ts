@@ -6,7 +6,7 @@ import {TokenPayloadValidator, UserService, AgentService} from "@services"
 import {generateErrorPayload} from "@controllers/error"
 import {isRight} from "fp-ts/lib/Either"
 import {ConfigProvider} from "@external/config"
-import {AuthenticatedEntity} from "@domain"
+import {AuthenticatedEntity, AuthenticatedUser, AuthenticatedAgent} from "@domain"
 
 /**
  * JWT Authentication Strategy for NestJS using Passport
@@ -124,9 +124,27 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
 
     let authenticatedEntity: AuthenticatedEntity
 
-    if (payload.entityType === "user") authenticatedEntity = await this.validateUserEntity(payload.sub)
-    else if (payload.entityType === "agent") authenticatedEntity = await this.validateAgentEntity(payload.sub)
-    else throw new UnauthorizedException(generateErrorPayload("INVALID_ENTITY_TYPE", "Invalid entity type in token"))
+    if (payload.entityType === "user") {
+      authenticatedEntity = await this.validateUserEntity(payload.sub)
+      if (payload.jti && payload.operation && payload.resource) {
+        ;(authenticatedEntity as AuthenticatedUser).stepUpContext = {
+          jti: payload.jti,
+          operation: payload.operation,
+          resource: payload.resource,
+          acr: payload.acr
+        }
+      }
+    } else if (payload.entityType === "agent") {
+      authenticatedEntity = await this.validateAgentEntity(payload.sub)
+      if (payload.jti && payload.operation && payload.resource) {
+        ;(authenticatedEntity as AuthenticatedAgent).stepUpContext = {
+          jti: payload.jti,
+          operation: payload.operation,
+          resource: payload.resource,
+          acr: payload.acr
+        }
+      }
+    } else throw new UnauthorizedException(generateErrorPayload("INVALID_ENTITY_TYPE", "Invalid entity type in token"))
 
     // Set requestor on request for GetAuthenticatedEntity decorator
     req.requestor = authenticatedEntity
