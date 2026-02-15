@@ -12,7 +12,7 @@ import {
   Req
 } from "@nestjs/common"
 import {Response, Request} from "express"
-import {AuthService, GenerateChallengeRequest, IdentityService} from "@services"
+import {AuthService, GenerateChallengeRequest, IdentityService, StepUpTokenRequest} from "@services"
 import {isLeft} from "fp-ts/lib/Either"
 import * as TE from "fp-ts/TaskEither"
 import {PublicRoute} from "../../../main/src/auth/jwt.authguard"
@@ -44,7 +44,8 @@ import {generateErrorPayload} from "@controllers/error"
 import {
   validateGenerateTokenRequest,
   validateRefreshAgentTokenRequest,
-  validateRefreshTokenRequest
+  validateRefreshTokenRequest,
+  validateStepUpTokenRequest
 } from "./auth.validators"
 import {
   generateErrorResponseForGenerateToken,
@@ -52,7 +53,8 @@ import {
   generateErrorResponseForRefreshUserToken,
   generateErrorResponseForEntityInfo,
   mapToTokenResponse,
-  mapToEntityInfoResponse
+  mapToEntityInfoResponse,
+  generateErrorResponseForStepUpToken
 } from "./auth.mappers"
 import {logSuccess} from "@utils"
 
@@ -317,6 +319,31 @@ export class AuthController {
     if (isLeft(result)) {
       Logger.error("Agent token refresh failed", result.left)
       throw generateErrorResponseForRefreshAgentToken(result.left, "Failed to refresh token")
+    }
+
+    return result.right
+  }
+
+  @Post("step-up")
+  @HttpCode(200)
+  async stepUpToken(
+    @Body() body: unknown,
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+  ): Promise<{accessToken: string}> {
+    const exchangeStepUpToken = (req: StepUpTokenRequest) => this.authService.exchangeStepUpToken(req, requestor)
+
+    const result = await pipe(
+      body,
+      TE.right,
+      TE.chainW(rawBody => TE.fromEither(validateStepUpTokenRequest(rawBody))),
+      TE.chainW(validatedBody => exchangeStepUpToken(validatedBody)),
+      TE.map(accessToken => ({accessToken})),
+      logSuccess("Step-up token exchanged", "AuthController")
+    )()
+
+    if (isLeft(result)) {
+      Logger.error("Step-up token exchange failed", result.left)
+      throw generateErrorResponseForStepUpToken(result.left, "Failed to exchange step-up token")
     }
 
     return result.right

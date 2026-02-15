@@ -8,6 +8,7 @@ export interface TokenPayloadForSigning {
   sub: string // Subject - user/agent ID
   aud: string[] // Audience - intended recipients/services
   nbf?: number // Not before - optional validity start time
+  jti?: string // JWT ID - unique identifier for the token
 
   // IANA registered claims
   email?: string // User email (not applicable for agents)
@@ -16,6 +17,11 @@ export interface TokenPayloadForSigning {
   // Custom application claims
   entityType: AuthenticatedEntity["entityType"]
   orgRole?: OrgRole // Organizational role (admin/member) - only for users
+
+  // Step-up context
+  acr?: string // Authentication Context Class Reference
+  operation?: string // The operation this token is bound to
+  resource?: string // The resource ID this token is bound to
 }
 
 export interface TokenPayload extends TokenPayloadForSigning {
@@ -43,6 +49,7 @@ export class TokenPayloadValidator {
       typeof p.exp === "number" &&
       typeof p.iat === "number" &&
       (p.nbf === undefined || typeof p.nbf === "number") &&
+      (p.jti === undefined || typeof p.jti === "string") &&
       // IANA registered claims
       (p.email === undefined || typeof p.email === "string") &&
       typeof p.name === "string" &&
@@ -53,7 +60,11 @@ export class TokenPayloadValidator {
       // Organization role validation (only for users)
       (p.entityType === "agent" || p.orgRole === undefined || p.orgRole === "admin" || p.orgRole === "member") &&
       // Roles validation (only for users, should be array if present)
-      (p.entityType === "agent" || p.roles === undefined || Array.isArray(p.roles))
+      (p.entityType === "agent" || p.roles === undefined || Array.isArray(p.roles)) &&
+      // Step-up context validation
+      (p.acr === undefined || typeof p.acr === "string") &&
+      (p.operation === undefined || typeof p.operation === "string") &&
+      (p.resource === undefined || typeof p.resource === "string")
     )
   }
 
@@ -118,11 +129,16 @@ export class TokenPayloadBuilder {
     orgRole?: OrgRole
     issuer: string
     audience: string[]
+    jti?: string
+    acr?: string
+    operation?: string
+    resource?: string
   }): TokenPayloadForSigning {
     return {
       iss: data.issuer,
       sub: data.sub,
       aud: data.audience,
+      jti: data.jti,
 
       // IANA registered claims
       email: data.email,
@@ -130,7 +146,12 @@ export class TokenPayloadBuilder {
 
       // Custom application claims
       entityType: data.entityType,
-      ...(data.entityType === "user" && data.orgRole && {orgRole: data.orgRole})
+      ...(data.entityType === "user" && data.orgRole && {orgRole: data.orgRole}),
+
+      // Step-up context
+      ...(data.acr && {acr: data.acr}),
+      ...(data.operation && {operation: data.operation}),
+      ...(data.resource && {resource: data.resource})
     }
   }
 
@@ -145,6 +166,10 @@ export class TokenPayloadBuilder {
     options: {
       issuer: string
       audience: string[]
+      jti?: string
+      acr?: string
+      operation?: string
+      resource?: string
     }
   ): TokenPayloadForSigning {
     return TokenPayloadBuilder.from({
@@ -154,7 +179,11 @@ export class TokenPayloadBuilder {
       email: user.email,
       orgRole: user.orgRole,
       issuer: options.issuer,
-      audience: options.audience
+      audience: options.audience,
+      jti: options.jti,
+      acr: options.acr,
+      operation: options.operation,
+      resource: options.resource
     })
   }
 
@@ -169,6 +198,10 @@ export class TokenPayloadBuilder {
     options: {
       issuer: string
       audience: string[]
+      jti?: string
+      acr?: string
+      operation?: string
+      resource?: string
     }
   ): TokenPayloadForSigning {
     return TokenPayloadBuilder.from({
@@ -177,7 +210,11 @@ export class TokenPayloadBuilder {
       displayName: agent.agentName,
       // Agents don't have email
       issuer: options.issuer,
-      audience: options.audience
+      audience: options.audience,
+      jti: options.jti,
+      acr: options.acr,
+      operation: options.operation,
+      resource: options.resource
     })
   }
 }

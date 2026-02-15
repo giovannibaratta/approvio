@@ -27,6 +27,8 @@ import {GROUP_MEMBERSHIP_REPOSITORY_TOKEN, GroupMembershipRepository} from "@ser
 import {isNone, Option} from "fp-ts/lib/Option"
 import {DistributiveOmit, logSuccess} from "@utils"
 import {isRight} from "fp-ts/lib/Either"
+import {STEP_UP_TOKEN_REPOSITORY_TOKEN, StepUpTokenRepository} from "../auth/interfaces"
+import {GROUP_REPOSITORY_TOKEN, GroupRepository} from "../group/interfaces"
 
 @Injectable()
 export class VoteService {
@@ -36,7 +38,11 @@ export class VoteService {
     private readonly workflowService: WorkflowService,
     @Inject(GROUP_MEMBERSHIP_REPOSITORY_TOKEN)
     private readonly groupMembershipRepo: GroupMembershipRepository,
-    private readonly queueService: QueueService
+    private readonly queueService: QueueService,
+    @Inject(STEP_UP_TOKEN_REPOSITORY_TOKEN)
+    private readonly stepUpTokenRepo: StepUpTokenRepository,
+    @Inject(GROUP_REPOSITORY_TOKEN)
+    private readonly groupRepo: GroupRepository
   ) {}
 
   /**
@@ -54,17 +60,18 @@ export class VoteService {
             workflowTemplate: true
           }),
           vote: this.getLatestVoteByWorkflowAndEntity(workflowId, request.requestor),
-          entityMemberships: this.getEntityMemberships(request.requestor)
+          entityMemberships: this.getEntityMemberships(request.requestor),
+          stepUpRequired: this.isStepUpRequired(request.requestor)
         })
       ),
       TE.map(({scope}) => {
-        const {workflowWithTemplate, vote, entityMemberships} = scope
+        const {workflowWithTemplate, vote, entityMemberships, stepUpRequired} = scope
         const status = this.getVoteStatus(vote)
         const entityRoles = getEntityRoles(request.requestor)
         const canVoteResult = canVoteOnWorkflow(workflowWithTemplate, entityMemberships, entityRoles)
         const canVote = isRight(canVoteResult) ? true : {reason: canVoteResult.left}
 
-        return {canVote, status}
+        return {canVote, status, stepUpRequired}
       })
     )
   }
@@ -94,6 +101,21 @@ export class VoteService {
     }
   }
 
+  private isStepUpRequired(entity: AuthenticatedEntity): TaskEither<UnknownError, boolean> {
+    if (entity.entityType !== "user") return TE.right(false)
+
+    return pipe(
+      this.groupRepo.getGroupsByUserId(entity.user.id),
+      TE.map(groups =>
+        groups.some(g => g.name.toLowerCase().includes("vp") || g.name.toLowerCase().includes("finance"))
+      ),
+      TE.mapLeft(err => {
+        Logger.error(`Failed to fetch groups for step-up check: ${err}`)
+        return "unknown_error" as const
+      })
+    )
+  }
+
   /**
    * Casts a vote on a workflow.
    * This action is optimistic and may be subject to race conditions.
@@ -121,18 +143,48 @@ export class VoteService {
           return TE.left(canVoteCheck.canVote.reason)
         }
 
-        // Create vote with voter object
-        const voter = createEntityReference(request.requestor)
-        const voteData = {...request, voter}
+        if (canVoteCheck.stepUpRequired) {
+          return this.validateStepUpAndPersistVote(request)
+        }
 
-        return pipe(
-          VoteFactory.newVote(voteData),
-          TE.fromEither,
-          TE.chainW(vote => this.voteRepo.persistVoteAndMarkWorkflowRecalculation(vote)),
-          TE.chainFirstW(this.enqueueRecalculationBestEffort),
-          logSuccess("Vote cast", "VoteService", vote => ({id: vote.id, workflowId: vote.workflowId}))
-        )
+        return this.persistVote(request)
       })
+    )
+  }
+
+  private validateStepUpAndPersistVote(request: CastVoteRequest): TaskEither<CastVoteServiceError, Vote> {
+    if (request.requestor.entityType !== "user" || !request.requestor.stepUpContext) {
+      return TE.left("step_up_required")
+    }
+    const ctx = request.requestor.stepUpContext
+    if (ctx.operation !== "vote" || ctx.resource !== request.workflowId) {
+      return TE.left("invalid_step_up_token")
+    }
+
+    return pipe(
+      this.stepUpTokenRepo.isTokenUsed(ctx.jti),
+      TE.mapLeft(() => "unknown_error" as const),
+      TE.chainW(used => {
+        if (used) return TE.left("step_up_token_already_used" as const)
+        return pipe(
+          this.stepUpTokenRepo.markTokenAsUsed(ctx.jti, 120), // 2 mins TTL matches token expiry
+          TE.mapLeft(() => "unknown_error" as const)
+        )
+      }),
+      TE.chainW(() => this.persistVote(request))
+    )
+  }
+
+  private persistVote(request: CastVoteRequest): TaskEither<CastVoteServiceError, Vote> {
+    const voter = createEntityReference(request.requestor)
+    const voteData = {...request, voter}
+
+    return pipe(
+      VoteFactory.newVote(voteData),
+      TE.fromEither,
+      TE.chainW(vote => this.voteRepo.persistVoteAndMarkWorkflowRecalculation(vote)),
+      TE.chainFirstW(this.enqueueRecalculationBestEffort),
+      logSuccess("Vote cast", "VoteService", vote => ({id: vote.id, workflowId: vote.workflowId}))
     )
   }
 
@@ -172,6 +224,7 @@ export enum VoteStatus {
 export interface CanVoteResponse {
   canVote: true | {reason: CantVoteReason}
   status: VoteStatus
+  stepUpRequired?: boolean
 }
 
 export type CanVoteError =
@@ -196,3 +249,6 @@ export type CastVoteServiceError =
   | UnknownError
   | WorkflowUpdateError
   | AuthorizationError
+  | "step_up_required"
+  | "invalid_step_up_token"
+  | "step_up_token_already_used"

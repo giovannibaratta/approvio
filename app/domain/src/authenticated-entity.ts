@@ -2,14 +2,23 @@ import {User, Agent, Versioned, UnconstrainedBoundRole} from "@domain"
 
 export type AuthenticatedEntity = AuthenticatedUser | AuthenticatedAgent
 
+export interface StepUpContext {
+  jti: string
+  operation: string
+  resource: string
+  acr?: string
+}
+
 export type AuthenticatedUser = {
   entityType: "user"
   user: Versioned<User>
+  stepUpContext?: StepUpContext
 }
 
 export type AuthenticatedAgent = {
   entityType: "agent"
   agent: Agent
+  stepUpContext?: StepUpContext
 }
 
 export interface EntityReference {
