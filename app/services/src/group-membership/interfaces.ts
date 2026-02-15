@@ -87,6 +87,8 @@ export interface GroupMembershipRepository {
     MembershipValidationErrorWithGroupRef | AgentKeyDecodeError | AgentValidationError | UnknownError,
     ReadonlyArray<MembershipWithGroupRef>
   >
+
+  countUserMembersByGroupId(groupId: string): TaskEither<UnknownError, number>
 }
 
 export interface GetGroupWithMembershipRepo {

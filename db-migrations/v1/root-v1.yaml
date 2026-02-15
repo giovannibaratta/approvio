@@ -31,3 +31,5 @@ databaseChangeLog:
       file: v1/20260208132807-create-agent-group-memberships-table.yaml
   - include:
       file: v1/20260208132808-create-workflow-actions-webhook-tasks-table.yaml
+  - include:
+      file: v1/20260215114500-create-quotas-table.yaml

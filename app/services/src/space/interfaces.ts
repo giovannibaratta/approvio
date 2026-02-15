@@ -12,6 +12,7 @@ export interface SpaceRepository {
   getSpaceByName(data: GetSpaceByNameRepo): TaskEither<GetSpaceRepoError, Versioned<Space>>
   listSpaces(data: ListSpacesRepo): TaskEither<ListSpacesRepoError, ListSpacesResult>
   deleteSpace(data: DeleteSpaceRepo): TaskEither<DeleteSpaceRepoError, void>
+  countSpaces(): TaskEither<"unknown_error", number>
 }
 
 // Repository data types

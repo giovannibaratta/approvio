@@ -273,3 +273,16 @@ model RefreshToken {
   @@index([tokenHash], map: "idx_refresh_tokens_token_hash")
   @@map("refresh_tokens")
 }
+
+model Quota {
+  id        String   @id @db.Uuid
+  scope     String   @db.VarChar(50)
+  metric    String   @db.VarChar(100)
+  limit     Int
+  createdAt DateTime @map("created_at") @db.Timestamp(6)
+  updatedAt DateTime @map("updated_at") @db.Timestamp(6)
+  occ       BigInt
+
+  @@unique([scope, metric], map: "quotas_scope_metric_unique")
+  @@map("quotas")
+}

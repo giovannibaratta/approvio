@@ -120,6 +120,16 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
     )
   }
 
+  countUserMembersByGroupId(groupId: string): TaskEither<UnknownError, number> {
+    return TE.tryCatch(
+      () => this.dbClient.groupMembership.count({where: {groupId}}),
+      error => {
+        Logger.error("Error counting user memberships", error)
+        return "unknown_error"
+      }
+    )
+  }
+
   private getObjectTask(): (
     data: GetGroupWithMembershipRepo
   ) => TaskEither<GetGroupRepoError, GroupWithMemberships | null> {

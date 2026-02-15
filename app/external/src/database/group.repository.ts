@@ -2,6 +2,7 @@ import {Group, GroupWithEntitiesCount, ListGroupsFilter} from "@domain"
 import {isPrismaForeignKeyConstraintError, isPrismaUniqueConstraintError} from "@external/database/errors"
 import {Injectable, Logger} from "@nestjs/common"
 import {Prisma, Group as PrismaGroup} from "@prisma/client"
+import {UnknownError} from "@services/error"
 import {
   CreateGroupRepoError,
   CreateGroupWithMembershipAndUpdateUserRepo,
@@ -201,6 +202,16 @@ export class GroupDbRepository implements GroupRepository {
       TE.chainEitherKW(groups =>
         pipe(groups, RA.traverse(E.Applicative)(mapToDomainVersionedGroupWithEntities), E.map(RA.toArray))
       )
+    )
+  }
+
+  countGroups(): TaskEither<UnknownError, number> {
+    return TE.tryCatch(
+      () => this.dbClient.group.count(),
+      error => {
+        Logger.error("Error counting groups", error)
+        return "unknown_error"
+      }
     )
   }
 
