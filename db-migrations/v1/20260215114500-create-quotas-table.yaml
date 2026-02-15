@@ -1,0 +1,48 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260215114500-create-quotas-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: quotas
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: scope
+                  type: VARCHAR(50)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: metric
+                  type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: "limit"
+                  type: INT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: TIMESTAMP(6)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: quotas
+            columnNames: scope, metric
+            constraintName: quotas_scope_metric_unique

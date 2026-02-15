@@ -42,6 +42,7 @@ export interface GroupRepository {
    * @param agentId The agent ID
    */
   getGroupsByAgentId(agentId: string): TaskEither<GetGroupRepoError, Group[]>
+  countGroups(): TaskEither<UnknownError, number>
 }
 
 export interface CreateGroupWithMembershipAndUpdateUserRepo {

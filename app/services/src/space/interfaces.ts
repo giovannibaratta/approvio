@@ -2,6 +2,7 @@ import {Space, SpaceValidationError, User} from "@domain"
 import {RequestorAwareRequest} from "@services/shared/types"
 import {Versioned} from "@domain"
 import {TaskEither} from "fp-ts/lib/TaskEither"
+import {UnknownError} from "@services/error"
 
 // Repository interfaces
 export const SPACE_REPOSITORY_TOKEN = "SPACE_REPOSITORY_TOKEN"
@@ -12,6 +13,7 @@ export interface SpaceRepository {
   getSpaceByName(data: GetSpaceByNameRepo): TaskEither<GetSpaceRepoError, Versioned<Space>>
   listSpaces(data: ListSpacesRepo): TaskEither<ListSpacesRepoError, ListSpacesResult>
   deleteSpace(data: DeleteSpaceRepo): TaskEither<DeleteSpaceRepoError, void>
+  countSpaces(): TaskEither<UnknownError, number>
 }
 
 // Repository data types
