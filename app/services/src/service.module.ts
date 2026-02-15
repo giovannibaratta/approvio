@@ -21,6 +21,7 @@ import {ConfigModule} from "@external/config.module"
 import {ConfigProvider} from "@external/config"
 import {JwtModule} from "@nestjs/jwt"
 import {RateLimiterService} from "./rate-limiter"
+import {QuotaService} from "./quota"
 
 const services = [
   AgentService,
@@ -41,7 +42,8 @@ const services = [
   TaskService,
   IdentityService,
   HealthService,
-  RateLimiterService
+  RateLimiterService,
+  QuotaService
 ]
 
 const internalServices = [PkceService]

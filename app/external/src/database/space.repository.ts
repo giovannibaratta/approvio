@@ -150,6 +150,16 @@ export class SpaceDbRepository implements SpaceRepository {
     )
   }
 
+  countSpaces(): TaskEither<"unknown_error", number> {
+    return TE.tryCatch(
+      () => this.dbClient.space.count(),
+      error => {
+        Logger.error("Error counting spaces", error)
+        return "unknown_error"
+      }
+    )
+  }
+
   private buildWhereClauseGetSpaceTask(request: GetSpaceTaskRequest): Prisma.SpaceWhereUniqueInput {
     return request.identifier.type === "id" ? {id: request.identifier.value} : {name: request.identifier.value}
   }

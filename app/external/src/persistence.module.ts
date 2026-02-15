@@ -15,12 +15,13 @@ import {
   RefreshTokenDbRepository,
   PrismaHealthRepository
 } from "./database/"
-import {GroupDbRepository} from "./database"
+import {GroupDbRepository, QuotaDbRepository} from "./database"
 import {
   AGENT_REPOSITORY_TOKEN,
   AGENT_CHALLENGE_REPOSITORY_TOKEN,
   GROUP_MEMBERSHIP_REPOSITORY_TOKEN,
   GROUP_REPOSITORY_TOKEN,
+  QUOTA_REPOSITORY_TOKEN,
   ORGANIZATION_ADMIN_REPOSITORY_TOKEN,
   SPACE_REPOSITORY_TOKEN,
   USER_REPOSITORY_TOKEN,
@@ -111,6 +112,11 @@ const healthRepository = {
   useClass: PrismaHealthRepository
 }
 
+const quotaRepository = {
+  provide: QUOTA_REPOSITORY_TOKEN,
+  useClass: QuotaDbRepository
+}
+
 const repositories = [
   agentRepository,
   agentChallengeRepository,
@@ -125,7 +131,8 @@ const repositories = [
   pkceSessionRepository,
   taskRepository,
   refreshTokenRepository,
-  healthRepository
+  healthRepository,
+  quotaRepository
 ]
 
 @Module({

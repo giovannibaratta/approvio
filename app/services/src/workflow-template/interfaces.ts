@@ -80,6 +80,8 @@ export interface WorkflowTemplateRepository {
   getWorkflowTemplatesParents(
     templateIds: ReadonlyArray<string>
   ): TaskEither<"workflow_template_not_found", ReadonlyMap<string, string>>
+
+  countWorkflowTemplatesBySpaceId(spaceId: string): TaskEither<UnknownError, number>
 }
 
 export interface ListWorkflowTemplatesRequest extends RequestorAwareRequest {

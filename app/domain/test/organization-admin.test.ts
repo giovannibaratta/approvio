@@ -15,7 +15,6 @@ describe("OrganizationAdminFactory", () => {
         const result = OrganizationAdminFactory.newOrganizationAdmin(adminData)
 
         // Expect: Success with valid organization admin
-        expect(result).toBeRight()
         expect(result).toBeRightOf(
           expect.objectContaining({
             email: "admin@example.com",

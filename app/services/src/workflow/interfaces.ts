@@ -74,6 +74,8 @@ export interface WorkflowRepository {
     data: ConcurrentUnsafeWorkflowUpdateData,
     includeRef?: T
   ): TaskEither<WorkflowUpdateError, DecoratedWorkflow<T>>
+
+  countActiveWorkflowsByTemplateId(templateId: string): TaskEither<UnknownError, number>
 }
 
 export type WorkflowGetError =
