@@ -60,7 +60,7 @@ export class RolePermissionChecker {
       return roleScope.workflowTemplateId === requestedScope.workflowTemplateId
     }
 
-    return true
+    return false
   }
 
   static hasGroupPermission(
