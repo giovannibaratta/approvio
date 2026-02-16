@@ -75,8 +75,17 @@ export class UserService {
       if (!search.match(/^[a-zA-Z0-9@.%_+.\s-]+$/)) return TE.left("search_term_invalid_characters")
     }
 
+    const validateRequestor = (req: ListUsersRequest): TaskEither<"requestor_not_authorized", ListUsersRequest> => {
+      const {requestor} = req
+      if (requestor.entityType !== "user" || requestor.user.orgRole !== "admin") {
+        return TE.left("requestor_not_authorized")
+      }
+      return TE.right(req)
+    }
+
     return pipe(
-      this.userRepo.listUsers({search, page, limit}),
+      validateRequestor(request),
+      TE.chainW(() => this.userRepo.listUsers({search, page, limit})),
       logSuccess("Users listed", "UserService", result => ({count: result.users.length}))
     )
   }
@@ -129,7 +138,7 @@ export interface CreateUserRequest extends RequestorAwareRequest {
   userData: Parameters<typeof UserFactory.newUser>[0]
 }
 
-export interface ListUsersRequest {
+export interface ListUsersRequest extends RequestorAwareRequest {
   readonly search?: string
   readonly page?: number
   readonly limit?: number
