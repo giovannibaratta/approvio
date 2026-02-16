@@ -10,3 +10,8 @@
 **Vulnerability:** The `listUsers` endpoint was accessible to any authenticated user, allowing full enumeration of all users (names, emails, roles).
 **Learning:** Default `JwtAuthGuard` only ensures authentication, not authorization. Service methods that return sensitive data collections must enforce role checks (RBAC) explicitly.
 **Prevention:** Always implement an authorization check (e.g., verifying `orgRole === 'admin'`) in the service layer for bulk retrieval operations. Use `RequestorAwareRequest` to pass the authenticated entity context to the service.
+
+## 2026-02-15 - Reverted BOLA Protection for User Listing
+**Vulnerability:** The `listUsers` endpoint allows any authenticated user to list all users.
+**Decision:** A strict admin-only check was implemented but reverted after feedback indicated it broke the "user search" feature for group management.
+**Learning:** Security controls must balance with UX requirements. When restricted access is not possible, ensure data minimization (returning only `UserSummary`) is enforced to reduce risk.

@@ -75,17 +75,11 @@ export class UserService {
       if (!search.match(/^[a-zA-Z0-9@.%_+.\s-]+$/)) return TE.left("search_term_invalid_characters")
     }
 
-    const validateRequestor = (req: ListUsersRequest): TaskEither<"requestor_not_authorized", ListUsersRequest> => {
-      const {requestor} = req
-      if (requestor.entityType !== "user" || requestor.user.orgRole !== "admin") {
-        return TE.left("requestor_not_authorized")
-      }
-      return TE.right(req)
-    }
+    // We allow any authenticated user to list users to support the user search use case in the frontend (e.g. adding users to groups)
+    // The data returned is limited to UserSummary (id, name, email) which is considered low risk
 
     return pipe(
-      validateRequestor(request),
-      TE.chainW(() => this.userRepo.listUsers({search, page, limit})),
+      this.userRepo.listUsers({search, page, limit}),
       logSuccess("Users listed", "UserService", result => ({count: result.users.length}))
     )
   }

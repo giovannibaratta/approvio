@@ -334,13 +334,13 @@ describe("Users API", () => {
         expect(response.body.users.map((u: UserSummary) => u.id)).toBeArrayIncludingOnly([user1.id])
       })
 
-      it("should return 403 FORBIDDEN when listing users (as OrgMember)", async () => {
+      it("should return a list of users (as OrgMember) to support search", async () => {
         // When
         const response = await get(app, endpoint).withToken(orgMemberUser.token).build()
 
         // Expect
-        expect(response).toHaveStatusCode(HttpStatus.FORBIDDEN)
-        expect(response.body).toHaveErrorCode("REQUESTOR_NOT_AUTHORIZED")
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        expect(response.body.users).toBeArray()
       })
     })
 
