@@ -75,6 +75,9 @@ export class UserService {
       if (!search.match(/^[a-zA-Z0-9@.%_+.\s-]+$/)) return TE.left("search_term_invalid_characters")
     }
 
+    // We allow any authenticated user to list users to support the user search use case in the frontend (e.g. adding users to groups)
+    // The data returned is limited to UserSummary (id, name, email) which is considered low risk
+
     return pipe(
       this.userRepo.listUsers({search, page, limit}),
       logSuccess("Users listed", "UserService", result => ({count: result.users.length}))
@@ -129,7 +132,7 @@ export interface CreateUserRequest extends RequestorAwareRequest {
   userData: Parameters<typeof UserFactory.newUser>[0]
 }
 
-export interface ListUsersRequest {
+export interface ListUsersRequest extends RequestorAwareRequest {
   readonly search?: string
   readonly page?: number
   readonly limit?: number
