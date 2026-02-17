@@ -60,7 +60,7 @@ export class UserService {
     )
   }
 
-  listUsers(request: ListUsersRequest): TaskEither<UserListError, PaginatedUsersList> {
+  listUsers(request: ListUsersRequest): TaskEither<UserListError | AuthorizationError, PaginatedUsersList> {
     const {search} = request
     const page = request.page ?? 1
     const limit = request.limit ?? DEFAULT_LIMIT
@@ -76,7 +76,13 @@ export class UserService {
     }
 
     return pipe(
-      this.userRepo.listUsers({search, page, limit}),
+      validateUserEntity(request.requestor),
+      E.filterOrElse(
+        user => user.orgRole === "admin",
+        () => "requestor_not_authorized" as const
+      ),
+      TE.fromEither,
+      TE.chainW(() => this.userRepo.listUsers({search, page, limit})),
       logSuccess("Users listed", "UserService", result => ({count: result.users.length}))
     )
   }
@@ -129,7 +135,7 @@ export interface CreateUserRequest extends RequestorAwareRequest {
   userData: Parameters<typeof UserFactory.newUser>[0]
 }
 
-export interface ListUsersRequest {
+export interface ListUsersRequest extends RequestorAwareRequest {
   readonly search?: string
   readonly page?: number
   readonly limit?: number
