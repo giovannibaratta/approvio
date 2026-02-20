@@ -61,6 +61,7 @@ export class OrganizationAdminController {
   @Get(":organizationName/admins")
   async listOrganizationAdmins(
     @Param("organizationName") organizationName: string,
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
     @Query("page") page?: string,
     @Query("limit") limit?: string
   ): Promise<{data: OrganizationAdminApi[]; pagination: PaginationApi}> {
@@ -69,7 +70,7 @@ export class OrganizationAdminController {
       this.organizationAdminService.listOrganizationAdmins(req)
 
     const eitherAdminsList = await pipe(
-      {organizationName, page, limit},
+      {organizationName, page, limit, requestor},
       listOrganizationAdminsApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceListAdmins),

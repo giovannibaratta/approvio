@@ -45,6 +45,7 @@ export function listOrganizationAdminsApiToServiceModel(data: {
   organizationName: string
   page?: string
   limit?: string
+  requestor: AuthenticatedEntity
 }): Either<"invalid_number_format", ListOrganizationAdminsRequest> {
   const parseNumber = (value: string | undefined): Either<"invalid_number_format", number | undefined> => {
     if (value === undefined) return right(undefined)
@@ -58,7 +59,8 @@ export function listOrganizationAdminsApiToServiceModel(data: {
     bindW("organizationName", () => right(data.organizationName)),
     bindW("page", () => parseNumber(data.page)),
     bindW("limit", () => parseNumber(data.limit)),
-    map(({organizationName, page, limit}) => ({organizationName, page, limit}))
+    bindW("requestor", () => right(data.requestor)),
+    map(({organizationName, page, limit, requestor}) => ({organizationName, page, limit, requestor}))
   )
 }
 
@@ -127,12 +129,16 @@ export function generateErrorResponseForAddOrganizationAdmin(
 }
 
 export function generateErrorResponseForListOrganizationAdmins(
-  error: OrganizationAdminListError | "invalid_number_format",
+  error: OrganizationAdminListError | AuthorizationError | "invalid_number_format",
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "requestor_not_authorized":
+      return new ForbiddenException(
+        generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
+      )
     case "organization_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Organization not found`))
     case "invalid_number_format":
