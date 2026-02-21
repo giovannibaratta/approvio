@@ -55,8 +55,9 @@ export class OrganizationAdminService {
 
   listOrganizationAdmins(
     request: ListOrganizationAdminsRequest
-  ): TaskEither<OrganizationAdminListError, PaginatedOrganizationAdminsList> {
-    const validateRequest = (req: ListOrganizationAdminsRequest) => {
+  ): TaskEither<OrganizationAdminListError | AuthorizationError, PaginatedOrganizationAdminsList> {
+    const validateRequest = (req: ListOrganizationAdminsRequest, requestor: User) => {
+      if (requestor.orgRole !== "admin") return E.left("requestor_not_authorized" as const)
       if (req.organizationName !== SUPPORTED_ORGANIZATION) return E.left("organization_not_found" as const)
 
       const page = req.page ?? 1
@@ -76,8 +77,8 @@ export class OrganizationAdminService {
       })
 
     return pipe(
-      request,
-      validateRequest,
+      validateUserEntity(request.requestor),
+      E.chainW(requestor => validateRequest(request, requestor)),
       TE.fromEither,
       TE.chainW(fetchAdmins),
       logSuccess("Organization admins listed", "OrganizationAdminService", result => ({count: result.admins.length}))
@@ -117,7 +118,7 @@ export interface AddOrganizationAdminRequest extends RequestorAwareRequest {
   readonly email: string
 }
 
-export interface ListOrganizationAdminsRequest {
+export interface ListOrganizationAdminsRequest extends RequestorAwareRequest {
   readonly organizationName: string
   readonly page?: number
   readonly limit?: number
