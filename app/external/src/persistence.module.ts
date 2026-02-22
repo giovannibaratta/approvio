@@ -36,6 +36,7 @@ import {PKCE_SESSION_REPOSITORY_TOKEN, REFRESH_TOKEN_REPOSITORY_TOKEN} from "@se
 import {ConfigModule} from "./config.module"
 import {QueueModule} from "./queue/queue.module"
 import {BullQueueProvider} from "./queue/queue.provider"
+import {RedisClient} from "./redis"
 
 const agentRepository = {
   provide: AGENT_REPOSITORY_TOKEN,
@@ -137,7 +138,7 @@ const repositories = [
 
 @Module({
   imports: [ConfigModule, QueueModule],
-  providers: [DatabaseClient, ...repositories, queueProvider],
+  providers: [DatabaseClient, ...repositories, queueProvider, RedisClient],
   exports: [...repositories, queueProvider]
 })
 export class PersistenceModule {}
