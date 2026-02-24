@@ -27,7 +27,8 @@ import {
   AgentTokenResponse,
   RefreshTokenRequest,
   AgentTokenRequest,
-  GetUserInfo200Response
+  GetUserInfo200Response,
+  PrivilegedTokenResponse
 } from "@approvio/api"
 import {
   mapAgentChallengeRequestToService,
@@ -44,7 +45,8 @@ import {generateErrorPayload} from "@controllers/error"
 import {
   validateGenerateTokenRequest,
   validateRefreshAgentTokenRequest,
-  validateRefreshTokenRequest
+  validateRefreshTokenRequest,
+  validateExchangePrivilegeTokenRequest
 } from "./auth.validators"
 import {
   generateErrorResponseForGenerateToken,
@@ -52,9 +54,12 @@ import {
   generateErrorResponseForRefreshUserToken,
   generateErrorResponseForEntityInfo,
   mapToTokenResponse,
-  mapToEntityInfoResponse
+  mapToEntityInfoResponse,
+  generateErrorResponseForExchangePrivilegeToken,
+  mapToPrivilegeTokenExchange
 } from "./auth.mappers"
 import {logSuccess} from "@utils"
+import {HttpStatusCode} from "axios"
 
 /**
  * ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -69,20 +74,19 @@ import {logSuccess} from "@utils"
  * │     │               │                 │ challenge        │                │             │
  * │     │               │                 │ + Auth URL       │                │             │
  * │     │               │                 │                  │                │             │
- * │     │               │                 │ Store PKCE ─────────────────────►│ Session      │
+ * │     │               │                 │ Store PKCE ──────┼───────────────►│ Session     │
  * │     │               │                 │ {state, codeV}   │                │ Storage     │
  * │     │               │                 │                  │                │             │
  * │     │ 302 Redirect  │ ◄───────────────│ Redirect to      │                │             │
  * │     │ to OIDC       │                 │ OIDC Provider    │                │             │
  * │     │               │                 │                  │                │             │
  * │     │               │                 │                  │                │             │
- * │     │               │                 │                  │                │             │
  * │ 2. User Authentication                                                                  │
- * │     │ ─────────────────────────────────────────────────►│ User login     │              │
+ * │     │ ──────────────────────────────────────────────────►│ User login     │             │
  * │     │               │                 │                  │ & consent      │             │
  * │     │               │                 │                  │                │             │
  * │ 3. GET /auth/callback?code=abc&state=xyz                                                │
- * │     │ ◄─────────────────────────────────────────────────│ Authorization  │              │
+ * │     │ ◄──────────────────────────────────────────────────┤ Authorization  │             │
  * │     │               │                 │                  │ code callback  │             │
  * │     │               │                 │                  │                │             │
  * │     │ ──────────────┼────────────────►│ Any server can   │                │             │
@@ -92,42 +96,34 @@ import {logSuccess} from "@utils"
  * │     │ to success    │                 │ /success?code=.. │                │             │
  * │     │               │                 │                  │                │             │
  * │     │               │                 │                  │                │             │
- * │     │               │                 │                  │                │             │
- * │     │               │                 │                  │                │             │
- * │     │               │                 │                  │                │             │
  * │ 4. POST /auth/token {code, state}                                                       │
- * │     │ ──────────────┼────────────────►│ Retrieve PKCE ◄─────────────────│ Lookup by     │
- * │     │               │                 │ data from DB     │                │ state       │
+ * │     │ ──────────────┼────────────────►│ Retrieve PKCE ◄──┼────────────────┤ Lookup      │
+ * │     │               │                 │ {codeVerifier}   │                │ by state    │
  * │     │               │                 │                  │                │             │
- * │     │               │                 │ Exchange code ──────────────────►│ Token        │
- * │     │               │                 │ + codeVerifier   │                │ Exchange    │
+ * │     │               │                 │ Exchange code ──►│ Token Exchange │             │
+ * │     │               │                 │ + codeVerifier   │                │             │
  * │     │               │                 │                  │                │             │
- * │     │               │                 │ Get user info ──────────────────►│ User         │
- * │     │               │                 │ (basic claims)   │                │ Claims      │
+ * │     │               │                 │ Get user info ──►│ User Claims    │             │
+ * │     │               │                 │ (basic claims)   │                │             │
  * │     │               │                 │                  │                │             │
- * │     │               │                 │ Lookup user ────────────────────►│ Enhanced     │
- * │     │               │                 │ orgRole & roles  │                │ User Data   │
+ * │     │               │                 │ JIT Provision ◄──┼────────────────┤ Find or     │
+ * │     │               │                 │ (Find/Create)    │                │ Create      │
  * │     │               │                 │                  │                │             │
- * │     │ Enhanced JWT  │ ◄───────────────│ Generate JWT     │                │             │
- * │     │ w/ orgRole,   │                 │ with enhanced    │                │             │
- * │     │ roles, etc.   │                 │ payload          │                │             │
+ * │     │ App JWT       │ ◄───────────────│ Generate JWT     │                │             │
+ * │     │ w/ orgRole    │                 │ payload          │                │             │
  * │                                                                                         │
- * │ Enhanced JWT Payload:                                                                   │
+ * │ App JWT Payload:                                                                        │
  * │ {                                                                                       │
  * │   "sub": "user-uuid",           // OIDC standard                                        │
  * │   "email": "user@example.com",  // OIDC standard                                        │
  * │   "name": "John Doe",           // OIDC standard                                        │
- * │   "orgRole": "admin",           // Enhanced: admin/member                               │
- * │   "roles": [                    // Enhanced: specific permissions                       │
- * │     {"name": "approver", "scope": {"type": "space", "spaceId": "space-123"}},           │
- * │     {"name": "viewer", "scope": {"type": "group", "groupId": "group-456"}}              │
- * │   ]                                                                                     │
+ * │   "orgRole": "admin"            // Extended: admin/member                               │
  * │ }                                                                                       │
  * │                                                                                         │
  * │ Load Balancer Benefits:                                                                 │
  * │ • PKCE data stored in shared database - any server can access                           │
  * │ • Stateless authentication - no server affinity required                                │
- * │ • Enhanced JWT includes organizational context not available from OIDC provider         │
+ * │ • App JWT includes organizational context derived during JIT provisioning               │
  * └─────────────────────────────────────────────────────────────────────────────────────────┘
  */
 @Controller("auth")
@@ -138,6 +134,7 @@ export class AuthController {
   ) {}
 
   @PublicRoute()
+  @HttpCode(HttpStatusCode.Found)
   @Get("login")
   async login(@Res() res: Response): Promise<void> {
     const result = await pipe(
@@ -317,6 +314,48 @@ export class AuthController {
     if (isLeft(result)) {
       Logger.error("Agent token refresh failed", result.left)
       throw generateErrorResponseForRefreshAgentToken(result.left, "Failed to refresh token")
+    }
+
+    return result.right
+  }
+
+  @PublicRoute()
+  @HttpCode(HttpStatusCode.Found)
+  @Get("initiatePrivilegedTokenExchange")
+  async initiatePrivilegeToken(@Res() res: Response): Promise<void> {
+    const runInitiation = () => this.authService.initiatePrivilegeTokenGeneration()
+
+    const result = await pipe(runInitiation(), logSuccess("Privilege token initiation started", "AuthController"))()
+
+    if (isLeft(result)) {
+      Logger.error("Failed to initiate privilege token generation", result.left)
+      res.redirect("/auth/error")
+      return
+    }
+
+    Logger.debug(`Redirecting to IDP for step-up: ${result.right}`)
+    res.redirect(result.right)
+  }
+
+  @Post("exchangePrivilegedToken")
+  @HttpCode(200)
+  async exchangePrivilegeToken(
+    @Body() body: unknown,
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+  ): Promise<PrivilegedTokenResponse> {
+    const result = await pipe(
+      body,
+      TE.right,
+      TE.chainW(rawBody => TE.fromEither(validateExchangePrivilegeTokenRequest(rawBody))),
+      TE.chainEitherKW(mapToPrivilegeTokenExchange),
+      TE.chainW(mappedRequest => this.authService.exchangePrivilegeToken(mappedRequest, requestor)),
+      TE.map(accessToken => ({accessToken})),
+      logSuccess("Privilege token exchanged", "AuthController")
+    )()
+
+    if (isLeft(result)) {
+      Logger.error("Privilege token exchange failed", result.left)
+      throw generateErrorResponseForExchangePrivilegeToken(result.left, "Failed to exchange privilege token")
     }
 
     return result.right

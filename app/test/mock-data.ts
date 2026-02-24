@@ -39,7 +39,7 @@ import * as O from "fp-ts/lib/Option"
 import {createSha256Hash} from "@utils"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "@external/database/constants"
 
-const chance = Chance()
+const chance = new Chance()
 
 // Pre-generated 2048-bit RSA key pairs for testing performance optimization
 // WARNING: These keys are for TESTING ONLY and should NEVER be used in production
@@ -250,6 +250,7 @@ export class MockKeyPool {
 }
 
 export class MockConfigProvider implements ConfigProviderInterface {
+  isPrivilegeMode: boolean
   dbConnectionUrl: string
   emailProviderConfig: Option<EmailProviderConfig>
   oidcConfig: OidcProviderConfig
@@ -267,9 +268,11 @@ export class MockConfigProvider implements ConfigProviderInterface {
     } = {}
   ) {
     const provider: ConfigProviderInterface = originalProvider ?? {
+      isPrivilegeMode: true,
       dbConnectionUrl: "postgresql://test:test@localhost:5433/postgres?schema=public",
       emailProviderConfig: O.none,
       oidcConfig: {
+        provider: "custom",
         issuerUrl: "http://localhost:4011",
         clientId: "integration-test-client-id",
         clientSecret: "integration-test-client-secret",
@@ -299,6 +302,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
       }
     }
 
+    this.isPrivilegeMode = provider.isPrivilegeMode
     this.dbConnectionUrl = mocks.dbConnectionUrl || provider.dbConnectionUrl
     this.emailProviderConfig =
       mocks.emailProviderConfig !== undefined ? O.some(mocks.emailProviderConfig) : provider.emailProviderConfig

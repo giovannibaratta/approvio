@@ -6,10 +6,25 @@ This document describes how to configure the authentication for the application.
 
 Authentication is configured via environment variables.
 
-### Common Variables
+### High Privilege Token Mode
+
+The application supports a "step-up" authentication flow where users can exchange their standard session for a high privilege token by re-authenticating. This flow is used for sensitive operations.
+This feature requires the IDP to support this kind of interaction, if using a custom provider, the mechanism will be disabled.
+
+You can explicitly control this mode via a top-level environmental variable:
+
+- `DISABLE_HIGH_PRIVILEGE_MODE`: (Optional) Boolean flag to globally disable the high privilege token mode. Defaults to `false`.
+
+> [!IMPORTANT]
+> The high privilege flow **does not support automatic registration**. Only pre-existing users can complete the step-up process. If an authenticated user from the IDP does not match an existing user in Approvio, the flow will fail.
+
+> `DISABLE_HIGH_PRIVILEGE_MODE` will only disable the authentication flow. If the resources have been configured to require a high-privilege token, the application will still attempt to perform the high-privilege token flow, but it will fail fast.
+
+## OIDC Provider Configuration
 
 These variables are required for all providers:
 
+- `OIDC_PROVIDER`: The type of OIDC provider being used. Acceptable values are `auth0`, `zitadel`, `keycloak`, or `custom`. Defaults to `custom`.
 - `OIDC_ISSUER_URL`: The Issuer URL of the IDP (e.g., `https://accounts.google.com`).
 - `OIDC_CLIENT_ID`: The Client ID obtained from the IDP.
 - `OIDC_CLIENT_SECRET`: The Client Secret obtained from the IDP.

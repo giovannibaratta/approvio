@@ -11,10 +11,14 @@ import {
   RateLimitConfig,
   RedisConfig
 } from "./interfaces"
+import {isOidcProvider} from "./types"
 import {isEmail, isNonEmptyArray} from "@utils"
+
+const IS_PRIVILEGE_MODE_DEFAULT = true
 
 @Injectable()
 export class ConfigProvider implements ConfigProviderInterface {
+  readonly isPrivilegeMode: boolean
   readonly dbConnectionUrl: string
   readonly emailProviderConfig: Option<EmailProviderConfig>
   readonly oidcConfig: OidcProviderConfig
@@ -23,12 +27,25 @@ export class ConfigProvider implements ConfigProviderInterface {
   readonly rateLimitConfig: RateLimitConfig
 
   constructor() {
+    this.isPrivilegeMode = this.validatePrivilegeMode()
     this.dbConnectionUrl = this.validateConnectionUrl()
     this.emailProviderConfig = ConfigProvider.validateEmailProviderConfig()
     this.oidcConfig = this.validateOidcProviderConfig()
     this.jwtConfig = this.validateJwtConfig()
     this.redisConfig = this.validateRedisConfig()
     this.rateLimitConfig = this.validateRateLimitConfig()
+  }
+
+  private validatePrivilegeMode(): boolean {
+    const disableModeRaw = process.env.DISABLE_HIGH_PRIVILEGE_MODE
+
+    if (disableModeRaw !== undefined) {
+      if (disableModeRaw.toLowerCase() !== "true" && disableModeRaw.toLowerCase() !== "false")
+        throw new Error("DISABLE_HIGH_PRIVILEGE_MODE must be 'true' or 'false'")
+      return disableModeRaw.toLowerCase() === "false"
+    }
+
+    return IS_PRIVILEGE_MODE_DEFAULT
   }
 
   private validateConnectionUrl(): string {
@@ -89,6 +106,16 @@ export class ConfigProvider implements ConfigProviderInterface {
   }
 
   private validateOidcProviderConfig(): OidcProviderConfig {
+    const providerRaw = process.env.OIDC_PROVIDER
+
+    let provider: OidcProviderConfig["provider"] = "custom"
+
+    if (providerRaw) {
+      if (!isOidcProvider(providerRaw)) throw new Error("OIDC_PROVIDER not supported")
+
+      provider = providerRaw
+    }
+
     const issuerUrl = process.env.OIDC_ISSUER_URL
     const clientId = process.env.OIDC_CLIENT_ID
     const clientSecret = process.env.OIDC_CLIENT_SECRET
@@ -163,6 +190,7 @@ export class ConfigProvider implements ConfigProviderInterface {
     }
 
     return {
+      provider,
       issuerUrl,
       clientId,
       clientSecret,

@@ -1,24 +1,37 @@
-import {AuthError, GetGroupRepoError, RefreshTokenCreateError, RefreshTokenRefreshError, TokenPair} from "@services"
+import {
+  AuthError,
+  GetGroupRepoError,
+  RefreshTokenCreateError,
+  RefreshTokenRefreshError,
+  TokenPair,
+  PrivilegeTokenExchange,
+  HighPrivilegeAuthError
+} from "@services"
 import {
   GenerateTokenRequestValidationError,
   RefreshAgentTokenRequestValidationError,
-  RefreshTokenRequestValidationError
+  RefreshTokenRequestValidationError,
+  PrivilegedTokenExchangeRequestValidationError
 } from "./auth.validators"
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   InternalServerErrorException,
   Logger,
+  ServiceUnavailableException,
   UnauthorizedException
 } from "@nestjs/common"
-import {GetEntityInfo200Response, TokenResponse} from "@approvio/api"
+import {GetEntityInfo200Response, TokenResponse, PrivilegedTokenExchangeRequest} from "@approvio/api"
 import {generateErrorPayload} from "@controllers/error"
-import {AuthenticatedEntity, Group} from "@domain"
+import {Either, left, right} from "fp-ts/Either"
+import {AuthenticatedEntity, Group, isStepUpOperation} from "@domain"
 
 type RefreshUserTokenError = RefreshTokenRequestValidationError | RefreshTokenRefreshError
 type RefreshAgentTokenError = RefreshAgentTokenRequestValidationError | RefreshTokenRefreshError
 type GenerateTokenError = RefreshTokenCreateError | GenerateTokenRequestValidationError | AuthError
+type ExchangePrivilegeTokenError = PrivilegedTokenExchangeRequestValidationError | HighPrivilegeAuthError
 
 export function generateErrorResponseForRefreshUserToken(error: RefreshUserTokenError, context: string): HttpException {
   const errorCode = error.toUpperCase()
@@ -45,7 +58,6 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
     case "agent_not_found":
     case "refresh_token_expired":
     case "refresh_token_revoked":
-    case "auth_user_not_found_in_system":
     case "auth_token_generation_failed":
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
@@ -139,6 +151,7 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
     case "organization_admin_email_empty":
     case "organization_admin_email_too_long":
     case "organization_admin_email_invalid":
+    case "oidc_unknown_error":
     case "oidc_token_exchange_failed":
     case "oidc_userinfo_fetch_failed":
     case "oidc_invalid_provider_response":
@@ -171,8 +184,92 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_name_cannot_be_uuid":
+      Logger.error(`Internal data inconsistency: ${errorCode}`)
       return new InternalServerErrorException(
-        generateErrorPayload(errorCode, `${context}: internal data inconsistency`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
+      )
+  }
+}
+
+export function generateErrorResponseForExchangePrivilegeToken(
+  error: ExchangePrivilegeTokenError,
+  context: string
+): HttpException {
+  const errorCode = error.toUpperCase()
+  switch (error) {
+    case "request_empty_body":
+    case "request_missing_code":
+    case "request_invalid_code":
+    case "request_missing_state":
+    case "request_invalid_state":
+    case "request_invalid_resource_id":
+    case "request_missing_operation":
+    case "request_invalid_operation":
+    case "user_not_found":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
+    case "auth_token_generation_failed":
+    case "unknown_error":
+    case "auth_missing_email_from_oidc_provider":
+    case "auth_authorization_url_generation_failed":
+    case "pkce_code_generation_failed":
+    case "pkce_code_storage_failed":
+    case "pkce_code_verification_failed":
+    case "pkce_code_not_found":
+    case "pkce_code_expired":
+    case "pkce_code_already_used":
+    case "oidc_token_exchange_failed":
+    case "oidc_userinfo_fetch_failed":
+    case "oidc_invalid_provider_response":
+    case "oidc_invalid_token_response":
+    case "organization_admin_already_exists":
+    case "organization_not_found":
+    case "organization_admin_invalid_uuid":
+    case "organization_admin_email_empty":
+    case "organization_admin_email_too_long":
+    case "organization_admin_email_invalid":
+    case "role_invalid_uuid":
+    case "role_name_empty":
+    case "role_name_too_long":
+    case "role_name_invalid_characters":
+    case "role_permissions_empty":
+    case "role_permission_invalid":
+    case "role_invalid_scope":
+    case "role_resource_id_invalid":
+    case "role_resource_required_for_scope":
+    case "role_resource_not_allowed_for_scope":
+    case "role_assignments_empty":
+    case "role_assignments_exceed_maximum":
+    case "role_total_roles_exceed_maximum":
+    case "role_unknown_role_name":
+    case "role_scope_incompatible_with_template":
+    case "role_entity_type_role_restriction":
+    case "role_invalid_structure":
+    case "request_invalid_user_identifier":
+    case "user_invalid_uuid":
+    case "user_display_name_empty":
+    case "user_display_name_too_long":
+    case "user_email_empty":
+    case "user_email_too_long":
+    case "user_email_invalid":
+    case "user_org_role_invalid":
+    case "user_role_assignments_invalid_format":
+    case "user_duplicate_roles":
+    case "user_already_exists":
+    case "auth_invalid_entity":
+      return new InternalServerErrorException(
+        generateErrorPayload(errorCode, `${context}: OIDC step-up token verification failed`)
+      )
+    case "oidc_network_error":
+    case "oidc_invalid_userinfo_response":
+    case "oidc_unknown_error":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: unknown error`))
+    case "pkce_code_concurrency_conflict":
+      return new ConflictException(generateErrorPayload(errorCode, `${context}: concurrent update. Try again`))
+    case "requestor_not_authorized":
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: concurrent update. Try again`))
+    case "auth_high_privilege_flow_disabled":
+      return new ServiceUnavailableException(
+        generateErrorPayload(errorCode, `${context}: functionality is not enabled`)
       )
   }
 }
@@ -212,7 +309,6 @@ export function generateErrorResponseForRefreshAgentToken(
     case "agent_not_found":
     case "refresh_token_expired":
     case "refresh_token_revoked":
-    case "auth_user_not_found_in_system":
     case "auth_token_generation_failed":
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
@@ -225,6 +321,7 @@ export function generateErrorResponseForRefreshAgentToken(
       return new ConflictException(generateErrorPayload(errorCode, `${context}: concurrent update. Try again`))
     case "unknown_error":
     case "agent_token_generation_failed":
+    case "oidc_unknown_error":
       Logger.error(`Unknown error: ${errorCode}`)
       return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "agent_key_decode_error":
@@ -419,14 +516,14 @@ export function generateErrorResponseForGenerateToken(error: GenerateTokenError,
     case "auth_token_generation_failed":
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
+    case "oidc_unknown_error":
     case "unknown_error":
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: unknown error`))
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "request_empty_body":
     case "request_missing_code":
     case "request_invalid_code":
     case "request_missing_state":
     case "request_invalid_state":
-    case "auth_user_not_found_in_system":
     case "pkce_code_verification_failed":
     case "pkce_code_not_found":
     case "pkce_code_expired":
@@ -463,9 +560,21 @@ export function generateErrorResponseForEntityInfo(error: GetGroupRepoError, con
     case "group_update_before_create":
     case "group_description_too_long":
     case "group_entities_count_invalid":
-      Logger.error(`Internal data inconsistency: ${errorCode}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
   }
+}
+
+export function mapToPrivilegeTokenExchange(
+  request: PrivilegedTokenExchangeRequest
+): Either<PrivilegedTokenExchangeRequestValidationError, PrivilegeTokenExchange> {
+  if (!isStepUpOperation(request.operation)) return left("request_invalid_operation")
+
+  return right({
+    code: request.code,
+    state: request.state,
+    operation: request.operation,
+    resourceId: request.resourceId
+  })
 }
