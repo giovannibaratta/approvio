@@ -32,10 +32,16 @@ import {
   HEALTH_REPOSITORY_TOKEN
 } from "@services"
 import {TASK_REPOSITORY_TOKEN} from "@services/task/interfaces"
-import {PKCE_SESSION_REPOSITORY_TOKEN, REFRESH_TOKEN_REPOSITORY_TOKEN} from "@services/auth"
+import {
+  PKCE_SESSION_REPOSITORY_TOKEN,
+  REFRESH_TOKEN_REPOSITORY_TOKEN,
+  STEP_UP_TOKEN_REPOSITORY_TOKEN
+} from "@services/auth"
 import {ConfigModule} from "./config.module"
 import {QueueModule} from "./queue/queue.module"
 import {BullQueueProvider} from "./queue/queue.provider"
+import {RedisStepUpTokenRepository} from "./auth/step-up-token.provider"
+import {RedisClient} from "./redis"
 
 const agentRepository = {
   provide: AGENT_REPOSITORY_TOKEN,
@@ -117,6 +123,11 @@ const quotaRepository = {
   useClass: QuotaDbRepository
 }
 
+const stepUpTokenRepository = {
+  provide: STEP_UP_TOKEN_REPOSITORY_TOKEN,
+  useClass: RedisStepUpTokenRepository
+}
+
 const repositories = [
   agentRepository,
   agentChallengeRepository,
@@ -132,12 +143,13 @@ const repositories = [
   taskRepository,
   refreshTokenRepository,
   healthRepository,
-  quotaRepository
+  quotaRepository,
+  stepUpTokenRepository
 ]
 
 @Module({
   imports: [ConfigModule, QueueModule],
-  providers: [DatabaseClient, ...repositories, queueProvider],
+  providers: [DatabaseClient, ...repositories, queueProvider, RedisClient],
   exports: [...repositories, queueProvider]
 })
 export class PersistenceModule {}

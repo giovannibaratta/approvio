@@ -1,4 +1,5 @@
 import {Option} from "fp-ts/lib/Option"
+import {OidcProvider} from "./types"
 
 export const DEFAULT_RATE_LIMIT_ENTITY_POINTS = 50
 export const DEFAULT_RATE_LIMIT_DURATION_IN_SECONDS = 60
@@ -16,6 +17,7 @@ export interface GenericEmailProviderConfig {
 }
 
 export interface OidcProviderConfig {
+  provider: OidcProvider
   issuerUrl: string
   clientId: string
   clientSecret: string
@@ -53,6 +55,12 @@ export interface RateLimitConfig {
 }
 
 export interface ConfigProviderInterface {
+  /**
+   * Indicates if the privilege mode (step-up authentication) is enabled.
+   * When enabled, the system allows high-privilege token flows for sensitive operations.
+   * This can be disabled by setting the DISABLE_HIGH_PRIVILEGE_MODE environment variable to 'true'.
+   */
+  isPrivilegeMode: boolean
   dbConnectionUrl: string
   emailProviderConfig: Option<EmailProviderConfig>
   oidcConfig: OidcProviderConfig

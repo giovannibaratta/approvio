@@ -6,7 +6,7 @@ import {TokenPayloadValidator, UserService, AgentService} from "@services"
 import {generateErrorPayload} from "@controllers/error"
 import {isRight} from "fp-ts/lib/Either"
 import {ConfigProvider} from "@external/config"
-import {AuthenticatedEntity} from "@domain"
+import {AuthenticatedEntity, StepUpContext, isStepUpOperation, AuthenticatedUser, AuthenticatedAgent} from "@domain"
 
 /**
  * JWT Authentication Strategy for NestJS using Passport
@@ -49,18 +49,17 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
    * Validates and retrieves a user entity by identifier
    *
    * @param userIdentifier - User identifier from JWT payload
-   * @returns Promise<AuthenticatedEntity> - User entity wrapped in AuthenticatedEntity
+   * @returns Promise<AuthenticatedUser> - User entity wrapped in AuthenticatedEntity
    * @throws UnauthorizedException - When user is not found or other errors occur
    */
-  private async validateUserEntity(userIdentifier: string): Promise<AuthenticatedEntity> {
+  private async validateUserEntity(userIdentifier: string): Promise<AuthenticatedUser> {
     const userResult = await this.userService.getUserByIdentifier(userIdentifier)()
 
-    if (isRight(userResult)) {
+    if (isRight(userResult))
       return {
         entityType: "user",
         user: userResult.right
-      } as AuthenticatedEntity
-    }
+      }
 
     if (userResult.left === "user_not_found")
       throw new UnauthorizedException(generateErrorPayload("USER_NOT_FOUND", "User not found"))
@@ -73,18 +72,17 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
    * Validates and retrieves an agent entity by name
    *
    * @param agentName - Agent name from JWT payload
-   * @returns Promise<AuthenticatedEntity> - Agent entity wrapped in AuthenticatedEntity
+   * @returns Promise<AuthenticatedAgent> - Agent entity wrapped in AuthenticatedEntity
    * @throws UnauthorizedException - When agent is not found or other errors occur
    */
-  private async validateAgentEntity(agentName: string): Promise<AuthenticatedEntity> {
+  private async validateAgentEntity(agentName: string): Promise<AuthenticatedAgent> {
     const agentResult = await this.agentService.getAgentByName(agentName)()
 
-    if (isRight(agentResult)) {
+    if (isRight(agentResult))
       return {
         entityType: "agent",
         agent: agentResult.right
-      } as AuthenticatedEntity
-    }
+      }
 
     if (agentResult.left === "agent_not_found")
       throw new UnauthorizedException(generateErrorPayload("AGENT_NOT_FOUND", "Agent not found"))
@@ -124,9 +122,29 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
 
     let authenticatedEntity: AuthenticatedEntity
 
-    if (payload.entityType === "user") authenticatedEntity = await this.validateUserEntity(payload.sub)
-    else if (payload.entityType === "agent") authenticatedEntity = await this.validateAgentEntity(payload.sub)
-    else throw new UnauthorizedException(generateErrorPayload("INVALID_ENTITY_TYPE", "Invalid entity type in token"))
+    if (payload.entityType === "user") {
+      authenticatedEntity = await this.validateUserEntity(payload.sub)
+
+      if (payload.jti && payload.operation) {
+        if (!isStepUpOperation(payload.operation))
+          throw new UnauthorizedException(
+            generateErrorPayload("INVALID_STEP_UP_OPERATION", "Unknown step-up operation in token")
+          )
+
+        const stepUpContext: StepUpContext = {
+          jti: payload.jti,
+          operation: payload.operation,
+          ...(payload.resource ? {resource: payload.resource} : {})
+        }
+
+        authenticatedEntity = {
+          ...authenticatedEntity,
+          authContext: stepUpContext
+        }
+      }
+    } else if (payload.entityType === "agent") {
+      authenticatedEntity = await this.validateAgentEntity(payload.sub)
+    } else throw new UnauthorizedException(generateErrorPayload("INVALID_ENTITY_TYPE", "Invalid entity type in token"))
 
     // Set requestor on request for GetAuthenticatedEntity decorator
     req.requestor = authenticatedEntity

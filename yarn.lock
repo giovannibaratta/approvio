@@ -100,10 +100,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@approvio/api@npm:0.0.24":
-  version: 0.0.24
-  resolution: "@approvio/api@npm:0.0.24"
-  checksum: 10/d579e9f4ee67ddb416f5eed972f3dc3782f5686c1354e28145610ceea83dc6120b9a2e8496307d4bb6ed00bb3e3761536c52d0ef80b850def8b581bc6cca1b3e
+"@approvio/api@npm:0.0.25":
+  version: 0.0.25
+  resolution: "@approvio/api@npm:0.0.25"
+  checksum: 10/3424ad7f7bffcc770290d6cea70fae5ecbba5be111506771dde755b7a74bd55710fe02199c405fa522e9927d1b963cc95c8591c8121363bd6d96fec05faf0624
   languageName: node
   linkType: hard
 
@@ -111,7 +111,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@approvio/backend@workspace:."
   dependencies:
-    "@approvio/api": "npm:0.0.24"
+    "@approvio/api": "npm:0.0.25"
     "@nestjs/bull": "npm:11.0.4"
     "@nestjs/cli": "npm:11.0.16"
     "@nestjs/common": "npm:11.1.13"

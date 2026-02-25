@@ -2,9 +2,32 @@ import {User, Agent, Versioned, UnconstrainedBoundRole} from "@domain"
 
 export type AuthenticatedEntity = AuthenticatedUser | AuthenticatedAgent
 
+export type StepUpOperation = "vote" | "admin_action"
+
+const ALLOWED_STEP_UP_OPERATIONS = ["vote", "admin_action"]
+
+export function isStepUpOperation(operation: unknown): operation is StepUpOperation {
+  return typeof operation === "string" && ALLOWED_STEP_UP_OPERATIONS.includes(operation)
+}
+
+/**
+ * Contextual information regarding the authentication event, specifically for step-up authentication.
+ * This includes details like the operation being authorized and the resource involved.
+ *
+ * @property jti - The unique identifier of the JWT.
+ * @property operation - The specific operation (e.g., 'vote') authorized by this token.
+ * @property resource - The resource identifier (e.g., workflow ID) this token is bound to.
+ */
+export interface StepUpContext {
+  jti: string
+  operation: StepUpOperation
+  resource?: string
+}
+
 export type AuthenticatedUser = {
   entityType: "user"
   user: Versioned<User>
+  authContext?: StepUpContext
 }
 
 export type AuthenticatedAgent = {

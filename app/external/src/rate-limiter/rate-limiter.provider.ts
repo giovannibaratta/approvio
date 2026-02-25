@@ -6,6 +6,7 @@ import {ConsumePointsError, RateLimiterProvider} from "@services"
 import * as TE from "fp-ts/lib/TaskEither"
 import {pipe} from "fp-ts/lib/function"
 import {TaskEither} from "fp-ts/lib/TaskEither"
+import {waitForRedisConnection} from "../redis/redis.utils"
 
 export {RateLimiterRes} from "rate-limiter-flexible"
 
@@ -26,19 +27,7 @@ export class RedisRateLimiterProvider implements RateLimiterProvider, OnModuleIn
       enableOfflineQueue: false
     })
 
-    // Wait for the Redis TCP connection to be established before accepting requests.
-    // This is required because enableOfflineQueue is false, which means commands sent
-    // before the connection is ready will fail immediately instead of being queued.
-    // The "error" listener ensures that connection failures (e.g. wrong host/port)
-    // surface at startup rather than silently falling through to the fail-open path.
-    try {
-      await new Promise<void>((resolve, reject) => {
-        this.getRedisClient().once("ready", resolve)
-        this.getRedisClient().once("error", reject)
-      })
-    } catch {
-      throw new Error(`Unable to connect to Redis at ${config.host}:${config.port}`)
-    }
+    await waitForRedisConnection(this.getRedisClient(), "rate-limiter-redis-client")
 
     this.rateLimiter = new RateLimiterRedis({
       storeClient: this.redisClient,
@@ -71,9 +60,7 @@ export class RedisRateLimiterProvider implements RateLimiterProvider, OnModuleIn
           this.getRateLimiter()
             .consume(key, points)
             .catch(error => {
-              if (error instanceof RateLimiterRes) {
-                return error
-              }
+              if (error instanceof RateLimiterRes) return error
               throw error
             })
         ),

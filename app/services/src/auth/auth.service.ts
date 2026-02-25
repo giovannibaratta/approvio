@@ -15,7 +15,10 @@ import {
   User,
   RefreshTokenFactory,
   canTokenBeRefreshed,
-  RefreshToken
+  RefreshToken,
+  AuthenticatedEntity,
+  StepUpOperation,
+  StepUpContext
 } from "@domain"
 import {
   OIDC_PROVIDER_TOKEN,
@@ -25,7 +28,6 @@ import {
   OidcTokenResponse,
   OidcUserInfo,
   PkceData,
-  PkceChallenge,
   AGENT_CHALLENGE_REPOSITORY_TOKEN,
   AgentChallengeRepository,
   AgentChallengeCreateError,
@@ -35,13 +37,21 @@ import {
   RefreshTokenRefreshError,
   TokenPair,
   RefreshTokenCreateError,
-  AuthError
+  AuthError,
+  STEP_UP_TOKEN_REPOSITORY_TOKEN,
+  StepUpTokenRepository,
+  UseHighPrivilegeTokenError,
+  PrivilegeTokenExchange,
+  AssuranceLevel,
+  HighPrivilegeAuthError
 } from "./interfaces"
 import {TokenPayloadBuilder} from "./auth-token"
-import {AgentService} from "@services/agent"
 import {createSha256Hash, validateDpopJwt, logSuccess} from "@utils"
+import {AgentService} from "@services/agent"
+import {v4 as uuidv4} from "uuid"
 
 const ACCESS_TOKEN_EXPIRY_SECONDS = 60 * 60 // 1 hour
+const STEP_UP_TOKEN_EXPIRY_SECONDS = 60 * 2 // 2 minutes
 
 export interface OidcUser {
   oidcSubjectId: string
@@ -66,7 +76,9 @@ export class AuthService {
     private readonly challengeRepo: AgentChallengeRepository,
     private readonly agentService: AgentService,
     @Inject(REFRESH_TOKEN_REPOSITORY_TOKEN)
-    private readonly refreshTokenRepo: RefreshTokenRepository
+    private readonly refreshTokenRepo: RefreshTokenRepository,
+    @Inject(STEP_UP_TOKEN_REPOSITORY_TOKEN)
+    private readonly stepUpTokenRepo: StepUpTokenRepository
   ) {
     const {audience, issuer, accessTokenExpirationSec} = this.configProvider.jwtConfig
 
@@ -75,15 +87,20 @@ export class AuthService {
     this.accessTokenExpirationSec = accessTokenExpirationSec ?? ACCESS_TOKEN_EXPIRY_SECONDS
   }
 
-  generateJwtToken(user: User): TaskEither<AuthError, string> {
+  private generateJwtToken(
+    user: User,
+    stepUpContext?: StepUpContext & {expiresInSeconds: number}
+  ): TaskEither<AuthError, string> {
     return TE.tryCatch(
       async () => {
         const tokenPayload = TokenPayloadBuilder.fromUser(user, {
           issuer: this.issuer,
-          audience: [this.audience]
+          audience: [this.audience],
+          stepUpContext
         })
 
-        const token = this.jwtService.sign(tokenPayload, {expiresIn: this.accessTokenExpirationSec})
+        const expiresIn = stepUpContext ? stepUpContext.expiresInSeconds : this.accessTokenExpirationSec
+        const token = this.jwtService.sign(tokenPayload, {expiresIn})
         Logger.log(`JWT token generated for user: ${user.id}`)
         return token
       },
@@ -106,7 +123,7 @@ export class AuthService {
    * 2. If user exists, returns the user for authentication
    * 3. If user not found, automatically registers a new user with OIDC data
    */
-  authenticateOrRegisterOidcUser(oidcUser: OidcUser): TaskEither<AuthError, User> {
+  private authenticateOrRegisterOidcUser(oidcUser: OidcUser): TaskEither<AuthError, User> {
     const autoRegisterUser = (oidcUserData: OidcUser): TaskEither<AuthError, User> => {
       const displayName = oidcUserData.displayName || oidcUserData.email
       const autoRegisterRequest: AutoRegisterOidcUserRequest = {
@@ -195,35 +212,7 @@ export class AuthService {
     return this.configProvider.oidcConfig.redirectUri
   }
 
-  private generateAuthorizationUrl(pkceChallenge: PkceChallenge): TaskEither<AuthError, string> {
-    return pipe(
-      this.oidcClient.getAuthorizationEndpoint(),
-      TE.chainW((authorizationEndpoint: string) =>
-        TE.tryCatch(
-          async () => {
-            const oidcConfig = this.configProvider.oidcConfig
-
-            const authUrl = new URL(authorizationEndpoint)
-            authUrl.searchParams.append("response_type", "code")
-            authUrl.searchParams.append("client_id", oidcConfig.clientId)
-            authUrl.searchParams.append("redirect_uri", oidcConfig.redirectUri)
-            authUrl.searchParams.append("scope", oidcConfig.scopes || "openid profile email")
-            authUrl.searchParams.append("state", pkceChallenge.state)
-            authUrl.searchParams.append("code_challenge", pkceChallenge.codeChallenge)
-            authUrl.searchParams.append("code_challenge_method", "S256")
-
-            return authUrl.toString()
-          },
-          error => {
-            Logger.error("Failed to generate authorization URL", error)
-            return "auth_authorization_url_generation_failed" as const
-          }
-        )
-      )
-    )
-  }
-
-  initiateOidcLogin(): TaskEither<AuthError, string> {
+  initiateOidcLogin(assuranceLevel: AssuranceLevel = AssuranceLevel.NONE): TaskEither<AuthError, string> {
     return pipe(
       TE.Do,
       TE.bindW("pkceChallenge", () => this.pkceService.generatePkceChallenge()),
@@ -234,7 +223,7 @@ export class AuthService {
           oidcState: pkceChallenge.state
         })
       ),
-      TE.chainW(({pkceChallenge}) => this.generateAuthorizationUrl(pkceChallenge))
+      TE.chainW(({pkceChallenge}) => this.oidcClient.getAuthorizationUrl(pkceChallenge, assuranceLevel))
     )
   }
 
@@ -286,6 +275,13 @@ export class AuthService {
     )
   }
 
+  /**
+   * Exchanges a signed JWT assertion from an agent for a TokenPair (access and refresh tokens).
+   * This implementation follows a challenge-response protocol to prevent replay attacks.
+   *
+   * @param jwtAssertion - The signed JWT assertion from the agent, containing the challenge nonce as 'jti'
+   * @returns TaskEither with AgentTokenError or RefreshTokenCreateError on failure, or TokenPair on success
+   */
   exchangeJwtAssertionForToken(jwtAssertion: string): TaskEither<AgentTokenError | RefreshTokenCreateError, TokenPair> {
     // Marks the challenge as used in the database to prevent replay attacks
     const markChallengeAsUsed = (challenge: DecoratedAgentChallenge<{occ: true}>) => {
@@ -425,6 +421,83 @@ export class AuthService {
         )
       })
     )
+  }
+
+  initiatePrivilegeTokenGeneration(): TaskEither<HighPrivilegeAuthError, string> {
+    if (!this.configProvider.isPrivilegeMode) return TE.left("auth_high_privilege_flow_disabled" as const)
+
+    return this.initiateOidcLogin(AssuranceLevel.FORCE_LOGIN)
+  }
+
+  /**
+   * Completes the high-privilege flow by exchanging an OIDC authorization code for a short-lived high-privilege token.
+   * This token is then used to authorize specific sensitive operations (step-up).
+   *
+   * @param request - The exchange request containing the authorization code, state, and target operation details
+   * @param requestor - The authenticated user requesting the privilege token
+   * @returns TaskEither with HighPrivilegeAuthError on failure, or the high-privilege JWT string on success
+   */
+  exchangePrivilegeToken(
+    request: PrivilegeTokenExchange,
+    requestor: AuthenticatedEntity
+  ): TaskEither<HighPrivilegeAuthError, string> {
+    if (!this.configProvider.isPrivilegeMode) return TE.left("auth_high_privilege_flow_disabled" as const)
+
+    if (requestor.entityType !== "user")
+      // Only users can step up using OAuth
+      return TE.left("auth_invalid_entity" as const)
+
+    return pipe(
+      this.pkceService.retrieveAndConsumePkceData(request.state),
+      TE.chainW(pkceData => this.exchangeCodeForTokens(request.code, pkceData)),
+      TE.chainW(tokenResponse =>
+        pipe(
+          this.getUserInfoFromProvider(tokenResponse.access_token),
+          TE.chainW(() => {
+            if (!tokenResponse.id_token) {
+              Logger.error("Step-up token exchange returned no id_token from IDP")
+              return TE.left("oidc_invalid_token_response" as const)
+            }
+
+            return this.oidcClient.verifyAssuranceLevel(tokenResponse.id_token, AssuranceLevel.FORCE_LOGIN)
+          })
+        )
+      ),
+      TE.chainW(() => {
+        const jti = uuidv4()
+        return pipe(
+          this.stepUpTokenRepo.storeToken(jti, STEP_UP_TOKEN_EXPIRY_SECONDS),
+          TE.chainW(() =>
+            this.generateJwtToken(requestor.user, {
+              operation: request.operation,
+              resource: request.resourceId,
+              jti,
+              expiresInSeconds: STEP_UP_TOKEN_EXPIRY_SECONDS
+            })
+          )
+        )
+      }),
+      logSuccess("Privilege token exchanged", "AuthService")
+    )
+  }
+
+  useHighPrivilegeToken(
+    entity: AuthenticatedEntity,
+    operation: StepUpOperation,
+    resource?: string
+  ): TaskEither<UseHighPrivilegeTokenError, void> {
+    if (entity.entityType !== "user") return TE.left("entity_not_supported" as const)
+
+    const stepUpContext = entity.authContext
+
+    if (!stepUpContext) return TE.left("step_up_context_missing" as const)
+
+    if (stepUpContext.operation !== operation) return TE.left("step_up_operation_mismatch" as const)
+
+    if (stepUpContext.resource && stepUpContext.resource !== resource)
+      return TE.left("step_up_resource_mismatch" as const)
+
+    return this.stepUpTokenRepo.consumeToken(stepUpContext.jti)
   }
 }
 
