@@ -27,6 +27,8 @@ import {GROUP_MEMBERSHIP_REPOSITORY_TOKEN, GroupMembershipRepository} from "@ser
 import {isNone, Option} from "fp-ts/lib/Option"
 import {DistributiveOmit, logSuccess} from "@utils"
 import {isRight} from "fp-ts/lib/Either"
+import {AuthService} from "@services/auth/auth.service"
+import {UseHighPrivilegeTokenError} from "@services/auth/interfaces"
 
 @Injectable()
 export class VoteService {
@@ -36,7 +38,8 @@ export class VoteService {
     private readonly workflowService: WorkflowService,
     @Inject(GROUP_MEMBERSHIP_REPOSITORY_TOKEN)
     private readonly groupMembershipRepo: GroupMembershipRepository,
-    private readonly queueService: QueueService
+    private readonly queueService: QueueService,
+    private readonly authService: AuthService
   ) {}
 
   /**
@@ -62,9 +65,20 @@ export class VoteService {
         const status = this.getVoteStatus(vote)
         const entityRoles = getEntityRoles(request.requestor)
         const canVoteResult = canVoteOnWorkflow(workflowWithTemplate, entityMemberships, entityRoles)
-        const canVote = isRight(canVoteResult) ? true : {reason: canVoteResult.left}
 
-        return {canVote, status}
+        if (isRight(canVoteResult)) {
+          return {
+            canVote: true,
+            requireHighPrivilege: canVoteResult.right.requireHighPrivilege,
+            status
+          }
+        }
+
+        return {
+          canVote: false,
+          reason: canVoteResult.left,
+          status
+        }
       })
     )
   }
@@ -113,24 +127,51 @@ export class VoteService {
       TE.Do,
       TE.bind("canVoteCheck", () => this.canVote({workflowId: request.workflowId, requestor: request.requestor})),
       TE.chainW(({canVoteCheck}) => {
-        if (canVoteCheck.canVote !== true) {
+        if (!canVoteCheck.canVote) {
           const entityRef = createEntityReference(request.requestor)
           Logger.error(
-            `${entityRef.entityType} ${entityRef.entityId} cannot vote for workflow ${request.workflowId}: ${canVoteCheck.canVote.reason}`
+            `${entityRef.entityType} ${entityRef.entityId} cannot vote for workflow ${request.workflowId}: ${canVoteCheck.reason}`
           )
-          return TE.left(canVoteCheck.canVote.reason)
+          return TE.left(canVoteCheck.reason)
         }
 
-        // Create vote with voter object
-        const voter = createEntityReference(request.requestor)
-        const voteData = {...request, voter}
+        // Verify high privilege if required
+        const verifyHighPrivilegeIfNeeded = (): TaskEither<CastVoteServiceError, void> => {
+          if (request.type !== "APPROVE") {
+            if (canVoteCheck.requireHighPrivilege)
+              return this.authService.useHighPrivilegeToken(request.requestor, "vote", request.workflowId)
+            return TE.right(undefined)
+          }
+
+          return pipe(
+            this.workflowService.getWorkflowByIdentifier(request.workflowId, {workflowTemplate: true}),
+            TE.chainW(workflowWithTemplate => {
+              const requireHighPrivilege = workflowWithTemplate.workflowTemplate.approvalRule.isHighPrivilegeRequired(
+                request.votedForGroups
+              )
+
+              if (!requireHighPrivilege) return TE.right(undefined)
+
+              return this.authService.useHighPrivilegeToken(request.requestor, "vote", request.workflowId)
+            })
+          )
+        }
 
         return pipe(
-          VoteFactory.newVote(voteData),
-          TE.fromEither,
-          TE.chainW(vote => this.voteRepo.persistVoteAndMarkWorkflowRecalculation(vote)),
-          TE.chainFirstW(this.enqueueRecalculationBestEffort),
-          logSuccess("Vote cast", "VoteService", vote => ({id: vote.id, workflowId: vote.workflowId}))
+          verifyHighPrivilegeIfNeeded(),
+          TE.chainW(() => {
+            // Create vote with voter object
+            const voter = createEntityReference(request.requestor)
+            const voteData = {...request, voter}
+
+            return pipe(
+              VoteFactory.newVote(voteData),
+              TE.fromEither,
+              TE.chainW(vote => this.voteRepo.persistVoteAndMarkWorkflowRecalculation(vote)),
+              TE.chainFirstW(this.enqueueRecalculationBestEffort),
+              logSuccess("Vote cast", "VoteService", vote => ({id: vote.id, workflowId: vote.workflowId}))
+            )
+          })
         )
       })
     )
@@ -169,10 +210,10 @@ export enum VoteStatus {
   VOTE_PENDING = "VOTE_PENDING"
 }
 
-export interface CanVoteResponse {
-  canVote: true | {reason: CantVoteReason}
-  status: VoteStatus
-}
+export type CanVoteResponse = {status: VoteStatus} & (
+  | {canVote: true; requireHighPrivilege: boolean}
+  | {canVote: false; reason: CantVoteReason}
+)
 
 export type CanVoteError =
   | "concurrency_error"
@@ -196,3 +237,4 @@ export type CastVoteServiceError =
   | UnknownError
   | WorkflowUpdateError
   | AuthorizationError
+  | UseHighPrivilegeTokenError

@@ -705,7 +705,8 @@ export async function createMockRefreshTokenInDb(
   const tokenHash = createSha256Hash(plainToken)
   const familyId = params.familyId || chance.guid()
   const createdAt = params.createdAt || chance.date()
-  const expiresAt = new Date(createdAt.getTime() + (params.expiresInSeconds || chance.integer({min: 1800})) * 1000)
+  const expiresInSeconds = params.expiresInSeconds ?? chance.integer({min: 1800, max: 86400})
+  const expiresAt = new Date(createdAt.getTime() + expiresInSeconds * 1000)
 
   // Prepare additional data for status-specific fields
   const extraData: {usedAt?: Date | null; nextTokenId?: string | null} = {}

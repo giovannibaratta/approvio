@@ -21,6 +21,7 @@ interface PrivateGroupRequirementRule {
   type: ApprovalRuleType.GROUP_REQUIREMENT
   groupId: string
   minCount: number
+  requireHighPrivilege?: boolean
 }
 
 export type AndRule = Readonly<PrivateAndRule>
@@ -41,6 +42,13 @@ interface ApprovalRuleLogic {
    * @returns The voting group ids.
    */
   getVotingGroupIds(): ReadonlyArray<string>
+
+  /**
+   * Determines if a high privilege token is explicitly required to cast a vote for the given groups.
+   * @param groupIds The groups the entity wants to cast a vote for.
+   * @returns true if high privilege is required, false otherwise.
+   */
+  isHighPrivilegeRequired(groupIds: ReadonlyArray<string>): boolean
 }
 
 export type ApprovalRuleValidationError = PrefixUnion<"approval_rule", UnprefixedApprovalRuleValidationError>
@@ -93,10 +101,17 @@ export class ApprovalRuleFactory {
       return left("approval_rule_group_rule_invalid_min_count")
     if (data.minCount < 1) return left("approval_rule_group_rule_invalid_min_count")
 
+    let requireHighPrivilege: boolean | undefined = undefined
+    if (data.requireHighPrivilege !== undefined) {
+      if (typeof data.requireHighPrivilege !== "boolean") return left("approval_rule_malformed_content")
+      requireHighPrivilege = data.requireHighPrivilege
+    }
+
     return right({
       type: ApprovalRuleType.GROUP_REQUIREMENT,
       groupId: data.groupId,
-      minCount: data.minCount
+      minCount: data.minCount,
+      ...(requireHighPrivilege !== undefined && {requireHighPrivilege})
     })
   }
 
@@ -131,7 +146,8 @@ export class ApprovalRuleFactory {
   private static decorateApprovalRuleData(data: ApprovalRuleData): ApprovalRule {
     return {
       ...data,
-      getVotingGroupIds: () => getVotingGroupIds(data)
+      getVotingGroupIds: () => getVotingGroupIds(data),
+      isHighPrivilegeRequired: (groupIds: ReadonlyArray<string>) => isHighPrivilegeRequired(data, groupIds)
     }
   }
 }
@@ -171,5 +187,15 @@ function getVotingGroupIds(rule: ApprovalRuleData): ReadonlyArray<string> {
       return rule.rules.flatMap(getVotingGroupIds)
     case ApprovalRuleType.OR:
       return rule.rules.flatMap(getVotingGroupIds)
+  }
+}
+
+function isHighPrivilegeRequired(rule: ApprovalRuleData, groupIds: ReadonlyArray<string>): boolean {
+  switch (rule.type) {
+    case ApprovalRuleType.GROUP_REQUIREMENT:
+      return groupIds.includes(rule.groupId) && rule.requireHighPrivilege === true
+    case ApprovalRuleType.AND:
+    case ApprovalRuleType.OR:
+      return rule.rules.some(r => isHighPrivilegeRequired(r, groupIds))
   }
 }

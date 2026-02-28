@@ -400,7 +400,10 @@ function mapApprovalRuleToJsonb(approvalRule: ApprovalRule): Prisma.InputJsonVal
       return {
         type: "GROUP_REQUIREMENT",
         groupId: approvalRule.groupId,
-        minCount: approvalRule.minCount
+        minCount: approvalRule.minCount,
+        ...(approvalRule.requireHighPrivilege !== undefined && {
+          requireHighPrivilege: approvalRule.requireHighPrivilege
+        })
       }
   }
 }

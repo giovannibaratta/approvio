@@ -49,9 +49,9 @@ describe("WorkflowTemplate - canVote method", () => {
   const membershipG1Admin = createMembership(group1Id, "user-1")
   const membershipG1Owner = createMembership(group1Id, "user-1")
   const membershipG1Auditor = createMembership(group1Id, "user-1")
-  const membershipG2Approver = createMembership(group2Id, "user-2")
-  const membershipG3Approver = createMembership(group3Id, "user-3")
-  const membershipUnrelatedApprover = createMembership(unrelatedGroupId, "user-4")
+  const membershipG2Approver = createMembership(group2Id, "user-1")
+  const membershipG3Approver = createMembership(group3Id, "user-1")
+  const membershipUnrelatedApprover = createMembership(unrelatedGroupId, "user-1")
 
   describe("good cases", () => {
     it("should return true for GROUP_REQUIREMENT rule when user is in the required group with APPROVER role", () => {
@@ -63,7 +63,7 @@ describe("WorkflowTemplate - canVote method", () => {
       // When: canVote is called
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be true
-      expect(result).toBeRightOf(true)
+      expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
     })
 
     it("should return true for GROUP_REQUIREMENT rule when user is in the required group with ADMIN role", () => {
@@ -75,7 +75,7 @@ describe("WorkflowTemplate - canVote method", () => {
       // When: canVote is called
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be true
-      expect(result).toBeRightOf(true)
+      expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
     })
 
     it("should return true for GROUP_REQUIREMENT rule when user is in the required group with OWNER role", () => {
@@ -87,7 +87,7 @@ describe("WorkflowTemplate - canVote method", () => {
       // When: canVote is called
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
-      expect(result).toBeRightOf(true)
+      expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
     })
 
     it("should return true for GROUP_REQUIREMENT rule when user has multiple memberships including the required one with an allowed role", () => {
@@ -99,7 +99,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const voterRoles = [createVoterRole(workflowTemplate.id)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
-      expect(result).toBeRightOf(true)
+      expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
     })
 
     it("should return true for AND rule when user is in the first required group with an allowed role", () => {
@@ -111,7 +111,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const voterRoles = [createVoterRole(workflowTemplate.id)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
-      expect(result).toBeRightOf(true)
+      expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
     })
 
     it("should return true for AND rule when user is in the second required group with an allowed role", () => {
@@ -123,7 +123,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const voterRoles = [createVoterRole(workflowTemplate.id)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
-      expect(result).toBeRightOf(true)
+      expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
     })
 
     it("should return true for AND rule when user is in both required groups with allowed roles", () => {
@@ -135,7 +135,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const voterRoles = [createVoterRole(workflowTemplate.id)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
-      expect(result).toBeRightOf(true)
+      expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
     })
 
     it("should return true for OR rule when user is in the first required group with an allowed role", () => {
@@ -147,7 +147,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const voterRoles = [createVoterRole(workflowTemplate.id)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
-      expect(result).toBeRightOf(true)
+      expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
     })
 
     it("should return true for OR rule when user is in the second required group with an allowed role", () => {
@@ -159,7 +159,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const voterRoles = [createVoterRole(workflowTemplate.id)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
-      expect(result).toBeRightOf(true)
+      expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
     })
 
     it("should return true for OR rule when user is in both required groups with allowed roles", () => {
@@ -171,7 +171,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const voterRoles = [createVoterRole(workflowTemplate.id)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
-      expect(result).toBeRightOf(true)
+      expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
     })
 
     it("should return true for a nested AND/OR rule when user is in a group from the AND part with an allowed role", () => {
@@ -186,7 +186,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const voterRoles = [createVoterRole(workflowTemplate.id)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
-      expect(result).toBeRightOf(true)
+      expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
     })
   })
 
@@ -224,6 +224,20 @@ describe("WorkflowTemplate - canVote method", () => {
       const result = workflowTemplate.canVote(memberships, [])
       // Expect: the result to be Left(entity_not_eligible_to_vote)
       expect(result).toBeLeftOf("entity_not_eligible_to_vote")
+    })
+
+    it("should return inconsistent_memberships when memberships belong to different entities", () => {
+      // Given: a rule and memberships for different users
+      const rule = createGroupRequirementRule(group1Id)
+      const workflowTemplate = getWorkflowTemplate(rule)
+      const memberships = [createMembership(group1Id, "user-1"), createMembership(group2Id, "user-2")]
+      const voterRoles = [createVoterRole(workflowTemplate.id)]
+
+      // When: canVote is called
+      const result = workflowTemplate.canVote(memberships, voterRoles)
+
+      // Expect: the result to be Left(inconsistent_memberships)
+      expect(result).toBeLeftOf("inconsistent_memberships")
     })
 
     it("should return ENTITY_NOT_IN_REQUIRED_GROUP for GROUP_REQUIREMENT rule when user has multiple memberships, none being the required one with an allowed role", () => {

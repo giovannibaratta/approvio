@@ -396,15 +396,16 @@ export function mapCanVoteResponseToApi(response: CanVoteResponse): CanVoteRespo
   const cantVoteReason = mapCantVoteReasonToApi(response)
 
   return {
-    canVote: response.canVote === true,
+    canVote: response.canVote,
     voteStatus: response.status,
-    cantVoteReason
+    cantVoteReason,
+    requireHighPrivilege: response.canVote ? response.requireHighPrivilege : undefined
   }
 }
 
 function mapCantVoteReasonToApi(response: CanVoteResponse): string | undefined {
-  if (response.canVote === true) return undefined
-  switch (response.canVote.reason) {
+  if (response.canVote) return undefined
+  switch (response.reason) {
     case "workflow_expired":
       return "WORKFLOW_EXPIRED"
     case "workflow_cancelled":
@@ -417,6 +418,8 @@ function mapCantVoteReasonToApi(response: CanVoteResponse): string | undefined {
       return "WORKFLOW_TEMPLATE_NOT_ACTIVE"
     case "entity_not_eligible_to_vote":
       return "NO_PERMISSIONS"
+    case "inconsistent_memberships":
+      return "INCONSISTENT_MEMBERSHIPS"
   }
 }
 
@@ -690,6 +693,15 @@ export function generateErrorResponseForCastVote(
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: Workflow has been updated concurrently`)
       )
+    case "entity_not_supported":
+    case "step_up_context_missing":
+    case "step_up_operation_mismatch":
+    case "step_up_resource_mismatch":
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: High privilege token required`))
+    case "token_not_found":
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Failed to consume token`)
+      )
     case "approval_rule_and_rule_must_have_rules":
     case "approval_rule_group_rule_invalid_group_id":
     case "approval_rule_group_rule_invalid_min_count":
@@ -776,6 +788,7 @@ export function generateErrorResponseForCastVote(
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
     case "agent_name_cannot_be_uuid":
+    case "inconsistent_memberships":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
