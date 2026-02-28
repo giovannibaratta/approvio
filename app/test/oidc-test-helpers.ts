@@ -1,4 +1,3 @@
-// eslint-disable-next-line node/no-unpublished-import
 import axios from "axios"
 import {ConfigProvider} from "@external/config"
 

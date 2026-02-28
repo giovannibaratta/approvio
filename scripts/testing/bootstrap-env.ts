@@ -1,5 +1,3 @@
-/* eslint-disable node/no-unpublished-import */
-
 /**
  * This script can be used to bootstrap a testing environment by creating a test user and an admin user.
  * It will also create a group and a workflow template.

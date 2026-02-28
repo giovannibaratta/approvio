@@ -1,5 +1,5 @@
 import {NestApplication} from "@nestjs/core"
-// eslint-disable-next-line node/no-unpublished-import
+
 import * as request from "supertest"
 
 type Method = "get" | "post" | "put" | "delete"

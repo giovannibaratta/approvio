@@ -23,7 +23,7 @@ import {
 } from "@domain"
 import {mapToDomainVersionedUser} from "@external/database/shared"
 import {isLeft} from "fp-ts/lib/Either"
-// eslint-disable-next-line node/no-unpublished-import
+
 import {Chance} from "chance"
 import {
   ConfigProvider,

@@ -1,4 +1,3 @@
-// eslint-disable-next-line node/no-unpublished-import
 import {Test, TestingModuleBuilder} from "@nestjs/testing"
 import {WorkerModule} from "../../src/worker.module"
 import {WorkflowEventsProcessor} from "../../src/processor/workflow-events.processor"
