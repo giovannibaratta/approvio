@@ -1,4 +1,3 @@
-// eslint-disable-next-line node/no-unpublished-import
 import {Method, WireMock} from "wiremock-captain"
 
 // We need to define the raw shape of the request coming from WireMock
@@ -50,7 +49,9 @@ export async function setupWiremockStub(
     )
   } catch (error) {
     console.error("Failed to setup Wiremock stub:", error)
-    throw new Error(`Wiremock stub setup failed: ${error instanceof Error ? error.message : String(error)}`)
+    throw new Error(`Wiremock stub setup failed: ${error instanceof Error ? error.message : String(error)}`, {
+      cause: error
+    })
   }
 }
 
