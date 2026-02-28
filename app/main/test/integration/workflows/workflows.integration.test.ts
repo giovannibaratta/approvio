@@ -23,7 +23,8 @@ import {
   createDomainMockUserInDb,
   createMockWorkflowInDb,
   createMockWorkflowTemplateInDb,
-  MockConfigProvider
+  MockConfigProvider,
+  createUserWithRefreshToken
 } from "@test/mock-data"
 import {get, post} from "@test/requests"
 import {UserWithToken} from "@test/types"
@@ -47,6 +48,17 @@ async function createTestGroup(prisma: PrismaClient, name: string): Promise<{id:
 }
 
 async function addUserToGroup(prisma: PrismaClient, groupId: string, userId: string): Promise<void> {
+  await prisma.user.update({
+    where: {id: userId},
+    data: {
+      groupMemberships: {
+        connectOrCreate: {
+          where: {groupId_userId: {groupId, userId}},
+          create: {groupId, createdAt: new Date(), updatedAt: new Date()}
+        }
+      }
+    }
+  })
   await prisma.groupMembership.upsert({
     where: {
       groupId_userId: {
@@ -66,6 +78,20 @@ async function addUserToGroup(prisma: PrismaClient, groupId: string, userId: str
   })
 }
 
+async function addVoterRoleToUser(prisma: PrismaClient, userId: string, workflowTemplateId: string): Promise<void> {
+  const voterRole = SystemRole.createWorkflowTemplateVoterRole({
+    type: "workflow_template",
+    workflowTemplateId
+  })
+  const roleForDb = JSON.parse(JSON.stringify(voterRole))
+  const user = await prisma.user.findUnique({where: {id: userId}})
+  const roles = (user?.roles as unknown[]) || []
+  await prisma.user.update({
+    where: {id: userId},
+    data: {roles: [...roles, roleForDb]}
+  })
+}
+
 describe("Workflows API", () => {
   let app: NestApplication
   let prisma: PrismaClient
@@ -74,6 +100,7 @@ describe("Workflows API", () => {
   let jwtService: JwtService
   let configProvider: ConfigProvider
   let mockGroupId1: string
+  let mockGroupId2: string
   let mockWorkflowTemplate: PrismaWorkflowTemplate
   let redisPrefix: string
   let recalculationQueue: Queue
@@ -105,6 +132,7 @@ describe("Workflows API", () => {
     const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
     const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
     const testGroup1 = await createTestGroup(prisma, "Test-Approver-Group-1")
+    const testGroup2 = await createTestGroup(prisma, "Test-Approver-Group-2")
 
     configProvider = module.get(ConfigProvider)
     const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
@@ -119,6 +147,7 @@ describe("Workflows API", () => {
     orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
     orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
     mockGroupId1 = testGroup1.id
+    mockGroupId2 = testGroup2.id
 
     mockWorkflowTemplate = await createMockWorkflowTemplateInDb(prisma, {
       approvalRule: {
@@ -393,20 +422,8 @@ describe("Workflows API", () => {
       await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id)
 
       // Add voter roles for this workflow template
-      const voterRole = SystemRole.createWorkflowTemplateVoterRole({
-        type: "workflow_template",
-        workflowTemplateId: template.id
-      })
-      const roleForDb = JSON.parse(JSON.stringify(voterRole))
-
-      await prisma.user.update({
-        where: {id: orgMemberUser.user.id},
-        data: {roles: [roleForDb]}
-      })
-      await prisma.user.update({
-        where: {id: orgAdminUser.user.id},
-        data: {roles: [roleForDb]}
-      })
+      await addVoterRoleToUser(prisma, orgMemberUser.user.id, template.id)
+      await addVoterRoleToUser(prisma, orgAdminUser.user.id, template.id)
 
       // Given: a generic workflow for other tests (e.g., admin access)
       testWorkflow = await createMockWorkflowInDb(prisma, {
@@ -426,7 +443,111 @@ describe("Workflows API", () => {
         const body: CanVoteResponseApi = response.body
         expect(body.canVote).toBe(true)
         expect(body.voteStatus).toEqual("VOTE_PENDING")
+        expect(body.requireHighPrivilege).toBe(false)
         expect(body.cantVoteReason).toBeUndefined()
+      })
+
+      it("should return 200 OK with requireHighPrivilege: true if workflow requires it", async () => {
+        const highPrivTemplate = await createMockWorkflowTemplateInDb(prisma, {
+          approvalRule: {
+            type: ApprovalRuleType.GROUP_REQUIREMENT,
+            groupId: mockGroupId1,
+            minCount: 1,
+            requireHighPrivilege: true
+          }
+        })
+
+        const workflowHighPriv = await createMockWorkflowInDb(prisma, {
+          name: "HighPrivWorkflow",
+          status: WorkflowStatus.EVALUATION_IN_PROGRESS,
+          workflowTemplateId: highPrivTemplate.id
+        })
+
+        // Also add user as voter
+        await addVoterRoleToUser(prisma, orgMemberUser.user.id, highPrivTemplate.id)
+
+        // Add user to required group
+        await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id)
+
+        const response = await get(app, `${endpoint}/${workflowHighPriv.id}/canVote`)
+          .withToken(orgMemberUser.token)
+          .build()
+
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: CanVoteResponseApi = response.body
+        expect(body.canVote).toBe(true)
+        expect(body.requireHighPrivilege).toBe(true)
+      })
+
+      it("should return 200 OK with requireHighPrivilege: true if workflow uses AND rule and only one requires high privilege", async () => {
+        const complexTemplate = await createMockWorkflowTemplateInDb(prisma, {
+          approvalRule: {
+            type: ApprovalRuleType.AND,
+            rules: [
+              {
+                type: ApprovalRuleType.GROUP_REQUIREMENT,
+                groupId: mockGroupId1,
+                minCount: 1,
+                requireHighPrivilege: true
+              },
+              {
+                type: ApprovalRuleType.GROUP_REQUIREMENT,
+                groupId: mockGroupId2,
+                minCount: 1,
+                requireHighPrivilege: false
+              }
+            ]
+          }
+        })
+
+        const complexWorkflow = await createMockWorkflowInDb(prisma, {
+          name: "ComplexWorkflow",
+          status: WorkflowStatus.EVALUATION_IN_PROGRESS,
+          workflowTemplateId: complexTemplate.id
+        })
+
+        // Give OrgMember voter role
+        await addVoterRoleToUser(prisma, orgMemberUser.user.id, complexTemplate.id)
+
+        // Test user only in group 1 (Requires High Privilege)
+        await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id)
+
+        const response1 = await get(app, `${endpoint}/${complexWorkflow.id}/canVote`)
+          .withToken(orgMemberUser.token)
+          .build()
+
+        expect(response1).toHaveStatusCode(HttpStatus.OK)
+        const body1: CanVoteResponseApi = response1.body
+        expect(body1.canVote).toBe(true)
+        expect(body1.requireHighPrivilege).toBe(true) // Required because they vote for group 1
+
+        // Test user only in group 2 (Does NOT require High Privilege)
+        const orgMember2User = await createUserWithRefreshToken(prisma, {
+          userOverrides: {
+            orgAdmin: false,
+            roles: [
+              SystemRole.createWorkflowTemplateVoterRole({
+                type: "workflow_template",
+                workflowTemplateId: complexTemplate.id
+              })
+            ]
+          },
+          tokenOverrides: {createdAt: new Date()}
+        })
+        const member2TokenPayload = TokenPayloadBuilder.fromUser(orgMember2User.user, {
+          issuer: configProvider.jwtConfig.issuer,
+          audience: [configProvider.jwtConfig.audience]
+        })
+        const member2Token = jwtService.sign(member2TokenPayload)
+
+        await addUserToGroup(prisma, mockGroupId2, orgMember2User.user.id)
+
+        const response2 = await get(app, `${endpoint}/${complexWorkflow.id}/canVote`).withToken(member2Token).build()
+
+        expect(response2).toHaveStatusCode(HttpStatus.OK)
+        const body2: CanVoteResponseApi = response2.body
+        expect(body2.canVote).toBe(true)
+        expect(body2.requireHighPrivilege).toBe(false) // Not required because they vote for group 2
       })
 
       it("should return 200 OK with canVote:true for OrgAdmin if they are part of a group", async () => {
@@ -547,23 +668,8 @@ describe("Workflows API", () => {
         await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id)
 
         // Add voter roles for the workflow template
-        const voterRole = SystemRole.createWorkflowTemplateVoterRole({
-          type: "workflow_template",
-          workflowTemplateId: workflowTemplate.id
-        })
-
-        // Convert role to JSON-serializable format
-        const roleForDb = JSON.parse(JSON.stringify(voterRole))
-
-        // Update users with voter roles
-        await prisma.user.update({
-          where: {id: orgMemberUser.user.id},
-          data: {roles: [roleForDb]}
-        })
-        await prisma.user.update({
-          where: {id: orgAdminUser.user.id},
-          data: {roles: [roleForDb]}
-        })
+        await addVoterRoleToUser(prisma, orgMemberUser.user.id, workflowTemplate.id)
+        await addVoterRoleToUser(prisma, orgAdminUser.user.id, workflowTemplate.id)
       })
 
       it("should allow OrgMember in the group to APPROVE a workflow and return 200 OK", async () => {
@@ -661,6 +767,92 @@ describe("Workflows API", () => {
         expect(tasks).toHaveLength(1)
         expect(tasks[0]).toMatchObject({data: {workflowId: workflowForVoting.id}})
       })
+
+      it("should enforce high privilege correctly for complex AND rules based on voted groups", async () => {
+        const complexTemplate = await createMockWorkflowTemplateInDb(prisma, {
+          approvalRule: {
+            type: ApprovalRuleType.AND,
+            rules: [
+              {
+                type: ApprovalRuleType.GROUP_REQUIREMENT,
+                groupId: mockGroupId1,
+                minCount: 1,
+                requireHighPrivilege: true
+              },
+              {
+                type: ApprovalRuleType.GROUP_REQUIREMENT,
+                groupId: mockGroupId2,
+                minCount: 1,
+                requireHighPrivilege: false
+              }
+            ]
+          }
+        })
+
+        const complexWorkflow = await createMockWorkflowInDb(prisma, {
+          name: "ComplexWorkflowVoting",
+          status: WorkflowStatus.EVALUATION_IN_PROGRESS,
+          workflowTemplateId: complexTemplate.id
+        })
+
+        await addVoterRoleToUser(prisma, orgMemberUser.user.id, complexTemplate.id)
+
+        // Test user only in group 1 (Requires High Privilege)
+        await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id)
+
+        const requestBody1: WorkflowVoteRequestApi = {
+          voteType: {
+            type: "APPROVE",
+            votedForGroups: [mockGroupId1]
+          }
+        }
+
+        const response1 = await post(app, `${endpoint}/${complexWorkflow.id}/vote`)
+          .withToken(orgMemberUser.token)
+          .build()
+          .send(requestBody1)
+
+        // Fails because the member doesn't have a high privilege token
+        expect(response1).toHaveStatusCode(HttpStatus.FORBIDDEN)
+        expect(response1.body).toHaveErrorCode("STEP_UP_CONTEXT_MISSING")
+
+        // Test user only in group 2 (Does NOT require High Privilege)
+        const orgMember2User = await createUserWithRefreshToken(prisma, {
+          userOverrides: {
+            orgAdmin: false,
+            roles: [
+              SystemRole.createWorkflowTemplateVoterRole({
+                type: "workflow_template",
+                workflowTemplateId: complexTemplate.id
+              })
+            ]
+          },
+          tokenOverrides: {createdAt: new Date()}
+        })
+
+        const member2TokenPayload = TokenPayloadBuilder.fromUser(orgMember2User.user, {
+          issuer: configProvider.jwtConfig.issuer,
+          audience: [configProvider.jwtConfig.audience]
+        })
+        const member2Token = jwtService.sign(member2TokenPayload)
+
+        await addUserToGroup(prisma, mockGroupId2, orgMember2User.user.id)
+
+        const requestBody2: WorkflowVoteRequestApi = {
+          voteType: {
+            type: "APPROVE",
+            votedForGroups: [mockGroupId2]
+          }
+        }
+
+        const response2 = await post(app, `${endpoint}/${complexWorkflow.id}/vote`)
+          .withToken(member2Token)
+          .build()
+          .send(requestBody2)
+
+        // Succeeds because group 2 doesn't require high privilege
+        expect(response2).toHaveStatusCode(HttpStatus.ACCEPTED)
+      })
     })
 
     describe("bad cases", () => {
@@ -739,6 +931,45 @@ describe("Workflows API", () => {
 
         expect(response).toHaveStatusCode(HttpStatus.UNPROCESSABLE_ENTITY)
         expect(response.body).toHaveErrorCode("ENTITY_NOT_IN_REQUIRED_GROUP")
+      })
+
+      it("should return 403 FORBIDDEN if voting without high privilege token when required", async () => {
+        const highPrivTemplate = await createMockWorkflowTemplateInDb(prisma, {
+          approvalRule: {
+            type: ApprovalRuleType.GROUP_REQUIREMENT,
+            groupId: mockGroupId1,
+            minCount: 1,
+            requireHighPrivilege: true
+          }
+        })
+
+        const workflowHighPriv = await createMockWorkflowInDb(prisma, {
+          name: "HighPrivWorkflow-Vote",
+          description: "Voting Test Priv",
+          status: WorkflowStatus.EVALUATION_IN_PROGRESS,
+          workflowTemplateId: highPrivTemplate.id,
+          expiresAt: "active"
+        })
+
+        // Give user permission to vote on this generic template too
+        await addVoterRoleToUser(prisma, orgMemberUser.user.id, highPrivTemplate.id)
+
+        await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id)
+
+        const requestBody: WorkflowVoteRequestApi = {
+          voteType: {
+            type: "APPROVE",
+            votedForGroups: [mockGroupId1]
+          }
+        }
+
+        const response = await post(app, `${endpoint}/${workflowHighPriv.id}/vote`)
+          .withToken(orgMemberUser.token)
+          .build()
+          .send(requestBody)
+
+        expect(response).toHaveStatusCode(HttpStatus.FORBIDDEN)
+        expect(response.body).toHaveErrorCode("STEP_UP_CONTEXT_MISSING")
       })
 
       it("should return 400 BAD_REQUEST for invalid voteType", async () => {
@@ -887,15 +1118,7 @@ describe("Workflows API", () => {
       await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id)
 
       // Add voter roles
-      const voterRole = SystemRole.createWorkflowTemplateVoterRole({
-        type: "workflow_template",
-        workflowTemplateId: workflowTemplate.id
-      })
-      const roleForDb = JSON.parse(JSON.stringify(voterRole))
-      await prisma.user.update({
-        where: {id: orgMemberUser.user.id},
-        data: {roles: [roleForDb]}
-      })
+      await addVoterRoleToUser(prisma, orgMemberUser.user.id, workflowTemplate.id)
 
       // Cast a vote
       const voteRequest: WorkflowVoteRequestApi = {

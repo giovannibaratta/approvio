@@ -149,6 +149,32 @@ describe("Workflow Templates API", () => {
         expect(templateDbObject?.defaultExpiresInHours).toEqual(createWorkflowTemplatePayload.defaultExpiresInHours)
       })
 
+      it("should create a workflow template with high privilege requirement (as OrgAdmin)", async () => {
+        // Given
+        const requestBody: WorkflowTemplateCreate = {
+          name: "High Privilege Template",
+          approvalRule: {
+            type: ApprovalRuleType.GROUP_REQUIREMENT,
+            groupId: randomUUID(),
+            minCount: 1,
+            requireHighPrivilege: true
+          },
+          spaceId: testSpace.id
+        }
+
+        // When
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.CREATED)
+
+        expect(response.body).toMatchObject({
+          approvalRule: {
+            requireHighPrivilege: true
+          }
+        })
+      })
+
       it("should create a workflow template without description and defaultExpiresInHours (as OrgAdmin)", async () => {
         // Given
         const requestBody: WorkflowTemplateCreate = {

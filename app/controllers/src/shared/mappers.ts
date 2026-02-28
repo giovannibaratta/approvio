@@ -24,7 +24,8 @@ export function mapApprovalRuleDataToApi(rule: ApprovalRuleData): ApprovalRuleAp
       return {
         type: rule.type,
         groupId: rule.groupId,
-        minCount: rule.minCount
+        minCount: rule.minCount,
+        ...(rule.requireHighPrivilege !== undefined && {requireHighPrivilege: rule.requireHighPrivilege})
       }
     case ApprovalRuleType.AND:
       return {

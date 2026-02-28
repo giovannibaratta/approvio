@@ -59,12 +59,22 @@ export type WorkflowTemplateCantVoteReason =
   | "entity_not_in_required_group"
   | "workflow_template_not_active"
   | "entity_not_eligible_to_vote"
+  | "inconsistent_memberships"
 
 interface WorkflowTemplateLogic {
+  /**
+   * Checks if an entity is eligible to vote on a workflow created from this template.
+   *
+   * @param memberships The group memberships of the entity.
+   * @param entityRoles The roles and permissions currently assigned to the entity.
+   * @param votedForGroups Optional list of specific group IDs being voted for.
+   * @returns Either a reason why the entity cannot vote, or a success object.
+   */
   canVote(
     memberships: ReadonlyArray<MembershipWithGroupRef>,
-    entityRoles: ReadonlyArray<UnconstrainedBoundRole>
-  ): Either<WorkflowTemplateCantVoteReason, true>
+    entityRoles: ReadonlyArray<UnconstrainedBoundRole>,
+    votedForGroups?: ReadonlyArray<string>
+  ): Either<WorkflowTemplateCantVoteReason, {canVote: true; requireHighPrivilege: boolean}>
 }
 
 export type WorkflowTemplateValidationError =
@@ -213,8 +223,9 @@ export class WorkflowTemplateFactory {
           ...workflowTemplateData,
           canVote: (
             memberships: ReadonlyArray<MembershipWithGroupRef>,
-            entityRoles: ReadonlyArray<UnconstrainedBoundRole>
-          ) => canVote(workflowTemplateData, memberships, entityRoles)
+            entityRoles: ReadonlyArray<UnconstrainedBoundRole>,
+            votedForGroups?: ReadonlyArray<string>
+          ) => canVote(workflowTemplateData, memberships, entityRoles, votedForGroups)
         }
       })
     )
@@ -306,14 +317,44 @@ function validateLatestIsActive(
   return E.right(undefined)
 }
 
+/**
+ * Checks if an entity (user or agent) is eligible to vote on a workflow based on the template.
+ *
+ * The check involves:
+ * 1. Template status: Must be ACTIVE or allow voting on DEPRECATED.
+ * 2. Permission check: Entity must have the 'vote' permission for this template.
+ * 3. Group membership: Entity must belong to at least one group defined in the template's approval rule.
+ * 4. Privilege check: Determines if a high-privilege token (step-up) is required for the vote.
+ *
+ * @param workflowTemplate The template data being checked.
+ * @param memberships The list of groups the entity belongs to, with their associated references.
+ * @param entityRoles The roles and permissions currently assigned to the entity.
+ * @param votedForGroups Optional list of specific group IDs the entity is casting a vote for.
+ * @returns Either a reason why the entity cannot vote, or a success object indicating if high-privilege is required.
+ */
 function canVote(
   workflowTemplate: WorkflowTemplateData,
   memberships: ReadonlyArray<MembershipWithGroupRef>,
-  entityRoles: ReadonlyArray<UnconstrainedBoundRole>
-): Either<WorkflowTemplateCantVoteReason, true> {
-  if (workflowTemplate.status !== WorkflowTemplateStatus.ACTIVE && !workflowTemplate.allowVotingOnDeprecatedTemplate) {
+  entityRoles: ReadonlyArray<UnconstrainedBoundRole>,
+  votedForGroups?: ReadonlyArray<string>
+): Either<WorkflowTemplateCantVoteReason, {canVote: true; requireHighPrivilege: boolean}> {
+  if (workflowTemplate.status !== WorkflowTemplateStatus.ACTIVE && !workflowTemplate.allowVotingOnDeprecatedTemplate)
     return left("workflow_template_not_active")
-  }
+
+  // If memberships is empty, the entity cannot vote because they are not in any required group
+  if (memberships.length === 0) return left("entity_not_in_required_group")
+
+  // Infer entityType from the first membership
+  const firstMembership = memberships[0]
+
+  if (firstMembership === undefined) return left("entity_not_in_required_group")
+
+  const entityType = firstMembership.getEntityType()
+  const entityId = firstMembership.getEntityId()
+
+  // Validate that all memberships belong to the same entity
+  const consistentMemberships = memberships.every(m => m.getEntityType() === entityType && m.getEntityId() === entityId)
+  if (!consistentMemberships) return left("inconsistent_memberships")
 
   // Check if entity has vote permission for this workflow template (hierarchical check)
   const hasVotePermission = hasVotePermissionForWorkflowTemplate(workflowTemplate, entityRoles)
@@ -326,9 +367,25 @@ function canVote(
 
   if (!hasValidMembership) return left("entity_not_in_required_group")
 
-  return right(true)
+  const targetGroups = votedForGroups ?? memberships.map(m => m.groupId)
+  const requireHighPrivilege =
+    entityType === "agent" ? false : workflowTemplate.approvalRule.isHighPrivilegeRequired(targetGroups)
+
+  return right({
+    canVote: true,
+    requireHighPrivilege
+  })
 }
 
+/**
+ * Helper function that checks if an entity has the 'vote' permission for a specific workflow template.
+ * The check is hierarchical: it searches for the permission at the organization level,
+ * the space level, or the individual template level.
+ *
+ * @param workflowTemplate The template containing 'id' and 'spaceId'.
+ * @param entityRoles The roles assigned to the entity.
+ * @returns True if the entity has a role that allows voting on this template.
+ */
 function hasVotePermissionForWorkflowTemplate(
   workflowTemplate: WorkflowTemplateData,
   entityRoles: ReadonlyArray<UnconstrainedBoundRole>

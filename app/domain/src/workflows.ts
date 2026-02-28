@@ -129,8 +129,9 @@ export const WORKFLOW_TERMINAL_STATUSES = [WorkflowStatus.APPROVED, WorkflowStat
 export function canVoteOnWorkflow(
   workflow: DecoratedWorkflow<{workflowTemplate: true}>,
   memberships: ReadonlyArray<MembershipWithGroupRef>,
-  entityRoles: ReadonlyArray<UnconstrainedBoundRole>
-): Either<CantVoteReason, true> {
+  entityRoles: ReadonlyArray<UnconstrainedBoundRole>,
+  votedForGroups?: ReadonlyArray<string>
+): Either<CantVoteReason, {canVote: true; requireHighPrivilege: boolean}> {
   if (WORKFLOW_TERMINAL_STATUSES.includes(workflow.status))
     return left(generateCantVoteReasonForTerminalStatus(workflow.status))
 
@@ -138,10 +139,10 @@ export function canVoteOnWorkflow(
   const now = new Date(Date.now())
   if (workflow.expiresAt < now) return left("workflow_expired")
 
-  const templateCanVoteResult = workflow.workflowTemplate.canVote(memberships, entityRoles)
+  const templateCanVoteResult = workflow.workflowTemplate.canVote(memberships, entityRoles, votedForGroups)
   if (isLeft(templateCanVoteResult)) return templateCanVoteResult
 
-  return right(true)
+  return templateCanVoteResult
 }
 
 function generateCantVoteReasonForTerminalStatus(status: WorkflowStatus): CantVoteReason {
