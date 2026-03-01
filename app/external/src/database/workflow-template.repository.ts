@@ -19,7 +19,7 @@ import {
   WorkflowTemplateGetError,
   WorkflowTemplateRepository,
   WorkflowTemplateUpdateError,
-  ListWorkflowTemplatesRequest,
+  ListWorkflowTemplatesRequestRepo,
   ListWorkflowTemplatesResponse
 } from "@services"
 import {Versioned} from "@domain"
@@ -144,18 +144,29 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
   }
 
   listWorkflowTemplates(
-    request: ListWorkflowTemplatesRequest
+    request: ListWorkflowTemplatesRequestRepo
   ): TaskEither<WorkflowTemplateValidationError | UnknownError, ListWorkflowTemplatesResponse> {
     return TE.tryCatchK(
       async () => {
         const skip = (request.pagination.page - 1) * request.pagination.limit
+
+        const where: Prisma.WorkflowTemplateWhereInput = {}
+        if (request.filters?.spaceId) {
+          where.spaceId = request.filters.spaceId
+        } else if (request.filters?.spaceName) {
+          where.spaces = {
+            name: request.filters.spaceName
+          }
+        }
+
         const [templates, total] = await Promise.all([
           this.dbClient.workflowTemplate.findMany({
             skip,
             take: request.pagination.limit,
-            orderBy: {createdAt: "desc"}
+            orderBy: {createdAt: "desc"},
+            where
           }),
-          this.dbClient.workflowTemplate.count()
+          this.dbClient.workflowTemplate.count({where})
         ])
 
         const domainTemplates = templates

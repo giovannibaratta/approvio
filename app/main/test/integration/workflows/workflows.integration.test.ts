@@ -1009,6 +1009,68 @@ describe("Workflows API", () => {
     })
 
     describe("good cases", () => {
+      it("should return workflows filtered by workflowTemplateIdentifier as UUID", async () => {
+        // Given: a new workflow template and workflow
+        const template = await createMockWorkflowTemplateInDb(prisma, {
+          name: "Template-For-UUID-Filter",
+          status: "ACTIVE"
+        })
+        await createMockWorkflowInDb(prisma, {
+          name: "Workflow-With-UUID-Template",
+          description: "A workflow associated with a specific template",
+          status: WorkflowStatus.APPROVED,
+          workflowTemplateId: template.id
+        })
+
+        // When: requesting workflows filtered by template UUID
+        const response = await get(app, `${endpoint}?workflowTemplateIdentifier=${template.id}`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect: only the workflow matching the template UUID is returned
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        expect(body.data).toHaveLength(1)
+        expect(body.data[0]?.name).toEqual("Workflow-With-UUID-Template")
+      })
+
+      it("should return workflows filtered by workflowTemplateIdentifier as Name", async () => {
+        // Given: a new workflow template and workflow
+        const template = await createMockWorkflowTemplateInDb(prisma, {
+          name: "Template-For-Name-Filter",
+          status: "ACTIVE"
+        })
+        await createMockWorkflowInDb(prisma, {
+          name: "Workflow-With-Name-Template",
+          description: "A workflow associated with a specific template",
+          status: WorkflowStatus.APPROVED,
+          workflowTemplateId: template.id
+        })
+
+        // When: requesting workflows filtered by template name
+        const response = await get(app, `${endpoint}?workflowTemplateIdentifier=${template.name}`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect: only the workflow matching the template name is returned
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        expect(body.data).toHaveLength(1)
+        expect(body.data[0]?.name).toEqual("Workflow-With-Name-Template")
+      })
+
+      it("should return an empty list if workflowTemplateIdentifier does not match", async () => {
+        // When: requesting workflows filtered by an unknown template name
+        const response = await get(app, `${endpoint}?workflowTemplateIdentifier=Non-Existent-Template`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect: an empty list is returned
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        expect(body.data).toHaveLength(0)
+      })
+
       it("should return all workflows without filter (as OrgAdmin)", async () => {
         // When: a request is sent to list workflows without filter
         const response = await get(app, endpoint).withToken(orgAdminUser.token).build()

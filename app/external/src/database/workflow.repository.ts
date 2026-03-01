@@ -19,7 +19,7 @@ import {
   WorkflowGetError,
   WorkflowRepository,
   WorkflowUpdateError,
-  ListWorkflowsRequest,
+  ListWorkflowsRequestRepo,
   ListWorkflowsResponse,
   UnknownError
 } from "@services"
@@ -90,7 +90,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
    * @returns A TaskEither with the list of workflows or an error.
    */
   listWorkflows<TInclude extends WorkflowDecoratorSelector>(
-    request: ListWorkflowsRequest<TInclude>
+    request: ListWorkflowsRequestRepo<TInclude>
   ): TaskEither<WorkflowGetError, ListWorkflowsResponse<TInclude>> {
     const prismaInclude = mapDomainSelectorToPrismaSelector(request.include)
 
@@ -270,7 +270,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
     DomainSelectors extends WorkflowDecoratorSelector,
     PrismaSelectors extends PrismaWorkflowDecoratorSelector
   >(): (
-    request: ListWorkflowsRequest<DomainSelectors>
+    request: ListWorkflowsRequestRepo<DomainSelectors>
   ) => TaskEither<
     WorkflowGetError,
     {workflows: PrismaDecoratedWorkflow<PrismaSelectors>[]; pagination: {total: number; page: number; limit: number}}
@@ -288,7 +288,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
   private listWorkflowsTaskNoErrorHandling<
     DomainSelectors extends WorkflowDecoratorSelector,
     PrismaSelectors extends PrismaWorkflowDecoratorSelector = object
-  >(): (request: ListWorkflowsRequest<DomainSelectors>) => Promise<{
+  >(): (request: ListWorkflowsRequestRepo<DomainSelectors>) => Promise<{
     workflows: PrismaDecoratedWorkflow<PrismaSelectors>[]
     pagination: {total: number; page: number; limit: number}
   }> {
@@ -301,6 +301,14 @@ export class WorkflowDbRepository implements WorkflowRepository {
       if (filters?.includeOnlyNonTerminalState) {
         where.status = {
           notIn: WORKFLOW_TERMINAL_STATUSES
+        }
+      }
+
+      if (filters?.workflowTemplateId) {
+        where.workflowTemplateId = filters.workflowTemplateId
+      } else if (filters?.workflowTemplateName) {
+        where.workflowTemplates = {
+          name: filters.workflowTemplateName
         }
       }
 

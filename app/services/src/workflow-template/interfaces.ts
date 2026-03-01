@@ -58,7 +58,7 @@ export interface WorkflowTemplateRepository {
    * @returns A paginated response containing workflow template summaries
    */
   listWorkflowTemplates(
-    request: ListWorkflowTemplatesRequest
+    request: ListWorkflowTemplatesRequestRepo
   ): TaskEither<WorkflowTemplateValidationError | UnknownError, ListWorkflowTemplatesResponse>
 
   /**
@@ -88,6 +88,20 @@ export interface ListWorkflowTemplatesRequest extends RequestorAwareRequest {
   pagination: {
     page: number
     limit: number
+  }
+  filters?: {
+    spaceIdentifier?: string
+  }
+}
+
+export interface ListWorkflowTemplatesRequestRepo extends RequestorAwareRequest {
+  pagination: {
+    page: number
+    limit: number
+  }
+  filters?: {
+    spaceId?: string
+    spaceName?: string
   }
 }
 
