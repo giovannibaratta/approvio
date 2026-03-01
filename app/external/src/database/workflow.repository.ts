@@ -19,7 +19,6 @@ import {
   WorkflowGetError,
   WorkflowRepository,
   WorkflowUpdateError,
-  ListWorkflowsRequest,
   ListWorkflowsRequestRepo,
   ListWorkflowsResponse,
   UnknownError
