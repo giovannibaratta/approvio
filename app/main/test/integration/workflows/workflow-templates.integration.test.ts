@@ -585,6 +585,68 @@ describe("Workflow Templates API", () => {
 
   describe("GET /workflow-templates", () => {
     describe("good cases", () => {
+      it("should filter workflow templates by space UUID", async () => {
+        // Given
+        const space = await createMockSpaceInDb(prisma, {name: "Space-For-UUID"})
+        await createMockWorkflowTemplateInDb(prisma, {
+          name: "Template-In-Space",
+          spaceId: space.id
+        })
+        await createMockWorkflowTemplateInDb(prisma, {
+          name: "Template-Other-Space"
+        })
+
+        // When
+        const response = await get(app, `${endpoint}?spaceIdentifier=${space.id}`).withToken(orgAdminUser.token).build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflowTemplates200Response = response.body
+        expect(body.data).toHaveLength(1)
+        expect(body.data[0]?.name).toEqual("Template-In-Space")
+      })
+
+      it("should filter workflow templates by space name", async () => {
+        // Given
+        const spaceName = "Space-For-Name"
+        const space = await createMockSpaceInDb(prisma, {name: spaceName})
+        await createMockWorkflowTemplateInDb(prisma, {
+          name: "Template-In-Space-Name",
+          spaceId: space.id
+        })
+        await createMockWorkflowTemplateInDb(prisma, {
+          name: "Template-Other-Space-Name"
+        })
+
+        // When
+        const response = await get(app, `${endpoint}?spaceIdentifier=${spaceName}`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflowTemplates200Response = response.body
+        expect(body.data).toHaveLength(1)
+        expect(body.data[0]?.name).toEqual("Template-In-Space-Name")
+      })
+
+      it("should return empty list if spaceIdentifier does not match", async () => {
+        // Given
+        await createMockWorkflowTemplateInDb(prisma, {
+          name: "Template-Any"
+        })
+
+        // When
+        const response = await get(app, `${endpoint}?spaceIdentifier=Non-Existent-Space`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflowTemplates200Response = response.body
+        expect(body.data).toHaveLength(0)
+      })
+
       it("should return empty list when no templates exist", async () => {
         // When
         const response = await get(app, endpoint).withToken(orgAdminUser.token).build()

@@ -4,7 +4,7 @@ import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as O from "fp-ts/Option"
-import {logSuccess} from "@utils"
+import {logSuccess, isUUIDv4} from "@utils"
 import {
   WorkflowTemplate,
   WorkflowTemplateFactory,
@@ -279,10 +279,28 @@ export class WorkflowTemplateService {
   listWorkflowTemplates(
     request: ListWorkflowTemplatesRequest
   ): TaskEither<WorkflowTemplateValidationError | UnknownError | AuthorizationError, ListWorkflowTemplatesResponse> {
+    const filters = request.filters
+      ? {
+          spaceId:
+            request.filters.spaceIdentifier && isUUIDv4(request.filters.spaceIdentifier)
+              ? request.filters.spaceIdentifier
+              : undefined,
+          spaceName:
+            request.filters.spaceIdentifier && !isUUIDv4(request.filters.spaceIdentifier)
+              ? request.filters.spaceIdentifier
+              : undefined
+        }
+      : undefined
+
+    const repoRequest = {
+      ...request,
+      filters
+    }
+
     return pipe(
       validateUserEntity(request.requestor),
       TE.fromEither,
-      TE.chainW(() => this.workflowTemplateRepository.listWorkflowTemplates(request)),
+      TE.chainW(() => this.workflowTemplateRepository.listWorkflowTemplates(repoRequest)),
       logSuccess("Workflow templates listed", "WorkflowTemplateService", r => ({count: r.pagination.total}))
     )
   }

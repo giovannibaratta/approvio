@@ -231,12 +231,14 @@ export type ListWorkflowsApiError =
   | "request_invalid_page"
   | "request_invalid_limit"
   | "request_invalid_include_only_non_terminal_state"
+  | "request_invalid_workflow_template_identifier"
 
 export function validateListWorkflowsParams(params: {
   include?: unknown
   page?: unknown
   limit?: unknown
   includeOnlyNonTerminalState?: unknown
+  workflowTemplateIdentifier?: unknown
 }): Either<ListWorkflowsApiError, ListWorkflowsParams & {include: WorkflowInclude[] | undefined}> {
   return pipe(
     E.Do,
@@ -253,11 +255,19 @@ export function validateListWorkflowsParams(params: {
         "request_invalid_include_only_non_terminal_state" as const
       )
     ),
-    map(({page, limit, include, includeOnlyNonTerminalState}) => ({
+    E.bindW("workflowTemplateIdentifier", () => {
+      if (!params.workflowTemplateIdentifier) return right(undefined)
+      if (typeof params.workflowTemplateIdentifier !== "string" || params.workflowTemplateIdentifier.length === 0) {
+        return E.left("request_invalid_workflow_template_identifier" as const)
+      }
+      return right(params.workflowTemplateIdentifier)
+    }),
+    map(({page, limit, include, includeOnlyNonTerminalState, workflowTemplateIdentifier}) => ({
       page,
       limit,
       include,
-      includeOnlyNonTerminalState
+      includeOnlyNonTerminalState,
+      workflowTemplateIdentifier
     }))
   )
 }
@@ -302,6 +312,7 @@ export function generateErrorResponseForListWorkflows(
     case "request_invalid_page":
     case "request_invalid_limit":
     case "request_invalid_include_only_non_terminal_state":
+    case "request_invalid_workflow_template_identifier":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request parameter`))
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))

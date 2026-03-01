@@ -99,12 +99,15 @@ export class WorkflowsController {
     @Query("limit") limit: unknown,
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
     @Query("include") include?: unknown,
-    @Query("include-only-non-terminal-state") includeOnlyNonTerminalState?: unknown
+    @Query("include-only-non-terminal-state") includeOnlyNonTerminalState?: unknown,
+    @Query("workflowTemplateIdentifier") workflowTemplateIdentifier?: unknown
   ): Promise<ListWorkflows200Response> {
     const eitherWorkflows = await pipe(
       TE.Do,
       TE.bindW("params", () =>
-        TE.fromEither(validateListWorkflowsParams({page, limit, include, includeOnlyNonTerminalState}))
+        TE.fromEither(
+          validateListWorkflowsParams({page, limit, include, includeOnlyNonTerminalState, workflowTemplateIdentifier})
+        )
       ),
       TE.bindW("workflowDecoratorSelector", ({params}) =>
         TE.right(includeArrayToWorkflowDecoratorSelector(params.include))
@@ -114,7 +117,10 @@ export class WorkflowsController {
           pagination: {page: params.page ?? 1, limit: params.limit ?? 20},
           include: workflowDecoratorSelector,
           requestor,
-          filters: params.includeOnlyNonTerminalState ? {includeOnlyNonTerminalState: true} : undefined
+          filters: {
+            includeOnlyNonTerminalState: params.includeOnlyNonTerminalState ? true : undefined,
+            workflowTemplateIdentifier: params.workflowTemplateIdentifier
+          }
         })
       ),
       TE.map(mapWorkflowListToApi),
