@@ -34,7 +34,14 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
     const {secret, trustedIssuers, audience} = configProvider.jwtConfig
 
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      jwtFromRequest: (req: Request) => {
+        // Try HttpOnly cookie first (browser clients)
+        const cookieToken = req?.cookies?.access_token
+        if (cookieToken) return cookieToken
+
+        // Fallback to Authorization header (CLI, agents)
+        return ExtractJwt.fromAuthHeaderAsBearerToken()(req)
+      },
       secretOrKey: secret,
       ignoreExpiration: false,
       // Enable request access in validate() to manually set request.requestor

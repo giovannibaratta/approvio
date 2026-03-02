@@ -34,7 +34,7 @@ import "expect-more-jest"
  * │    │ matching OIDC                                     │ with OIDC user  │              │
  * │    │                                                   │                 │              │
  * │ 2. Authentication Flow Simulation                                                       │
- * │    │ GET /auth/login ─────────────────────────────────►│ Generate PKCE   │              │
+ * │    │ GET /auth/web/login ─────────────────────────────►│ Generate PKCE   │              │
  * │    │                                                   │ & auth URL      │              │
  * │    │                              │                    │                 │              │
  * │    │ Extract auth URL ◄───────────────────────────────│ 302 Redirect    │              │
@@ -61,15 +61,12 @@ import "expect-more-jest"
  * │    │                              │ callback URL       │                 │              │
  * │    │                              │                    │                 │              │
  * │    │ Extract auth code            │ Final redirect:    │                 │              │
- * │    │ from final redirect          │ /auth/callback?    │                 │              │
+ * │    │ from final redirect          │ /auth/web/callback │                 │              │
  * │    │                              │ code=abc&state=xyz │                 │              │
  * │    │                              │                    │                 │              │
  * │ 4. Backend Integration Test                                                             │
- * │    │ GET /auth/callback ─────────────────────────────►│ Validate &      │              │
- * │    │ ?code=abc&state=xyz                               │ redirect to     │              │
- * │    │                              │                    │ /success        │              │
  * │    │                              │                    │                 │              │
- * │    │ POST /auth/token ───────────────────────────────►│ Retrieve PKCE ◄────────────────│
+ * │    │ POST /auth/cli/token ───────────────────────────►│ Retrieve PKCE ◄────────────────│
  * │    │ {code, state}                                     │ by state        │              │
  * │    │                              │                    │                 │              │
  * │    │                              │ Exchange tokens ◄─│ Use retrieved   │              │
@@ -159,14 +156,14 @@ describe("OIDC Flow Integration", () => {
       // Given: OIDC mock server is running and configured
 
       // When: User initiates login
-      const loginResponse = await request(app.getHttpServer()).get("/auth/login").expect(302)
+      const loginResponse = await request(app.getHttpServer()).get("/auth/web/login").expect(302)
 
       // Expect: Login redirects to OIDC provider with proper parameters
       const redirectLocation = loginResponse.headers.location
       expect(redirectLocation).toBeTruthy()
       expect(redirectLocation).toContain("response_type=code")
       expect(redirectLocation).toContain("client_id=integration-test-client-id")
-      expect(redirectLocation).toContain("redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fcallback")
+      expect(redirectLocation).toContain("redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fauth%2Fweb%2Fcallback")
       expect(redirectLocation).toContain("scope=openid+profile+email")
       expect(redirectLocation).toContain("code_challenge=")
       expect(redirectLocation).toContain("code_challenge_method=S256")
@@ -191,17 +188,8 @@ describe("OIDC Flow Integration", () => {
       const authCode = await simulateOidcAuthorization(redirectLocation!, testUser, configProvider)
       expect(authCode).toBeTruthy()
 
-      // When: OIDC provider redirects back to callback
-      const callbackResponse = await request(app.getHttpServer())
-        .get("/auth/callback")
-        .query({code: authCode, state: state})
-        .expect(302)
-
-      // Expect: Callback redirects to success with code and state
-      expect(callbackResponse.headers.location).toBe(`/auth/success?code=${authCode}&state=${state}`)
-
       // When: Frontend exchanges authorization code for JWT token
-      const tokenResponse = await request(app.getHttpServer()).post("/auth/token").send({
+      const tokenResponse = await request(app.getHttpServer()).post("/auth/cli/token").send({
         code: authCode,
         state: state
       })

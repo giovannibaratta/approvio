@@ -28,7 +28,7 @@ These variables are required for all providers:
 - `OIDC_ISSUER_URL`: The Issuer URL of the IDP (e.g., `https://accounts.google.com`).
 - `OIDC_CLIENT_ID`: The Client ID obtained from the IDP.
 - `OIDC_CLIENT_SECRET`: The Client Secret obtained from the IDP.
-- `OIDC_REDIRECT_URI`: The callback URL where the IDP redirects after login (e.g., `http://localhost:3000/auth/callback`).
+- `OIDC_REDIRECT_URI`: The callback URL where the IDP redirects after login (e.g., `http://localhost:3000/auth/web/callback`).
 - `OIDC_SCOPES`: (Optional) Space-separated list of scopes to request. Defaults to `openid profile email`.
 
 ### Discovery (Recommended)
@@ -76,6 +76,89 @@ OIDC_REDIRECT_URI=http://localhost:3000/auth/callback
 OIDC_AUTHORIZATION_ENDPOINT=https://idp.example.com/oauth2/authorize
 OIDC_TOKEN_ENDPOINT=https://idp.example.com/oauth2/token
 OIDC_USERINFO_ENDPOINT=https://idp.example.com/oauth2/userinfo
+```
+
+## Authentication Flows
+
+Approvio utilizes a Token Mediated Backend architecture to authenticate requests. The authentication process is categorized into three primary flows: Web, CLI, and Agent (Machine-to-Machine).
+
+### 1. Web Flow (Browser + Frontend)
+
+The Web flow uses standard OIDC redirection and secures the session via `httpOnly` cookies.
+
+**Endpoints:** `GET /auth/web/login`, `GET /auth/web/callback`, `POST /auth/web/refresh`, `POST /auth/web/initiatePrivilegedTokenExchange`, `POST /auth/web/exchangePrivilegedToken`
+
+```mermaid
+sequenceDiagram
+    participant F as Frontend (Browser)
+    participant W as WebAuthController
+    participant O as OIDC Provider
+
+    F->>W: GET /auth/web/login
+    W-->>F: 302 Redirect to OIDC Provider
+    F->>O: User Authentication & Consent
+    O-->>F: 302 Redirect to /auth/web/callback
+    F->>W: GET /auth/web/callback?code=...&state=...
+    Note over W,O: Backend exchanges code for OIDC tokens <br/> server-to-server via OidcClient
+    Note over W: Validates PKCE & JIT Provisions User <br/> Generates Approvio TokenPair
+    W-->>F: 302 Redirect to Frontend URL <br/> (Sets httpOnly access_token + refresh_token Cookies)
+
+    Note over F,W: Token Refresh
+    F->>W: POST /auth/web/refresh (refresh_token cookie)
+    W-->>F: 204 No Content (Rotates Cookies)
+```
+
+### 2. CLI Flow (Terminal + Browser)
+
+The CLI flow involves initiating login via the CLI, performing authentication on the host browser, and finally exchanging the code for programmatic tokens on the CLI.
+
+**Endpoints:** `POST /auth/cli/initiate`, `POST /auth/cli/token`, `POST /auth/cli/refresh`, `GET /auth/cli/initiatePrivilegedTokenExchange`, `POST /auth/cli/exchangePrivilegedToken`
+
+```mermaid
+sequenceDiagram
+    participant C as CLI
+    participant B as Host Browser
+    participant A as CliAuthController
+    participant O as OIDC Provider
+
+    C->>A: POST /auth/cli/initiate { redirectUri }
+    A-->>C: 200 { authorizationUrl }
+    C->>B: Opens local Browser
+    B->>O: User Authentication & Consent
+    O-->>B: 302 Redirect to CLI local server (redirectUri)
+    B-->>C: Returns code & state
+    C->>A: POST /auth/cli/token { code, state }
+    Note over A,O: Backend exchanges code for OIDC tokens <br/> server-to-server via OidcClient
+    Note over A: Validates PKCE & JIT Provisions User <br/> Generates Approvio TokenPair
+    A-->>C: 200 Returns Approvio Access & Refresh Tokens (JSON)
+
+    Note over C,A: Token Refresh
+    C->>A: POST /auth/cli/refresh { refreshToken }
+    A-->>C: 200 Returns new Access & Refresh Tokens (JSON)
+```
+
+### 3. Agent Flow (Machine-to-Machine)
+
+Agents use an asymmetric key-pair (JWT Assertion) mechanism to securely authenticate without interactive logins.
+
+**Endpoints:** `POST /auth/agents/challenge`, `POST /auth/agents/token`, `POST /auth/agents/refresh`
+
+```mermaid
+sequenceDiagram
+    participant M as Trusted Agent
+    participant A as AuthController
+
+    M->>A: POST /auth/agents/challenge { agentId }
+    A-->>M: 200 Returns PKCE Challenge
+    Note over M: Agent signs the challenge <br/> with its private key (Client Assertion JWT)
+    M->>A: POST /auth/agents/token { clientAssertion }
+    Note over A: Validates JWT Signature <br/> JIT Provisioning (if applicable)
+    A-->>M: 200 Returns AgentTokenResponse (Access + Refresh Tokens)
+
+    Note over M,A: Token Refresh (DPoP-bound)
+    M->>A: POST /auth/agents/refresh { refreshToken } + DPoP header
+    Note over A: Validates DPoP proof <br/> Verifies method & URL binding
+    A-->>M: 200 Returns new TokenResponse
 ```
 
 ## Troubleshooting

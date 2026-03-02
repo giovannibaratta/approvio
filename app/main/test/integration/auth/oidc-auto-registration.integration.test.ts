@@ -87,15 +87,14 @@ describe("OIDC Auto-Registration Integration", () => {
       }
 
       // When: User completes OIDC authentication flow
-      const loginResponse = await request(app.getHttpServer()).get("/auth/login").expect(302)
+      const loginResponse = await request(app.getHttpServer()).get("/auth/web/login").expect(302)
       const redirectLocation = loginResponse.headers.location
       const urlParams = new URLSearchParams(redirectLocation!.split("?")[1])
       const state = urlParams.get("state") ?? ""
 
       const authCode = await simulateOidcAuthorization(redirectLocation!, testUser, configProvider)
-      await request(app.getHttpServer()).get("/auth/callback").query({code: authCode, state: state}).expect(302)
 
-      const tokenResponse = await request(app.getHttpServer()).post("/auth/token").send({
+      const tokenResponse = await request(app.getHttpServer()).post("/auth/cli/token").send({
         code: authCode,
         state: state
       })
@@ -165,15 +164,14 @@ describe("OIDC Auto-Registration Integration", () => {
       }
 
       // When: Second user completes OIDC authentication flow
-      const loginResponse = await request(app.getHttpServer()).get("/auth/login").expect(302)
+      const loginResponse = await request(app.getHttpServer()).get("/auth/web/login").expect(302)
       const redirectLocation = loginResponse.headers.location
       const urlParams = new URLSearchParams(redirectLocation!.split("?")[1])
       const state = urlParams.get("state") ?? ""
 
       const authCode = await simulateOidcAuthorization(redirectLocation!, testUser, configProvider)
-      await request(app.getHttpServer()).get("/auth/callback").query({code: authCode, state: state}).expect(302)
 
-      const tokenResponse = await request(app.getHttpServer()).post("/auth/token").send({
+      const tokenResponse = await request(app.getHttpServer()).post("/auth/cli/token").send({
         code: authCode,
         state: state
       })
@@ -238,15 +236,14 @@ describe("OIDC Auto-Registration Integration", () => {
       }
 
       // When: Existing user completes OIDC authentication flow
-      const loginResponse = await request(app.getHttpServer()).get("/auth/login").expect(302)
+      const loginResponse = await request(app.getHttpServer()).get("/auth/web/login").expect(302)
       const redirectLocation = loginResponse.headers.location
       const urlParams = new URLSearchParams(redirectLocation!.split("?")[1])
       const state = urlParams.get("state") ?? ""
 
       const authCode = await simulateOidcAuthorization(redirectLocation!, testUser, configProvider)
-      await request(app.getHttpServer()).get("/auth/callback").query({code: authCode, state: state}).expect(302)
 
-      const tokenResponse = await request(app.getHttpServer()).post("/auth/token").send({
+      const tokenResponse = await request(app.getHttpServer()).post("/auth/cli/token").send({
         code: authCode,
         state: state
       })

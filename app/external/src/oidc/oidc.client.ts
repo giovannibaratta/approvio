@@ -32,7 +32,11 @@ export class OidcClient implements OidcProvider {
     return TE.right(this.oidcBootstrapService.getConfiguration().authorization_endpoint)
   }
 
-  getAuthorizationUrl(pkce: PkceChallenge, assuranceLevel: AssuranceLevel): TaskEither<OidcError, string> {
+  getAuthorizationUrl(
+    pkce: PkceChallenge,
+    assuranceLevel: AssuranceLevel,
+    redirectUri: string
+  ): TaskEither<OidcError, string> {
     return pipe(
       this.getAuthorizationEndpoint(),
       TE.chainW(authorizationEndpoint =>
@@ -43,7 +47,7 @@ export class OidcClient implements OidcProvider {
             const authUrl = new URL(authorizationEndpoint)
             authUrl.searchParams.append("response_type", "code")
             authUrl.searchParams.append("client_id", oidcConfig.clientId)
-            authUrl.searchParams.append("redirect_uri", oidcConfig.redirectUri)
+            authUrl.searchParams.append("redirect_uri", redirectUri)
             authUrl.searchParams.append("scope", oidcConfig.scopes || "openid profile email")
             authUrl.searchParams.append("state", pkce.state)
             authUrl.searchParams.append("code_challenge", pkce.codeChallenge)

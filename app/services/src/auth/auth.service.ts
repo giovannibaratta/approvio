@@ -18,7 +18,8 @@ import {
   RefreshToken,
   AuthenticatedEntity,
   StepUpOperation,
-  StepUpContext
+  StepUpContext,
+  REFRESH_TOKEN_EXPIRY_DAYS
 } from "@domain"
 import {
   OIDC_PROVIDER_TOKEN,
@@ -43,7 +44,8 @@ import {
   UseHighPrivilegeTokenError,
   PrivilegeTokenExchange,
   AssuranceLevel,
-  HighPrivilegeAuthError
+  HighPrivilegeAuthError,
+  PrivilegedToken
 } from "./interfaces"
 import {TokenPayloadBuilder} from "./auth-token"
 import {createSha256Hash, validateDpopJwt, logSuccess} from "@utils"
@@ -200,7 +202,9 @@ export class AuthService {
           TE.chainFirstW(({refreshToken}) => this.refreshTokenRepo.createToken(refreshToken)),
           TE.map(({accessToken, refreshToken}) => ({
             accessToken,
-            refreshToken: refreshToken.tokenValue
+            refreshToken: refreshToken.tokenValue,
+            accessTokenExpiresInSec: this.accessTokenExpirationSec,
+            refreshTokenExpiresInSec: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60
           }))
         )
       ),
@@ -208,22 +212,34 @@ export class AuthService {
     )
   }
 
-  private getRedirectUri(): string {
+  private getWebRedirectUri(): string {
     return this.configProvider.oidcConfig.redirectUri
   }
 
-  initiateOidcLogin(assuranceLevel: AssuranceLevel = AssuranceLevel.NONE): TaskEither<AuthError, string> {
+  initiateOidcLoginFromCli(redirectUri: string): TaskEither<AuthError, string> {
+    if (!this.isLoopbackRedirectUri(redirectUri)) return TE.left("auth_invalid_redirect_uri" as const)
+
+    return this.initiateOidcLogin(AssuranceLevel.NONE, redirectUri)
+  }
+
+  initiateOidcLogin(
+    assuranceLevel: AssuranceLevel = AssuranceLevel.NONE,
+    redirectUri?: string
+  ): TaskEither<AuthError, string> {
+    const finalRedirectUri = redirectUri ?? this.getWebRedirectUri()
     return pipe(
       TE.Do,
       TE.bindW("pkceChallenge", () => this.pkceService.generatePkceChallenge()),
       TE.chainFirstW(({pkceChallenge}) =>
         this.pkceService.storePkceData(pkceChallenge.state, {
           codeVerifier: pkceChallenge.codeVerifier,
-          redirectUri: this.getRedirectUri(),
+          redirectUri: finalRedirectUri,
           oidcState: pkceChallenge.state
         })
       ),
-      TE.chainW(({pkceChallenge}) => this.oidcClient.getAuthorizationUrl(pkceChallenge, assuranceLevel))
+      TE.chainW(({pkceChallenge}) =>
+        this.oidcClient.getAuthorizationUrl(pkceChallenge, assuranceLevel, finalRedirectUri)
+      )
     )
   }
 
@@ -318,7 +334,9 @@ export class AuthService {
       TE.chainFirstW(({refreshToken}) => this.refreshTokenRepo.createToken(refreshToken)),
       TE.map(({accessToken, refreshToken}) => ({
         accessToken,
-        refreshToken: refreshToken.tokenValue
+        refreshToken: refreshToken.tokenValue,
+        accessTokenExpiresInSec: this.accessTokenExpirationSec,
+        refreshTokenExpiresInSec: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60
       })),
       logSuccess("Agent token exchanged", "AuthService")
     )
@@ -355,7 +373,9 @@ export class AuthService {
       // Return token pair
       TE.map(({newAccessToken, refreshedToken}) => ({
         accessToken: newAccessToken,
-        refreshToken: refreshedToken.tokenValue
+        refreshToken: refreshedToken.tokenValue,
+        accessTokenExpiresInSec: this.accessTokenExpirationSec,
+        refreshTokenExpiresInSec: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60
       })),
       logSuccess("User token refreshed", "AuthService")
     )
@@ -396,7 +416,9 @@ export class AuthService {
       ),
       TE.map(({newAccessToken, refreshedToken}) => ({
         accessToken: newAccessToken,
-        refreshToken: refreshedToken.tokenValue
+        refreshToken: refreshedToken.tokenValue,
+        accessTokenExpiresInSec: this.accessTokenExpirationSec,
+        refreshTokenExpiresInSec: REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60
       })),
       logSuccess("Agent token refreshed", "AuthService")
     )
@@ -423,10 +445,10 @@ export class AuthService {
     )
   }
 
-  initiatePrivilegeTokenGeneration(): TaskEither<HighPrivilegeAuthError, string> {
+  initiatePrivilegeTokenGeneration(redirectUri?: string): TaskEither<HighPrivilegeAuthError, string> {
     if (!this.configProvider.isPrivilegeMode) return TE.left("auth_high_privilege_flow_disabled" as const)
 
-    return this.initiateOidcLogin(AssuranceLevel.FORCE_LOGIN)
+    return this.initiateOidcLogin(AssuranceLevel.FORCE_LOGIN, redirectUri)
   }
 
   /**
@@ -440,7 +462,7 @@ export class AuthService {
   exchangePrivilegeToken(
     request: PrivilegeTokenExchange,
     requestor: AuthenticatedEntity
-  ): TaskEither<HighPrivilegeAuthError, string> {
+  ): TaskEither<HighPrivilegeAuthError, PrivilegedToken> {
     if (!this.configProvider.isPrivilegeMode) return TE.left("auth_high_privilege_flow_disabled" as const)
 
     if (requestor.entityType !== "user")
@@ -468,12 +490,18 @@ export class AuthService {
         return pipe(
           this.stepUpTokenRepo.storeToken(jti, STEP_UP_TOKEN_EXPIRY_SECONDS),
           TE.chainW(() =>
-            this.generateJwtToken(requestor.user, {
-              operation: request.operation,
-              resource: request.resourceId,
-              jti,
-              expiresInSeconds: STEP_UP_TOKEN_EXPIRY_SECONDS
-            })
+            pipe(
+              this.generateJwtToken(requestor.user, {
+                operation: request.operation,
+                resource: request.resourceId,
+                jti,
+                expiresInSeconds: STEP_UP_TOKEN_EXPIRY_SECONDS
+              }),
+              TE.map(token => ({
+                token,
+                expiresInSec: STEP_UP_TOKEN_EXPIRY_SECONDS
+              }))
+            )
           )
         )
       }),
@@ -498,6 +526,17 @@ export class AuthService {
       return TE.left("step_up_resource_mismatch" as const)
 
     return this.stepUpTokenRepo.consumeToken(stepUpContext.jti)
+  }
+
+  private isLoopbackRedirectUri(uri: string): boolean {
+    try {
+      const parsed = new URL(uri)
+      const isLoopback = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1"
+      const isHttp = parsed.protocol === "http:" || parsed.protocol === "https:"
+      return isLoopback && isHttp
+    } catch {
+      return false
+    }
   }
 }
 

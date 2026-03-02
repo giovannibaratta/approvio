@@ -257,6 +257,8 @@ export class MockConfigProvider implements ConfigProviderInterface {
   jwtConfig: JwtConfig
   redisConfig: RedisConfig
   rateLimitConfig: RateLimitConfig
+  frontendUrl: string
+  cookieSecure: boolean
 
   private constructor(
     originalProvider?: ConfigProvider,
@@ -276,7 +278,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
         issuerUrl: "http://localhost:4011",
         clientId: "integration-test-client-id",
         clientSecret: "integration-test-client-secret",
-        redirectUri: "http://localhost:3000/auth/callback",
+        redirectUri: "http://localhost:3000/auth/web/callback",
         allowInsecure: true,
         override: undefined
       },
@@ -299,7 +301,9 @@ export class MockConfigProvider implements ConfigProviderInterface {
           port: 1234,
           db: 5
         }
-      }
+      },
+      frontendUrl: "http://localhost:5173",
+      cookieSecure: false
     }
 
     this.isPrivilegeMode = provider.isPrivilegeMode
@@ -311,6 +315,8 @@ export class MockConfigProvider implements ConfigProviderInterface {
     this.redisConfig =
       mocks.redisPrefix !== undefined ? {...provider.redisConfig, prefix: mocks.redisPrefix} : provider.redisConfig
     this.rateLimitConfig = mocks.rateLimitConfig || provider.rateLimitConfig
+    this.frontendUrl = provider.frontendUrl
+    this.cookieSecure = provider.cookieSecure
   }
 
   static fromDbConnectionUrl(dbConnectionUrl: string, redisPrefix?: string): MockConfigProvider {

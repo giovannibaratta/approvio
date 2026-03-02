@@ -146,15 +146,15 @@ async function getAccessToken(name: string, email: string): Promise<string> {
   console.log(`Getting access token for ${email}...`)
 
   // 1. Initiate login to get IDP redirect URL
-  console.log(`Initializing token exchange to ${API_URL}/auth/login`)
+  console.log(`Initializing token exchange to ${API_URL}/auth/web/login`)
 
-  const loginInitResponse = await axios.get(`${API_URL}/auth/login`, {
+  const loginInitResponse = await axios.get(`${API_URL}/auth/web/login`, {
     maxRedirects: 0,
     validateStatus: (status: number) => status === 302
   })
 
   const redirectLocation = loginInitResponse.headers.location
-  if (!redirectLocation) throw new Error("Failed to get IDP redirect URL from /auth/login")
+  if (!redirectLocation) throw new Error("Failed to get IDP redirect URL from /auth/web/login")
   // 2. Simulate OIDC flow
   const mockUser: OidcMockUser = {
     SubjectId: email,

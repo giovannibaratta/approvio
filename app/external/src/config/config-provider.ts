@@ -25,6 +25,8 @@ export class ConfigProvider implements ConfigProviderInterface {
   readonly jwtConfig: JwtConfig
   readonly redisConfig: RedisConfig
   readonly rateLimitConfig: RateLimitConfig
+  readonly frontendUrl: string
+  readonly cookieSecure: boolean
 
   constructor() {
     this.isPrivilegeMode = this.validatePrivilegeMode()
@@ -34,6 +36,8 @@ export class ConfigProvider implements ConfigProviderInterface {
     this.jwtConfig = this.validateJwtConfig()
     this.redisConfig = this.validateRedisConfig()
     this.rateLimitConfig = this.validateRateLimitConfig()
+    this.frontendUrl = this.validateFrontendUrl()
+    this.cookieSecure = this.validateCookieSecure()
   }
 
   private validatePrivilegeMode(): boolean {
@@ -322,5 +326,31 @@ export class ConfigProvider implements ConfigProviderInterface {
       db,
       prefix
     }
+  }
+
+  private validateFrontendUrl(): string {
+    const frontendUrl = process.env.FRONTEND_URL
+
+    if (!frontendUrl) throw new Error("FRONTEND_URL is not defined")
+    if (frontendUrl.length === 0) throw new Error("FRONTEND_URL cannot be empty")
+
+    try {
+      new URL(frontendUrl)
+    } catch {
+      throw new Error("FRONTEND_URL must be a valid URL")
+    }
+
+    return frontendUrl
+  }
+
+  private validateCookieSecure(): boolean {
+    const cookieSecureRaw = process.env.COOKIE_SECURE
+
+    if (cookieSecureRaw === undefined) return true
+
+    if (cookieSecureRaw.toLowerCase() !== "true" && cookieSecureRaw.toLowerCase() !== "false")
+      throw new Error("COOKIE_SECURE must be 'true' or 'false'")
+
+    return cookieSecureRaw.toLowerCase() === "true"
   }
 }

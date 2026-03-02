@@ -35,7 +35,10 @@ export const STEP_UP_TOKEN_REPOSITORY_TOKEN = "STEP_UP_TOKEN_REPOSITORY_TOKEN"
 export type AuthError =
   | PrefixUnion<
       "auth",
-      "token_generation_failed" | "authorization_url_generation_failed" | "missing_email_from_oidc_provider"
+      | "token_generation_failed"
+      | "authorization_url_generation_failed"
+      | "missing_email_from_oidc_provider"
+      | "invalid_redirect_uri"
     >
   | UserGetError
   | AutoRegisterError
@@ -174,7 +177,11 @@ export interface OidcProvider {
   /**
    * Generate a redirect URL to the IDP provider to obtain a token with the requested level of assurance
    */
-  getAuthorizationUrl(pkce: PkceChallenge, assuranceLevel: AssuranceLevel): TaskEither<OidcError, string>
+  getAuthorizationUrl(
+    pkce: PkceChallenge,
+    assuranceLevel: AssuranceLevel,
+    redirectUri: string
+  ): TaskEither<OidcError, string>
   /**
    * Validates the assurance level of the provided token
    */
@@ -267,6 +274,13 @@ export interface RefreshTokenRepository {
 export interface TokenPair {
   accessToken: string
   refreshToken: string
+  accessTokenExpiresInSec: number
+  refreshTokenExpiresInSec: number
+}
+
+export interface PrivilegedToken {
+  token: string
+  expiresInSec: number
 }
 
 export type StoreTokenError = UnknownError

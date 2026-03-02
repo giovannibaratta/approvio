@@ -100,18 +100,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@approvio/api@npm:0.0.26":
-  version: 0.0.26
-  resolution: "@approvio/api@npm:0.0.26"
-  checksum: 10/4ae9e36ad341dcf346dc11542a01b9dec50a8fcf0c41ef951288cb0f4547d2803c973ba3c5bf2b49069caf88d293514c2e832047ef52f5f64c14a1d4028d5143
+"@approvio/api@portal:/workspace/approvio-api::locator=%40approvio%2Fbackend%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@approvio/api@portal:/workspace/approvio-api::locator=%40approvio%2Fbackend%40workspace%3A."
   languageName: node
-  linkType: hard
+  linkType: soft
 
 "@approvio/backend@workspace:.":
   version: 0.0.0-use.local
   resolution: "@approvio/backend@workspace:."
   dependencies:
-    "@approvio/api": "npm:0.0.26"
+    "@approvio/api": "npm:0.0.28"
     "@eslint/js": "npm:10.0.1"
     "@nestjs/bull": "npm:11.0.4"
     "@nestjs/cli": "npm:11.0.16"
@@ -126,6 +125,7 @@ __metadata:
     "@prisma/client": "npm:7.4.2"
     "@prisma/driver-adapter-utils": "npm:7.4.2"
     "@types/chance": "npm:1.1.7"
+    "@types/cookie-parser": "npm:1.4.10"
     "@types/express": "npm:5.0.6"
     "@types/jest": "npm:30.0.0"
     "@types/jsonwebtoken": "npm:9.0.10"
@@ -141,6 +141,7 @@ __metadata:
     chance: "npm:1.1.13"
     class-transformer: "npm:0.5.1"
     class-validator: "npm:0.15.1"
+    cookie-parser: "npm:1.4.7"
     dotenv-cli: "npm:8.0.0"
     eslint: "npm:10.0.2"
     eslint-config-prettier: "npm:10.1.8"
@@ -2984,6 +2985,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/cookie-parser@npm:1.4.10":
+  version: 1.4.10
+  resolution: "@types/cookie-parser@npm:1.4.10"
+  peerDependencies:
+    "@types/express": "*"
+  checksum: 10/1f37b5a4115dbfd4b7bbea2d874fbf9495eca8c3e8c87fa7e38c50f9fff66222377c911cfdc7a1ea08855e822919c5534ebbcc4bf25b596bc6f7270e403483d9
+  languageName: node
+  linkType: hard
+
 "@types/cookiejar@npm:^2.1.5":
   version: 2.1.5
   resolution: "@types/cookiejar@npm:2.1.5"
@@ -5117,6 +5127,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"cookie-parser@npm:1.4.7":
+  version: 1.4.7
+  resolution: "cookie-parser@npm:1.4.7"
+  dependencies:
+    cookie: "npm:0.7.2"
+    cookie-signature: "npm:1.0.6"
+  checksum: 10/243fa13f217e793d20a57675e6552beea08c5989fcc68495d543997a31646875335e0e82d687b42dcfd466df57891d22bae7f5ba6ab33b7705ed2dd6eb989105
+  languageName: node
+  linkType: hard
+
+"cookie-signature@npm:1.0.6":
+  version: 1.0.6
+  resolution: "cookie-signature@npm:1.0.6"
+  checksum: 10/f4e1b0a98a27a0e6e66fd7ea4e4e9d8e038f624058371bf4499cfcd8f3980be9a121486995202ba3fca74fbed93a407d6d54d43a43f96fd28d0bd7a06761591a
+  languageName: node
+  linkType: hard
+
 "cookie-signature@npm:^1.2.1, cookie-signature@npm:^1.2.2":
   version: 1.2.2
   resolution: "cookie-signature@npm:1.2.2"
@@ -5131,7 +5158,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"cookie@npm:^0.7.1, cookie@npm:~0.7.1":
+"cookie@npm:0.7.2, cookie@npm:^0.7.1, cookie@npm:~0.7.1":
   version: 0.7.2
   resolution: "cookie@npm:0.7.2"
   checksum: 10/24b286c556420d4ba4e9bc09120c9d3db7d28ace2bd0f8ccee82422ce42322f73c8312441271e5eefafbead725980e5996cc02766dbb89a90ac7f5636ede608f

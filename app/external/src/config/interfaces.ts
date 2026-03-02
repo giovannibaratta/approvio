@@ -67,4 +67,8 @@ export interface ConfigProviderInterface {
   jwtConfig: JwtConfig
   redisConfig: RedisConfig
   rateLimitConfig: RateLimitConfig
+  /** URL of the frontend application. Used by the auth callback to redirect after login. */
+  frontendUrl: string
+  /** Whether to set the Secure flag on auth cookies. Set to false for local HTTP development. */
+  cookieSecure: boolean
 }

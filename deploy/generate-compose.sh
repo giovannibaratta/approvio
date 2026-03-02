@@ -16,7 +16,7 @@ LOG_LEVEL="info"
 OIDC_ISSUER_URL=""
 OIDC_CLIENT_ID=""
 OIDC_CLIENT_SECRET=""
-OIDC_REDIRECT_URI="http://localhost:3000/auth/callback"
+OIDC_REDIRECT_URI="http://localhost:3000/auth/web/callback"
 OIDC_ALLOW_INSECURE="false"
 
 # Parsing arguments

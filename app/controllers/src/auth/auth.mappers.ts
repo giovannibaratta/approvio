@@ -63,6 +63,7 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
     case "auth_missing_email_from_oidc_provider":
     case "user_not_found":
     case "request_invalid_user_identifier":
+    case "auth_invalid_redirect_uri":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
     case "refresh_token_reuse_detected":
     case "refresh_token_concurrent_update":
@@ -206,6 +207,7 @@ export function generateErrorResponseForExchangePrivilegeToken(
     case "request_missing_operation":
     case "request_invalid_operation":
     case "user_not_found":
+    case "auth_invalid_redirect_uri":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
     case "auth_token_generation_failed":
     case "unknown_error":
@@ -315,6 +317,7 @@ export function generateErrorResponseForRefreshAgentToken(
     case "user_not_found":
     case "request_invalid_user_identifier":
     case "request_invalid_dpop_jkt":
+    case "auth_invalid_redirect_uri":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid request`))
     case "refresh_token_concurrent_update":
     case "refresh_token_reuse_detected":
@@ -518,6 +521,7 @@ export function generateErrorResponseForGenerateToken(error: GenerateTokenError,
     case "auth_missing_email_from_oidc_provider":
     case "oidc_unknown_error":
     case "unknown_error":
+    case "auth_invalid_redirect_uri":
       return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "request_empty_body":
     case "request_missing_code":

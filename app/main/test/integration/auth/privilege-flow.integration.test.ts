@@ -76,7 +76,7 @@ describe("Privilege Flow Integration", () => {
   describe("Complete Privilege Token Flow", () => {
     it("should successfully complete step-up auth and enforce single-use", async () => {
       // 1. Initial Login to get a standard access token
-      const loginResponse = await request(app.getHttpServer()).get("/auth/login").expect(302)
+      const loginResponse = await request(app.getHttpServer()).get("/auth/web/login").expect(302)
       const loginLocation = loginResponse.headers.location
       const loginStateMatch = loginLocation?.match(/state=([^&]+)/)
       const loginState = loginStateMatch ? loginStateMatch[1] : null
@@ -86,10 +86,8 @@ describe("Privilege Flow Integration", () => {
 
       const loginCode = await simulateOidcAuthorization(loginLocation, testUser, configProvider)
 
-      await request(app.getHttpServer()).get(`/auth/callback?code=${loginCode}&state=${loginState}`).expect(302)
-
       const tokenResponse = await request(app.getHttpServer())
-        .post("/auth/token")
+        .post("/auth/cli/token")
         .send({code: loginCode, state: loginState})
         .expect(201)
 
@@ -98,7 +96,7 @@ describe("Privilege Flow Integration", () => {
 
       // 2. Initiate Privilege Token Exchange
       const initiateResponse = await request(app.getHttpServer())
-        .get("/auth/initiatePrivilegedTokenExchange")
+        .get("/auth/cli/initiatePrivilegedTokenExchange")
         .set("Authorization", `Bearer ${standardAccessToken}`)
         .expect(302)
 
@@ -117,7 +115,7 @@ describe("Privilege Flow Integration", () => {
       const targetResource = "test-resource-123"
 
       const exchangeResponse = await request(app.getHttpServer())
-        .post("/auth/exchangePrivilegedToken")
+        .post("/auth/cli/exchangePrivilegedToken")
         .set("Authorization", `Bearer ${standardAccessToken}`)
         .send({
           code: privilegeCode,

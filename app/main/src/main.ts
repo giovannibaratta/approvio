@@ -1,5 +1,4 @@
 import {NestFactory} from "@nestjs/core"
-import {globalValidationPipe} from "./validation-pipe"
 import {AppModule} from "./app.module"
 import {LogLevel} from "@nestjs/common"
 import {CustomLogger} from "./logging/custom-logger"
@@ -19,8 +18,9 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule, {logger: logger})
 
-  app.useGlobalPipes(globalValidationPipe)
   app.enableCors({
+    origin: process.env.FRONTEND_URL || true,
+    credentials: true, // Required for the browser to send/receive cookies and 'Authorization' headers.
     exposedHeaders: ["Location"]
   })
   app.enableShutdownHooks()

@@ -6,6 +6,9 @@ import {APP_GUARD} from "@nestjs/core"
 import {JwtAuthGuard} from "./auth"
 import {RateLimiterGuard} from "./rate-limiter"
 import {RequestIdMiddleware} from "./logging/request-id.middleware"
+import * as cookieParser from "cookie-parser"
+import {APP_PIPE} from "@nestjs/core"
+import {globalValidationPipe} from "./validation-pipe"
 
 @Module({
   imports: [ControllersModule, AuthModule, RateLimiterModule],
@@ -19,11 +22,15 @@ import {RequestIdMiddleware} from "./logging/request-id.middleware"
     {
       provide: APP_GUARD,
       useExisting: RateLimiterGuard
+    },
+    {
+      provide: APP_PIPE,
+      useValue: globalValidationPipe
     }
   ]
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(RequestIdMiddleware).forRoutes("*")
+    consumer.apply(cookieParser(), RequestIdMiddleware).forRoutes("*")
   }
 }

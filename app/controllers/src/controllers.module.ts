@@ -9,14 +9,16 @@ import {AuthModule} from "@app/auth"
 import {WorkflowsController} from "./workflows"
 import {WorkflowTemplatesController} from "./workflow-templates"
 import {WorkflowTemplateInternalController} from "./internal"
-import {AuthController} from "./auth"
+import {AuthController, WebAuthController, CliAuthController} from "./auth"
 import {RolesController} from "./roles"
 import {HealthController} from "./health"
+
+import {ConfigModule} from "@external/config.module"
 
 const internalControllers = [WorkflowTemplateInternalController]
 
 @Module({
-  imports: [ServiceModule, AuthModule],
+  imports: [ServiceModule, AuthModule, ConfigModule],
   controllers: [
     AgentsController,
     GroupsController,
@@ -26,6 +28,8 @@ const internalControllers = [WorkflowTemplateInternalController]
     WorkflowsController,
     WorkflowTemplatesController,
     AuthController,
+    WebAuthController,
+    CliAuthController,
     RolesController,
     HealthController,
     ...internalControllers
