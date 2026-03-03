@@ -73,6 +73,7 @@ export class UsersController {
   @Get()
   @HttpCode(HttpStatus.OK)
   async listUsers(
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
     @Query("search") search?: string,
     @Query("page") page?: string,
     @Query("limit") limit?: string
@@ -80,8 +81,7 @@ export class UsersController {
     const requestToService = (request: ListUsersRequest) => this.userService.listUsers(request)
 
     const eitherUsers = await pipe(
-      {search, page, limit},
-      mapToServiceRequest,
+      mapToServiceRequest({search, page, limit}, requestor),
       TE.fromEither,
       TE.chainW(requestToService),
       TE.map(mapUsersToApi),

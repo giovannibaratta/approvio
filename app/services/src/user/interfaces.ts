@@ -12,7 +12,7 @@ export type UserListValidationError =
   | "invalid_limit_number"
   | "search_too_long"
   | "search_term_invalid_characters"
-export type UserListError = UserListValidationError | UserSummaryValidationError | UnknownError
+export type UserListError = UserListValidationError | UserSummaryValidationError | AuthorizationError | UnknownError
 
 export interface PaginatedUsersList {
   readonly users: ReadonlyArray<UserSummary>
