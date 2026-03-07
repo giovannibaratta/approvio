@@ -27,13 +27,13 @@
     "start:worker:dev": "dotenv -e .env.local -- nest start worker --watch --debug",
     "test:setup": "yarn deps:start:test && yarn prisma:generate && yarn liquibase:update:test",
     "test": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest --maxWorkers=50%",
-    "test:all": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest app/**/*.test.ts",
+    "test:all": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest --maxWorkers=50% app/**/*.test.ts",
     "test:bootstrap-env": "yarn ts-node scripts/testing/bootstrap-env.ts",
     "generate:license": "generate-license-file"
   },
   "packageManager": "yarn@4.7.0",
   "dependencies": {
-    "@approvio/api": "0.0.28",
+    "@approvio/api": "0.0.29",
     "@nestjs/bull": "11.0.4",
     "@nestjs/common": "11.1.14",
     "@nestjs/core": "11.1.14",
@@ -106,8 +106,5 @@
     "webpack": "5.105.3",
     "wiremock": "3.13.2",
     "wiremock-captain": "4.1.3"
-  },
-  "resolutions": {
-    "@approvio/api": "portal:/workspace/approvio-api"
   }
 }

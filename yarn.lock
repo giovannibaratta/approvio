@@ -100,17 +100,18 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@approvio/api@portal:/workspace/approvio-api::locator=%40approvio%2Fbackend%40workspace%3A.":
-  version: 0.0.0-use.local
-  resolution: "@approvio/api@portal:/workspace/approvio-api::locator=%40approvio%2Fbackend%40workspace%3A."
+"@approvio/api@npm:0.0.29":
+  version: 0.0.29
+  resolution: "@approvio/api@npm:0.0.29"
+  checksum: 10/da68a9a43a8191294d722a9aa2da071bf534309bd1c2e879d42fe57bc344b35f606b4cc7f8b321559a5c078faab442c5d3c49d4db142d1b8dc990f3e45a04fa0
   languageName: node
-  linkType: soft
+  linkType: hard
 
 "@approvio/backend@workspace:.":
   version: 0.0.0-use.local
   resolution: "@approvio/backend@workspace:."
   dependencies:
-    "@approvio/api": "npm:0.0.28"
+    "@approvio/api": "npm:0.0.29"
     "@eslint/js": "npm:10.0.1"
     "@nestjs/bull": "npm:11.0.4"
     "@nestjs/cli": "npm:11.0.16"
