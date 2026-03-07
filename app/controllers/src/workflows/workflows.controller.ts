@@ -23,13 +23,13 @@ import {
   validateListWorkflowsParams,
   validateGetWorkflowParams,
   mapVoteListToApi,
-  generateErrorResponseForListVotes
+  generateErrorResponseForListVotes,
+  WorkflowInclude
 } from "./workflows.mappers"
 import {
   Workflow as WorkflowApi,
   CanVoteResponse as CanVoteResponseApi,
   ListWorkflows200Response,
-  WorkflowInclude,
   GetWorkflowVotes200Response
 } from "@approvio/api"
 
