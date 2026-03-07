@@ -1,7 +1,7 @@
 import {ApprovalRuleData, ApprovalRuleType} from "@domain"
 import {
   ApprovalRule as ApprovalRuleApi,
-  RoleAssignmentItem,
+  RoleOperationItem,
   RoleAssignmentRequest,
   RoleRemovalRequest,
   RoleScope,
@@ -104,7 +104,7 @@ function validateRequestStructure(
 
 function validateRolesArray(request: {
   roles: [unknown, ...unknown[]]
-}): Either<RoleOperationChangeValidationError, {roles: RoleAssignmentItem[]}> {
+}): Either<RoleOperationChangeValidationError, {roles: RoleOperationItem[]}> {
   return pipe(
     request.roles,
     A.traverse(E.Applicative)(role => validateSingleRole(role)),
@@ -112,7 +112,7 @@ function validateRolesArray(request: {
   )
 }
 
-function validateSingleRole(role: unknown): Either<RoleOperationChangeValidationError, RoleAssignmentItem> {
+function validateSingleRole(role: unknown): Either<RoleOperationChangeValidationError, RoleOperationItem> {
   return pipe(
     E.Do,
     E.bindW("structure", () => validateRoleStructure(role)),

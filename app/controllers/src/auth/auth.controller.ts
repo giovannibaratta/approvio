@@ -12,7 +12,7 @@ import {
   AgentTokenResponse,
   RefreshTokenRequest,
   AgentTokenRequest,
-  GetUserInfo200Response
+  GetEntityInfo200Response
 } from "@approvio/api"
 import {
   mapAgentChallengeRequestToService,
@@ -56,7 +56,7 @@ export class AuthController {
   @Get("info")
   async getEntityInfo(
     @GetAuthenticatedEntity() authenticatedEntity: AuthenticatedEntity
-  ): Promise<GetUserInfo200Response> {
+  ): Promise<GetEntityInfo200Response> {
     const result = await pipe(
       this.identityService.getIdentityGroups(authenticatedEntity),
       TE.map(groups => mapToEntityInfoResponse(authenticatedEntity, groups))

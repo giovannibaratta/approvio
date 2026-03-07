@@ -18,7 +18,6 @@ import {
   Workflow as WorkflowApi,
   ListWorkflowsParams,
   GetWorkflowParams,
-  WorkflowInclude,
   GetWorkflowVotes200Response,
   WorkflowVote
 } from "@approvio/api"
@@ -876,3 +875,6 @@ export function generateErrorResponseForListVotes(error: FindVotesError, context
       )
   }
 }
+
+// OpenApi does not export this model
+export type WorkflowInclude = "workflow-template"
