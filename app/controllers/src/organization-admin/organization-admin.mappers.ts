@@ -45,6 +45,7 @@ export function listOrganizationAdminsApiToServiceModel(data: {
   organizationName: string
   page?: string
   limit?: string
+  requestor: AuthenticatedEntity
 }): Either<"invalid_number_format", ListOrganizationAdminsRequest> {
   const parseNumber = (value: string | undefined): Either<"invalid_number_format", number | undefined> => {
     if (value === undefined) return right(undefined)
@@ -58,7 +59,7 @@ export function listOrganizationAdminsApiToServiceModel(data: {
     bindW("organizationName", () => right(data.organizationName)),
     bindW("page", () => parseNumber(data.page)),
     bindW("limit", () => parseNumber(data.limit)),
-    map(({organizationName, page, limit}) => ({organizationName, page, limit}))
+    map(({organizationName, page, limit}) => ({organizationName, page, limit, requestor: data.requestor}))
   )
 }
 
@@ -142,6 +143,10 @@ export function generateErrorResponseForListOrganizationAdmins(
     case "invalid_page_number":
     case "invalid_limit_number":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid pagination parameters`))
+    case "requestor_not_authorized":
+      return new ForbiddenException(
+        generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
+      )
     case "organization_admin_email_empty":
     case "organization_admin_email_too_long":
     case "organization_admin_email_invalid":

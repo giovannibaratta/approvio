@@ -16,6 +16,7 @@ export type OrganizationAdminListError =
   | "organization_not_found"
   | "invalid_page_number"
   | "invalid_limit_number"
+  | AuthorizationError
   | OrganizationAdminValidationError
   | UnknownError
 
