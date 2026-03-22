@@ -36,9 +36,9 @@ import {
   WorkflowTemplate as PrismaWorkflowTemplate
 } from "@prisma/client"
 import {Versioned} from "@domain"
-import * as E from "fp-ts/lib/Either"
-import {Either} from "fp-ts/lib/Either"
-import {pipe} from "fp-ts/lib/function"
+import * as E from "fp-ts/Either"
+import {Either} from "fp-ts/Either"
+import {pipe} from "fp-ts/function"
 import {PrismaGroupWithCount} from "./group.repository"
 import {Prisma} from "@prisma/client"
 import {PrismaUserWithOrgAdmin, UserSummaryRepo} from "./user.repository"

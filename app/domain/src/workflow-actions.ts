@@ -1,5 +1,5 @@
 import {getStringAsEnum, isEmail, isObject, isValidUrl, PrefixUnion} from "@utils"
-import {Either, left, right, traverseArray} from "fp-ts/lib/Either"
+import {Either, left, right, traverseArray} from "fp-ts/Either"
 
 export enum WebhookActionHttpMethod {
   GET = "GET",

@@ -10,9 +10,9 @@ import {WorkflowActionEmailTaskFactory, TaskStatus, WorkflowStatus} from "@domai
 import {Job} from "bull"
 import {WorkflowActionEmailEvent} from "@domain/events"
 import {randomUUID} from "crypto"
-import {isLeft} from "fp-ts/lib/Either"
+import {isLeft} from "fp-ts/Either"
 import axios from "axios"
-import {isNone} from "fp-ts/lib/Option"
+import {isNone} from "fp-ts/Option"
 import {EmailService} from "@services/email/email.service"
 import * as TE from "fp-ts/TaskEither"
 

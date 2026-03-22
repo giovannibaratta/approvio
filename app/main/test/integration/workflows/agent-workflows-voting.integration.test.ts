@@ -27,7 +27,7 @@ import {
 import {get, post} from "@test/requests"
 import {TokenPayloadBuilder} from "@services"
 import {mapAgentToDomain} from "@external/database/shared"
-import {isLeft} from "fp-ts/lib/Either"
+import {isLeft} from "fp-ts/Either"
 import {getQueueToken} from "@nestjs/bull"
 import {WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"
 import {Queue} from "bull"

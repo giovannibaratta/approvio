@@ -43,7 +43,7 @@ import {
   Vote
 } from "@domain"
 import {mapWorkflowTemplateToApi} from "@controllers/workflow-templates"
-import {pipe} from "fp-ts/lib/function"
+import {pipe} from "fp-ts/function"
 
 type CreateWorkflowApiError =
   | "name_missing"

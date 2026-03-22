@@ -1,4 +1,4 @@
-import {Either, isLeft, isRight} from "fp-ts/lib/Either"
+import {Either, isLeft, isRight} from "fp-ts/Either"
 
 export const unwrapRight = <L, R>(either: Either<L, R>): R => {
   if (isLeft(either)) throw new Error(`Failed to unwrap Either right. Either is left: ${either.left}`)

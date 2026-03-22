@@ -31,7 +31,7 @@ import {Prisma, WorkflowActionsWebhookTask as PrismaWorkflowActionsWebhookTask} 
 import {ConcurrentUpdateError} from "./shared"
 import {TaskLockedByOtherError, TaskNotFoundError, TaskUnknownError} from "./task.exceptions"
 import {mapToNullableJsonValue} from "./shared/json-mappers"
-import {pipe} from "fp-ts/lib/function"
+import {pipe} from "fp-ts/function"
 
 @Injectable()
 export class PrismaTaskRepository implements TaskRepository {

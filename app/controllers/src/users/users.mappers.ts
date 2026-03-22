@@ -23,7 +23,7 @@ import {
 } from "@services"
 import {bindW, Do, Either, map, right, left} from "fp-ts/Either"
 import {generateErrorPayload} from "../error"
-import {pipe} from "fp-ts/lib/function"
+import {pipe} from "fp-ts/function"
 import * as O from "fp-ts/Option"
 import {Option} from "fp-ts/Option"
 import {RoleAssignmentValidationError, RoleRemovalValidationError} from "@controllers/shared"

@@ -1,4 +1,4 @@
-import {Either, isLeft, left, right} from "fp-ts/lib/Either"
+import {Either, isLeft, left, right} from "fp-ts/Either"
 import {DecorableEntity, PrefixUnion, hasOwnProperty, isDecoratedWith, isEmail} from "@utils"
 import {
   Lock,
@@ -7,9 +7,9 @@ import {
   WorkflowActionTaskFactory,
   WorkflowActionTaskValidationError
 } from "./base"
-import * as A from "fp-ts/lib/Array"
-import * as E from "fp-ts/lib/Either"
-import {pipe} from "fp-ts/lib/function"
+import * as A from "fp-ts/Array"
+import * as E from "fp-ts/Either"
+import {pipe} from "fp-ts/function"
 
 export type WorkflowActionEmailTask = Readonly<WorkflowActionEmailTaskData>
 

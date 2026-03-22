@@ -1,7 +1,7 @@
 import {Vote, VoteValidationError, EntityReference} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 import {UnknownError} from "@services/error"
-import {Option} from "fp-ts/lib/Option"
+import {Option} from "fp-ts/Option"
 import {WorkflowGetError} from "../workflow/interfaces"
 
 export const VOTE_REPOSITORY_TOKEN = "VoteRepositoryToken"

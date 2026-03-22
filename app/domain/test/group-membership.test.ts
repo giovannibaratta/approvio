@@ -11,7 +11,7 @@ import {
 } from "@domain"
 import {SystemRole} from "../src/system-role"
 
-import {Either, isLeft, isRight} from "fp-ts/lib/Either"
+import {Either, isLeft, isRight} from "fp-ts/Either"
 
 // Helpers for unwrapping Either in tests
 const unwrapRight = <L, R>(either: Either<L, R>): R => {

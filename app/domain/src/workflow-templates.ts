@@ -1,6 +1,6 @@
 import {randomUUID} from "crypto"
 import * as E from "fp-ts/Either"
-import {Either, isLeft, left, right} from "fp-ts/lib/Either"
+import {Either, isLeft, left, right} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 import {ApprovalRule, ApprovalRuleFactory, ApprovalRuleValidationError} from "./approval-rules"
 import {WorkflowAction, WorkflowActionValidationError, validateWorkflowActions} from "./workflow-actions"

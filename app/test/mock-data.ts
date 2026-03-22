@@ -22,7 +22,7 @@ import {
   WorkflowStatus
 } from "@domain"
 import {mapToDomainVersionedUser} from "@external/database/shared"
-import {isLeft} from "fp-ts/lib/Either"
+import {isLeft} from "fp-ts/Either"
 
 import {Chance} from "chance"
 import {
@@ -34,8 +34,8 @@ import {
   RedisConfig,
   RateLimitConfig
 } from "@external/config"
-import {Option} from "fp-ts/lib/Option"
-import * as O from "fp-ts/lib/Option"
+import {Option} from "fp-ts/Option"
+import * as O from "fp-ts/Option"
 import {createSha256Hash} from "@utils"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "@external/database/constants"
 

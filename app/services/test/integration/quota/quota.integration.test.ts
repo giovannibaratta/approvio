@@ -1,6 +1,6 @@
 import {QuotaFactory, QuotaIdentifier} from "@domain"
 import {QuotaRepository, QuotaService} from "@services"
-import {isRight} from "fp-ts/lib/Either"
+import {isRight} from "fp-ts/Either"
 
 import {Test, TestingModule} from "@nestjs/testing"
 import {ServiceModule} from "@services/service.module"

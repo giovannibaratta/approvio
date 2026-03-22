@@ -1,9 +1,9 @@
 import {Inject, Injectable} from "@nestjs/common"
 import {EmailProviderExternal, EmailError, EMAIL_EXTERNAL_TOKEN, Email} from "./email.interface"
-import {TaskEither} from "fp-ts/lib/TaskEither"
-import * as TE from "fp-ts/lib/TaskEither"
+import {TaskEither} from "fp-ts/TaskEither"
+import * as TE from "fp-ts/TaskEither"
 import {isEmail} from "@utils"
-import {pipe} from "fp-ts/lib/function"
+import {pipe} from "fp-ts/function"
 
 @Injectable()
 export class EmailService {

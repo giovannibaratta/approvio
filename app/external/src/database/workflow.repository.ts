@@ -28,7 +28,7 @@ import * as E from "fp-ts/Either"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 import {isPrismaUniqueConstraintError} from "./errors"
 import * as TE from "fp-ts/TaskEither"
-import {pipe} from "fp-ts/lib/function"
+import {pipe} from "fp-ts/function"
 import {DecorableEntity, isDecoratedWith} from "@utils/types"
 
 interface Identifier {

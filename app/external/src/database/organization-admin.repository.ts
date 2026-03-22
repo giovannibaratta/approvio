@@ -10,13 +10,13 @@ import {
   PaginatedOrganizationAdminsList,
   ListOrganizationAdminsRepoRequest
 } from "@services"
-import * as TE from "fp-ts/lib/TaskEither"
-import {TaskEither} from "fp-ts/lib/TaskEither"
-import {pipe} from "fp-ts/lib/function"
+import * as TE from "fp-ts/TaskEither"
+import {TaskEither} from "fp-ts/TaskEither"
+import {pipe} from "fp-ts/function"
 import {DatabaseClient} from "./database-client"
 import {mapOrganizationAdminToDomain} from "./shared"
-import * as E from "fp-ts/lib/Either"
-import {traverseArray} from "fp-ts/lib/Either"
+import * as E from "fp-ts/Either"
+import {traverseArray} from "fp-ts/Either"
 
 @Injectable()
 export class OrganizationAdminDbRepository implements OrganizationAdminRepository {

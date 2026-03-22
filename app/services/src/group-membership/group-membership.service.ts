@@ -20,7 +20,7 @@ import {AgentRepository, AGENT_REPOSITORY_TOKEN} from "@services/agent/interface
 import {isUUIDv4, logSuccess} from "@utils"
 import * as A from "fp-ts/Array"
 import {pipe} from "fp-ts/function"
-import {isLeft} from "fp-ts/lib/Either"
+import {isLeft} from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
 import {

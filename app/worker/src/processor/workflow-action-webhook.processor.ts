@@ -8,7 +8,7 @@ import {WORKER_ID} from "../worker.constants"
 import {WorkflowActionType, WorkflowActionWebhookEvent, WorkflowActionWebhookTaskFactory} from "@domain"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
-import {isLeft} from "fp-ts/lib/Either"
+import {isLeft} from "fp-ts/Either"
 
 @Injectable()
 @Processor(WORKFLOW_ACTION_WEBHOOK_QUEUE)

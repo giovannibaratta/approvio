@@ -1,7 +1,7 @@
 import {Space, SpaceValidationError, User} from "@domain"
 import {RequestorAwareRequest} from "@services/shared/types"
 import {Versioned} from "@domain"
-import {TaskEither} from "fp-ts/lib/TaskEither"
+import {TaskEither} from "fp-ts/TaskEither"
 import {UnknownError} from "@services/error"
 
 // Repository interfaces

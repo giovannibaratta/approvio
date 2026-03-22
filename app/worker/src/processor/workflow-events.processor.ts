@@ -20,7 +20,7 @@ import {
 import {TaskCreateError, TaskService} from "@services"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
-import {isLeft} from "fp-ts/lib/Either"
+import {isLeft} from "fp-ts/Either"
 import {WorkflowService} from "@services"
 
 @Processor(WORKFLOW_STATUS_CHANGED_QUEUE)

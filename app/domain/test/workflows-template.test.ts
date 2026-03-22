@@ -8,7 +8,7 @@ import {
 } from "@domain"
 import {createMembership, createGroupRequirementRule, createAndRule, createOrRule} from "./workflow-test-helpers"
 import {randomUUID} from "crypto"
-import {isRight} from "fp-ts/lib/Either"
+import {isRight} from "fp-ts/Either"
 import "@utils/matchers"
 
 /**
