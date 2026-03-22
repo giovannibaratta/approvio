@@ -14,7 +14,7 @@ import {
 import {Either, right, left, chain} from "fp-ts/Either"
 import * as E from "fp-ts/Either"
 import * as A from "fp-ts/Array"
-import {pipe} from "fp-ts/lib/function"
+import {pipe} from "fp-ts/function"
 import {PrefixUnion, isUUIDv4} from "@utils"
 
 /** Map the domain model to the API model */

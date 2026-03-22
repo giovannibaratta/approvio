@@ -15,7 +15,7 @@ import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import {TokenPayloadBuilder} from "@services"
 import {mapAgentToDomain} from "@external/database/shared"
-import {isLeft} from "fp-ts/lib/Either"
+import {isLeft} from "fp-ts/Either"
 import {EntityType} from "@controllers/groups/groups.mappers"
 
 type AgentWithToken = {

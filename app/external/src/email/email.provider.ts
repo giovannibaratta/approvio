@@ -3,9 +3,9 @@ import {Email, EmailExternalError, EmailProviderExternal} from "@services"
 import {Injectable, Logger} from "@nestjs/common"
 import {ConfigProvider} from "@external/config"
 import {EmailProviderConfig} from "@external/config/interfaces"
-import {isNone, isSome, Option} from "fp-ts/lib/Option"
-import {TaskEither} from "fp-ts/lib/TaskEither"
-import * as TE from "fp-ts/lib/TaskEither"
+import {isNone, isSome, Option} from "fp-ts/Option"
+import {TaskEither} from "fp-ts/TaskEither"
+import * as TE from "fp-ts/TaskEither"
 
 @Injectable()
 export class NodemailerEmailProvider implements EmailProviderExternal {

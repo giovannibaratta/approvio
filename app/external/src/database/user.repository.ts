@@ -12,15 +12,15 @@ import {
   UserUpdateError
 } from "@services"
 import {Versioned} from "@domain"
-import * as TE from "fp-ts/lib/TaskEither"
-import {TaskEither} from "fp-ts/lib/TaskEither"
-import {pipe} from "fp-ts/lib/function"
+import * as TE from "fp-ts/TaskEither"
+import {TaskEither} from "fp-ts/TaskEither"
+import {pipe} from "fp-ts/function"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 import {DatabaseClient} from "./database-client"
 import {mapRolesToPrisma, mapToDomainUserSummary, mapToDomainVersionedUser, mapUserToDomain} from "./shared"
 import {areAllRights, chainNullableToLeft} from "./utils"
-import {isLeft} from "fp-ts/lib/Either"
-import * as E from "fp-ts/lib/Either"
+import {isLeft} from "fp-ts/Either"
+import * as E from "fp-ts/Either"
 import {randomUUID} from "crypto"
 
 interface Identifier {

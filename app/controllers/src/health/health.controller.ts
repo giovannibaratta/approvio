@@ -1,9 +1,9 @@
 import {Controller, Get, ServiceUnavailableException} from "@nestjs/common"
 import {HealthService} from "@services/health"
 import {PublicRoute} from "../../../main/src/auth/jwt.authguard"
-import {isLeft} from "fp-ts/lib/Either"
+import {isLeft} from "fp-ts/Either"
 import {HealthResponse} from "@approvio/api"
-import {pipe} from "fp-ts/lib/function"
+import {pipe} from "fp-ts/function"
 import {mapToGetHealthResponse} from "./health.mapper"
 import * as TE from "fp-ts/TaskEither"
 

@@ -10,7 +10,7 @@ import {WorkflowActionWebhookTaskFactory, TaskStatus, WebhookActionHttpMethod, W
 import {Job} from "bull"
 import {WorkflowActionWebhookEvent} from "@domain/events"
 import {randomUUID} from "crypto"
-import {isLeft} from "fp-ts/lib/Either"
+import {isLeft} from "fp-ts/Either"
 import {createWiremockUrl, getWiremockRequestsFor, setupWiremockStub} from "@test/wiremock"
 
 async function createWorkflowWithWebhookTask(

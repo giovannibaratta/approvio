@@ -1,5 +1,5 @@
 import {hasOwnProperty} from "@utils"
-import {Either} from "fp-ts/lib/Either"
+import {Either} from "fp-ts/Either"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
 

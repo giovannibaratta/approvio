@@ -5,11 +5,11 @@ import {PersistVoteError, GetLatestVoteError, VoteRepository, FindVotesError} fr
 import * as E from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
-import {none, Option, some} from "fp-ts/lib/Option"
-import {pipe} from "fp-ts/lib/function"
+import {none, Option, some} from "fp-ts/Option"
+import {pipe} from "fp-ts/function"
 import {DatabaseClient} from "./database-client"
 import {isPrismaForeignKeyConstraintError} from "./errors"
-import {traverseArray} from "fp-ts/lib/Either"
+import {traverseArray} from "fp-ts/Either"
 
 @Injectable()
 export class VoteDbRepository implements VoteRepository {

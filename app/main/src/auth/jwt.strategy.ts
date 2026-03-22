@@ -4,7 +4,7 @@ import {PassportStrategy} from "@nestjs/passport"
 import {ExtractJwt, Strategy} from "passport-jwt"
 import {TokenPayloadValidator, UserService, AgentService} from "@services"
 import {generateErrorPayload} from "@controllers/error"
-import {isRight} from "fp-ts/lib/Either"
+import {isRight} from "fp-ts/Either"
 import {ConfigProvider} from "@external/config"
 import {AuthenticatedEntity, StepUpContext, isStepUpOperation, AuthenticatedUser, AuthenticatedAgent} from "@domain"
 

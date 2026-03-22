@@ -1,7 +1,7 @@
 import {Controller, Get, Post, Body, HttpCode, Logger, Headers, Req} from "@nestjs/common"
 import {Request} from "express"
 import {AuthService, GenerateChallengeRequest, IdentityService} from "@services"
-import {isLeft} from "fp-ts/lib/Either"
+import {isLeft} from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {PublicRoute} from "../../../main/src/auth/jwt.authguard"
 import {GetAuthenticatedEntity} from "../../../main/src/auth"
@@ -23,7 +23,7 @@ import {
   validateAgentTokenRequest,
   validateAgentChallengeRequest
 } from "./agent-auth.mappers"
-import {pipe} from "fp-ts/lib/function"
+import {pipe} from "fp-ts/function"
 import {AuthenticatedEntity} from "@domain"
 import {validateRefreshAgentTokenRequest} from "./auth.validators"
 import {

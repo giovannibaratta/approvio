@@ -1,7 +1,7 @@
 import {Quota, QuotaIdentifier, QuotaValidationError, Versioned} from "@domain"
 import {ConcurrentModificationError, UnknownError} from "@services/error"
 import {PrefixUnion} from "@utils"
-import {TaskEither} from "fp-ts/lib/TaskEither"
+import {TaskEither} from "fp-ts/TaskEither"
 
 export type QuotaGetError = PrefixUnion<"quota", "not_found" | UnknownError> | QuotaValidationError
 export type QuotaCreateError = PrefixUnion<"quota", UnknownError | "already_exists"> | QuotaValidationError

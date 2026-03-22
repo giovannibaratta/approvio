@@ -1,6 +1,6 @@
 import {Injectable} from "@nestjs/common"
-import {Option} from "fp-ts/lib/Option"
-import * as O from "fp-ts/lib/Option"
+import {Option} from "fp-ts/Option"
+import * as O from "fp-ts/Option"
 import {
   ConfigProviderInterface,
   DEFAULT_RATE_LIMIT_DURATION_IN_SECONDS,

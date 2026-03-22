@@ -1,7 +1,7 @@
 import {isUUIDv4, PrefixUnion} from "@utils"
 import * as E from "fp-ts/Either"
-import {Either, left, right} from "fp-ts/lib/Either"
-import {pipe} from "fp-ts/lib/function"
+import {Either, left, right} from "fp-ts/Either"
+import {pipe} from "fp-ts/function"
 import * as A from "fp-ts/Array"
 import {ApproveVote, getNormalizedEntityId} from "@domain"
 

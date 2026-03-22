@@ -13,11 +13,11 @@ import {
   AgentChallengeUpdateError,
   GetChallengeByNonceError
 } from "@services"
-import * as TE from "fp-ts/lib/TaskEither"
-import {TaskEither} from "fp-ts/lib/TaskEither"
-import {pipe} from "fp-ts/lib/function"
+import * as TE from "fp-ts/TaskEither"
+import {TaskEither} from "fp-ts/TaskEither"
+import {pipe} from "fp-ts/function"
 import {DatabaseClient} from "./database-client"
-import * as E from "fp-ts/lib/Either"
+import * as E from "fp-ts/Either"
 import {chainNullableToLeft} from "./utils"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 

@@ -17,9 +17,9 @@ import {
 } from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
-import {pipe} from "fp-ts/lib/function"
+import {pipe} from "fp-ts/function"
 import * as E from "fp-ts/Either"
-import * as TE from "fp-ts/lib/TaskEither"
+import * as TE from "fp-ts/TaskEither"
 import {
   createUserApiToServiceModel,
   generateErrorResponseForCreateUser,

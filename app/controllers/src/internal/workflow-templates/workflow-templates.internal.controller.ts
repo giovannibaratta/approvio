@@ -1,8 +1,8 @@
 import {Controller, HttpCode, HttpStatus, Param, Post} from "@nestjs/common"
 import {WorkflowTemplateService} from "@services"
 import {isLeft} from "fp-ts/Either"
-import {pipe} from "fp-ts/lib/function"
-import * as TE from "fp-ts/lib/TaskEither"
+import {pipe} from "fp-ts/function"
+import * as TE from "fp-ts/TaskEither"
 import {generateErrorResponseForCancelWorkflowsForTemplate} from "./workflow-templates.mappers"
 
 export const WORKFLOW_TEMPLATE_INTERNAL_ENDPOINT_ROOT = "internal/workflow-template"

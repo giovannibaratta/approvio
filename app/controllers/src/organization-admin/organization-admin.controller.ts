@@ -8,8 +8,8 @@ import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query,
 import {OrganizationAdminService} from "@services"
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
-import {pipe} from "fp-ts/lib/function"
-import * as TE from "fp-ts/lib/TaskEither"
+import {pipe} from "fp-ts/function"
+import * as TE from "fp-ts/TaskEither"
 import {
   addOrganizationAdminApiToServiceModel,
   listOrganizationAdminsApiToServiceModel,

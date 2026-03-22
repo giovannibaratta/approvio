@@ -9,8 +9,8 @@ import {
 } from "@domain"
 import {isUUIDv4, PrefixUnion} from "@utils"
 import * as A from "fp-ts/Array"
-import {Applicative, Do, Either, isLeft, left, right, chain, bindW} from "fp-ts/lib/Either"
-import {pipe} from "fp-ts/lib/function"
+import {Applicative, Do, Either, isLeft, left, right, chain, bindW} from "fp-ts/Either"
+import {pipe} from "fp-ts/function"
 import {RolePermissionChecker} from "./permission-checker"
 import {GroupScope} from "./role"
 

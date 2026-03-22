@@ -1,4 +1,4 @@
-import {Either, isLeft, left, right} from "fp-ts/lib/Either"
+import {Either, isLeft, left, right} from "fp-ts/Either"
 import {DecorableEntity, PrefixUnion, getStringAsEnum, hasOwnProperty, isRecordStringString, isValidUrl} from "@utils"
 import {
   TaskStatus,

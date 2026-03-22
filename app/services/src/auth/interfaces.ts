@@ -23,7 +23,7 @@ import {UserGetError} from "../user/interfaces"
 import {OrganizationAdminCreateError} from "../organization-admin/interfaces"
 import {UnknownError} from "../error"
 import {PrefixUnion} from "@utils/types"
-import {TaskEither} from "fp-ts/lib/TaskEither"
+import {TaskEither} from "fp-ts/TaskEither"
 import {DpopValidationError} from "@utils/dpop"
 
 export const PKCE_SESSION_REPOSITORY_TOKEN = "PKCE_SESSION_REPOSITORY_TOKEN"

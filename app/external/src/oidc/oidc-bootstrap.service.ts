@@ -7,7 +7,7 @@ import {OidcError} from "@services/auth/interfaces"
 import {ConfigProvider} from "../config/config-provider"
 import {OidcProviderConfig} from "../config/interfaces"
 import {OidcServerMetadata} from "./oidc-types"
-import {isLeft} from "fp-ts/lib/Either"
+import {isLeft} from "fp-ts/Either"
 
 @Injectable()
 export class OidcBootstrapService implements OnApplicationBootstrap {

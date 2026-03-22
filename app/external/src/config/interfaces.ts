@@ -1,4 +1,4 @@
-import {Option} from "fp-ts/lib/Option"
+import {Option} from "fp-ts/Option"
 import {OidcProvider} from "./types"
 
 export const DEFAULT_RATE_LIMIT_ENTITY_POINTS = 50

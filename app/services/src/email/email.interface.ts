@@ -1,5 +1,5 @@
 import {PrefixUnion} from "@utils"
-import {TaskEither} from "fp-ts/lib/TaskEither"
+import {TaskEither} from "fp-ts/TaskEither"
 
 export type EmailError = PrefixUnion<"email", ServiceError> | EmailExternalError
 export type EmailExternalError = PrefixUnion<"email", ExternalError>

@@ -6,7 +6,7 @@ import {ThirdPartyModule} from "@external"
 import {randomUUID} from "crypto"
 import {ConfigProvider} from "@external/config"
 import {MockConfigProvider} from "@test/mock-data"
-import {isNone} from "fp-ts/lib/Option"
+import {isNone} from "fp-ts/Option"
 
 /**
  * The integration test is based on the availability of Mailpit.

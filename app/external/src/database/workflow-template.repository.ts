@@ -31,7 +31,7 @@ import * as O from "fp-ts/Option"
 import {Option} from "fp-ts/Option"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 import {isPrismaUniqueConstraintError} from "./errors"
-import {Either} from "fp-ts/lib/Either"
+import {Either} from "fp-ts/Either"
 
 type Identifier = IdIdentifier | NameVersionIdentifier
 

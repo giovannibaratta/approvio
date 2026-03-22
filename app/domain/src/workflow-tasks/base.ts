@@ -3,7 +3,7 @@
  * The specific tasks (e.g. sending email, calling webhook)can extend this base types and factories to add task specific attributes.
  */
 
-import {Either, isLeft, left, right} from "fp-ts/lib/Either"
+import {Either, isLeft, left, right} from "fp-ts/Either"
 import {
   DecorableEntity,
   GeneratorSelector,

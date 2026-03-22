@@ -1,6 +1,6 @@
 import {randomUUID} from "crypto"
 import * as E from "fp-ts/Either"
-import {Either, isLeft, left, right} from "fp-ts/lib/Either"
+import {Either, isLeft, left, right} from "fp-ts/Either"
 import {DecorableEntity, getStringAsEnum, isDecoratedWith, isUUIDv4, PrefixUnion} from "@utils"
 import {
   MembershipWithGroupRef,

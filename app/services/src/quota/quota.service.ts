@@ -6,10 +6,10 @@ import {SPACE_REPOSITORY_TOKEN, SpaceRepository} from "../space/interfaces"
 import {WORKFLOW_TEMPLATE_REPOSITORY_TOKEN, WorkflowTemplateRepository} from "../workflow-template/interfaces"
 import {WORKFLOW_REPOSITORY_TOKEN, WorkflowRepository} from "../workflow/interfaces"
 import {GROUP_MEMBERSHIP_REPOSITORY_TOKEN, GroupMembershipRepository} from "../group-membership/interfaces"
-import * as TE from "fp-ts/lib/TaskEither"
-import {pipe} from "fp-ts/lib/function"
+import * as TE from "fp-ts/TaskEither"
+import {pipe} from "fp-ts/function"
 import {UnknownError} from "@services/error"
-import {sequenceT} from "fp-ts/lib/Apply"
+import {sequenceT} from "fp-ts/Apply"
 
 import {USER_REPOSITORY_TOKEN, UserRepository} from "../user/interfaces"
 
