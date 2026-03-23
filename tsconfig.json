@@ -8,6 +8,9 @@
     "allowJs": true,
     "noUncheckedIndexedAccess": true,
     "paths": {
+      // Avoid issues with multiple versions of fp-ts
+      "fp-ts": ["node_modules/fp-ts"],
+      "fp-ts/*": ["node_modules/fp-ts/*"],
       "@app": ["app/main/src"],
       "@app/*": ["app/main/src/*"],
       "@services": ["app/services/src"],
