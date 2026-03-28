@@ -351,6 +351,6 @@ export class ConfigProvider implements ConfigProviderInterface {
     if (cookieSecureRaw.toLowerCase() !== "true" && cookieSecureRaw.toLowerCase() !== "false")
       throw new Error("COOKIE_SECURE must be 'true' or 'false'")
 
-    return cookieSecureRaw.toLowerCase() === "true"
+    return cookieSecureRaw.toLowerCase() !== "false"
   }
 }
