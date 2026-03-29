@@ -1,7 +1,22 @@
 import {NestFactory} from "@nestjs/core"
 import {AppModule} from "./app.module"
-import {LogLevel} from "@nestjs/common"
+import {Logger, LogLevel} from "@nestjs/common"
 import {CustomLogger} from "./logging/custom-logger"
+import {Request, Response, NextFunction} from "express"
+
+function isDevOrTestEnv(): boolean {
+  return process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test"
+}
+
+function allowedOrigin(): string | boolean {
+  if (isDevOrTestEnv()) return process.env.FRONTEND_URL || true
+
+  const frontendUrl = process.env.FRONTEND_URL
+
+  if (!frontendUrl) throw new Error("FRONTEND_URL must be set in production environment")
+
+  return frontendUrl
+}
 
 async function bootstrap() {
   const logLevels: LogLevel[] = ["log", "error", "warn"]
@@ -18,8 +33,18 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule, {logger: logger})
 
+  if (process.env.ENV === "development") {
+    Logger.log("Injecting middleware to log OPTIONS requests in development environment.")
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      if (req.method === "OPTIONS") Logger.debug(`Received OPTIONS request for ${req.url}`)
+      next()
+    })
+  }
+
+  const origin = allowedOrigin()
+
   app.enableCors({
-    origin: process.env.FRONTEND_URL || true,
+    origin,
     credentials: true, // Required for the browser to send/receive cookies and 'Authorization' headers.
     exposedHeaders: ["Location"]
   })

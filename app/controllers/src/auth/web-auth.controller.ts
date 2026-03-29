@@ -93,7 +93,7 @@ export class WebAuthController {
     )()
 
     if (isLeft(result)) {
-      Logger.error("Web User token refresh failed", result.left)
+      Logger.error(`Web User token refresh failed: ${result.left.toUpperCase()}`, "WebAuthController")
       res.clearCookie("access_token")
       res.clearCookie("refresh_token")
       throw generateErrorResponseForRefreshUserToken(result.left, "Failed to refresh token")

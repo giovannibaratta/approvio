@@ -59,7 +59,11 @@ export class AuthController {
   ): Promise<GetEntityInfo200Response> {
     const result = await pipe(
       this.identityService.getIdentityGroups(authenticatedEntity),
-      TE.map(groups => mapToEntityInfoResponse(authenticatedEntity, groups))
+      TE.map(groups => mapToEntityInfoResponse(authenticatedEntity, groups)),
+      logSuccess(
+        `Fetched entity info for ${authenticatedEntity.entityType === "user" ? authenticatedEntity.user.id : authenticatedEntity.agent.agentName}`,
+        "AuthController"
+      )
     )()
 
     if (isLeft(result)) throw generateErrorResponseForEntityInfo(result.left, "Failed to fetch entity groups")
