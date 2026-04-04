@@ -35,7 +35,7 @@
   "dependencies": {
     "@approvio/api": "0.0.32",
     "@nestjs/bull": "11.0.4",
-    "@nestjs/common": "11.1.14",
+    "@nestjs/common": "11.1.18",
     "@nestjs/core": "11.1.14",
     "@nestjs/jwt": "11.0.2",
     "@nestjs/passport": "11.0.5",
