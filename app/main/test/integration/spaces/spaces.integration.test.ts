@@ -193,6 +193,28 @@ describe("Spaces API", () => {
         })
       })
 
+      it("should perform a fuzzy search by name and ignore SQL injection attempts", async () => {
+        // Given
+        await createMockSpaceInDb(prisma, {name: "space-1"})
+        await createMockSpaceInDb(prisma, {name: "space-2"})
+        const targetSpace = await createMockSpaceInDb(prisma, {name: "fuzzy-space-search-target"})
+
+        // When: We try a search that might look like SQL injection
+        const responseInjection = await get(app, `${endpoint}?search=' OR 1=1 --`).withToken(orgAdminUser.token).build()
+
+        // Expect: Should return empty results (safe from injection)
+        expect(responseInjection).toHaveStatusCode(HttpStatus.OK)
+        expect((responseInjection.body as ListSpaces200Response).data).toHaveLength(0)
+
+        // When: We do a normal fuzzy search
+        const responseValid = await get(app, `${endpoint}?search=space-search`).withToken(orgAdminUser.token).build()
+
+        // Expect: Should find the exact group (case insensitive partial match)
+        expect(responseValid).toHaveStatusCode(HttpStatus.OK)
+        expect((responseValid.body as ListSpaces200Response).data).toHaveLength(1)
+        expect((responseValid.body as ListSpaces200Response).data[0]?.id).toEqual(targetSpace.id)
+      })
+
       it("should return a list of all spaces with correct pagination", async () => {
         // Given: some spaces
         const space1 = await createMockSpaceInDb(prisma, {name: "space-1"})

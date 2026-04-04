@@ -89,6 +89,7 @@ export interface ListWorkflowTemplatesRequest extends RequestorAwareRequest {
     page: number
     limit: number
   }
+  search?: string
 }
 
 export interface ListWorkflowTemplatesResponse {

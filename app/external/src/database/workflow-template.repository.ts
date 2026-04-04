@@ -149,13 +149,18 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
     return TE.tryCatchK(
       async () => {
         const skip = (request.pagination.page - 1) * request.pagination.limit
+        const whereClause: Prisma.WorkflowTemplateWhereInput = request.search
+          ? {name: {contains: request.search, mode: "insensitive"}}
+          : {}
+
         const [templates, total] = await Promise.all([
           this.dbClient.workflowTemplate.findMany({
             skip,
             take: request.pagination.limit,
+            where: whereClause,
             orderBy: {createdAt: "desc"}
           }),
-          this.dbClient.workflowTemplate.count()
+          this.dbClient.workflowTemplate.count({where: whereClause})
         ])
 
         const domainTemplates = templates

@@ -239,14 +239,16 @@ export function generateErrorResponseForGetGroup(
 }
 
 export function generateErrorResponseForListGroups(
-  error: ListGroupsRepoError | AuthorizationError,
+  error: ListGroupsRepoError | AuthorizationError | "invalid_search" | "malformed_object",
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
   switch (error) {
     case "invalid_page":
     case "invalid_limit":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid page or limit`))
+    case "invalid_search":
+    case "malformed_object":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid list parameters`))
     case "requestor_not_authorized":
       return new ForbiddenException(
         generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)

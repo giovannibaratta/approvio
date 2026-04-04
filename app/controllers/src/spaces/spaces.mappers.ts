@@ -147,14 +147,18 @@ export function generateErrorResponseForGetSpace(error: GetSpaceError, context: 
   }
 }
 
-export function generateErrorResponseForListSpaces(error: ListSpacesError, context: string): HttpException {
+export function generateErrorResponseForListSpaces(
+  error: ListSpacesError | "invalid_search" | "malformed_object",
+  context: string
+): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (error) {
     case "invalid_page":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid page parameter`))
     case "invalid_limit":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid limit parameter`))
+    case "invalid_search":
+    case "malformed_object":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid list parameters`))
     case "unknown_error":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: an unexpected error occurred`)

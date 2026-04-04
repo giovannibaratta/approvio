@@ -107,19 +107,21 @@ export type ListGroupsFilter = ListAllGroupsFilter | ListGroupsWhereRequestorIsM
 
 interface ListAllGroupsFilter {
   type: "all"
+  search?: string
 }
 interface ListGroupsWhereRequestorIsMemberFilter {
   type: "direct_member"
   requestor: User
+  search?: string
 }
 
 export class ListFilterFactory {
-  static generateListFiltersForRequestor(requestor: User): ListGroupsFilter {
+  static generateListFiltersForRequestor(requestor: User, search?: string): ListGroupsFilter {
     switch (requestor.orgRole) {
       case OrgRole.ADMIN:
-        return {type: "all"} as ListAllGroupsFilter
+        return {type: "all", search}
       case OrgRole.MEMBER:
-        return {type: "direct_member", requestor} as ListGroupsWhereRequestorIsMemberFilter
+        return {type: "direct_member", requestor, search}
     }
   }
 }

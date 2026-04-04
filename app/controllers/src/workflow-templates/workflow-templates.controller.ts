@@ -27,7 +27,8 @@ import {
   WorkflowTemplate as WorkflowTemplateApi,
   ListWorkflowTemplates200Response,
   WorkflowTemplateUpdate,
-  WorkflowTemplateDeprecate
+  WorkflowTemplateDeprecate,
+  validateListWorkflowTemplatesParams
 } from "@approvio/api"
 import {AuthenticatedEntity} from "@domain"
 
@@ -73,21 +74,20 @@ export class WorkflowTemplatesController {
 
   @Get()
   async listWorkflowTemplates(
-    @Query("page") page: string = "1",
-    @Query("limit") limit: string = "20",
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @Query() query: Record<string, unknown>
   ): Promise<ListWorkflowTemplates200Response> {
-    const pageNum = parseInt(page, 10) || 1
-    const limitNum = parseInt(limit, 10) || 20
-
-    const request = {
-      pagination: {page: pageNum, limit: limitNum},
-      requestor
-    }
-
     const eitherWorkflowTemplates = await pipe(
-      request,
-      TE.right,
+      query,
+      validateListWorkflowTemplatesParams,
+      TE.fromEither,
+      TE.map(params => {
+        return {
+          pagination: {page: params.page ?? 1, limit: params.limit ?? 20},
+          search: params.search,
+          requestor
+        }
+      }),
       TE.chainW(req => this.workflowTemplateService.listWorkflowTemplates(req)),
       TE.map(mapWorkflowTemplateListToApi),
       logSuccess("Workflow templates listed", "WorkflowTemplatesController", r => ({count: r.pagination.total}))

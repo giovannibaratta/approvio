@@ -4,7 +4,8 @@ import {
   GroupCreate,
   ListGroupEntities200Response,
   ListGroups200Response,
-  RemoveGroupEntitiesRequest
+  RemoveGroupEntitiesRequest,
+  validateListGroupsParams
 } from "@approvio/api"
 import {GetAuthenticatedEntity} from "@app/auth"
 import {
@@ -88,15 +89,24 @@ export class GroupsController {
   @Get()
   @HttpCode(HttpStatus.OK)
   async listGroups(
-    @Query("page", new DefaultValuePipe(1), ParseIntPipe) page: number,
-    @Query("limit", new DefaultValuePipe(20), ParseIntPipe) limit: number,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @Query() query: Record<string, unknown>
   ): Promise<ListGroups200Response> {
     // Wrap in a lambda to preserve the "this" context
     const serviceListGroups = (request: ListGroupsRequest) => this.groupService.listGroups(request)
+
     const eitherGroups = await pipe(
-      {page, limit, requestor},
-      TE.right,
+      query,
+      validateListGroupsParams,
+      TE.fromEither,
+      TE.map(params => {
+        return {
+          page: params.page ?? 1,
+          limit: params.limit ?? 20,
+          search: params.search,
+          requestor
+        }
+      }),
       TE.chainW(serviceListGroups),
       logSuccess("Groups listed", "GroupsController", result => ({count: result.groups.length}))
     )()

@@ -141,7 +141,7 @@ export class SpaceService {
     return pipe(
       validateUserEntity(request.requestor),
       TE.fromEither,
-      TE.chainW(() => this.spaceRepo.listSpaces({page, limit})),
+      TE.chainW(() => this.spaceRepo.listSpaces({page, limit, search: request.search})),
       logSuccess("Spaces listed", "SpaceService", result => ({
         count: result.spaces.length,
         total: result.total
