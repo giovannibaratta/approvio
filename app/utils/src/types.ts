@@ -4,6 +4,11 @@ import {TaskEither} from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
 
 /**
+ * Extract the Left part of a standalone function that returns an either
+ */
+export type ExtractLeftFromFn<T> = T extends (...args: unknown[]) => Either<infer L, unknown> ? L : never
+
+/**
  * Extracts the Left type from the TaskEither return type of a specific class method.
  * @template ClassType The class constructor type.
  * @template MethodName The name of the method on the class instance.

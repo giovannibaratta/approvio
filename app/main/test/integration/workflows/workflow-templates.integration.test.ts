@@ -596,6 +596,28 @@ describe("Workflow Templates API", () => {
         expect(body.pagination.total).toEqual(0)
       })
 
+      it("should perform a fuzzy search by name and ignore SQL injection attempts", async () => {
+        // Given
+        await createMockWorkflowTemplateInDb(prisma, {name: "Template 1"})
+        await createMockWorkflowTemplateInDb(prisma, {name: "Template 2"})
+        const targetTemplate = await createMockWorkflowTemplateInDb(prisma, {name: "fuzzy-template-target"})
+
+        // When: We try a search that might look like SQL injection
+        const responseInjection = await get(app, `${endpoint}?search=' OR 1=1 --`).withToken(orgAdminUser.token).build()
+
+        // Expect: Should return empty results (safe from injection)
+        expect(responseInjection).toHaveStatusCode(HttpStatus.OK)
+        expect((responseInjection.body as ListWorkflowTemplates200Response).data).toHaveLength(0)
+
+        // When: We do a normal fuzzy search
+        const responseValid = await get(app, `${endpoint}?search=template-target`).withToken(orgAdminUser.token).build()
+
+        // Expect: Should find the exact group (case insensitive partial match)
+        expect(responseValid).toHaveStatusCode(HttpStatus.OK)
+        expect((responseValid.body as ListWorkflowTemplates200Response).data).toHaveLength(1)
+        expect((responseValid.body as ListWorkflowTemplates200Response).data[0]?.id).toEqual(targetTemplate.id)
+      })
+
       it("should return list of workflow templates with pagination", async () => {
         // Given
         const template1 = await createMockWorkflowTemplateInDb(prisma, {

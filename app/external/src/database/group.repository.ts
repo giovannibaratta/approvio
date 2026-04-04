@@ -360,11 +360,16 @@ export class GroupDbRepository implements GroupRepository {
   }
 
   private buildWhereCloseForListingGroups(filter: ListGroupsFilter): Prisma.GroupWhereInput {
+    const baseWhere: Prisma.GroupWhereInput = filter.search
+      ? {name: {contains: filter.search, mode: "insensitive"}}
+      : {}
+
     switch (filter.type) {
       case "all":
-        return {}
+        return baseWhere
       case "direct_member":
         return {
+          ...baseWhere,
           groupMemberships: {
             some: {
               userId: filter.requestor.id

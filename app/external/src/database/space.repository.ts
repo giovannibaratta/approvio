@@ -100,14 +100,15 @@ export class SpaceDbRepository implements SpaceRepository {
   }
 
   listSpaces(data: ListSpacesRepo): TaskEither<ListSpacesRepoError, ListSpacesResult> {
-    const {page, limit} = data
+    const {page, limit, search} = data
 
     const skip = (page - 1) * limit
     const take = limit
 
     const options: ListOptions = {
       take,
-      skip
+      skip,
+      search
     }
 
     return pipe(
@@ -182,14 +183,19 @@ export class SpaceDbRepository implements SpaceRepository {
     return options =>
       TE.tryCatchK(
         () => {
+          const whereClause: Prisma.SpaceWhereInput = options.search
+            ? {name: {contains: options.search, mode: "insensitive"}}
+            : {}
+
           const data = this.dbClient.space.findMany({
             take: options.take,
             skip: options.skip,
+            where: whereClause,
             orderBy: {
               createdAt: "asc"
             }
           })
-          const stats = this.dbClient.space.count()
+          const stats = this.dbClient.space.count({where: whereClause})
 
           return this.dbClient.$transaction([data, stats], {
             isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead
@@ -213,4 +219,5 @@ interface GetSpaceTaskRequest {
 interface ListOptions {
   take: number
   skip: number
+  search?: string
 }

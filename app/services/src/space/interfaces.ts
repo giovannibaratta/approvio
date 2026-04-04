@@ -34,6 +34,7 @@ export interface GetSpaceByNameRepo {
 export interface ListSpacesRepo {
   page: number
   limit: number
+  search?: string
 }
 
 export interface DeleteSpaceRepo {
@@ -65,6 +66,7 @@ export interface GetSpaceRequest extends RequestorAwareRequest {
 export interface ListSpacesRequest extends RequestorAwareRequest {
   page?: number
   limit?: number
+  search?: string
 }
 
 export interface DeleteSpaceRequest extends RequestorAwareRequest {

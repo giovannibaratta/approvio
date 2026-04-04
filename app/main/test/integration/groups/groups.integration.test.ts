@@ -4,7 +4,8 @@ import {
   ListGroupEntities200Response,
   ListGroups200Response,
   RemoveGroupEntitiesRequest,
-  Group as GroupApi
+  Group as GroupApi,
+  validateListGroups200Response
 } from "@approvio/api"
 import {AppModule} from "@app/app.module"
 import {GROUPS_ENDPOINT_ROOT} from "@controllers"
@@ -291,6 +292,37 @@ describe("Groups API", () => {
           page: 1,
           limit: 20
         })
+      })
+
+      it("should perform a fuzzy search by name and ignore SQL injection attempts", async () => {
+        // Given
+        await createTestGroup(prisma, "Super-Secret-Group")
+        await createTestGroup(prisma, "Another-Group")
+        await createTestGroup(prisma, "Test-Group-123")
+        const groupToFind = await createTestGroup(prisma, "Fuzzy-Search-Target")
+
+        // When: We try a search that might look like SQL injection
+        const responseInjection = await get(app, `${endpoint}?search=' OR 1=1 --`).withToken(orgAdminUser.token).build()
+
+        // Expect: Should return empty results (safe from injection)
+        expect(responseInjection).toHaveStatusCode(HttpStatus.OK)
+
+        const responseInjectionEither = validateListGroups200Response(responseInjection.body)
+        expect(responseInjectionEither).toBeRight()
+
+        expect((responseInjection.body as ListGroups200Response).groups).toHaveLength(0)
+
+        // When: We do a normal fuzzy search
+        const responseValid = await get(app, `${endpoint}?search=search-target`).withToken(orgAdminUser.token).build()
+
+        // Expect: Should find the exact group (case insensitive partial match)
+        expect(responseValid).toHaveStatusCode(HttpStatus.OK)
+
+        const responseValidEither = validateListGroups200Response(responseValid.body)
+        expect(responseValidEither).toBeRight()
+
+        expect((responseValid.body as ListGroups200Response).groups).toHaveLength(1)
+        expect((responseValid.body as ListGroups200Response).groups[0]?.id).toEqual(groupToFind.id)
       })
 
       it("should return a list of all groups with correct pagination (as OrgAdmin)", async () => {

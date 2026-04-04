@@ -1,4 +1,4 @@
-import {Space as SpaceApi, SpaceCreate, ListSpaces200Response} from "@approvio/api"
+import {Space as SpaceApi, SpaceCreate, ListSpaces200Response, validateListSpacesParams} from "@approvio/api"
 import {GetAuthenticatedEntity} from "@app/auth"
 import {
   createSpaceApiToServiceModel,
@@ -51,24 +51,23 @@ export class SpacesController {
   @Get()
   @HttpCode(HttpStatus.OK)
   async listSpaces(
-    @Query("page") pageQuery: string,
-    @Query("limit") limitQuery: string,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @Query() query: Record<string, unknown>
   ): Promise<ListSpaces200Response> {
-    const validateAndParseParams = (pageStr?: string, limitStr?: string) => {
-      const page = pageStr ? parseInt(pageStr, 10) : undefined
-      const limit = limitStr ? parseInt(limitStr, 10) : undefined
-
-      if (page !== undefined && isNaN(page)) return TE.left("invalid_page" as const)
-      if (limit !== undefined && isNaN(limit)) return TE.left("invalid_limit" as const)
-
-      return TE.right({page, limit, requestor})
-    }
-
     const serviceListSpaces = (request: ListSpacesRequest) => this.spaceService.listSpaces(request)
 
     const eitherSpaces = await pipe(
-      validateAndParseParams(pageQuery, limitQuery),
+      query,
+      validateListSpacesParams,
+      TE.fromEither,
+      TE.map(params => {
+        return {
+          page: params.page ?? 1,
+          limit: params.limit ?? 20,
+          search: params.search,
+          requestor
+        }
+      }),
       TE.chainW(serviceListSpaces),
       logSuccess("Spaces listed", "SpacesController", result => ({
         count: result.spaces.length,

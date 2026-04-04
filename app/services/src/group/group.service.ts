@@ -133,7 +133,7 @@ export class GroupService {
     const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
 
     const buildRepoRequest = (requestor: User) => {
-      const filter = ListFilterFactory.generateListFiltersForRequestor(requestor)
+      const filter = ListFilterFactory.generateListFiltersForRequestor(requestor, request.search)
       return {page, limit, filter}
     }
 
@@ -163,6 +163,7 @@ export interface CreateGroupRequest extends RequestorAwareRequest {
 export interface ListGroupsRequest extends RequestorAwareRequest {
   page: number
   limit: number
+  search?: string
 }
 
 export interface GetGroupByIdentifierRequest extends RequestorAwareRequest {

@@ -5,7 +5,8 @@ import {
   WorkflowTemplate as WorkflowTemplateApi,
   WorkflowTemplateSummary as WorkflowTemplateSummaryApi,
   ApprovalRule as ApprovalRuleApi,
-  ListWorkflowTemplates200Response
+  ListWorkflowTemplates200Response,
+  validateListWorkflowTemplatesParams
 } from "@approvio/api"
 import {generateErrorPayload} from "@controllers/error"
 import {mapApprovalRuleDataToApi} from "@controllers/shared"
@@ -35,7 +36,7 @@ import {
   UpdateWorkflowTemplateRequest,
   WorkflowTemplateService
 } from "@services"
-import {ExtractLeftFromMethod} from "@utils"
+import {ExtractLeftFromFn, ExtractLeftFromMethod} from "@utils"
 import {Either, isLeft, right} from "fp-ts/Either"
 
 export function createWorkflowTemplateApiToServiceModel(data: {
@@ -395,14 +396,21 @@ export function generateErrorResponseForDeprecateWorkflowTemplate(
 }
 
 type ListWorkflowTemplatesLeft = ExtractLeftFromMethod<typeof WorkflowTemplateService, "listWorkflowTemplates">
+type ListWorkflowRequestValidationLeft = ExtractLeftFromFn<typeof validateListWorkflowTemplatesParams>
 
 export function generateErrorResponseForListWorkflowTemplates(
-  error: ListWorkflowTemplatesLeft,
+  error: ListWorkflowTemplatesLeft | ListWorkflowRequestValidationLeft,
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "invalid_page":
+    case "invalid_limit":
+    case "invalid_search":
+    case "invalid_space_identifier":
+    case "malformed_object":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid list parameters`))
     case "requestor_not_authorized":
       throw new ForbiddenException(
         generateErrorPayload(
