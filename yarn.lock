@@ -117,7 +117,7 @@ __metadata:
     "@eslint/js": "npm:10.0.1"
     "@nestjs/bull": "npm:11.0.4"
     "@nestjs/cli": "npm:11.0.16"
-    "@nestjs/common": "npm:11.1.14"
+    "@nestjs/common": "npm:11.1.18"
     "@nestjs/core": "npm:11.1.14"
     "@nestjs/jwt": "npm:11.0.2"
     "@nestjs/passport": "npm:11.0.5"
@@ -2031,11 +2031,11 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@nestjs/common@npm:11.1.14":
-  version: 11.1.14
-  resolution: "@nestjs/common@npm:11.1.14"
+"@nestjs/common@npm:11.1.18":
+  version: 11.1.18
+  resolution: "@nestjs/common@npm:11.1.18"
   dependencies:
-    file-type: "npm:21.3.0"
+    file-type: "npm:21.3.4"
     iterare: "npm:1.2.1"
     load-esm: "npm:1.0.3"
     tslib: "npm:2.8.1"
@@ -2050,7 +2050,7 @@ __metadata:
       optional: true
     class-validator:
       optional: true
-  checksum: 10/420c4f66ce4d3219196fa9cc6a6c4de63aacdabe869cc95754419a0d306f498a1e52031cf2f5f6c1737616943323309fb875708f5a4f61c960eebc62d5f60232
+  checksum: 10/94901d434bd049c2baff822fcd705b3ea5e7d2038b398b2619a8f79fd5dac4e969a30595147553b6c0580e92e15f7e3252a6feb9eabf4c42bab6cf373339cf06
   languageName: node
   linkType: hard
 
@@ -6290,15 +6290,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"file-type@npm:21.3.0":
-  version: 21.3.0
-  resolution: "file-type@npm:21.3.0"
+"file-type@npm:21.3.4":
+  version: 21.3.4
+  resolution: "file-type@npm:21.3.4"
   dependencies:
     "@tokenizer/inflate": "npm:^0.4.1"
     strtok3: "npm:^10.3.4"
     token-types: "npm:^6.1.1"
     uint8array-extras: "npm:^1.4.0"
-  checksum: 10/8eb8707f34d0a0fd6c2d2b223edf1ed6235cb00a44a90216741be9e812ae08dc8497dbf4e2dd63e629728509cdf361070ed32ae2280724744463ab459da81a83
+  checksum: 10/42d5cf6aafb998fb2f0357e96ea7c48bcce5249f899523a3a5a4c297f4fe2346cc0aff9cf04243ada5c54b6457183550b2a04902b6533cd5e64aaa344d78e0eb
   languageName: node
   linkType: hard
 
