@@ -409,6 +409,7 @@ export function generateErrorResponseForListWorkflowTemplates(
     case "invalid_limit":
     case "invalid_search":
     case "invalid_space_identifier":
+    case "invalid_status":
     case "malformed_object":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid list parameters`))
     case "requestor_not_authorized":

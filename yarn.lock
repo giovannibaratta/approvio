@@ -100,12 +100,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@approvio/api@npm:0.0.35":
-  version: 0.0.35
-  resolution: "@approvio/api@npm:0.0.35"
+"@approvio/api@npm:0.0.37":
+  version: 0.0.37
+  resolution: "@approvio/api@npm:0.0.37"
   peerDependencies:
     fp-ts: ^2.0.0
-  checksum: 10/b42523fcacd19791758b68e4c564f341bd77c580067a1e07a4f0ab9cebdbc5e90259c921a1183b05c179bddc40352179ac0188ee9fdd54b77902b5642441a77c
+  checksum: 10/32581f5cb92f8d5ac44cbb6b9ab19c9cd99a568ba08a340847446294307427bdf31cd39c116a59f46106a28b9e9bc147f1062f268c2de66bc031b3f189aa8cbc
   languageName: node
   linkType: hard
 
@@ -113,7 +113,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@approvio/backend@workspace:."
   dependencies:
-    "@approvio/api": "npm:0.0.35"
+    "@approvio/api": "npm:0.0.37"
     "@eslint/js": "npm:10.0.1"
     "@nestjs/bull": "npm:11.0.4"
     "@nestjs/cli": "npm:11.0.16"

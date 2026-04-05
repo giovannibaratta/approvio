@@ -5,6 +5,7 @@ import {CreateWorkflowRequest, WorkflowService, VoteService, CanVoteRequest, Cas
 import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
+import * as E from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {logSuccess} from "@utils"
 import {
@@ -20,13 +21,14 @@ import {
   generateErrorResponseForCastVote,
   validateWorkflowCreateRequest,
   validateApiRequest,
-  validateListWorkflowsParams,
   validateGetWorkflowParams,
   mapVoteListToApi,
   generateErrorResponseForListVotes,
-  WorkflowInclude
+  WorkflowInclude,
+  validateInclude
 } from "./workflows.mappers"
 import {
+  validateListWorkflowsParams,
   Workflow as WorkflowApi,
   CanVoteResponse as CanVoteResponseApi,
   ListWorkflows200Response,
@@ -95,35 +97,39 @@ export class WorkflowsController {
 
   @Get()
   async listWorkflows(
-    @Query("page") page: unknown,
-    @Query("limit") limit: unknown,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
-    @Query("include") include?: unknown,
-    @Query("include-only-non-terminal-state") includeOnlyNonTerminalState?: unknown
+    @Query() query: Record<string, unknown>,
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<ListWorkflows200Response> {
     const eitherWorkflows = await pipe(
       TE.Do,
-      TE.bindW("params", () =>
-        TE.fromEither(validateListWorkflowsParams({page, limit, include, includeOnlyNonTerminalState}))
-      ),
+      TE.bindW("params", () => TE.fromEither(validateListWorkflowsParams(query))),
       TE.bindW("workflowDecoratorSelector", ({params}) =>
-        TE.right(includeArrayToWorkflowDecoratorSelector(params.include))
+        TE.fromEither(
+          pipe(
+            params,
+            E.right,
+            E.chainW(p => validateInclude(p.include, "invalid_include" as const)),
+            E.map(includeArrayToWorkflowDecoratorSelector)
+          )
+        )
       ),
       TE.chainW(({params, workflowDecoratorSelector}) =>
         this.workflowService.listWorkflows({
           pagination: {page: params.page ?? 1, limit: params.limit ?? 20},
           include: workflowDecoratorSelector,
           requestor,
-          filters: params.includeOnlyNonTerminalState ? {includeOnlyNonTerminalState: true} : undefined
+          filters: {
+            includeOnlyNonTerminalState: params.includeOnlyNonTerminalState,
+            workflowTemplateIdentifier: params.workflowTemplateIdentifier
+          }
         })
       ),
       TE.map(mapWorkflowListToApi),
       logSuccess("Workflows listed", "WorkflowsController", r => ({count: r.data.length}))
     )()
 
-    if (isLeft(eitherWorkflows)) {
+    if (isLeft(eitherWorkflows))
       throw generateErrorResponseForListWorkflows(eitherWorkflows.left, "Failed to list workflows")
-    }
 
     return eitherWorkflows.right
   }

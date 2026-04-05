@@ -585,6 +585,33 @@ describe("Workflow Templates API", () => {
 
   describe("GET /workflow-templates", () => {
     describe("good cases", () => {
+      it("should filter workflow templates by space UUID", async () => {
+        const space = await createMockSpaceInDb(prisma, {name: "Space-Test-Filter-UUID"})
+        await createMockWorkflowTemplateInDb(prisma, {name: "Template-In-Space-1", spaceId: space.id})
+        await createMockWorkflowTemplateInDb(prisma, {name: "Template-In-Other-Space"})
+
+        const response = await get(app, `${endpoint}?spaceIdentifier=${space.id}`).withToken(orgAdminUser.token).build()
+
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflowTemplates200Response = response.body
+        expect(body.data).toHaveLength(1)
+        expect(body.data[0]?.name).toEqual("Template-In-Space-1")
+      })
+
+      it("should filter workflow templates by space name", async () => {
+        const space = await createMockSpaceInDb(prisma, {name: "Space-Test-Filter-Name"})
+        await createMockWorkflowTemplateInDb(prisma, {name: "Template-In-Space-Name", spaceId: space.id})
+
+        const response = await get(app, `${endpoint}?spaceIdentifier=${space.name}`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflowTemplates200Response = response.body
+        expect(body.data).toHaveLength(1)
+        expect(body.data[0]?.name).toEqual("Template-In-Space-Name")
+      })
+
       it("should return empty list when no templates exist", async () => {
         // When
         const response = await get(app, endpoint).withToken(orgAdminUser.token).build()
@@ -662,6 +689,94 @@ describe("Workflow Templates API", () => {
         expect(body.pagination.total).toEqual(3)
         expect(body.pagination.page).toEqual(2)
         expect(body.pagination.limit).toEqual(2)
+      })
+
+      describe("status filtering", () => {
+        let active1: PrismaWorkflowTemplate
+        let active2: PrismaWorkflowTemplate
+        let deprecated: PrismaWorkflowTemplate
+        let pendingDeprecation: PrismaWorkflowTemplate
+
+        beforeEach(async () => {
+          // Create templates with different statuses
+          active1 = await createMockWorkflowTemplateInDb(prisma, {
+            name: "Active 1",
+            status: "ACTIVE",
+            version: "latest"
+          })
+          active2 = await createMockWorkflowTemplateInDb(prisma, {
+            name: "Active 2",
+            status: "ACTIVE",
+            version: "latest"
+          })
+          pendingDeprecation = await createMockWorkflowTemplateInDb(prisma, {
+            name: "Pending Deprecation 1",
+            status: "PENDING_DEPRECATION",
+            version: "1"
+          })
+          deprecated = await createMockWorkflowTemplateInDb(prisma, {
+            name: "Deprecated 1",
+            status: "DEPRECATED",
+            version: "1"
+          })
+        })
+
+        it("should return only ACTIVE templates by default", async () => {
+          // When
+          const response = await get(app, endpoint).withToken(orgAdminUser.token).build()
+
+          // Expect
+          expect(response).toHaveStatusCode(HttpStatus.OK)
+          const body: ListWorkflowTemplates200Response = response.body
+          expect(body.data).toHaveLength(2)
+
+          const ids = body.data.map(template => template.id)
+
+          expect(ids).toBeArrayIncludingAllOf([active1.id, active2.id])
+        })
+
+        it("should filter by single status (DEPRECATED)", async () => {
+          // When
+          const response = await get(app, `${endpoint}?status=DEPRECATED`).withToken(orgAdminUser.token).build()
+
+          // Expect
+          expect(response).toHaveStatusCode(HttpStatus.OK)
+          const body: ListWorkflowTemplates200Response = response.body
+          expect(body.data).toHaveLength(1)
+          expect(body.data[0]?.id).toEqual(deprecated.id)
+        })
+
+        it("should filter by multiple statuses", async () => {
+          // When
+          const response = await get(app, endpoint)
+            .withToken(orgAdminUser.token)
+            .query({status: ["PENDING_DEPRECATION", "DEPRECATED"]})
+            .build()
+
+          // Expect
+          expect(response).toHaveStatusCode(HttpStatus.OK)
+          const body: ListWorkflowTemplates200Response = response.body
+          expect(body.data).toHaveLength(2)
+
+          const ids = body.data.map(template => template.id)
+
+          expect(ids).toBeArrayIncludingAllOf([deprecated.id, pendingDeprecation.id])
+        })
+
+        it("should return empty list when no templates match the status", async () => {
+          // When
+          const space = await createMockSpaceInDb(prisma)
+          await createMockWorkflowTemplateInDb(prisma, {name: "Active in Space", status: "ACTIVE", spaceId: space.id})
+
+          const response = await get(app, `${endpoint}?status=DEPRECATED&spaceIdentifier=${space.id}`)
+            .withToken(orgAdminUser.token)
+            .build()
+
+          // Expect
+          expect(response).toHaveStatusCode(HttpStatus.OK)
+          const body: ListWorkflowTemplates200Response = response.body
+          expect(body.data).toHaveLength(0)
+        })
       })
 
       it("should allow org members to list templates", async () => {

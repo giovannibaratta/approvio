@@ -1009,6 +1009,75 @@ describe("Workflows API", () => {
     })
 
     describe("good cases", () => {
+      it("should return workflows filtered by workflowTemplateIdentifier as UUID", async () => {
+        // Given: a new workflow template and workflow
+        const template = await createMockWorkflowTemplateInDb(prisma, {
+          name: "Template-For-UUID-Filter",
+          status: "ACTIVE"
+        })
+        await createMockWorkflowInDb(prisma, {
+          name: "Workflow-With-UUID-Template",
+          description: "A workflow associated with a specific template",
+          status: WorkflowStatus.APPROVED,
+          workflowTemplateId: template.id
+        })
+
+        expect(await prisma.workflow.count()).toBeGreaterThan(1)
+
+        // When: requesting workflows filtered by template UUID
+        const response = await get(app, `${endpoint}?workflowTemplateIdentifier=${template.id}`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect: only the workflow matching the template UUID is returned
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        expect(body.data).toHaveLength(1)
+        expect(body.data[0]?.name).toEqual("Workflow-With-UUID-Template")
+      })
+
+      it("should return workflows filtered by workflowTemplateIdentifier as Name", async () => {
+        // Given: a new workflow template and workflow
+        const template = await createMockWorkflowTemplateInDb(prisma, {
+          name: "Template-For-Name-Filter",
+          status: "ACTIVE"
+        })
+        await createMockWorkflowInDb(prisma, {
+          name: "Workflow-With-Name-Template",
+          description: "A workflow associated with a specific template",
+          status: WorkflowStatus.APPROVED,
+          workflowTemplateId: template.id
+        })
+
+        expect(await prisma.workflow.count()).toBeGreaterThan(1)
+
+        // When: requesting workflows filtered by template name
+        const response = await get(app, `${endpoint}?workflowTemplateIdentifier=${template.name}`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect: only the workflow matching the template name is returned
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        expect(body.data).toHaveLength(1)
+        expect(body.data[0]?.name).toEqual("Workflow-With-Name-Template")
+      })
+
+      it("should return an empty list if workflowTemplateIdentifier does not match", async () => {
+        // Given
+        expect(await prisma.workflow.count()).toBeGreaterThan(0)
+
+        // When: requesting workflows filtered by an unknown template name
+        const response = await get(app, `${endpoint}?workflowTemplateIdentifier=Non-Existent-Template`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect: an empty list is returned
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        expect(body.data).toHaveLength(0)
+      })
+
       it("should return all workflows without filter (as OrgAdmin)", async () => {
         // When: a request is sent to list workflows without filter
         const response = await get(app, endpoint).withToken(orgAdminUser.token).build()
@@ -1021,9 +1090,9 @@ describe("Workflows API", () => {
         expect(body.data.map(w => w.name)).toContain("Non-Terminal-Workflow")
       })
 
-      it("should return only non-terminal workflows when include-only-non-terminal-state filter is true (as OrgAdmin)", async () => {
-        // When: a request is sent to list workflows with include-only-non-terminal-state=true
-        const response = await get(app, `${endpoint}?include-only-non-terminal-state=true`)
+      it("should return only non-terminal workflows when includeOnlyNonTerminalState filter is true (as OrgAdmin)", async () => {
+        // When: a request is sent to list workflows with includeOnlyNonTerminalState=true
+        const response = await get(app, `${endpoint}?includeOnlyNonTerminalState=true`)
           .withToken(orgAdminUser.token)
           .build()
 
@@ -1035,9 +1104,9 @@ describe("Workflows API", () => {
         expect(body.data[0]?.status).toEqual(WorkflowStatus.EVALUATION_IN_PROGRESS)
       })
 
-      it("should return all workflows when include-only-non-terminal-state filter is false (as OrgAdmin)", async () => {
-        // When: a request is sent to list workflows with include-only-non-terminal-state=false
-        const response = await get(app, `${endpoint}?include-only-non-terminal-state=false`)
+      it("should return all workflows when includeOnlyNonTerminalState filter is false (as OrgAdmin)", async () => {
+        // When: a request is sent to list workflows with includeOnlyNonTerminalState=false
+        const response = await get(app, `${endpoint}?includeOnlyNonTerminalState=false`)
           .withToken(orgAdminUser.token)
           .build()
 
@@ -1049,7 +1118,7 @@ describe("Workflows API", () => {
 
       it("should work with pagination and the non-terminal filter (as OrgAdmin)", async () => {
         // When: a request is sent with pagination and the non-terminal filter
-        const response = await get(app, `${endpoint}?page=1&limit=10&include-only-non-terminal-state=true`)
+        const response = await get(app, `${endpoint}?page=1&limit=10&includeOnlyNonTerminalState=true`)
           .withToken(orgAdminUser.token)
           .build()
 
@@ -1090,7 +1159,7 @@ describe("Workflows API", () => {
 
         // Expect: a 400 BAD_REQUEST status with REQUEST_INVALID_INCLUDE error code
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("REQUEST_INVALID_INCLUDE")
+        expect(response.body).toHaveErrorCode("INVALID_INCLUDE")
       })
     })
   })

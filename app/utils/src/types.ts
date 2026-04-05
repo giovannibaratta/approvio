@@ -132,3 +132,9 @@ export type Nullable<T> = {
 export function mapToLeftWithPrefix<T extends string, E extends string>(error: T, prefix: string): Either<E, never> {
   return E.left(`${prefix}_${error}` as E)
 }
+
+/**
+ * Overwrites the properties of type T with the properties of type U.
+ * This is a distributive type that works with unions.
+ */
+export type Overwrite<T, U> = Omit<T, keyof U> & U

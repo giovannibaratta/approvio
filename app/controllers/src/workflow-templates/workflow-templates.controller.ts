@@ -1,6 +1,6 @@
 import {GetAuthenticatedEntity} from "@app/auth"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
-import {logSuccess} from "@utils"
+import {getStringAsEnum, logSuccess, Overwrite} from "@utils"
 import {
   WorkflowTemplateService,
   CreateWorkflowTemplateRequest,
@@ -8,7 +8,7 @@ import {
   DeprecateWorkflowTemplateRequest
 } from "@services"
 import {Response} from "express"
-import {isLeft} from "fp-ts/Either"
+import * as E from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {
@@ -28,9 +28,11 @@ import {
   ListWorkflowTemplates200Response,
   WorkflowTemplateUpdate,
   WorkflowTemplateDeprecate,
-  validateListWorkflowTemplatesParams
+  validateListWorkflowTemplatesParams,
+  ListWorkflowTemplatesParams
 } from "@approvio/api"
-import {AuthenticatedEntity} from "@domain"
+import {AuthenticatedEntity, WorkflowTemplateStatus} from "@domain"
+import {isLeft} from "fp-ts/Either"
 
 export const WORKFLOW_TEMPLATES_ENDPOINT_ROOT = "workflow-templates"
 
@@ -80,25 +82,66 @@ export class WorkflowTemplatesController {
     const eitherWorkflowTemplates = await pipe(
       query,
       validateListWorkflowTemplatesParams,
+      E.chainW<
+        "invalid_status",
+        ListWorkflowTemplatesParams,
+        Overwrite<
+          ListWorkflowTemplatesParams,
+          {
+            status?: [WorkflowTemplateStatus, ...WorkflowTemplateStatus[]]
+          }
+        >
+      >(params => {
+        const rawStatus = params.status
+
+        if (rawStatus === undefined) return E.right({...params, status: undefined})
+
+        const uncheckedStatuses = rawStatus.map(s => getStringAsEnum(s.toUpperCase(), WorkflowTemplateStatus))
+
+        const statuses: WorkflowTemplateStatus[] = []
+
+        for (const status of uncheckedStatuses) {
+          if (status === undefined) return E.left("invalid_status" as const)
+          statuses.push(status)
+        }
+
+        const firstItem = statuses.at(0)
+
+        if (firstItem === undefined) return E.left("invalid_status" as const)
+
+        const typedStatus: ListWorkflowTemplatesParams & {
+          status: [WorkflowTemplateStatus, ...WorkflowTemplateStatus[]]
+        } = {
+          ...params,
+          status: [firstItem, ...statuses.slice(1)]
+        }
+
+        return E.right(typedStatus)
+      }),
       TE.fromEither,
       TE.map(params => {
         return {
           pagination: {page: params.page ?? 1, limit: params.limit ?? 20},
           search: params.search,
+          filters: {
+            spaceIdentifier: params.spaceIdentifier,
+            status: params.status
+          },
           requestor
         }
       }),
       TE.chainW(req => this.workflowTemplateService.listWorkflowTemplates(req)),
       TE.map(mapWorkflowTemplateListToApi),
-      logSuccess("Workflow templates listed", "WorkflowTemplatesController", r => ({count: r.pagination.total}))
+      logSuccess("Workflow templates listed", "WorkflowTemplatesController", r => ({
+        count: r.pagination.total
+      }))
     )()
 
-    if (isLeft(eitherWorkflowTemplates)) {
+    if (isLeft(eitherWorkflowTemplates))
       throw generateErrorResponseForListWorkflowTemplates(
         eitherWorkflowTemplates.left,
         "Failed to list workflow templates"
       )
-    }
 
     return eitherWorkflowTemplates.right
   }
