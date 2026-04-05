@@ -8,7 +8,7 @@ import {
   ListWorkflowsResponse,
   FindVotesError
 } from "@services"
-import {eitherParseOptionalBoolean, eitherParseInt, ExtractLeftFromMethod} from "@utils"
+import {ExtractLeftFromFn, ExtractLeftFromMethod} from "@utils"
 import {Either, right, left, map} from "fp-ts/Either"
 import {
   WorkflowCreate as WorkflowCreateApi,
@@ -16,12 +16,12 @@ import {
   WorkflowVoteRequest as WorkflowVoteRequestApi,
   CanVoteResponse as CanVoteResponseApi,
   Workflow as WorkflowApi,
-  ListWorkflowsParams,
   GetWorkflowParams,
   GetWorkflowVotes200Response,
-  WorkflowVote
+  WorkflowVote,
+  validateListWorkflowsParams
 } from "@approvio/api"
-import * as E from "fp-ts/Either"
+
 import {
   HttpException,
   BadRequestException,
@@ -223,44 +223,6 @@ export function generateErrorResponseForGetWorkflow(
   }
 }
 
-type ListWorkflowsLeft = ExtractLeftFromMethod<typeof WorkflowService, "listWorkflows">
-
-export type ListWorkflowsApiError =
-  | "request_invalid_include"
-  | "request_invalid_page"
-  | "request_invalid_limit"
-  | "request_invalid_include_only_non_terminal_state"
-
-export function validateListWorkflowsParams(params: {
-  include?: unknown
-  page?: unknown
-  limit?: unknown
-  includeOnlyNonTerminalState?: unknown
-}): Either<ListWorkflowsApiError, ListWorkflowsParams & {include: WorkflowInclude[] | undefined}> {
-  return pipe(
-    E.Do,
-    E.bindW("page", () =>
-      params.page ? eitherParseInt(params.page, "request_invalid_page" as const) : right(undefined)
-    ),
-    E.bindW("limit", () =>
-      params.limit ? eitherParseInt(params.limit, "request_invalid_limit" as const) : right(undefined)
-    ),
-    E.bindW("include", () => validateInclude(params.include, "request_invalid_include" as const)),
-    E.bindW("includeOnlyNonTerminalState", () =>
-      eitherParseOptionalBoolean(
-        params.includeOnlyNonTerminalState,
-        "request_invalid_include_only_non_terminal_state" as const
-      )
-    ),
-    map(({page, limit, include, includeOnlyNonTerminalState}) => ({
-      page,
-      limit,
-      include,
-      includeOnlyNonTerminalState
-    }))
-  )
-}
-
 export function validateGetWorkflowParams(params: {
   include?: unknown
 }): Either<GetWorkflowApiError, GetWorkflowParams & {include: WorkflowInclude[] | undefined}> {
@@ -274,7 +236,7 @@ export function validateGetWorkflowParams(params: {
   )
 }
 
-function validateInclude<T>(include: unknown, leftValue: T): Either<T, WorkflowInclude[] | undefined> {
+export function validateInclude<T>(include: unknown, leftValue: T): Either<T, WorkflowInclude[] | undefined> {
   if (include === undefined) return right(undefined)
 
   if (typeof include !== "string" && !Array.isArray(include)) return left(leftValue)
@@ -290,17 +252,22 @@ function validateInclude<T>(include: unknown, leftValue: T): Either<T, WorkflowI
   return right(validatedIncludes)
 }
 
+type ListWorkflowsServiceLeft = ExtractLeftFromMethod<typeof WorkflowService, "listWorkflows">
+type ListWorkflowApiLeft = ExtractLeftFromFn<typeof validateListWorkflowsParams>
+
 export function generateErrorResponseForListWorkflows(
-  error: ListWorkflowsLeft | ListWorkflowsApiError,
+  error: ListWorkflowsServiceLeft | ListWorkflowApiLeft,
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (error) {
-    case "request_invalid_include":
-    case "request_invalid_page":
-    case "request_invalid_limit":
-    case "request_invalid_include_only_non_terminal_state":
+    case "invalid_include":
+    case "invalid_page":
+    case "invalid_limit":
+    case "invalid_include_only_non_terminal_state":
+    case "invalid_workflow_template_identifier":
+    case "malformed_object":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request parameter`))
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))

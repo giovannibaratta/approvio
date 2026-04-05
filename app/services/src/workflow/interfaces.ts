@@ -119,11 +119,18 @@ export interface ListWorkflowsRequestRepo<TInclude extends WorkflowDecoratorSele
   filters?: {
     includeOnlyNonTerminalState?: boolean
     templateId?: string
+    workflowTemplateId?: string
+    workflowTemplateName?: string
   }
 }
 
 export interface ListWorkflowsRequest<TInclude extends WorkflowDecoratorSelector>
-  extends RequestorAwareRequest, ListWorkflowsRequestRepo<TInclude> {}
+  extends RequestorAwareRequest, Omit<ListWorkflowsRequestRepo<TInclude>, "filters"> {
+  filters?: {
+    includeOnlyNonTerminalState?: boolean
+    workflowTemplateIdentifier?: string
+  }
+}
 
 export interface ListWorkflowsResponse<TInclude extends WorkflowDecoratorSelector> {
   workflows: ReadonlyArray<DecoratedWorkflow<TInclude>>

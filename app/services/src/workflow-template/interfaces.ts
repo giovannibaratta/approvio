@@ -1,4 +1,10 @@
-import {WorkflowTemplate, WorkflowTemplateValidationError, ApprovalRule, WorkflowTemplateSummary} from "@domain"
+import {
+  WorkflowTemplate,
+  WorkflowTemplateValidationError,
+  ApprovalRule,
+  WorkflowTemplateSummary,
+  WorkflowTemplateStatus
+} from "@domain"
 import {UnknownError} from "@services/error"
 import {RequestorAwareRequest} from "@services/shared/types"
 import {TaskEither} from "fp-ts/TaskEither"
@@ -58,7 +64,7 @@ export interface WorkflowTemplateRepository {
    * @returns A paginated response containing workflow template summaries
    */
   listWorkflowTemplates(
-    request: ListWorkflowTemplatesRequest
+    request: ListWorkflowTemplatesRequestRepo
   ): TaskEither<WorkflowTemplateValidationError | UnknownError, ListWorkflowTemplatesResponse>
 
   /**
@@ -85,11 +91,28 @@ export interface WorkflowTemplateRepository {
 }
 
 export interface ListWorkflowTemplatesRequest extends RequestorAwareRequest {
+  search?: string
   pagination: {
     page: number
     limit: number
   }
+  filters?: {
+    spaceIdentifier?: string
+    status?: readonly [WorkflowTemplateStatus, ...WorkflowTemplateStatus[]]
+  }
+}
+
+export interface ListWorkflowTemplatesRequestRepo extends RequestorAwareRequest {
   search?: string
+  pagination: {
+    page: number
+    limit: number
+  }
+  filters?: {
+    spaceId?: string
+    spaceName?: string
+    status?: readonly [WorkflowTemplateStatus, ...WorkflowTemplateStatus[]]
+  }
 }
 
 export interface ListWorkflowTemplatesResponse {

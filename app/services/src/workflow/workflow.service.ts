@@ -24,6 +24,7 @@ import {
   WorkflowGetError,
   WorkflowRepository,
   ListWorkflowsRequest,
+  ListWorkflowsRequestRepo,
   ListWorkflowsResponse
 } from "./interfaces"
 
@@ -103,7 +104,26 @@ export class WorkflowService {
   listWorkflows<T extends WorkflowDecoratorSelector>(
     request: ListWorkflowsRequest<T>
   ): TaskEither<WorkflowGetError, ListWorkflowsResponse<T>> {
-    return this.workflowRepo.listWorkflows(request)
+    const filters = request.filters
+      ? {
+          includeOnlyNonTerminalState: request.filters.includeOnlyNonTerminalState,
+          workflowTemplateId:
+            request.filters.workflowTemplateIdentifier && isUUIDv4(request.filters.workflowTemplateIdentifier)
+              ? request.filters.workflowTemplateIdentifier
+              : undefined,
+          workflowTemplateName:
+            request.filters.workflowTemplateIdentifier && !isUUIDv4(request.filters.workflowTemplateIdentifier)
+              ? request.filters.workflowTemplateIdentifier
+              : undefined
+        }
+      : undefined
+
+    const repoRequest: ListWorkflowsRequestRepo<T> = {
+      ...request,
+      filters
+    }
+
+    return this.workflowRepo.listWorkflows(repoRequest)
   }
 }
 

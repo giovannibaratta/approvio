@@ -1,7 +1,6 @@
 import {
   WorkflowTemplate,
   WorkflowTemplateValidationError,
-  WorkflowTemplateSummary,
   ApprovalRule,
   ApprovalRuleType,
   WorkflowAction,
@@ -19,7 +18,7 @@ import {
   WorkflowTemplateGetError,
   WorkflowTemplateRepository,
   WorkflowTemplateUpdateError,
-  ListWorkflowTemplatesRequest,
+  ListWorkflowTemplatesRequestRepo,
   ListWorkflowTemplatesResponse
 } from "@services"
 import {Versioned} from "@domain"
@@ -31,6 +30,7 @@ import * as O from "fp-ts/Option"
 import {Option} from "fp-ts/Option"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 import {isPrismaUniqueConstraintError} from "./errors"
+import * as E from "fp-ts/Either"
 import {Either} from "fp-ts/Either"
 
 type Identifier = IdIdentifier | NameVersionIdentifier
@@ -144,53 +144,67 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
   }
 
   listWorkflowTemplates(
-    request: ListWorkflowTemplatesRequest
+    request: ListWorkflowTemplatesRequestRepo
   ): TaskEither<WorkflowTemplateValidationError | UnknownError, ListWorkflowTemplatesResponse> {
-    return TE.tryCatchK(
-      async () => {
-        const skip = (request.pagination.page - 1) * request.pagination.limit
-        const whereClause: Prisma.WorkflowTemplateWhereInput = request.search
-          ? {name: {contains: request.search, mode: "insensitive"}}
-          : {}
+    return pipe(
+      TE.tryCatch(
+        async () => {
+          const skip = (request.pagination.page - 1) * request.pagination.limit
 
-        const [templates, total] = await Promise.all([
-          this.dbClient.workflowTemplate.findMany({
-            skip,
-            take: request.pagination.limit,
-            where: whereClause,
-            orderBy: {createdAt: "desc"}
-          }),
-          this.dbClient.workflowTemplate.count({where: whereClause})
-        ])
+          const where: Prisma.WorkflowTemplateWhereInput = request.search
+            ? {name: {contains: request.search, mode: "insensitive"}}
+            : {}
 
-        const domainTemplates = templates
-          .map(template => mapWorkflowTemplateToDomain(template))
-          .filter(result => result._tag === "Right")
-          .map(result => result.right)
-
-        const workflowTemplateSummaries: ReadonlyArray<WorkflowTemplateSummary> = domainTemplates.map(template => ({
-          id: template.id,
-          name: template.name,
-          version: template.version,
-          description: template.description,
-          createdAt: template.createdAt,
-          updatedAt: template.updatedAt
-        }))
-
-        return {
-          templates: workflowTemplateSummaries,
-          pagination: {
-            total,
-            page: request.pagination.page,
-            limit: request.pagination.limit
+          if (request.filters?.spaceId) {
+            where.spaceId = request.filters.spaceId
+          } else if (request.filters?.spaceName) {
+            where.spaces = {
+              name: request.filters.spaceName
+            }
           }
+
+          if (request.filters?.status) where.status = {in: [...request.filters.status]}
+
+          return Promise.all([
+            this.dbClient.workflowTemplate.findMany({
+              skip,
+              take: request.pagination.limit,
+              orderBy: {createdAt: "desc"},
+              where
+            }),
+            this.dbClient.workflowTemplate.count({where})
+          ])
+        },
+        error => {
+          Logger.error("Error while listing workflow templates. Unknown error", error)
+          return "unknown_error" as const
         }
-      },
-      error => {
-        Logger.error("Error while listing workflow templates. Unknown error", error)
-        return "unknown_error" as const
-      }
-    )()
+      ),
+      TE.chainEitherKW(([templates, total]) =>
+        pipe(
+          templates,
+          E.traverseArray(mapWorkflowTemplateToDomain),
+          E.map(
+            (domainTemplates): ListWorkflowTemplatesResponse => ({
+              templates: domainTemplates.map(template => ({
+                id: template.id,
+                name: template.name,
+                version: template.version,
+                description: template.description,
+                status: template.status,
+                createdAt: template.createdAt,
+                updatedAt: template.updatedAt
+              })),
+              pagination: {
+                total,
+                page: request.pagination.page,
+                limit: request.pagination.limit
+              }
+            })
+          )
+        )
+      )
+    )
   }
 
   atomicUpdateAndCreate(data: {
