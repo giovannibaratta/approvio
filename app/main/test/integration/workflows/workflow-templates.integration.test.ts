@@ -645,6 +645,58 @@ describe("Workflow Templates API", () => {
         expect((responseValid.body as ListWorkflowTemplates200Response).data[0]?.id).toEqual(targetTemplate.id)
       })
 
+      it("should support EXACT searchMode", async () => {
+        // Given
+        await createMockWorkflowTemplateInDb(prisma, {name: "Template 123"})
+        const targetTemplate = await createMockWorkflowTemplateInDb(prisma, {name: "Template 12"})
+
+        // When: searching with searchMode=EXACT
+        const response = await get(app, `${endpoint}?search=Template 12&searchMode=EXACT`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect: Only the exact match should be returned
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflowTemplates200Response = response.body
+        expect(body.data).toHaveLength(1)
+        expect(body.data[0]?.id).toEqual(targetTemplate.id)
+      })
+
+      it("should return empty list when no templates match the exact search term", async () => {
+        // Given
+        await createMockWorkflowTemplateInDb(prisma, {name: "Template 123"})
+
+        // When: searching with an incomplete term and searchMode=EXACT
+        const response = await get(app, `${endpoint}?search=Template 12&searchMode=EXACT`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect: No templates should be returned
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflowTemplates200Response = response.body
+        expect(body.data).toHaveLength(0)
+      })
+
+      it("should support CONTAINS searchMode", async () => {
+        // Given
+        const template1 = await createMockWorkflowTemplateInDb(prisma, {name: "Template XYZ"})
+        const template2 = await createMockWorkflowTemplateInDb(prisma, {name: "My Template XYZ 123"})
+        await createMockWorkflowTemplateInDb(prisma, {name: "Template 123"})
+
+        // When: searching with searchMode=CONTAINS
+        const response = await get(app, `${endpoint}?search=Template XYZ&searchMode=CONTAINS`)
+          .withToken(orgAdminUser.token)
+          .build()
+
+        // Expect: Both templates containing the term should be returned
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflowTemplates200Response = response.body
+        expect(body.data).toHaveLength(2)
+        const returnedIds = body.data.map(t => t.id)
+        expect(returnedIds).toContain(template1.id)
+        expect(returnedIds).toContain(template2.id)
+      })
+
       it("should return list of workflow templates with pagination", async () => {
         // Given
         const template1 = await createMockWorkflowTemplateInDb(prisma, {

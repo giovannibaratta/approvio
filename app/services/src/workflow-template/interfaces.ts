@@ -90,24 +90,23 @@ export interface WorkflowTemplateRepository {
   countWorkflowTemplatesBySpaceId(spaceId: string): TaskEither<UnknownError, number>
 }
 
-export interface ListWorkflowTemplatesRequest extends RequestorAwareRequest {
+interface ListWorkflowTemplateRequestNoFilters {
   search?: string
+  searchMode?: "CONTAINS" | "EXACT"
   pagination: {
     page: number
     limit: number
   }
+}
+
+export interface ListWorkflowTemplatesRequest extends RequestorAwareRequest, ListWorkflowTemplateRequestNoFilters {
   filters?: {
     spaceIdentifier?: string
     status?: readonly [WorkflowTemplateStatus, ...WorkflowTemplateStatus[]]
   }
 }
 
-export interface ListWorkflowTemplatesRequestRepo extends RequestorAwareRequest {
-  search?: string
-  pagination: {
-    page: number
-    limit: number
-  }
+export interface ListWorkflowTemplatesRequestRepo extends ListWorkflowTemplateRequestNoFilters {
   filters?: {
     spaceId?: string
     spaceName?: string

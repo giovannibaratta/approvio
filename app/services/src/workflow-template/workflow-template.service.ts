@@ -295,6 +295,7 @@ export class WorkflowTemplateService {
 
     const repoRequest = {
       ...request,
+      searchMode: request.searchMode,
       filters
     }
 

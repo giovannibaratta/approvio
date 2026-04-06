@@ -118,11 +118,33 @@ export class WorkflowTemplatesController {
 
         return E.right(typedStatus)
       }),
+      E.chainW<
+        "invalid_search_mode",
+        ListWorkflowTemplatesParams & {
+          status?: [WorkflowTemplateStatus, ...WorkflowTemplateStatus[]]
+        },
+        Overwrite<
+          ListWorkflowTemplatesParams & {
+            status?: [WorkflowTemplateStatus, ...WorkflowTemplateStatus[]]
+          },
+          {
+            searchMode?: "CONTAINS" | "EXACT"
+          }
+        >
+      >(params => {
+        if (params.searchMode === undefined) return E.right({...params, searchMode: undefined})
+
+        if (params.searchMode === "CONTAINS" || params.searchMode === "EXACT")
+          return E.right({...params, searchMode: params.searchMode})
+
+        return E.left("invalid_search_mode" as const)
+      }),
       TE.fromEither,
       TE.map(params => {
         return {
           pagination: {page: params.page ?? 1, limit: params.limit ?? 20},
           search: params.search,
+          searchMode: params.searchMode,
           filters: {
             spaceIdentifier: params.spaceIdentifier,
             status: params.status
