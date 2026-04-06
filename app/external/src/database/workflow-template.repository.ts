@@ -151,9 +151,12 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
         async () => {
           const skip = (request.pagination.page - 1) * request.pagination.limit
 
-          const where: Prisma.WorkflowTemplateWhereInput = request.search
-            ? {name: {contains: request.search, mode: "insensitive"}}
-            : {}
+          const where: Prisma.WorkflowTemplateWhereInput = {}
+
+          if (request.search) {
+            if (request.searchMode === "EXACT") where.name = request.search
+            else where.name = {contains: request.search, mode: "insensitive"}
+          }
 
           if (request.filters?.spaceId) {
             where.spaceId = request.filters.spaceId

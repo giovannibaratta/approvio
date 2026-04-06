@@ -408,6 +408,8 @@ export function generateErrorResponseForListWorkflowTemplates(
     case "invalid_page":
     case "invalid_limit":
     case "invalid_search":
+    case "invalid_search_mode":
+    case "invalid_search_length":
     case "invalid_space_identifier":
     case "invalid_status":
     case "malformed_object":
