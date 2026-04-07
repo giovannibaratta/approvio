@@ -334,6 +334,8 @@ export function generateErrorResponseForListUsers(error: UserListError, context:
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "requestor_not_authorized":
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Not authorized to list users`))
     case "invalid_page_number":
     case "invalid_limit_number":
     case "search_too_long":
@@ -355,11 +357,14 @@ export function generateErrorResponseForListUsers(error: UserListError, context:
   }
 }
 
-export function mapToServiceRequest(request: {
-  search?: string
-  page?: string
-  limit?: string
-}): Either<"invalid_page_number" | "invalid_limit_number", ListUsersRequest> {
+export function mapToServiceRequest(
+  request: {
+    search?: string
+    page?: string
+    limit?: string
+  },
+  requestor: AuthenticatedEntity
+): Either<"invalid_page_number" | "invalid_limit_number", ListUsersRequest> {
   const {search, page, limit} = request
 
   const validateInteger = <LValue>(value: string | undefined, lValue: LValue): Either<LValue, Option<number>> => {
@@ -378,6 +383,7 @@ export function mapToServiceRequest(request: {
     bindW("page", () => validateInteger(page, "invalid_page_number" as const)),
     bindW("limit", () => validateInteger(limit, "invalid_limit_number" as const)),
     map(request => ({
+      requestor,
       search: request.search,
       page: O.isSome(request.page) ? request.page.value : undefined,
       limit: O.isSome(request.limit) ? request.limit.value : undefined
