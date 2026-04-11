@@ -10,6 +10,7 @@ import {RequestorAwareRequest} from "@services/shared/types"
 import {TaskEither} from "fp-ts/TaskEither"
 import {Option} from "fp-ts/Option"
 import {Versioned} from "@domain"
+import {SortBy, SortDirection} from "@approvio/api"
 
 export interface WorkflowTemplateRepository {
   /**
@@ -19,7 +20,7 @@ export interface WorkflowTemplateRepository {
    */
   createWorkflowTemplate(
     data: WorkflowTemplate
-  ): TaskEither<CreateWorkflowTemplateRepoError | WorkflowTemplateValidationError, WorkflowTemplate>
+  ): TaskEither<CreateWorkflowTemplateRepoError | WorkflowTemplateValidationError, Versioned<WorkflowTemplate>>
 
   /**
    * Retrieves a workflow template by its unique identifier.
@@ -36,8 +37,17 @@ export interface WorkflowTemplateRepository {
    */
   getWorkflowTemplateByNameAndVersion(
     templateName: string,
-    version: string
+    version: number
   ): TaskEither<WorkflowTemplateGetError, Versioned<WorkflowTemplate>>
+
+  /**
+   * Retrieves the active workflow template by its name.
+   * @param templateName The name of the workflow template
+   * @returns The versioned workflow template or an error if not found
+   */
+  getActiveWorkflowTemplateByName(
+    templateName: string
+  ): TaskEither<WorkflowTemplateGetActiveError, Versioned<WorkflowTemplate>>
 
   /**
    * Finds the most recent non-active workflow template for a given name.
@@ -76,7 +86,7 @@ export interface WorkflowTemplateRepository {
   atomicUpdateAndCreate(data: {
     existingTemplate: Versioned<WorkflowTemplate>
     newTemplate: WorkflowTemplate
-  }): TaskEither<WorkflowTemplateUpdateError | CreateWorkflowTemplateRepoError, WorkflowTemplate>
+  }): TaskEither<WorkflowTemplateUpdateError | CreateWorkflowTemplateRepoError, Versioned<WorkflowTemplate>>
 
   /**
    * Retrieves space mappings for a batch of workflow template IDs.
@@ -90,6 +100,11 @@ export interface WorkflowTemplateRepository {
   countWorkflowTemplatesBySpaceId(spaceId: string): TaskEither<UnknownError, number>
 }
 
+export interface Sort {
+  readonly field: SortBy
+  readonly direction: SortDirection
+}
+
 interface ListWorkflowTemplateRequestNoFilters {
   search?: string
   searchMode?: "CONTAINS" | "EXACT"
@@ -97,6 +112,7 @@ interface ListWorkflowTemplateRequestNoFilters {
     page: number
     limit: number
   }
+  sort?: readonly Sort[]
 }
 
 export interface ListWorkflowTemplatesRequest extends RequestorAwareRequest, ListWorkflowTemplateRequestNoFilters {
@@ -138,6 +154,8 @@ export interface CreateWorkflowTemplateRequest extends RequestorAwareRequest {
 
 export interface UpdateWorkflowTemplateRequest extends RequestorAwareRequest {
   templateName: string
+  /** The value is used to check for concurrency control, not as a value to be updated */
+  occVersion: bigint
   workflowTemplateData: Partial<CreateWorkflowTemplateRequest["workflowTemplateData"]>
   cancelWorkflows?: boolean
 }
@@ -155,16 +173,20 @@ export interface CreateWorkflowTemplateRepo {
 
 export const WORKFLOW_TEMPLATE_REPOSITORY_TOKEN = Symbol("WORKFLOW_TEMPLATE_REPOSITORY_TOKEN")
 
+export type WorkflowTemplateGetActiveError =
+  | "active_workflow_template_not_found"
+  | WorkflowTemplateValidationError
+  | UnknownError
+
 export type WorkflowTemplateGetError = "workflow_template_not_found" | WorkflowTemplateValidationError | UnknownError
+
 export type WorkflowTemplateUpdateError =
-  | "workflow_template_not_found"
   | "concurrency_error"
   | "workflow_template_already_exists"
   | UnknownError
   | WorkflowTemplateValidationError
 
 export type WorkflowTemplateDeprecateError =
-  | "workflow_template_not_found"
   | "workflow_template_not_active"
   | "workflow_template_not_pending_deprecation"
   | UnknownError

@@ -1,6 +1,6 @@
 import {GetAuthenticatedEntity} from "@app/auth"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
-import {getStringAsEnum, logSuccess, Overwrite} from "@utils"
+import {logSuccess} from "@utils"
 import {
   WorkflowTemplateService,
   CreateWorkflowTemplateRequest,
@@ -20,7 +20,8 @@ import {
   generateErrorResponseForDeprecateWorkflowTemplate,
   generateErrorResponseForListWorkflowTemplates,
   mapWorkflowTemplateToApi,
-  mapWorkflowTemplateListToApi
+  mapWorkflowTemplateListToApi,
+  mapListWorkflowTemplatesParamsToServiceRequest
 } from "./workflow-templates.mappers"
 import {
   WorkflowTemplateCreate,
@@ -28,10 +29,9 @@ import {
   ListWorkflowTemplates200Response,
   WorkflowTemplateUpdate,
   WorkflowTemplateDeprecate,
-  validateListWorkflowTemplatesParams,
-  ListWorkflowTemplatesParams
+  validateListWorkflowTemplatesParams
 } from "@approvio/api"
-import {AuthenticatedEntity, WorkflowTemplateStatus} from "@domain"
+import {AuthenticatedEntity} from "@domain"
 import {isLeft} from "fp-ts/Either"
 
 export const WORKFLOW_TEMPLATES_ENDPOINT_ROOT = "workflow-templates"
@@ -80,78 +80,9 @@ export class WorkflowTemplatesController {
     @Query() query: Record<string, unknown>
   ): Promise<ListWorkflowTemplates200Response> {
     const eitherWorkflowTemplates = await pipe(
-      query,
-      validateListWorkflowTemplatesParams,
-      E.chainW<
-        "invalid_status",
-        ListWorkflowTemplatesParams,
-        Overwrite<
-          ListWorkflowTemplatesParams,
-          {
-            status?: [WorkflowTemplateStatus, ...WorkflowTemplateStatus[]]
-          }
-        >
-      >(params => {
-        const rawStatus = params.status
-
-        if (rawStatus === undefined) return E.right({...params, status: undefined})
-
-        const uncheckedStatuses = rawStatus.map(s => getStringAsEnum(s.toUpperCase(), WorkflowTemplateStatus))
-
-        const statuses: WorkflowTemplateStatus[] = []
-
-        for (const status of uncheckedStatuses) {
-          if (status === undefined) return E.left("invalid_status" as const)
-          statuses.push(status)
-        }
-
-        const firstItem = statuses.at(0)
-
-        if (firstItem === undefined) return E.left("invalid_status" as const)
-
-        const typedStatus: ListWorkflowTemplatesParams & {
-          status: [WorkflowTemplateStatus, ...WorkflowTemplateStatus[]]
-        } = {
-          ...params,
-          status: [firstItem, ...statuses.slice(1)]
-        }
-
-        return E.right(typedStatus)
-      }),
-      E.chainW<
-        "invalid_search_mode",
-        ListWorkflowTemplatesParams & {
-          status?: [WorkflowTemplateStatus, ...WorkflowTemplateStatus[]]
-        },
-        Overwrite<
-          ListWorkflowTemplatesParams & {
-            status?: [WorkflowTemplateStatus, ...WorkflowTemplateStatus[]]
-          },
-          {
-            searchMode?: "CONTAINS" | "EXACT"
-          }
-        >
-      >(params => {
-        if (params.searchMode === undefined) return E.right({...params, searchMode: undefined})
-
-        if (params.searchMode === "CONTAINS" || params.searchMode === "EXACT")
-          return E.right({...params, searchMode: params.searchMode})
-
-        return E.left("invalid_search_mode" as const)
-      }),
+      validateListWorkflowTemplatesParams(query),
+      E.chainW(params => mapListWorkflowTemplatesParamsToServiceRequest(params, requestor)),
       TE.fromEither,
-      TE.map(params => {
-        return {
-          pagination: {page: params.page ?? 1, limit: params.limit ?? 20},
-          search: params.search,
-          searchMode: params.searchMode,
-          filters: {
-            spaceIdentifier: params.spaceIdentifier,
-            status: params.status
-          },
-          requestor
-        }
-      }),
       TE.chainW(req => this.workflowTemplateService.listWorkflowTemplates(req)),
       TE.map(mapWorkflowTemplateListToApi),
       logSuccess("Workflow templates listed", "WorkflowTemplatesController", r => ({
@@ -180,9 +111,8 @@ export class WorkflowTemplatesController {
       logSuccess("Workflow template retrieved", "WorkflowTemplatesController", t => ({id: t.id}))
     )()
 
-    if (isLeft(eitherWorkflowTemplate)) {
+    if (isLeft(eitherWorkflowTemplate))
       throw generateErrorResponseForGetWorkflowTemplate(eitherWorkflowTemplate.left, "Failed to get workflow template")
-    }
 
     return eitherWorkflowTemplate.right
   }
