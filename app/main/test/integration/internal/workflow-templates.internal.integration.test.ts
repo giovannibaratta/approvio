@@ -78,7 +78,7 @@ describe("Workflow Templates internal API", () => {
           where: {id: createdTemplate.id},
           data: {
             status: "PENDING_DEPRECATION",
-            version: "1",
+            version: 1,
             allowVotingOnDeprecatedTemplate: false
           }
         })

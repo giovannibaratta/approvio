@@ -7,7 +7,8 @@ import {
   Vote,
   consolidateVotes,
   doesVotesCoverApprovalRules,
-  UnconstrainedBoundRole
+  UnconstrainedBoundRole,
+  Versioned
 } from "@domain"
 import {WorkflowTemplate, WorkflowTemplateCantVoteReason} from "./workflow-templates"
 
@@ -212,7 +213,7 @@ function validateWorkflowStatus(status: string): Either<WorkflowValidationError,
 }
 
 export interface WorkflowDecorators {
-  workflowTemplate: WorkflowTemplate
+  workflowTemplate: Versioned<WorkflowTemplate>
   occ: bigint
 }
 

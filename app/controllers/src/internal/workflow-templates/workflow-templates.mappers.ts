@@ -37,7 +37,6 @@ export function generateErrorResponseForCancelWorkflowsForTemplate(
     case "workflow_template_version_invalid_number":
     case "workflow_template_version_too_long":
     case "workflow_template_version_invalid_format":
-    case "workflow_template_active_is_not_latest":
     case "approval_rule_malformed_content":
     case "approval_rule_invalid_rule_type":
     case "approval_rule_and_rule_must_have_rules":

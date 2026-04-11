@@ -753,23 +753,19 @@ describe("Workflow Templates API", () => {
           // Create templates with different statuses
           active1 = await createMockWorkflowTemplateInDb(prisma, {
             name: "Active 1",
-            status: "ACTIVE",
-            version: "latest"
+            status: "ACTIVE"
           })
           active2 = await createMockWorkflowTemplateInDb(prisma, {
             name: "Active 2",
-            status: "ACTIVE",
-            version: "latest"
+            status: "ACTIVE"
           })
           pendingDeprecation = await createMockWorkflowTemplateInDb(prisma, {
             name: "Pending Deprecation 1",
-            status: "PENDING_DEPRECATION",
-            version: "1"
+            status: "PENDING_DEPRECATION"
           })
           deprecated = await createMockWorkflowTemplateInDb(prisma, {
             name: "Deprecated 1",
-            status: "DEPRECATED",
-            version: "1"
+            status: "DEPRECATED"
           })
         })
 
@@ -831,6 +827,90 @@ describe("Workflow Templates API", () => {
         })
       })
 
+      describe("sorting", () => {
+        it("should support multiple field sorting with default ASC direction for missing directions", async () => {
+          // Given
+          const t1a = await createMockWorkflowTemplateInDb(prisma, {
+            name: "Template A",
+            createdAt: new Date("2023-01-02"),
+            version: 1
+          })
+          const t1b = await createMockWorkflowTemplateInDb(prisma, {
+            name: "Template B",
+            createdAt: new Date("2023-01-01"),
+            version: 1
+          })
+          const t2 = await createMockWorkflowTemplateInDb(prisma, {
+            name: "Template B",
+            createdAt: new Date("2023-01-03"),
+            version: 2
+          })
+
+          // When: Sort by Version ASC, then CreatedAt (default ASC)
+          // (Template A, 2023-01-01) -> (Template A, 2023-01-02) -> (Template B, 2023-01-03)
+          const responseArr = await get(app, endpoint)
+            .withToken(orgAdminUser.token)
+            .query({sortBy: ["VERSION", "CREATED_AT"], sortDirection: ["ASC"]})
+            .build()
+
+          // Expect
+          expect(responseArr).toHaveStatusCode(HttpStatus.OK)
+          const bodyArr: ListWorkflowTemplates200Response = responseArr.body
+          expect(bodyArr.data).toHaveLength(3)
+          expect(bodyArr.data[0]?.id).toEqual(t1b.id)
+          expect(bodyArr.data[1]?.id).toEqual(t1a.id)
+          expect(bodyArr.data[2]?.id).toEqual(t2.id)
+
+          // When: Sort by Version DESC, then CreatedAt ASC
+          // (Template B, 2023-01-03) -> (Template A, 2023-01-01) -> (Template A, 2023-01-02)
+          const responseSingle = await get(app, endpoint)
+            .withToken(orgAdminUser.token)
+            .query({sortBy: ["VERSION", "CREATED_AT"], sortDirection: ["DESC"]})
+            .build()
+
+          expect(responseSingle).toHaveStatusCode(HttpStatus.OK)
+          const bodySingle: ListWorkflowTemplates200Response = responseSingle.body
+          expect(bodySingle.data).toHaveLength(3)
+          expect(bodySingle.data[0]?.id).toEqual(t2.id)
+          expect(bodySingle.data[1]?.id).toEqual(t1b.id)
+          expect(bodySingle.data[2]?.id).toEqual(t1a.id)
+        })
+
+        it("should support multiple field sorting with explicit directions", async () => {
+          // Given
+          const t1a = await createMockWorkflowTemplateInDb(prisma, {
+            name: "Template A",
+            createdAt: new Date("2023-01-01"),
+            version: 1
+          })
+          const t2b = await createMockWorkflowTemplateInDb(prisma, {
+            name: "Template B",
+            createdAt: new Date("2023-01-02"),
+            version: 1
+          })
+          const t2a = await createMockWorkflowTemplateInDb(prisma, {
+            name: "Template A",
+            createdAt: new Date("2023-01-02"),
+            version: 2
+          })
+
+          // When: Sort by Version ASC, then CreatedAt DESC
+          // Template A (newer) -> Template A (older)
+          const response = await get(app, endpoint)
+            .withToken(orgAdminUser.token)
+            .query({sortBy: ["VERSION", "CREATED_AT"], sortDirection: ["ASC", "DESC"]})
+            .build()
+
+          // Expect
+          expect(response).toHaveStatusCode(HttpStatus.OK)
+          const body: ListWorkflowTemplates200Response = response.body
+          expect(body.data).toHaveLength(3)
+          expect(body.data[0]?.id).toEqual(t2b.id)
+          expect(body.data[1]?.id).toEqual(t1a.id)
+          expect(body.data[2]?.id).toEqual(t2a.id)
+        })
+      })
+
       it("should allow org members to list templates", async () => {
         // Given
         await createMockWorkflowTemplateInDb(prisma, {name: "Member Template"})
@@ -846,6 +926,18 @@ describe("Workflow Templates API", () => {
     })
 
     describe("bad cases", () => {
+      it("should return 400 BAD_REQUEST (SORT_DIRECTION_LENGTH_MISMATCH) when more directions than fields provided", async () => {
+        // When
+        const response = await get(app, endpoint)
+          .withToken(orgAdminUser.token)
+          .query({sortBy: ["VERSION"], sortDirection: ["ASC", "DESC"]})
+          .build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("SORT_DIRECTION_LENGTH_MISMATCH")
+      })
+
       it("should return 401 UNAUTHORIZED if no token is provided", async () => {
         // When
         const response = await get(app, endpoint).build()
@@ -915,20 +1007,22 @@ describe("Workflow Templates API", () => {
     })
   })
 
-  describe("PUT /workflow-templates/:templateId", () => {
+  describe("PUT /workflow-templates/:templateName", () => {
     let createdTemplate: PrismaWorkflowTemplate
+    let updatePayload: WorkflowTemplateUpdate
 
     beforeEach(async () => {
       createdTemplate = await createMockWorkflowTemplateInDb(prisma, {
         name: "Update Template",
         description: "Original description"
       })
-    })
 
-    const updatePayload: WorkflowTemplateUpdate = {
-      description: "Updated description",
-      defaultExpiresInHours: 48
-    }
+      updatePayload = {
+        concurrencyControl: {version: createdTemplate.occ.toString()},
+        description: "Updated description",
+        defaultExpiresInHours: 48
+      }
+    })
 
     describe("good cases", () => {
       it("should update workflow template and return updated data (as OrgAdmin)", async () => {
@@ -953,7 +1047,7 @@ describe("Workflow Templates API", () => {
         expect(originalTemplate?.name).toEqual(createdTemplate.name) // Name should not change
         expect(originalTemplate?.description).toEqual(createdTemplate.description) // Original description should remain
         expect(originalTemplate?.status).toEqual("PENDING_DEPRECATION") // Original template should be deprecated
-        expect(originalTemplate?.version).toEqual("1") // Original template should now have version 1
+        expect(originalTemplate?.version).toEqual(1) // Original template should now have version 1
 
         const newTemplate = await prisma.workflowTemplate.findUnique({
           where: {id: body.id}
@@ -961,12 +1055,13 @@ describe("Workflow Templates API", () => {
         expect(newTemplate?.description).toEqual(updatePayload.description)
         expect(newTemplate?.defaultExpiresInHours).toEqual(updatePayload.defaultExpiresInHours)
         expect(newTemplate?.status).toEqual("ACTIVE") // New template should be active
-        expect(newTemplate?.version).toEqual("latest") // New template should be latest
+        expect(newTemplate?.version).toEqual(2) // New template should be 2
       })
 
       it("should update only provided fields", async () => {
         // Given
         const partialUpdate: WorkflowTemplateUpdate = {
+          concurrencyControl: {version: createdTemplate.occ.toString()},
           description: "Partially Updated Description"
         }
 
@@ -986,6 +1081,7 @@ describe("Workflow Templates API", () => {
       it("should create new version and deprecate old version on update", async () => {
         // Given
         const updatePayload: WorkflowTemplateUpdate = {
+          concurrencyControl: {version: createdTemplate.occ.toString()},
           description: "New version description"
         }
 
@@ -1001,7 +1097,7 @@ describe("Workflow Templates API", () => {
         expect(body.id).not.toEqual(createdTemplate.id) // New template should have different ID
         expect(body.name).toEqual(createdTemplate.name) // Same name
         expect(body.description).toEqual(updatePayload.description)
-        expect(body.version).toEqual("latest") // New version should be latest
+        expect(body.version).toEqual("2")
 
         // Validate that both templates exist in DB
         const allTemplates = await prisma.workflowTemplate.findMany({
@@ -1028,7 +1124,7 @@ describe("Workflow Templates API", () => {
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
       })
 
-      it("should return 404 NOT_FOUND for non-existent template", async () => {
+      it("should return 409 ACTIVE_WORKFLOW_TEMPLATE_NOT_FOUND for non-existent template", async () => {
         // Given
         const nonExistentId = randomUUID()
 
@@ -1039,13 +1135,14 @@ describe("Workflow Templates API", () => {
           .send(updatePayload)
 
         // Expect
-        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
-        expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_NOT_FOUND")
+        expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
+        expect(response.body).toHaveErrorCode("ACTIVE_WORKFLOW_TEMPLATE_NOT_FOUND")
       })
 
       it("should return 400 BAD_REQUEST (WORKFLOW_TEMPLATE_DESCRIPTION_TOO_LONG) for very long description in update", async () => {
         // Given
         const invalidUpdate: WorkflowTemplateUpdate = {
+          concurrencyControl: {version: createdTemplate.occ.toString()},
           description: "a".repeat(2049) // Too long
         }
 

@@ -6,7 +6,10 @@ import {
   WorkflowTemplateSummary as WorkflowTemplateSummaryApi,
   ApprovalRule as ApprovalRuleApi,
   ListWorkflowTemplates200Response,
-  validateListWorkflowTemplatesParams
+  validateListWorkflowTemplatesParams,
+  ListWorkflowTemplatesParams,
+  SortBy,
+  SortDirection
 } from "@approvio/api"
 import {generateErrorPayload} from "@controllers/error"
 import {mapApprovalRuleDataToApi} from "@controllers/shared"
@@ -19,7 +22,9 @@ import {
   WorkflowAction,
   WorkflowActionType,
   WorkflowTemplateSummary,
-  AuthenticatedEntity
+  AuthenticatedEntity,
+  Versioned,
+  WorkflowTemplateStatus
 } from "@domain"
 import {
   BadRequestException,
@@ -34,10 +39,14 @@ import {
   CreateWorkflowTemplateRequest,
   ListWorkflowTemplatesResponse,
   UpdateWorkflowTemplateRequest,
-  WorkflowTemplateService
+  WorkflowTemplateService,
+  ListWorkflowTemplatesRequest,
+  Sort
 } from "@services"
-import {ExtractLeftFromFn, ExtractLeftFromMethod} from "@utils"
+import {ExtractLeftFromFn, ExtractLeftFromMethod, getStringAsEnum} from "@utils"
 import {Either, isLeft, right} from "fp-ts/Either"
+import * as E from "fp-ts/Either"
+import {pipe} from "fp-ts/function"
 
 export function createWorkflowTemplateApiToServiceModel(data: {
   workflowTemplateData: WorkflowTemplateCreateApi
@@ -90,7 +99,8 @@ export function updateWorkflowTemplateApiToServiceModel(data: {
     templateName: data.templateName,
     workflowTemplateData,
     cancelWorkflows: data.workflowTemplateData.cancelWorkflows,
-    requestor: data.requestor
+    requestor: data.requestor,
+    occVersion: BigInt(data.workflowTemplateData.concurrencyControl.version)
   })
 }
 
@@ -98,7 +108,7 @@ function mapApprovalRuleToDomain(apiRule: ApprovalRuleApi): Either<ApprovalRuleV
   return ApprovalRuleFactory.validate(apiRule)
 }
 
-export function mapWorkflowTemplateToApi(workflowTemplate: WorkflowTemplate): WorkflowTemplateApi {
+export function mapWorkflowTemplateToApi(workflowTemplate: Versioned<WorkflowTemplate>): WorkflowTemplateApi {
   return {
     id: workflowTemplate.id,
     name: workflowTemplate.name,
@@ -112,7 +122,8 @@ export function mapWorkflowTemplateToApi(workflowTemplate: WorkflowTemplate): Wo
     createdAt: workflowTemplate.createdAt.toISOString(),
     updatedAt: workflowTemplate.updatedAt.toISOString(),
     status: workflowTemplate.status,
-    allowVotingOnDeprecatedTemplate: workflowTemplate.allowVotingOnDeprecatedTemplate
+    allowVotingOnDeprecatedTemplate: workflowTemplate.allowVotingOnDeprecatedTemplate,
+    concurrencyControl: {version: workflowTemplate.occ.toString()}
   }
 }
 
@@ -127,11 +138,93 @@ export function mapWorkflowTemplateListToApi(data: ListWorkflowTemplatesResponse
   }
 }
 
+export function mapListWorkflowTemplatesParamsToServiceRequest(
+  params: ListWorkflowTemplatesParams,
+  requestor: AuthenticatedEntity
+): Either<
+  "invalid_status" | "invalid_search_mode" | "invalid_sort_direction" | "invalid_sort_by",
+  ListWorkflowTemplatesRequest
+> {
+  const statusEither = pipe(
+    (params.status as string[] | undefined) ?? [],
+    E.traverseArray((s: string) =>
+      E.fromNullable("invalid_status" as const)(getStringAsEnum(s.toUpperCase(), WorkflowTemplateStatus))
+    ),
+    E.chain(statuses => {
+      if (params.status === undefined) return E.right(undefined)
+      const first = statuses[0]
+      if (first === undefined) return E.left("invalid_status" as const)
+      return E.right([first, ...statuses.slice(1)] as [WorkflowTemplateStatus, ...WorkflowTemplateStatus[]])
+    })
+  )
+
+  const searchModeEither = pipe(
+    params.searchMode,
+    E.fromPredicate(
+      mode => mode === undefined || mode === "CONTAINS" || mode === "EXACT",
+      () => "invalid_search_mode" as const
+    )
+  )
+
+  const sortDirectionEither = pipe(
+    (params.sortDirection as string[] | undefined) ?? [],
+    E.traverseArray((v: string) =>
+      E.fromNullable("invalid_sort_direction" as const)(getStringAsEnum(v.toUpperCase(), SortDirection))
+    )
+  )
+
+  const sortByEither = pipe(
+    (params.sortBy as string[] | undefined) ?? [],
+    E.traverseArray((v: string) => E.fromNullable("invalid_sort_by" as const)(getStringAsEnum(v.toUpperCase(), SortBy)))
+  )
+
+  return pipe(
+    statusEither,
+    E.chainW(status =>
+      pipe(
+        searchModeEither,
+        E.chainW(searchMode =>
+          pipe(
+            sortDirectionEither,
+            E.chainW(sortDirection =>
+              pipe(
+                sortByEither,
+                E.map(sortBy => {
+                  const sort: Sort[] = sortBy.map((field, i) => ({
+                    field,
+                    direction: (sortDirection as SortDirection[])[i] ?? SortDirection.ASC
+                  }))
+
+                  return {
+                    pagination: {
+                      page: params.page ?? 1,
+                      limit: params.limit ?? 20
+                    },
+                    search: params.search,
+                    searchMode: searchMode as "CONTAINS" | "EXACT" | undefined,
+                    sort: sort.length > 0 ? sort : undefined,
+                    filters: {
+                      spaceIdentifier: params.spaceIdentifier,
+                      status
+                    },
+                    requestor
+                  }
+                })
+              )
+            )
+          )
+        )
+      )
+    )
+  )
+}
+
 function mapWorkflowTemplateSummaryToApi(workflowTemplateSummary: WorkflowTemplateSummary): WorkflowTemplateSummaryApi {
   return {
     id: workflowTemplateSummary.id,
     name: workflowTemplateSummary.name,
     version: workflowTemplateSummary.version.toString(),
+    status: workflowTemplateSummary.status,
     description: workflowTemplateSummary.description,
     createdAt: workflowTemplateSummary.createdAt.toISOString(),
     updatedAt: workflowTemplateSummary.updatedAt.toISOString()
@@ -201,7 +294,6 @@ export function generateErrorResponseForCreateWorkflowTemplate(
         generateErrorPayload(errorCode, `${context}: Workflow template with this name already exists`)
       )
     case "workflow_template_update_before_create":
-    case "workflow_template_active_is_not_latest":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Found internal data inconsistency`)
@@ -247,7 +339,6 @@ export function generateErrorResponseForGetWorkflowTemplate(
     case "workflow_template_version_invalid_number":
     case "workflow_template_version_too_long":
     case "workflow_template_space_id_invalid_uuid":
-    case "workflow_template_active_is_not_latest":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
@@ -273,8 +364,7 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
           `${context}: entity does not have sufficient permissions to perform this operation`
         )
       )
-    case "workflow_template_not_found":
-      return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow template not found`))
+    case "active_workflow_template_not_found":
     case "concurrency_error":
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: Workflow template has been updated concurrently`)
@@ -305,8 +395,6 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
     case "workflow_action_headers_invalid":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
     case "workflow_template_update_before_create":
-    case "workflow_template_active_is_not_latest":
-    case "workflow_template_most_recent_non_active_invalid_status":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Found internal data inconsistency`)
@@ -342,8 +430,7 @@ export function generateErrorResponseForDeprecateWorkflowTemplate(
           `${context}: entity does not have sufficient permissions to perform this operation`
         )
       )
-    case "workflow_template_not_found":
-      return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow template not found`))
+    case "active_workflow_template_not_found":
     case "workflow_template_not_active":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Workflow template is not active`))
     case "workflow_template_not_pending_deprecation":
@@ -382,8 +469,6 @@ export function generateErrorResponseForDeprecateWorkflowTemplate(
     case "workflow_template_version_invalid_number":
     case "workflow_template_version_too_long":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
-    case "workflow_template_active_is_not_latest":
-    case "workflow_template_most_recent_non_active_invalid_status":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
@@ -413,6 +498,10 @@ export function generateErrorResponseForListWorkflowTemplates(
     case "invalid_space_identifier":
     case "invalid_status":
     case "malformed_object":
+    case "invalid_sort_by":
+    case "invalid_sort_direction":
+    case "sort_direction_without_sort_by":
+    case "sort_direction_length_mismatch":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid list parameters`))
     case "requestor_not_authorized":
       throw new ForbiddenException(
@@ -444,7 +533,6 @@ export function generateErrorResponseForListWorkflowTemplates(
     case "workflow_template_version_invalid_format":
     case "workflow_template_version_invalid_number":
     case "workflow_template_version_too_long":
-    case "workflow_template_active_is_not_latest":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)

@@ -107,7 +107,7 @@ model WorkflowTemplate {
   createdAt                       DateTime   @map("created_at") @db.Timestamp(6)
   updatedAt                       DateTime   @map("updated_at") @db.Timestamp(6)
   status                          String     @db.VarChar(50)
-  version                         String     @db.VarChar(50)
+  version                         Int
   allowVotingOnDeprecatedTemplate Boolean    @map("allow_voting_on_deprecated_template")
   occ                             BigInt
   spaceId                         String     @map("space_id") @db.Uuid

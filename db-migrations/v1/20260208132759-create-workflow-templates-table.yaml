@@ -50,7 +50,7 @@ databaseChangeLog:
                     nullable: false
               - column:
                   name: version
-                  type: varchar(50)
+                  type: integer
                   constraints:
                     nullable: false
               - column:

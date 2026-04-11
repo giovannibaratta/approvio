@@ -19,7 +19,9 @@ import {
   UnconstrainedBoundRole,
   User,
   UserFactory,
-  WorkflowStatus
+  WorkflowStatus,
+  WorkflowTemplate,
+  WorkflowTemplateFactory
 } from "@domain"
 import {mapToDomainVersionedUser} from "@external/database/shared"
 import {isLeft} from "fp-ts/Either"
@@ -38,6 +40,7 @@ import {Option} from "fp-ts/Option"
 import * as O from "fp-ts/Option"
 import {createSha256Hash} from "@utils"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "@external/database/constants"
+import {unwrapRight} from "@utils/either"
 
 const chance = new Chance()
 
@@ -341,6 +344,28 @@ type PrismaUserWithOrgAdmin = PrismaUser & {
   organizationAdmins: PrismaOrganizationAdmin | null
 }
 
+export function createMockWorkflowTemplateDomain(overrides?: Partial<WorkflowTemplate>): WorkflowTemplate {
+  const randomTemplate = unwrapRight(
+    WorkflowTemplateFactory.newWorkflowTemplate({
+      name: chance.name(),
+      version: chance.integer({min: 1, max: 100}),
+      description: chance.sentence(),
+      approvalRule: {
+        type: "GROUP_REQUIREMENT",
+        groupId: chance.guid(),
+        minCount: 1
+      },
+      actions: [],
+      defaultExpiresInHours: chance.integer({min: 1, max: 8760}),
+      spaceId: chance.guid()
+    })
+  )
+
+  const validatedTemplate = WorkflowTemplateFactory.validate({...randomTemplate, ...overrides})
+
+  return unwrapRight(validatedTemplate)
+}
+
 export function createMockUserDomain(overrides?: {email?: string}): User {
   const randomUser = UserFactory.newUser({
     email: overrides?.email ?? chance.email(),
@@ -510,7 +535,7 @@ export async function createMockWorkflowTemplateInDb(
     defaultExpiresInHours: chance.integer({min: 1, max: 168}), // 1 hour to 1 week
     status: "ACTIVE",
     allowVotingOnDeprecatedTemplate: true,
-    version: "latest",
+    version: 1,
     occ: 1,
     spaces: {
       connect: {

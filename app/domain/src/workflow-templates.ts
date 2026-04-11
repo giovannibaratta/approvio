@@ -17,6 +17,7 @@ export const MAX_EXPIRES_IN_HOURS = 8760 // 1 year
 export enum WorkflowTemplateStatus {
   /**
    * Template can be referenced to create new workflows.
+   * There can be only one active workflow template with the same name.
    */
   ACTIVE = "ACTIVE",
   /**
@@ -38,7 +39,7 @@ export type WorkflowTemplate = Readonly<WorkflowTemplateData & WorkflowTemplateL
 interface WorkflowTemplateData {
   id: string
   name: string
-  version: number | "latest"
+  version: number
   description?: string
   approvalRule: ApprovalRule
   actions: ReadonlyArray<WorkflowAction>
@@ -52,7 +53,7 @@ interface WorkflowTemplateData {
 
 export type WorkflowTemplateSummary = Pick<
   WorkflowTemplateData,
-  "id" | "name" | "version" | "description" | "createdAt" | "updatedAt"
+  "id" | "name" | "version" | "description" | "status" | "createdAt" | "updatedAt"
 >
 
 export type WorkflowTemplateCantVoteReason =
@@ -93,7 +94,6 @@ type UnprefixedWorkflowTemplateValidationError =
   | "version_invalid_number"
   | "version_too_long"
   | "version_invalid_format"
-  | "active_is_not_latest"
   | "space_id_invalid_uuid"
 
 export type WorkflowTemplateDeprecationError =
@@ -164,14 +164,14 @@ export class WorkflowTemplateFactory {
     data: Omit<
       Parameters<typeof WorkflowTemplateFactory.validate>[0],
       "id" | "createdAt" | "updatedAt" | "deletedAt" | "status" | "allowVotingOnDeprecatedTemplate" | "version"
-    >
+    > & {version?: number}
   ): Either<WorkflowTemplateValidationError, WorkflowTemplate> {
     const uuid = randomUUID()
     const now = new Date()
     const template = {
       ...data,
       id: uuid,
-      version: "latest" as const,
+      version: data.version ?? 1,
       status: WorkflowTemplateStatus.ACTIVE,
       allowVotingOnDeprecatedTemplate: true,
       createdAt: now,
@@ -204,8 +204,6 @@ export class WorkflowTemplateFactory {
       E.bindW("status", () => validateWorkflowTemplateStatus(data.status)),
       E.bindW("spaceId", () => validateSpaceId(data.spaceId)),
       E.chainFirstW(() => validateCreatedBeforeUpdated(data.createdAt, data.updatedAt)),
-      E.chainFirstW(({status, version}) => validateActiveIsLatest(status, version)),
-      E.chainFirstW(({status, version}) => validateLatestIsActive(status, version)),
       E.map(({name, version, description, approvalRule, actions, defaultExpiresInHours, status, spaceId}) => {
         const workflowTemplateData: WorkflowTemplateData = {
           ...data,
@@ -271,22 +269,11 @@ function validateWorkflowTemplateStatus(
 }
 
 function validateWorkflowTemplateVersion(
-  version: string | number
+  version: number
 ): Either<WorkflowTemplateValidationError, WorkflowTemplate["version"]> {
-  if (version === "latest") return E.right("latest" as const)
-
-  // Version can be either a string representing a number, or a number itself. Other cases are not allowed
-  let value: number
-
-  if (typeof version === "string")
-    try {
-      value = parseInt(version)
-    } catch {
-      return E.left("workflow_template_version_invalid_format")
-    }
-  else value = version
-
-  return value < 0 ? E.left("workflow_template_version_invalid_number") : E.right(value)
+  if (typeof version !== "number" || !Number.isInteger(version))
+    return E.left("workflow_template_version_invalid_format")
+  return version < 1 ? E.left("workflow_template_version_invalid_number") : E.right(version)
 }
 
 function validateSpaceId(spaceId: string): Either<WorkflowTemplateValidationError, string> {
@@ -296,24 +283,6 @@ function validateSpaceId(spaceId: string): Either<WorkflowTemplateValidationErro
 
 function validateCreatedBeforeUpdated(createdAt: Date, updatedAt: Date): Either<WorkflowTemplateValidationError, void> {
   if (createdAt > updatedAt) return E.left("workflow_template_update_before_create")
-  return E.right(undefined)
-}
-
-function validateActiveIsLatest(
-  status: WorkflowTemplateStatus,
-  version: WorkflowTemplate["version"]
-): Either<WorkflowTemplateValidationError, void> {
-  if (status === WorkflowTemplateStatus.ACTIVE && version !== "latest")
-    return E.left("workflow_template_active_is_not_latest")
-  return E.right(undefined)
-}
-
-function validateLatestIsActive(
-  status: WorkflowTemplateStatus,
-  version: WorkflowTemplate["version"]
-): Either<WorkflowTemplateValidationError, void> {
-  if (version === "latest" && status !== WorkflowTemplateStatus.ACTIVE)
-    return E.left("workflow_template_active_is_not_latest")
   return E.right(undefined)
 }
 
@@ -412,23 +381,18 @@ function hasVotePermissionForWorkflowTemplate(
 /**
  * Marks a template for deprecation by transitioning it to PENDING_DEPRECATION status.
  * @param template The active workflow template to deprecate
- * @param newVersion The new version number for the deprecated template.
- *                   Required because only one template can have "latest" version (ACTIVE status),
- *                   so the deprecated template must be assigned a specific version number.
  * @param cancelWorkflows Whether to cancel active workflows using this template.
  *                        If false, voting remains allowed on deprecated template.
  * @returns The updated template with PENDING_DEPRECATION status or validation errors
  */
 export function markTemplateForDeprecation(
   template: WorkflowTemplate,
-  newVersion: number,
   cancelWorkflows: boolean
 ): Either<WorkflowTemplateValidationError | WorkflowTemplateDeprecationError, WorkflowTemplate> {
   if (template.status !== WorkflowTemplateStatus.ACTIVE) return E.left("workflow_template_not_active")
 
   const updatedTemplate: WorkflowTemplate = {
     ...template,
-    version: newVersion,
     status: WorkflowTemplateStatus.PENDING_DEPRECATION,
     allowVotingOnDeprecatedTemplate: !cancelWorkflows,
     updatedAt: new Date()
@@ -453,24 +417,15 @@ export function markTemplateAsDeprecated(
   return WorkflowTemplateFactory.validate(updatedTemplate)
 }
 
+// TODO: This can be simplified by doing a simple sort
 export function getMostRecentVersionFromTuples<T>(
-  tuples: ReadonlyArray<T & {version: string}>
+  tuples: ReadonlyArray<T & {version: number}>
 ): Either<"empty_array" | "invalid_version", T> {
   if (tuples.length === 0) return left("empty_array")
 
   try {
     const mostRecent = tuples.reduce((mostRecent, current) => {
-      if (current.version === "latest") return current
-      if (mostRecent.version === "latest") return mostRecent
-
-      const currentVersionNum = parseInt(current.version, 10)
-      const mostRecentVersionNum = parseInt(mostRecent.version, 10)
-
-      if (isNaN(currentVersionNum) || isNaN(mostRecentVersionNum)) {
-        throw new Error("Invalid version format")
-      }
-
-      return currentVersionNum > mostRecentVersionNum ? current : mostRecent
+      return current.version > mostRecent.version ? current : mostRecent
     })
 
     return right(mostRecent)

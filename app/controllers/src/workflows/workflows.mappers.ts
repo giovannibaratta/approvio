@@ -156,7 +156,6 @@ export function generateErrorResponseForCreateWorkflow(
     case "workflow_template_version_invalid_number":
     case "workflow_template_version_too_long":
     case "workflow_template_space_id_invalid_uuid":
-    case "workflow_template_active_is_not_latest":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
@@ -213,7 +212,6 @@ export function generateErrorResponseForGetWorkflow(
     case "workflow_template_space_id_invalid_uuid":
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
-    case "workflow_template_active_is_not_latest":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
@@ -303,7 +301,6 @@ export function generateErrorResponseForListWorkflows(
     case "workflow_template_space_id_invalid_uuid":
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
-    case "workflow_template_active_is_not_latest":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
@@ -547,7 +544,6 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "workflow_template_space_id_invalid_uuid":
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
-    case "workflow_template_active_is_not_latest":
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
@@ -702,7 +698,6 @@ export function generateErrorResponseForCastVote(
     case "workflow_template_space_id_invalid_uuid":
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
-    case "workflow_template_active_is_not_latest":
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
@@ -833,7 +828,6 @@ export function generateErrorResponseForListVotes(error: FindVotesError, context
     case "workflow_template_space_id_invalid_uuid":
     case "workflow_update_before_create":
     case "workflow_workflow_template_id_invalid_uuid":
-    case "workflow_template_active_is_not_latest":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
