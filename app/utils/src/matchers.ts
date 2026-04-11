@@ -1,6 +1,5 @@
 import {ErrorPayload} from "@controllers/error"
 
-import {MatcherFunction} from "expect"
 import {Either, isLeft, isRight} from "fp-ts/Either"
 
 import {format} from "pretty-format"
@@ -23,11 +22,16 @@ declare global {
     }
 
     interface ExpectExtendMap {
-      toHaveErrorCode: MatcherFunction<[expectedCode: string]>
-      toBeLeft: MatcherFunction<[]>
-      toBeLeftOf: MatcherFunction<[expected: unknown]>
-      toBeRight: MatcherFunction<[]>
-      toBeRightOf: MatcherFunction<[expected: unknown]>
+      toHaveErrorCode: (received: unknown, expectedCode: string) => CustomMatcherResult
+      toHaveStatusCode: (
+        this: MatcherContext,
+        actualResponse: unknown,
+        expectedStatusCode: number
+      ) => CustomMatcherResult
+      toBeLeft: (received: unknown) => CustomMatcherResult
+      toBeLeftOf: (received: unknown, expected: unknown) => CustomMatcherResult
+      toBeRight: (received: unknown) => CustomMatcherResult
+      toBeRightOf: (this: MatcherContext, received: unknown, expected: unknown) => CustomMatcherResult
     }
   }
 }
