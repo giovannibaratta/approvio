@@ -23,7 +23,8 @@ This skill executes the test suite for the codebase.
     - If the user request is generic (e.g., "run all tests"), execute the base command.
 
 3.  **Execution**:
-    - Run the command: `yarn test <optional-arguments>` in the terminal.
+    - Run the command: `yarn ai:test <optional-arguments>` in the terminal.
+    - Note: The test setup runs silently for AI agents to reduce noise and may take a couple of minutes. You will see outputs like "Starting services" or "Generating schema".
 
 4.  **Analysis**:
     - Read the terminal output.
@@ -42,7 +43,7 @@ This skill executes the test suite for the codebase.
 ## Examples
 
 **User:** "Run the tests"
-**Action:** `yarn test`
+**Action:** `yarn ai:test:all`
 
 **User:** "Test the user controller"
-**Action:** `yarn test user.controller.spec.ts` (or similar matching file)
+**Action:** `yarn ai:test user.controller.spec.ts` (or similar matching file)
