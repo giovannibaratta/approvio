@@ -26,10 +26,16 @@
     "start:worker": "dotenv -e .env.local -- nest start worker",
     "start:worker:dev": "dotenv -e .env.local -- nest start worker --watch --debug",
     "test:setup": "yarn deps:start:test && yarn prisma:generate && yarn liquibase:update:test",
-    "test": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest --maxWorkers=50%",
-    "test:all": "yarn test:setup && yarn dotenv -e .env.test -- yarn jest --maxWorkers=50% app/**/*.test.ts",
+    "test:jest": "dotenv -e .env.test -- yarn jest --maxWorkers=50%",
+    "test": "yarn test:setup && yarn test:jest",
+    "test:all": "yarn test:setup && yarn test:jest app/**/*.test.ts",
     "test:bootstrap-env": "yarn ts-node scripts/testing/bootstrap-env.ts",
-    "generate:license": "generate-license-file"
+    "generate:license": "generate-license-file",
+    "ai:deps:start": "yarn deps:start --silent",
+    "ai:liquibase:update:dev": "yarn liquibase:update:dev --silent",
+    "ai:test:setup": "yarn deps:start:test --silent && ./scripts/prisma.sh --silent generate && ./scripts/liquibase.sh --silent update test",
+    "ai:test": "yarn ai:test:setup && AI_AGENT=true yarn test:jest",
+    "ai:test:all": "yarn ai:test:setup && AI_AGENT=true yarn test:jest app/**/*.test.ts"
   },
   "packageManager": "yarn@4.7.0",
   "dependencies": {

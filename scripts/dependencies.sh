@@ -2,10 +2,15 @@
 
 # This script manages the lifecycle of the dependencies for the project.
 
+. "$(dirname "$0")/shared.sh"
+
 readonly DOCKER_PROVIDER="docker"
 readonly PODMAN_PROVIDER="podman"
 readonly DEFAULT_PROVIDER="${DOCKER_PROVIDER}"
 readonly EXTERNAL_DEPS_COMPOSE_FILE="dev-external-deps/docker-compose.yaml"
+
+# Controls output verbosity. When set to 1, standard output of wrapped commands is suppressed.
+SILENT=0
 
 function detect_compose_provider() {
   # This function assume that podman-compose wrapper is installed.
@@ -62,24 +67,21 @@ function start(){
     down "test"
   fi
 
-  echo "Starting services with profile: '${profile_to_start}'..."
-  docker compose -f "${EXTERNAL_DEPS_COMPOSE_FILE}" --profile "${profile_to_start}" up -d ${flags}
+  run_cmd "Starting services with profile: '${profile_to_start}'" docker compose -f "${EXTERNAL_DEPS_COMPOSE_FILE}" --profile "${profile_to_start}" up -d ${flags}
 }
 
 function stop(){
   local test_arg="$1"
   local profile_to_stop=$(profile "${test_arg}")
 
-  echo "Stopping services with profile: '${profile_to_stop}'..."
-  docker compose -f "${EXTERNAL_DEPS_COMPOSE_FILE}" --profile "${profile_to_stop}" stop
+  run_cmd "Stopping services with profile: '${profile_to_stop}'" docker compose -f "${EXTERNAL_DEPS_COMPOSE_FILE}" --profile "${profile_to_stop}" stop
 }
 
 function down(){
   local test_arg="$1"
   local profile_to_down=$(profile "${test_arg}")
 
-  echo "Bringing down services and volumes with profile: '${profile_to_down}'..."
-  docker compose -f "${EXTERNAL_DEPS_COMPOSE_FILE}" --profile "${profile_to_down}" down --volumes
+  run_cmd "Bringing down services and volumes with profile: '${profile_to_down}'" docker compose -f "${EXTERNAL_DEPS_COMPOSE_FILE}" --profile "${profile_to_down}" down --volumes
 }
 
 function rebuild(){
@@ -89,31 +91,41 @@ function rebuild(){
     stop
   fi
 
-  docker ${pre_flags} compose -f "${EXTERNAL_DEPS_COMPOSE_FILE}" --profile dev up -d --build ${flags}
+  run_cmd "Rebuilding services" docker ${pre_flags} compose -f "${EXTERNAL_DEPS_COMPOSE_FILE}" --profile dev up -d --build ${flags}
 }
 
 function main(){
-  if [ $# -eq 0 ]; then
+  local args=()
+  for arg in "$@"; do
+    if [ "$arg" == "--silent" ]; then
+      SILENT=1
+    else
+      args+=("$arg")
+    fi
+  done
+
+  if [ ${#args[@]} -eq 0 ]; then
       echo "No arguments provided. Please provide an action (start, stop, down, rebuild)."
       exit 1
   fi
 
-  ACTION=$1
+  ACTION=${args[0]}
 
-  shift # Remove the first argument (action) from the list of arguments
+  # Shift the first element (action) and keep the rest
+  local action_args=("${args[@]:1}")
 
   case $ACTION in
       start)
-          start "$@"
+          start "${action_args[@]}"
           ;;
       stop)
-          stop "$@"
+          stop "${action_args[@]}"
           ;;
       down)
-          down "$@"
+          down "${action_args[@]}"
           ;;
       rebuild)
-          rebuild "$@"
+          rebuild "${action_args[@]}"
           ;;
       *)
           echo "Invalid action: $ACTION. Please use start, stop, down, or rebuild."

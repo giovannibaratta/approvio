@@ -19,8 +19,9 @@ For specific troubleshooting scenarios, refer to the following documentation:
 
 Use these scripts to verify system state and identify errors:
 
-| Script          | Description                                        |
-| :-------------- | :------------------------------------------------- |
-| `yarn lint`     | Checks for codebase linting and style issues.      |
-| `yarn build`    | Verifies TypeScript compilation across all layers. |
-| `yarn test:all` | Runs the full integration and unit test suite.     |
+| Script                        | Description                                                                                                                                                                                                                                                      |
+| :---------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `yarn lint`                   | Checks for codebase linting and style issues.                                                                                                                                                                                                                    |
+| `yarn build`                  | Verifies TypeScript compilation across all layers.                                                                                                                                                                                                               |
+| `yarn ai:test <JEST pattern>` | Runs the tests matching the specified pattern                                                                                                                                                                                                                    |
+| `yarn ai:test:all`            | Runs the full integration and unit test suite silently for AI agents. Note: Completion of the test suite can take a few minutes. During the setup phase, the command will print the current operation being done, in case of failure a full output is expected". |

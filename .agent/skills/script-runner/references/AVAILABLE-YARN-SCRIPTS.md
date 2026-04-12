@@ -24,9 +24,12 @@
 | `test:bootstrap-env`    | `yarn test:bootstrap-env`    | Bootstraps the test environment by running the test environment setup script.                                                                              | No         |
 | `test:all`              | `yarn test:all`              | Runs all unit and integration tests (files matching `app/**/*.test.ts`) after performing `test:setup`. Uses environment variables from `.env.test`.        | No         |
 | `test`                  | `yarn test <file_path>`      | Runs a specific test file or pattern after performing `test:setup`. Uses `.env.test`. The path to the test file/pattern must be appended to the command.   | No         |
+| `ai:test:setup`         | `yarn ai:test:setup`         | Silent version of `test:setup` intended for AI agents.             | No         |
+| `ai:test:all`           | `yarn ai:test:all`           | Runs all tests (files matching `app/**/*.test.ts`) using the silent `ai:test:setup`. It uses `.env.test` and sets `AI_AGENT=true`.                         | No         |
+| `ai:test`               | `yarn ai:test <file_path>`   | Runs a specific test file or pattern using the silent `ai:test:setup`. It uses `.env.test` and sets `AI_AGENT=true`.                                       | No         |
 
 ## Usage Notes
 
 - **Blocking Processes:** Scripts like `start:backend` and `start:worker` are long-running and will block the terminal. Use `&` to run them in the background if needed.
 - **Dependencies:** `deps:*` scripts manage Docker containers. Ensure Docker is running.
-- **Tests:** `test:all` runs everything. Use `yarn test <path>` for specific files.
+- **Tests:** `test:all` runs everything. Use `yarn test <path>` for specific files. For agents, use `ai:test:all` or `yarn ai:test <path>`, which have quieter output and will take a couple of minutes to finish silently.

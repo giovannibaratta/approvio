@@ -25,7 +25,7 @@ To update the database schema, follow these steps:
 
 If the automated command fails or you need more control:
 
-1.  **Start Database:** `yarn deps:start`
-2.  **Run Liquibase Update:** `yarn liquibase:update:dev`
+1.  **Start Database:** `yarn ai:deps:start`
+2.  **Run Liquibase Update:** `yarn ai:liquibase:update:dev`
 3.  **Pull Schema:** `yarn prisma:pull` (Updates `prisma/schema.prisma`)
 4.  **Generate Client:** `yarn prisma:generate`
