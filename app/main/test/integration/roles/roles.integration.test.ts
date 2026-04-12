@@ -28,7 +28,7 @@ describe("Roles Integration Tests", () => {
       .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
       .compile()
 
-    app = moduleRef.createNestApplication()
+    app = moduleRef.createNestApplication({logger: false})
     prisma = moduleRef.get(DatabaseClient)
     jwtService = moduleRef.get(JwtService)
     configProvider = moduleRef.get(ConfigProvider)

@@ -43,7 +43,7 @@ describe("Agents API", () => {
       throw error
     }
 
-    app = module.createNestApplication({logger: ["error", "warn"]})
+    app = module.createNestApplication({logger: false})
     prisma = module.get(DatabaseClient)
     const jwtService = module.get(JwtService)
     const configProvider = module.get(ConfigProvider)

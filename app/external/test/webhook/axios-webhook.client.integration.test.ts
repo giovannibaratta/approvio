@@ -6,6 +6,8 @@ import {unwrapRight} from "@utils/either"
 import {ResponseBodyStatus} from "@domain"
 import {Chance} from "chance"
 
+import {SilentLogger} from "@test/logger-helpers"
+
 describe("AxiosWebhookClient (Integration)", () => {
   let client: AxiosWebhookClient
   let endpoint: string
@@ -16,7 +18,9 @@ describe("AxiosWebhookClient (Integration)", () => {
     chance = new Chance()
     const module: TestingModule = await Test.createTestingModule({
       providers: [AxiosWebhookClient]
-    }).compile()
+    })
+      .setLogger(new SilentLogger())
+      .compile()
 
     client = module.get<AxiosWebhookClient>(AxiosWebhookClient)
     endpoint = `/test-axios-client-${chance.guid()}`

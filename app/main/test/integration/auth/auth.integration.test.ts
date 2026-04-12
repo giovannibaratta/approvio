@@ -30,7 +30,7 @@ describe("Auth Integration", () => {
       throw error
     }
 
-    app = module.createNestApplication({logger: ["error", "warn"]})
+    app = module.createNestApplication({logger: false})
     prisma = module.get(DatabaseClient)
 
     await app.init()

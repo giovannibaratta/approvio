@@ -7,6 +7,8 @@ import {WorkflowRecalculationProcessor} from "../../src/processor/workflow-recal
 import {Process} from "@nestjs/bull"
 import {Injectable} from "@nestjs/common/interfaces"
 
+import {SilentLogger} from "@test/logger-helpers"
+
 /**
  * All worker processors that should be considered for mocking
  */
@@ -43,7 +45,7 @@ class MockProcessor {
 export function setupWorkerTestModule(processorsToKeep: Array<Injectable> = []): TestingModuleBuilder {
   const builder = Test.createTestingModule({
     imports: [WorkerModule]
-  })
+  }).setLogger(new SilentLogger())
 
   // Mock all processors except those in processorsToKeep
   ALL_WORKER_PROCESSORS.forEach(processor => {

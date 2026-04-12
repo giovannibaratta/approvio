@@ -52,7 +52,7 @@ describe("Privilege Flow Integration", () => {
       .useValue(mockConfigProvider)
       .compile()
 
-    app = module.createNestApplication()
+    app = module.createNestApplication({logger: false})
     prisma = module.get(DatabaseClient)
     configProvider = module.get(ConfigProvider)
     authService = module.get(AuthService)

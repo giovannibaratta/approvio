@@ -7,7 +7,6 @@ import {cleanDatabase, cleanRedisByPrefix, prepareDatabase, prepareRedisPrefix} 
 import {MockConfigProvider} from "@test/mock-data"
 import {get} from "@test/requests"
 import {DatabaseClient} from "@external"
-import {CustomLogger} from "../../../src/logging/custom-logger"
 import {RequestContext} from "../../../src/logging/request-context"
 import {HealthService} from "@services/health"
 import * as TE from "fp-ts/TaskEither"
@@ -31,7 +30,7 @@ describe("RequestIdMiddleware Integration", () => {
       .compile()
 
     app = module.createNestApplication({
-      logger: new CustomLogger("test", {timestamp: false, logLevels: ["error", "warn"]})
+      logger: false
     })
     prisma = module.get(DatabaseClient)
     healthService = module.get(HealthService)
