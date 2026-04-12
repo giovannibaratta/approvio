@@ -43,6 +43,7 @@ export function addOrganizationAdminApiToServiceModel(data: {
 
 export function listOrganizationAdminsApiToServiceModel(data: {
   organizationName: string
+  requestor: AuthenticatedEntity
   page?: string
   limit?: string
 }): Either<"invalid_number_format", ListOrganizationAdminsRequest> {
@@ -58,7 +59,7 @@ export function listOrganizationAdminsApiToServiceModel(data: {
     bindW("organizationName", () => right(data.organizationName)),
     bindW("page", () => parseNumber(data.page)),
     bindW("limit", () => parseNumber(data.limit)),
-    map(({organizationName, page, limit}) => ({organizationName, page, limit}))
+    map(({organizationName, page, limit}) => ({organizationName, page, limit, requestor: data.requestor}))
   )
 }
 
@@ -127,7 +128,7 @@ export function generateErrorResponseForAddOrganizationAdmin(
 }
 
 export function generateErrorResponseForListOrganizationAdmins(
-  error: OrganizationAdminListError | "invalid_number_format",
+  error: OrganizationAdminListError | "invalid_number_format" | AuthorizationError,
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
@@ -142,6 +143,10 @@ export function generateErrorResponseForListOrganizationAdmins(
     case "invalid_page_number":
     case "invalid_limit_number":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid pagination parameters`))
+    case "requestor_not_authorized":
+      return new ForbiddenException(
+        generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
+      )
     case "organization_admin_email_empty":
     case "organization_admin_email_too_long":
     case "organization_admin_email_invalid":
