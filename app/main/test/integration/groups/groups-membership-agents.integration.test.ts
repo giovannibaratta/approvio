@@ -50,7 +50,7 @@ describe("Groups API - Agent Membership", () => {
       throw error
     }
 
-    app = module.createNestApplication({logger: ["error", "warn"]})
+    app = module.createNestApplication({logger: false})
 
     prisma = module.get(DatabaseClient)
     jwtService = module.get(JwtService)

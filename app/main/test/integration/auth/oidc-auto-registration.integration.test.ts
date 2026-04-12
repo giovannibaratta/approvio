@@ -49,7 +49,7 @@ describe("OIDC Auto-Registration Integration", () => {
       throw error
     }
 
-    app = module.createNestApplication({logger: ["error", "warn"]})
+    app = module.createNestApplication({logger: false})
     prisma = module.get(DatabaseClient)
     configProvider = module.get(ConfigProvider)
 

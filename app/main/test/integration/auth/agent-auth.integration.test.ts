@@ -19,6 +19,7 @@ import {isLeft} from "fp-ts/Either"
 import {createMockRefreshTokenInDb} from "@test/mock-data"
 import {RefreshTokenStatus, GRACE_PERIOD_SECONDS} from "@domain"
 import {createSha256Hash} from "@utils"
+import {SilentLogger} from "@test/logger-helpers"
 
 describe("Agent Authentication Integration", () => {
   let app: INestApplication
@@ -37,13 +38,14 @@ describe("Agent Authentication Integration", () => {
       })
         .overrideProvider(ConfigProvider)
         .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .setLogger(new SilentLogger())
         .compile()
     } catch (error) {
       console.error(error)
       throw error
     }
 
-    app = module.createNestApplication({logger: ["error", "warn"]})
+    app = module.createNestApplication({logger: false})
     prisma = module.get(DatabaseClient)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)

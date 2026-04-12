@@ -35,7 +35,7 @@ describe("Health API", () => {
       throw error
     }
 
-    app = module.createNestApplication({logger: ["error", "warn"]})
+    app = module.createNestApplication({logger: false})
     prisma = module.get(DatabaseClient)
     healthRepository = module.get(HEALTH_REPOSITORY_TOKEN)
     await app.init()
