@@ -331,6 +331,23 @@ describe("Organization Admin API", () => {
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
       })
+
+      it("should return 403 for unauthorized user (non-admin)", async () => {
+        // Given
+        const testUser = await createMockUserInDb(prisma, {email: "test.admin@example.com", orgAdmin: false})
+        const requestBody: OrganizationAdminCreate = {
+          email: testUser.email
+        }
+
+        // When
+        const response = await post(app, `${endpoint}/${organizationName}/admins`)
+          .withToken(orgMemberUser.token)
+          .build()
+          .send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.FORBIDDEN)
+      })
     })
   })
 
