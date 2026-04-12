@@ -10,7 +10,7 @@ import {WorkflowActionEmailTaskFactory, TaskStatus, WorkflowStatus} from "@domai
 import {Job} from "bull"
 import {WorkflowActionEmailEvent} from "@domain/events"
 import {randomUUID} from "crypto"
-import axios from "axios"
+import {MailpitClient} from "mailpit-api"
 import {isNone} from "fp-ts/Option"
 import {EmailService} from "@services/email/email.service"
 import * as TE from "fp-ts/TaskEither"
@@ -158,11 +158,12 @@ describe("Workflow Action Email Processor Integration", () => {
 
       // Expect: The email was sent (captured by Mailpit)
       // Note: We search by recipient to avoid interference with other tests
-      const response = await axios.get(`http://${mailpitEndpoint}/api/v1/search?query=to:"${recipient}"`)
-      const messages = response.data.messages
+      const mailpit = new MailpitClient(`http://${mailpitEndpoint}`)
+      const response = await mailpit.searchMessages({query: `to:"${recipient}"`})
+      const messages = response.messages || []
       expect(messages).toHaveLength(1)
-      expect(messages[0].To[0].Address).toBe(recipient)
-      expect(messages[0].From.Address).toBe(senderEmail)
+      expect(messages[0]?.To?.[0]?.Address).toBe(recipient)
+      expect(messages[0]?.From?.Address).toBe(senderEmail)
 
       // And: The task was updated to COMPLETED status
       const updatedTask = await prisma.workflowActionsEmailTask.findUnique({

@@ -1,5 +1,5 @@
 import {Email, EMAIL_EXTERNAL_TOKEN} from "@services/email"
-import axios from "axios"
+import {MailpitClient} from "mailpit-api"
 import {NodemailerEmailProvider} from "@external/email/email.provider"
 import {Test, TestingModule} from "@nestjs/testing"
 import {ThirdPartyModule} from "@external"
@@ -82,17 +82,21 @@ describe("NodemailerEmailProvider", () => {
     expect(result).toBeRight()
 
     // Verify the email was captured by Mailpit
-    const response = await axios.get(
-      `http://${mailpitEndpoint}/api/v1/search?query=from:"${senderUniqueTestIdentifier}"`
-    )
-    const messages = response.data.messages
+    const mailpit = new MailpitClient(`http://${mailpitEndpoint}`)
+    const response = await mailpit.searchMessages({query: `from:"${senderUniqueTestIdentifier}"`})
+    const messages = response.messages || []
 
     expect(messages).toHaveLength(1)
     const capturedEmail = messages[0]
-    expect(capturedEmail.To[0].Address).toBe(email.to)
+    expect(capturedEmail?.To?.[0]?.Address).toBe(email.to)
   })
 })
 
 async function cleanMailpitEmailInbox(endpoint: string, search: string) {
-  return await axios.delete(`http://${endpoint}/api/v1/search?query=${search}`)
+  const mailpit = new MailpitClient(`http://${endpoint}`)
+  try {
+    await mailpit.deleteMessagesBySearch({query: search})
+  } catch {
+    // If no messages match or other error, we don't strictly care for cleanup
+  }
 }
