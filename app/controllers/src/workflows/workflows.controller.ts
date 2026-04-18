@@ -25,7 +25,8 @@ import {
   mapVoteListToApi,
   generateErrorResponseForListVotes,
   WorkflowInclude,
-  validateInclude
+  validateInclude,
+  mapOrderByToService
 } from "./workflows.mappers"
 import {
   validateListWorkflowsParams,
@@ -118,9 +119,11 @@ export class WorkflowsController {
           pagination: {page: params.page ?? 1, limit: params.limit ?? 20},
           include: workflowDecoratorSelector,
           requestor,
+          sort: mapOrderByToService(params.orderBy),
           filters: {
             includeOnlyNonTerminalState: params.includeOnlyNonTerminalState,
-            workflowTemplateIdentifier: params.workflowTemplateIdentifier
+            workflowTemplateIdentifier: params.workflowTemplateIdentifier,
+            includeGroups: params.includeGroups ? Array.from(new Set(params.includeGroups)) : undefined
           }
         })
       ),
