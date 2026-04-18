@@ -1142,6 +1142,142 @@ describe("Workflows API", () => {
         expect(body.data[0]?.ref?.workflowTemplate).not.toBeNull()
         expect(body.data[1]?.ref?.workflowTemplate).not.toBeNull()
       })
+
+      it("should return workflows sorted by createdAt:ASC", async () => {
+        // Given: 3 workflows created in sequence
+        await createMockWorkflowInDb(prisma, {name: "Workflow-Sort-A"})
+        await createMockWorkflowInDb(prisma, {name: "Workflow-Sort-B"})
+        await createMockWorkflowInDb(prisma, {name: "Workflow-Sort-C"})
+
+        // When: requesting workflows sorted by CREATED_AT:ASC
+        const response = await get(app, `${endpoint}?orderBy=CREATED_AT:ASC`).withToken(orgAdminUser.token).build()
+
+        // Expect: workflows are in the relative order they were created
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        const names = body.data.map(w => w.name)
+
+        const indexA = names.indexOf("Workflow-Sort-A")
+        const indexB = names.indexOf("Workflow-Sort-B")
+        const indexC = names.indexOf("Workflow-Sort-C")
+
+        expect(indexA).toBeLessThan(indexB)
+        expect(indexB).toBeLessThan(indexC)
+      })
+
+      it("should return workflows sorted by createdAt:DESC", async () => {
+        // Given: 3 workflows created in sequence
+        await createMockWorkflowInDb(prisma, {name: "Workflow-Sort-D"})
+        await createMockWorkflowInDb(prisma, {name: "Workflow-Sort-E"})
+        await createMockWorkflowInDb(prisma, {name: "Workflow-Sort-F"})
+
+        // When: requesting workflows sorted by CREATED_AT:DESC
+        const response = await get(app, `${endpoint}?orderBy=CREATED_AT:DESC`).withToken(orgAdminUser.token).build()
+
+        // Expect: workflows are in reverse relative creation order
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        const names = body.data.map(w => w.name)
+
+        const indexD = names.indexOf("Workflow-Sort-D")
+        const indexE = names.indexOf("Workflow-Sort-E")
+        const indexF = names.indexOf("Workflow-Sort-F")
+
+        expect(indexF).toBeLessThan(indexE)
+        expect(indexE).toBeLessThan(indexD)
+      })
+
+      it("should return workflows sorted by updatedAt:ASC", async () => {
+        // Given: 3 workflows created with increasing updatedAt
+        const w1 = await createMockWorkflowInDb(prisma, {name: "Workflow-Update-A"})
+        const w2 = await createMockWorkflowInDb(prisma, {name: "Workflow-Update-B"})
+        const w3 = await createMockWorkflowInDb(prisma, {name: "Workflow-Update-C"})
+
+        // Manually update updatedAt to ensure specific order
+        // w1: now + 10s (default)
+        // w2: now + 20s
+        // w3: now + 1s (oldest)
+
+        const oldestDate = new Date(w3.createdAt.getTime() + 1000) // 1s after its creation
+        const middleDate = new Date(w1.createdAt.getTime() + 2000) // 2s after its creation
+        const newestDate = new Date(w2.createdAt.getTime() + 3000) // 3s after its creation
+
+        await prisma.workflow.update({where: {id: w3.id}, data: {updatedAt: oldestDate}})
+        await prisma.workflow.update({where: {id: w1.id}, data: {updatedAt: middleDate}})
+        await prisma.workflow.update({where: {id: w2.id}, data: {updatedAt: newestDate}})
+
+        // When: requesting workflows sorted by UPDATED_AT:ASC
+        const response = await get(app, `${endpoint}?orderBy=UPDATED_AT:ASC`).withToken(orgAdminUser.token).build()
+
+        // Expect order: Workflow-Update-C, Workflow-Update-A, Workflow-Update-B
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        const names = body.data.map(w => w.name)
+
+        const indexC = names.indexOf("Workflow-Update-C")
+        const indexA = names.indexOf("Workflow-Update-A")
+        const indexB = names.indexOf("Workflow-Update-B")
+
+        expect(indexC).toBeLessThan(indexA)
+        expect(indexA).toBeLessThan(indexB)
+      })
+
+      it("should return workflows sorted by updatedAt:DESC", async () => {
+        // Given: 3 workflows created
+        const w1 = await createMockWorkflowInDb(prisma, {name: "Workflow-Update-D"})
+        const w2 = await createMockWorkflowInDb(prisma, {name: "Workflow-Update-E"})
+        const w3 = await createMockWorkflowInDb(prisma, {name: "Workflow-Update-F"})
+
+        // Manually update updatedAt to ensure specific order (DESC)
+        // w1: oldest
+        // w2: middle
+        // w3: newest
+
+        const oldestDate = new Date(w1.createdAt.getTime() + 1000)
+        const middleDate = new Date(w2.createdAt.getTime() + 2000)
+        const newestDate = new Date(w3.createdAt.getTime() + 3000)
+
+        await prisma.workflow.update({where: {id: w1.id}, data: {updatedAt: oldestDate}})
+        await prisma.workflow.update({where: {id: w2.id}, data: {updatedAt: middleDate}})
+        await prisma.workflow.update({where: {id: w3.id}, data: {updatedAt: newestDate}})
+
+        // When: requesting workflows sorted by UPDATED_AT:DESC
+        const response = await get(app, `${endpoint}?orderBy=UPDATED_AT:DESC`).withToken(orgAdminUser.token).build()
+
+        // Expect: Workflow-Update-F, Workflow-Update-E, Workflow-Update-D
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        const names = body.data.map(w => w.name)
+
+        const indexF = names.indexOf("Workflow-Update-F")
+        const indexE = names.indexOf("Workflow-Update-E")
+        const indexD = names.indexOf("Workflow-Update-D")
+
+        expect(indexF).toBeLessThan(indexE)
+        expect(indexE).toBeLessThan(indexD)
+      })
+
+      it("should return workflows sorted by createdAt:DESC by default", async () => {
+        // Given: 3 workflows created in sequence
+        await createMockWorkflowInDb(prisma, {name: "Workflow-Default-1"})
+        await createMockWorkflowInDb(prisma, {name: "Workflow-Default-2"})
+        await createMockWorkflowInDb(prisma, {name: "Workflow-Default-3"})
+
+        // When: requesting workflows without orderBy
+        const response = await get(app, endpoint).withToken(orgAdminUser.token).build()
+
+        // Expect: newest workflows are first (DESC)
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: ListWorkflows200Response = response.body
+        const names = body.data.map(w => w.name)
+
+        const index1 = names.indexOf("Workflow-Default-1")
+        const index2 = names.indexOf("Workflow-Default-2")
+        const index3 = names.indexOf("Workflow-Default-3")
+
+        expect(index3).toBeLessThan(index2)
+        expect(index2).toBeLessThan(index1)
+      })
     })
 
     describe("bad cases", () => {

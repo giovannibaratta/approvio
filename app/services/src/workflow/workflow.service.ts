@@ -114,13 +114,15 @@ export class WorkflowService {
           workflowTemplateName:
             request.filters.workflowTemplateIdentifier && !isUUIDv4(request.filters.workflowTemplateIdentifier)
               ? request.filters.workflowTemplateIdentifier
-              : undefined
+              : undefined,
+          includeGroups: request.filters.includeGroups
         }
       : undefined
 
     const repoRequest: ListWorkflowsRequestRepo<T> = {
       ...request,
-      filters
+      filters,
+      sort: request.sort
     }
 
     return this.workflowRepo.listWorkflows(repoRequest)

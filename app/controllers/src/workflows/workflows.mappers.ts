@@ -6,7 +6,8 @@ import {
   CastVoteServiceError,
   CanVoteError,
   ListWorkflowsResponse,
-  FindVotesError
+  FindVotesError,
+  WorkflowSort
 } from "@services"
 import {ExtractLeftFromFn, ExtractLeftFromMethod} from "@utils"
 import {Either, right, left, map} from "fp-ts/Either"
@@ -19,7 +20,8 @@ import {
   GetWorkflowParams,
   GetWorkflowVotes200Response,
   WorkflowVote,
-  validateListWorkflowsParams
+  validateListWorkflowsParams,
+  ListWorkflowsParams
 } from "@approvio/api"
 
 import {
@@ -265,6 +267,10 @@ export function generateErrorResponseForListWorkflows(
     case "invalid_limit":
     case "invalid_include_only_non_terminal_state":
     case "invalid_workflow_template_identifier":
+    case "invalid_include_groups":
+    case "invalid_order_by":
+    case "duplicate_order_by_fields":
+    case "too_many_order_by_items":
     case "malformed_object":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request parameter`))
     case "unknown_error":
@@ -839,3 +845,15 @@ export function generateErrorResponseForListVotes(error: FindVotesError, context
 
 // OpenApi does not export this model
 export type WorkflowInclude = "workflow-template"
+
+export function mapOrderByToService(orderBy?: ListWorkflowsParams.OrderByEnum[]): WorkflowSort[] | undefined {
+  if (!orderBy) return undefined
+
+  return orderBy.map(item => {
+    const [field, order] = item.split(":") as [string, "ASC" | "DESC"]
+    return {
+      param: field === "CREATED_AT" ? "createdAt" : "updatedAt",
+      order: order === "ASC" ? "asc" : "desc"
+    }
+  })
+}

@@ -308,12 +308,35 @@ export class WorkflowDbRepository implements WorkflowRepository {
       if (filters?.workflowTemplateId) where.workflowTemplateId = filters.workflowTemplateId
       else if (filters?.workflowTemplateName) where.workflowTemplates = {name: filters.workflowTemplateName}
 
+      if (filters?.includeGroups && filters.includeGroups.length > 0) {
+        where.workflowTemplates = {
+          ...(where.workflowTemplates as Prisma.WorkflowTemplateWhereInput),
+          OR: filters.includeGroups.map(groupId => ({
+            approvalRule: {
+              string_contains: groupId
+            }
+          }))
+        }
+      }
+
+      const orderBy: Prisma.WorkflowOrderByWithRelationInput[] = []
+      const sortItems = request.sort ?? []
+
+      if (sortItems.length > 0) {
+        for (const sortItem of sortItems) {
+          orderBy.push({[sortItem.param]: sortItem.order})
+        }
+      }
+
+      if (orderBy.length === 0) orderBy.push({updatedAt: "desc"})
+
       const [workflows, total] = await this.dbClient.$transaction([
         this.dbClient.workflow.findMany({
           skip: pagination ? (pagination.page - 1) * pagination.limit : undefined,
           take: pagination ? pagination.limit : undefined,
           include: prismaInclude,
-          where
+          where,
+          orderBy
         }),
         this.dbClient.workflow.count({where})
       ])

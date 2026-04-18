@@ -110,26 +110,38 @@ export type ConcurrentSafeWorkflowUpdateData = Pick<Workflow, "recalculationRequ
 export type ConcurrentUnsafeWorkflowUpdateData = Partial<Pick<Workflow, "status" | "recalculationRequired">> &
   Pick<Workflow, "updatedAt">
 
+export type WorkflowSortParam = "createdAt" | "updatedAt"
+export type SortOrder = "asc" | "desc"
+
+export interface WorkflowSort {
+  param: WorkflowSortParam
+  order: SortOrder
+}
+
 export interface ListWorkflowsRequestRepo<TInclude extends WorkflowDecoratorSelector> {
   pagination?: {
     page: number
     limit: number
   }
   include?: TInclude
+  sort?: WorkflowSort[]
   filters?: {
     includeOnlyNonTerminalState?: boolean
     templateId?: string
     workflowTemplateId?: string
     workflowTemplateName?: string
+    includeGroups?: string[]
   }
 }
 
 export interface ListWorkflowsRequest<TInclude extends WorkflowDecoratorSelector>
-  extends RequestorAwareRequest, Omit<ListWorkflowsRequestRepo<TInclude>, "filters"> {
+  extends RequestorAwareRequest, Omit<ListWorkflowsRequestRepo<TInclude>, "filters" | "sort"> {
   filters?: {
     includeOnlyNonTerminalState?: boolean
     workflowTemplateIdentifier?: string
+    includeGroups?: string[]
   }
+  sort?: WorkflowSort[]
 }
 
 export interface ListWorkflowsResponse<TInclude extends WorkflowDecoratorSelector> {
