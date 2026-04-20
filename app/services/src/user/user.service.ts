@@ -65,6 +65,9 @@ export class UserService {
     const page = request.page ?? 1
     const limit = request.limit ?? DEFAULT_LIMIT
 
+    if (request.requestor.entityType !== "user" || request.requestor.user.orgRole !== "admin")
+      return TE.left("requestor_not_authorized")
+
     if (page < MIN_PAGE) return TE.left("invalid_page_number")
     if (limit < MIN_LIMIT || limit > MAX_LIMIT) return TE.left("invalid_limit_number")
     if (search !== undefined) {
@@ -129,7 +132,7 @@ export interface CreateUserRequest extends RequestorAwareRequest {
   userData: Parameters<typeof UserFactory.newUser>[0]
 }
 
-export interface ListUsersRequest {
+export interface ListUsersRequest extends RequestorAwareRequest {
   readonly search?: string
   readonly page?: number
   readonly limit?: number
