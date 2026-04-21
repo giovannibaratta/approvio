@@ -46,7 +46,7 @@
     "@nestjs/jwt": "11.0.2",
     "@nestjs/passport": "11.0.5",
     "@nestjs/platform-express": "11.1.18",
-    "@prisma/adapter-pg": "7.4.2",
+    "@prisma/adapter-pg": "7.7.0",
     "@prisma/client": "7.4.2",
     "@prisma/driver-adapter-utils": "7.4.2",
     "axios": "1.15.0",

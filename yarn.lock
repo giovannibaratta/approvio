@@ -124,7 +124,7 @@ __metadata:
     "@nestjs/platform-express": "npm:11.1.18"
     "@nestjs/schematics": "npm:11.0.9"
     "@nestjs/testing": "npm:11.1.18"
-    "@prisma/adapter-pg": "npm:7.4.2"
+    "@prisma/adapter-pg": "npm:7.7.0"
     "@prisma/client": "npm:7.4.2"
     "@prisma/driver-adapter-utils": "npm:7.4.2"
     "@types/chance": "npm:1.1.7"
@@ -2465,14 +2465,15 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@prisma/adapter-pg@npm:7.4.2":
-  version: 7.4.2
-  resolution: "@prisma/adapter-pg@npm:7.4.2"
+"@prisma/adapter-pg@npm:7.7.0":
+  version: 7.7.0
+  resolution: "@prisma/adapter-pg@npm:7.7.0"
   dependencies:
-    "@prisma/driver-adapter-utils": "npm:7.4.2"
+    "@prisma/driver-adapter-utils": "npm:7.7.0"
+    "@types/pg": "npm:^8.16.0"
     pg: "npm:^8.16.3"
     postgres-array: "npm:3.0.4"
-  checksum: 10/a5460436059bf822d4eabb06cbaa7b9059e3d46b8c42fac8b2e1a20caec48e43118ed2b2231c21de7cdf0dd36dc22ca511a548ce3c841c74ccf5461ccf540f85
+  checksum: 10/6a0a92d172c23d224ff8c4792821b5bbe5ee6ee41e73f066ea03b4f1b7b2796f54ff7df3c463a0df82b263b50a3dd14d8a1a97d60be055674955bed3bb2a11b6
   languageName: node
   linkType: hard
 
@@ -2537,6 +2538,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@prisma/debug@npm:7.7.0":
+  version: 7.7.0
+  resolution: "@prisma/debug@npm:7.7.0"
+  checksum: 10/6b474e071415da1d0ed9a63bc36cb7b84ac666e8998d1a5d79447f27dcd4ee4670af21583b4bffb5b752e0eaa77e2456fc0ef4926fc3968e269da1a22bb8483b
+  languageName: node
+  linkType: hard
+
 "@prisma/dev@npm:0.20.0":
   version: 0.20.0
   resolution: "@prisma/dev@npm:0.20.0"
@@ -2568,6 +2576,15 @@ __metadata:
   dependencies:
     "@prisma/debug": "npm:7.4.2"
   checksum: 10/c244935b04ef480e3f1914d773b5ef7e2a408018987201ca708a70feef7e7e8528284c16aa8435f74da6a5d755570fa95f9997f4bc9c13a338943e9a7c110927
+  languageName: node
+  linkType: hard
+
+"@prisma/driver-adapter-utils@npm:7.7.0":
+  version: 7.7.0
+  resolution: "@prisma/driver-adapter-utils@npm:7.7.0"
+  dependencies:
+    "@prisma/debug": "npm:7.7.0"
+  checksum: 10/fb2d685236f445aa81c7299689ce24e6f491b195e8257cdb747d8a10e2e0ea439864c04a5454841b3991a7558b0049050e5132298d1ea60c9f724ede450960fd
   languageName: node
   linkType: hard
 
@@ -3234,6 +3251,17 @@ __metadata:
   dependencies:
     "@types/express": "npm:*"
   checksum: 10/3db90645d58d928796dd8e9c328dec8040b71a43f3691d42a08fb4779efcbfc7dccc43ea612066a961a41be0869800096d52fd8aaa71518a89aa4483f67f5914
+  languageName: node
+  linkType: hard
+
+"@types/pg@npm:^8.16.0":
+  version: 8.20.0
+  resolution: "@types/pg@npm:8.20.0"
+  dependencies:
+    "@types/node": "npm:*"
+    pg-protocol: "npm:*"
+    pg-types: "npm:^2.2.0"
+  checksum: 10/3fb5be6e02de5c1a519acfbcb73647864e0d118bd09d0dea9b02091992095094e1ba150454c1175fd0127a596947e7216e15ff9b6162cd7792b62effce6aa751
   languageName: node
   linkType: hard
 
@@ -10158,6 +10186,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"pg-protocol@npm:*":
+  version: 1.13.0
+  resolution: "pg-protocol@npm:1.13.0"
+  checksum: 10/302cd3920df00f178519693557c34949d64c8b3af7e2c12772b14f61547b947e4c761b4ca2319dbba5b0906207bb1b535cbfc7006d40d47fd823e277c2690a71
+  languageName: node
+  linkType: hard
+
 "pg-protocol@npm:^1.10.3":
   version: 1.10.3
   resolution: "pg-protocol@npm:1.10.3"
@@ -10165,7 +10200,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"pg-types@npm:2.2.0":
+"pg-types@npm:2.2.0, pg-types@npm:^2.2.0":
   version: 2.2.0
   resolution: "pg-types@npm:2.2.0"
   dependencies:
