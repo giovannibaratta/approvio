@@ -126,7 +126,7 @@ __metadata:
     "@nestjs/testing": "npm:11.1.18"
     "@prisma/adapter-pg": "npm:7.7.0"
     "@prisma/client": "npm:7.4.2"
-    "@prisma/driver-adapter-utils": "npm:7.4.2"
+    "@prisma/driver-adapter-utils": "npm:7.7.0"
     "@types/chance": "npm:1.1.7"
     "@types/cookie-parser": "npm:1.4.10"
     "@types/express": "npm:5.0.6"

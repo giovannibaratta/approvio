@@ -50,7 +50,7 @@
     "@nestjs/platform-express": "11.1.18",
     "@prisma/adapter-pg": "7.7.0",
     "@prisma/client": "7.4.2",
-    "@prisma/driver-adapter-utils": "7.4.2",
+    "@prisma/driver-adapter-utils": "7.7.0",
     "axios": "1.15.0",
     "bull": "4.16.5",
     "class-transformer": "0.5.1",
