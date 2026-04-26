@@ -21,12 +21,13 @@ import {
   WorkflowUpdateError,
   ListWorkflowsRequestRepo,
   ListWorkflowsResponse,
-  UnknownError
+  UnknownError,
+  WorkflowGetParentTemplateError
 } from "@services"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
-import {isPrismaUniqueConstraintError} from "./errors"
+import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "./errors"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {DecorableEntity, isDecoratedWith} from "@utils/types"
@@ -156,9 +157,44 @@ export class WorkflowDbRepository implements WorkflowRepository {
           }
         }),
       error => {
-        Logger.error("Error counting active workflows", error)
+        Logger.error(`Error counting active workflows for template ${templateId}`, error)
         return "unknown_error"
       }
+    )
+  }
+
+  countActiveWorkflows(): TaskEither<UnknownError, number> {
+    return TE.tryCatch(
+      () =>
+        this.dbClient.workflow.count({
+          where: {
+            status: {
+              notIn: WORKFLOW_TERMINAL_STATUSES
+            }
+          }
+        }),
+      error => {
+        Logger.error("Error counting all active workflows", error)
+        return "unknown_error"
+      }
+    )
+  }
+
+  getParentWorkflowTemplate(workflowId: string): TaskEither<WorkflowGetParentTemplateError, string> {
+    return pipe(
+      TE.tryCatch(
+        () =>
+          this.dbClient.workflow.findUnique({
+            where: {id: workflowId},
+            select: {workflowTemplateId: true}
+          }),
+        error => {
+          Logger.error(`Error getting parent workflow template for workflow ${workflowId}`, error)
+          return "unknown_error" as const
+        }
+      ),
+      chainNullableToLeft("workflow_not_found" as const),
+      TE.map(workflow => workflow.workflowTemplateId)
     )
   }
 
@@ -172,9 +208,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
       TE.tryCatchK(
         () => this.updateWorkflowTaskNoErrorHandling({workflowId, data, occCheck, includeRef}),
         error => {
-          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
-            return "concurrency_error" as const
-          }
+          if (isPrismaRecordNotFoundError(error, Prisma.ModelName.Workflow)) return "concurrency_error" as const
           Logger.error(`Error while updating workflow ${workflowId}. Unknown error`, error)
           return "unknown_error" as const
         }

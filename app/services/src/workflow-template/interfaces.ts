@@ -21,6 +21,7 @@ export interface WorkflowTemplateRepository {
   createWorkflowTemplate(
     data: WorkflowTemplate
   ): TaskEither<CreateWorkflowTemplateRepoError | WorkflowTemplateValidationError, Versioned<WorkflowTemplate>>
+  getParentSpace(templateId: string): TaskEither<WorkflowTemplateGetParentSpaceError, string>
 
   /**
    * Retrieves a workflow template by its unique identifier.
@@ -97,7 +98,12 @@ export interface WorkflowTemplateRepository {
     templateIds: ReadonlyArray<string>
   ): TaskEither<"workflow_template_not_found", ReadonlyMap<string, string>>
 
-  countWorkflowTemplatesBySpaceId(spaceId: string): TaskEither<UnknownError, number>
+  /**
+   * Counts the number of unique workflow templates in a space, revision of a template are not counted as separate templates.
+   * @param spaceId The ID of the space to count unique workflow templates in
+   * @returns The number of unique workflow templates in the space or an error
+   */
+  countUniqueWorkflowTemplatesBySpaceId(spaceId: string): TaskEither<UnknownError, number>
 }
 
 export interface Sort {
@@ -177,6 +183,8 @@ export type WorkflowTemplateGetActiveError =
   | "active_workflow_template_not_found"
   | WorkflowTemplateValidationError
   | UnknownError
+
+export type WorkflowTemplateGetParentSpaceError = "workflow_template_not_found" | UnknownError
 
 export type WorkflowTemplateGetError = "workflow_template_not_found" | WorkflowTemplateValidationError | UnknownError
 

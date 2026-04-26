@@ -20,7 +20,8 @@ import {
   WorkflowTemplateUpdateError,
   ListWorkflowTemplatesRequestRepo,
   ListWorkflowTemplatesResponse,
-  WorkflowTemplateGetActiveError
+  WorkflowTemplateGetActiveError,
+  WorkflowTemplateGetParentSpaceError
 } from "@services"
 import {Versioned} from "@domain"
 import {UnknownError} from "@services/error"
@@ -30,7 +31,7 @@ import {TaskEither} from "fp-ts/TaskEither"
 import * as O from "fp-ts/Option"
 import {Option} from "fp-ts/Option"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
-import {isPrismaUniqueConstraintError} from "./errors"
+import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "./errors"
 import * as E from "fp-ts/Either"
 import {Either} from "fp-ts/Either"
 import {SortBy, SortDirection} from "@approvio/api"
@@ -65,6 +66,24 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
       TE.right,
       TE.chainW(this.persistWorkflowTemplate()),
       TE.chainEitherKW(mapToDomainVersionedWorkflowTemplate)
+    )
+  }
+
+  getParentSpace(templateId: string): TaskEither<WorkflowTemplateGetParentSpaceError, string> {
+    return pipe(
+      TE.tryCatch(
+        () =>
+          this.dbClient.workflowTemplate.findUnique({
+            where: {id: templateId},
+            select: {spaceId: true}
+          }),
+        error => {
+          Logger.error(`Error while retrieving parent space for workflow template ${templateId}. Unknown error`, error)
+          return "unknown_error" as const
+        }
+      ),
+      chainNullableToLeft("workflow_template_not_found" as const),
+      TE.map(template => template.spaceId)
     )
   }
 
@@ -300,11 +319,16 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
     )
   }
 
-  countWorkflowTemplatesBySpaceId(spaceId: string): TaskEither<UnknownError, number> {
+  countUniqueWorkflowTemplatesBySpaceId(spaceId: string): TaskEither<UnknownError, number> {
     return TE.tryCatch(
-      () => this.dbClient.workflowTemplate.count({where: {spaceId}}),
+      async () => {
+        const result = await this.dbClient.$queryRaw<{count: bigint}[]>(
+          Prisma.sql`SELECT COUNT(DISTINCT name) as count FROM workflow_templates WHERE space_id = ${spaceId}::uuid`
+        )
+        return Number(result[0]?.count ?? 0)
+      },
       error => {
-        Logger.error("Error counting workflow templates", error)
+        Logger.error(`Error counting workflow templates in space ${spaceId}`, error)
         return "unknown_error"
       }
     )
@@ -371,8 +395,7 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
           })
         },
         error => {
-          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025")
-            return "concurrency_error" as const
+          if (isPrismaRecordNotFoundError(error, Prisma.ModelName.WorkflowTemplate)) return "concurrency_error" as const
           if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
             return "concurrency_error" as const
           Logger.error(`Error while updating workflow template ${data.id}. Unknown error`, error)

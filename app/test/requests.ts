@@ -2,7 +2,7 @@ import {NestApplication} from "@nestjs/core"
 
 import * as request from "supertest"
 
-type Method = "get" | "post" | "put" | "delete"
+type Method = "get" | "post" | "put" | "delete" | "patch"
 
 export class RequestBuilder {
   partialRequest: request.Test
@@ -22,6 +22,9 @@ export class RequestBuilder {
         break
       case "delete":
         this.partialRequest = req.delete(endpoint)
+        break
+      case "patch":
+        this.partialRequest = req.patch(endpoint)
         break
     }
   }
@@ -55,4 +58,8 @@ export function put(app: NestApplication, endpoint: string) {
 
 export function del(app: NestApplication, endpoint: string) {
   return new RequestBuilder(app, "delete", endpoint)
+}
+
+export function patch(app: NestApplication, endpoint: string) {
+  return new RequestBuilder(app, "patch", endpoint)
 }

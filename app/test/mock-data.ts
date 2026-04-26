@@ -8,7 +8,8 @@ import {
   Workflow as PrismaWorkflow,
   Group as PrismaGroup,
   Space as PrismaSpace,
-  RefreshToken as PrismaRefreshToken
+  RefreshToken as PrismaRefreshToken,
+  Quota as PrismaQuota
 } from "@prisma/client"
 import {randomBytes} from "crypto"
 import {
@@ -817,4 +818,23 @@ export async function createUserWithRefreshToken(
       tokenId
     }
   }
+}
+
+export async function createMockQuotaInDb(
+  prisma: PrismaClient,
+  overrides?: Partial<Omit<Prisma.QuotaCreateInput, "occ">>
+): Promise<PrismaQuota> {
+  const data: Prisma.QuotaCreateInput = {
+    id: chance.guid({version: 4}),
+    scope: "Org",
+    quotaType: "MAX_GROUPS",
+    targetId: chance.guid({version: 4}),
+    limit: 10,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    occ: 0n,
+    ...overrides
+  }
+
+  return await prisma.quota.create({data})
 }
