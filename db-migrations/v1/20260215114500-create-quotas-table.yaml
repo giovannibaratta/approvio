@@ -18,8 +18,13 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
-                  name: metric
+                  name: quota_type
                   type: VARCHAR(100)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: target_id
+                  type: UUID
                   constraints:
                     nullable: false
               - column:
@@ -44,5 +49,5 @@ databaseChangeLog:
                     nullable: false
         - addUniqueConstraint:
             tableName: quotas
-            columnNames: scope, metric
-            constraintName: quotas_scope_metric_unique
+            columnNames: scope, quota_type, target_id
+            constraintName: quotas_scope_quota_type_target_id_unique

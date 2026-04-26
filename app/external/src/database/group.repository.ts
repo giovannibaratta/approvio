@@ -1,5 +1,9 @@
 import {Group, GroupWithEntitiesCount, ListGroupsFilter} from "@domain"
-import {isPrismaForeignKeyConstraintError, isPrismaUniqueConstraintError} from "@external/database/errors"
+import {
+  isPrismaForeignKeyConstraintError,
+  isPrismaRecordNotFoundError,
+  isPrismaUniqueConstraintError
+} from "@external/database/errors"
 import {Injectable, Logger} from "@nestjs/common"
 import {Prisma, Group as PrismaGroup} from "@prisma/client"
 import {UnknownError} from "@services/error"
@@ -116,8 +120,7 @@ export class GroupDbRepository implements GroupRepository {
           if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_user")) return "user_not_found"
 
           // Handle OCC conflicts - P2025 means record not found (likely due to OCC mismatch)
-          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025")
-            return "concurrency_error"
+          if (isPrismaRecordNotFoundError(error, Prisma.ModelName.Group)) return "concurrency_error" as const
 
           Logger.error("Error while creating group. Unknown error", error)
           return "unknown_error"

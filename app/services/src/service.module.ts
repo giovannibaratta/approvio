@@ -22,6 +22,7 @@ import {ConfigProvider} from "@external/config"
 import {JwtModule} from "@nestjs/jwt"
 import {RateLimiterService} from "./rate-limiter"
 import {QuotaService} from "./quota"
+import {HierarchyService} from "./hierarchy/hierarchy.service"
 
 const services = [
   AgentService,
@@ -43,7 +44,8 @@ const services = [
   IdentityService,
   HealthService,
   RateLimiterService,
-  QuotaService
+  QuotaService,
+  HierarchyService
 ]
 
 const internalServices = [PkceService]

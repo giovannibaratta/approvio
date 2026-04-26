@@ -76,7 +76,11 @@ export interface WorkflowRepository {
   ): TaskEither<WorkflowUpdateError, DecoratedWorkflow<T>>
 
   countActiveWorkflowsByTemplateId(templateId: string): TaskEither<UnknownError, number>
+  countActiveWorkflows(): TaskEither<UnknownError, number>
+  getParentWorkflowTemplate(workflowId: string): TaskEither<WorkflowGetParentTemplateError, string>
 }
+
+export type WorkflowGetParentTemplateError = "workflow_not_found" | UnknownError
 
 export type WorkflowGetError =
   | "workflow_not_found"

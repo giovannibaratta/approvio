@@ -1,46 +1,51 @@
 # Quotas
 
-The Quota system is designed to govern and restrict resource consumption within the application. It ensures that usage remains within predefined boundaries, preventing resource exhaustion and allowing administrators to enforce system constraints.
+The Quota system is designed to govern and restrict resource consumption within Approvio. It ensures that usage remains within predefined boundaries, preventing resource exhaustion and allowing administrators to enforce system constraints.
 
 ## High-Level Mechanism
 
-The quota system operates by evaluating current resource usage against defined limits before allowing new resources to be created or specific actions to be performed.
+The quota system operates by evaluating current resource usage against defined limits. Approvio uses a **hierarchical enforcement model**, allowing for flexible configuration at different levels of the organization.
 
-Key characteristics of the quota mechanism include:
-- **Default Unlimited:** If no explicit quota is defined for a specific metric and scope, the system considers the usage unlimited, and actions are permitted by default.
-- **Best-Effort Checking:** The system performs a best-effort check to limit usage. It evaluates the current usage count at the time of the request. Note that this is a non-locking approach; the primary goal is to gracefully enforce limits generally rather than preventing highly concurrent edge-case overages.
-- **Targeted vs. Global Limits:** Limits can be applied system-wide or restricted to specific target entities (like a specific Space or Group).
+### Hierarchical Enforcement
 
-## Scopes and Metrics
+Quotas can be set at multiple levels in the resource hierarchy. While a metric has a "base level" where it is evaluated (e.g., `MAX_ENTITIES_PER_GROUP` is evaluated for a specific `Group`), the limit itself can be defined:
 
-Quotas are defined by a combination of a **Scope** (the level at which the limit is applied) and a **Metric** (the specific resource being limited).
+1.  **Directly on the resource:** A specific limit for that individual resource (e.g., a specific limit for Group A).
+2.  **Inherited from an ancestor:** A default limit defined at a higher level (e.g., a limit defined at the `Org` level that applies to all Groups within that Org).
 
-The currently supported scopes and their associated metrics are:
+When the system checks a quota, it traverses the hierarchy upwards starting from the resource being evaluated. The **first** (most specific) defined limit encountered is the one enforced.
 
-### Global Scope (`GLOBAL`)
-Limits applied system-wide, affecting the entire installation.
-- **`MAX_GROUPS`**: The maximum total number of Groups allowed in the system.
-- **`MAX_SPACES`**: The maximum total number of Spaces allowed in the system.
+### Key Characteristics
 
-### Space Scope (`SPACE`)
-Limits applied to an individual Space.
-- **`MAX_TEMPLATES`**: The maximum number of Workflow Templates that can be created within a single Space.
+- **Default Unlimited:** If no explicit quota is defined for a specific metric at any level of the hierarchy, the system considers the usage unlimited.
+- **Best-Effort Checking:** The system performs a best-effort check to limit usage. It evaluates the current usage count at the time of the request. Note that this is a non-locking approach; the primary goal is to gracefully enforce limits generally.
 
-### Group Scope (`GROUP`)
-Limits applied to an individual Group.
-- **`MAX_ENTITIES_PER_GROUP`**: The maximum number of members (both Users and Agents combined) that can belong to a single Group.
+## Metrics and Evaluation Levels
 
-### Template Scope (`TEMPLATE`)
-Limits applied to an individual Workflow Template.
-- **`MAX_CONCURRENT_WORKFLOWS`**: The maximum number of active workflows that can be running simultaneously from a single Workflow Template.
+Each quota metric is associated with a specific level in the resource hierarchy where usage is measured (the "Evaluation Level").
 
-### User Scope (`USER`)
-Limits applied to an individual User.
+### Org Level
+- **`MAX_GROUPS`**: The maximum number of Groups allowed within an Organization.
+- **`MAX_SPACES`**: The maximum number of Spaces allowed within an Organization.
+
+### Space Level
+- **`MAX_WORKFLOW_TEMPLATES_PER_SPACE`**: The maximum number of Workflow Templates that can be created within a single Space.
+
+### Group Level
+- **`MAX_ENTITIES_PER_GROUP`**: The maximum number of members (Users and Agents) that can belong to a single Group.
+
+### Workflow Template Level
+- **`MAX_CONCURRENT_WORKFLOWS`**: The maximum number of active workflows that can be running simultaneously for a single Template.
+
+### Workflow Level
+- **`MAX_VOTES_PER_WORKFLOW`**: The maximum number of votes allowed for a specific Workflow.
+
+### User Level
 - **`MAX_ROLES_PER_USER`**: The maximum number of roles that can be assigned to a single User.
 
 ## Management
 
-Currently, the quota system is in its initial phase.
+The quota system is managed via standard administrative APIs. Administrators can create, view, update, and delete quota limits for any resource in the hierarchy.
 
-- **Current State:** Managing quotas (creating, updating, or deleting limits) is performed via direct system or database configuration. System administrators must interact with the database directly to set or modify the specific limits for the scopes and metrics.
-- **Future Roadmap:** There are active roadmap items to expose these management functionalities via a dedicated API. This will eventually allow administrators to configure, enforce, and monitor quotas using standard administrative interfaces or infrastructure-as-code tools without requiring direct database access.
+- **Administrative APIs:** The system provides dedicated endpoints under `/quotas` for managing limits. These APIs support filtering by resource type, metric, and specific identifiers.
+- **Access Control:** Quota management is restricted to users with administrative privileges.
