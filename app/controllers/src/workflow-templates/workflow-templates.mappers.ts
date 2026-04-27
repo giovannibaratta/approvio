@@ -257,8 +257,12 @@ export function generateErrorResponseForCreateWorkflowTemplate(
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "quota_exceeded":
+      return new ForbiddenException(
+        generateErrorPayload(errorCode, `${context}: quota exceeded for creating workflow template`)
+      )
     case "requestor_not_authorized":
-      throw new ForbiddenException(
+      return new ForbiddenException(
         generateErrorPayload(
           errorCode,
           `${context}: entity does not have sufficient permissions to perform this operation`
@@ -298,6 +302,7 @@ export function generateErrorResponseForCreateWorkflowTemplate(
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Found internal data inconsistency`)
       )
+    case "quota_check_error":
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
   }
@@ -358,7 +363,7 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
 
   switch (error) {
     case "requestor_not_authorized":
-      throw new ForbiddenException(
+      return new ForbiddenException(
         generateErrorPayload(
           errorCode,
           `${context}: entity does not have sufficient permissions to perform this operation`
@@ -409,8 +414,11 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
       return new BadRequestException(
         generateErrorPayload(errorCode, `${context}: Workflow template is not pending deprecation`)
       )
+    case "quota_check_error":
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
+    case "quota_exceeded":
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded`))
   }
 }
 
@@ -424,7 +432,7 @@ export function generateErrorResponseForDeprecateWorkflowTemplate(
 
   switch (error) {
     case "requestor_not_authorized":
-      throw new ForbiddenException(
+      return new ForbiddenException(
         generateErrorPayload(
           errorCode,
           `${context}: entity does not have sufficient permissions to perform this operation`
@@ -504,7 +512,7 @@ export function generateErrorResponseForListWorkflowTemplates(
     case "sort_direction_length_mismatch":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid list parameters`))
     case "requestor_not_authorized":
-      throw new ForbiddenException(
+      return new ForbiddenException(
         generateErrorPayload(
           errorCode,
           `${context}: entity does not have sufficient permissions to perform this operation`

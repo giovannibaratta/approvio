@@ -14,6 +14,8 @@ export type UserRoleAssignmentError =
   | UserUpdateError
   | AuthorizationError
   | UnknownError
+  | "quota_exceeded"
+  | "quota_check_error"
 
 export type AgentRoleAssignmentError =
   | "agent_not_found"

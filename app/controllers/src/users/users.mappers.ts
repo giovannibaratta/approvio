@@ -68,6 +68,7 @@ export function generateErrorResponseForCreateUser(
         generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
       )
     case "user_invalid_uuid":
+    case "quota_check_error":
     case "unknown_error":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
@@ -167,6 +168,10 @@ export function generateErrorResponseForUserRoleAssignment(
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "quota_exceeded":
+      throw new ForbiddenException(
+        generateErrorPayload(errorCode, `${context}: quota exceeded for assigning roles to user`)
+      )
     case "request_malformed":
     case "request_roles_missing":
     case "request_roles_not_array":
@@ -232,6 +237,7 @@ export function generateErrorResponseForUserRoleAssignment(
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
+    case "quota_check_error":
     case "unknown_error":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)

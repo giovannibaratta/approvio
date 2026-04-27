@@ -29,6 +29,7 @@ import {validateUserEntity} from "@services/shared/types"
 import {AGENT_REPOSITORY_TOKEN, AgentRepository} from "@services/agent"
 import {USER_REPOSITORY_TOKEN, UserRepository} from "@services/user"
 import {WORKFLOW_TEMPLATE_REPOSITORY_TOKEN, WorkflowTemplateRepository} from "@services/workflow-template"
+import {QuotaService} from "@services/quota/quota.service"
 
 @Injectable()
 export class RoleService {
@@ -38,7 +39,8 @@ export class RoleService {
     @Inject(AGENT_REPOSITORY_TOKEN)
     private readonly agentRoleRepo: AgentRepository,
     @Inject(WORKFLOW_TEMPLATE_REPOSITORY_TOKEN)
-    private readonly workflowTemplateRepo: WorkflowTemplateRepository
+    private readonly workflowTemplateRepo: WorkflowTemplateRepository,
+    private readonly quotaService: QuotaService
   ) {}
 
   /**
@@ -149,9 +151,24 @@ export class RoleService {
       )
     }
 
+    // TODO: Does this take into account the deduplication ? If not we should do the check
+    // after computing the roles in the domain. The isQuotaAvailable might not support this
+    // since it wants an added quota, (we might compute the diff between the new role length - the current roles length)
+    const checkQuota = (request: AssignRolesToUserRequest) =>
+      pipe(
+        this.quotaService.isQuotaAvailable(
+          {type: "User", identifier: request.userId},
+          "MAX_ROLES_PER_USER",
+          request.roles.length
+        ),
+        TE.mapLeft(() => "quota_check_error" as const),
+        TE.chainW(isAvailable => (isAvailable ? TE.right(undefined) : TE.left("quota_exceeded" as const)))
+      )
+
     return pipe(
       TE.Do,
       TE.bindW("request", () => TE.right(request)),
+      TE.chainFirstW(({request}) => checkQuota(request)),
       TE.bindW("boundRolesToAssign", ({request}) => TE.fromEither(validateAndCreateBoundRoles(request.roles))),
       TE.bindW("workflowTemplatesParents", ({boundRolesToAssign}) =>
         this.fetchWorkflowTemplateSpaceMappings(boundRolesToAssign)

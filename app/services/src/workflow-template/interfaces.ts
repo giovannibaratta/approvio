@@ -145,7 +145,11 @@ export interface ListWorkflowTemplatesResponse {
   }
 }
 
-export type CreateWorkflowTemplateError = WorkflowTemplateValidationError | CreateWorkflowTemplateRepoError
+export type CreateWorkflowTemplateError =
+  | WorkflowTemplateValidationError
+  | CreateWorkflowTemplateRepoError
+  | "quota_exceeded"
+  | "quota_check_error"
 
 export interface CreateWorkflowTemplateRequest extends RequestorAwareRequest {
   workflowTemplateData: {

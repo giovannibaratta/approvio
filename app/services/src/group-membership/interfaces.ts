@@ -28,6 +28,8 @@ export type MembershipAddError =
   | UnknownError
   | ConcurrentModificationError
   | "membership_group_not_found"
+  | "quota_exceeded"
+  | "quota_check_error"
   | "membership_user_not_found"
   | "membership_agent_not_found"
 

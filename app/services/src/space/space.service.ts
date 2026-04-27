@@ -12,6 +12,8 @@ import {
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError} from "@services/error"
 import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
+import {DEFAULT_ORG_ID} from "@services/constants"
+import {QuotaService} from "@services/quota/quota.service"
 import {Versioned} from "@domain"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
@@ -54,7 +56,8 @@ export class SpaceService {
     @Inject(SPACE_REPOSITORY_TOKEN)
     private readonly spaceRepo: SpaceRepository,
     @Inject(USER_REPOSITORY_TOKEN)
-    private readonly userRepo: UserRepository
+    private readonly userRepo: UserRepository,
+    private readonly quotaService: QuotaService
   ) {}
 
   /**
@@ -80,9 +83,17 @@ export class SpaceService {
         userOcc: data.userOcc
       })
 
+    const checkQuota = () =>
+      pipe(
+        this.quotaService.isQuotaAvailable({type: "Org", identifier: DEFAULT_ORG_ID}, "MAX_SPACES", 1),
+        TE.mapLeft(() => "quota_check_error" as const),
+        TE.chainW(isAvailable => (isAvailable ? TE.right(undefined) : TE.left("quota_exceeded" as const)))
+      )
+
     return pipe(
       TE.Do,
       TE.bindW("requestor", () => validateRequestor()),
+      TE.chainFirstW(() => checkQuota()),
       TE.bindW("space", () => validateSpace(request)),
       TE.bindW("user", ({requestor}) => fetchUser(requestor)),
       TE.bindW("updatedUser", ({user, space}) => addManagePermissions({user, space})),

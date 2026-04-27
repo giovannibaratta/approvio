@@ -13,6 +13,7 @@ import {
   markTemplateAsDeprecated,
   WorkflowTemplateDeprecationError
 } from "@domain"
+import {QuotaService} from "@services/quota/quota.service"
 import {
   WorkflowTemplateRepository,
   WORKFLOW_TEMPLATE_REPOSITORY_TOKEN,
@@ -36,7 +37,6 @@ import {
 } from "../workflow/interfaces"
 import {UnknownError} from "@services/error"
 import {Versioned} from "@domain"
-import * as E from "fp-ts/Either"
 import {validateUserEntity} from "@services/shared/types"
 
 @Injectable()
@@ -45,15 +45,29 @@ export class WorkflowTemplateService {
     @Inject(WORKFLOW_TEMPLATE_REPOSITORY_TOKEN)
     private readonly workflowTemplateRepository: WorkflowTemplateRepository,
     @Inject(WORKFLOW_REPOSITORY_TOKEN)
-    private readonly workflowRepository: WorkflowRepository
+    private readonly workflowRepository: WorkflowRepository,
+    private readonly quotaService: QuotaService
   ) {}
 
   createWorkflowTemplate(
     request: CreateWorkflowTemplateRequest
   ): TaskEither<CreateWorkflowTemplateError | AuthorizationError, Versioned<WorkflowTemplate>> {
+    const checkQuota = () =>
+      pipe(
+        this.quotaService.isQuotaAvailable(
+          {type: "Space", identifier: request.workflowTemplateData.spaceId},
+          "MAX_WORKFLOW_TEMPLATES_PER_SPACE",
+          1
+        ),
+        TE.mapLeft(() => "quota_check_error" as const),
+        TE.chainW(isAvailable => (isAvailable ? TE.right(undefined) : TE.left("quota_exceeded" as const)))
+      )
+
     return pipe(
       validateUserEntity(request.requestor),
-      E.chainW(() =>
+      TE.fromEither,
+      TE.chainW(() => checkQuota()),
+      TE.chainEitherKW(() =>
         WorkflowTemplateFactory.newWorkflowTemplate({
           name: request.workflowTemplateData.name,
           description: request.workflowTemplateData.description,
@@ -63,7 +77,6 @@ export class WorkflowTemplateService {
           spaceId: request.workflowTemplateData.spaceId
         })
       ),
-      TE.fromEither,
       TE.chainW(workflowTemplate => this.workflowTemplateRepository.createWorkflowTemplate(workflowTemplate)),
       logSuccess("Workflow template created", "WorkflowTemplateService", t => ({id: t.id}))
     )

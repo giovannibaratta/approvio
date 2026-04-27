@@ -122,6 +122,7 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
         generateErrorPayload(errorCode, `${context}: functionality is not enabled`)
       )
     case "unknown_error":
+    case "quota_check_error":
     case "agent_token_generation_failed":
     case "oidc_unknown_error":
     case "oidc_network_error":
@@ -300,6 +301,7 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
         generateErrorPayload(errorCode, `${context}: functionality is not enabled`)
       )
     case "unknown_error":
+    case "quota_check_error":
     case "agent_token_generation_failed":
     case "oidc_unknown_error":
     case "oidc_network_error":
@@ -478,6 +480,7 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
         generateErrorPayload(errorCode, `${context}: functionality is not enabled`)
       )
     case "unknown_error":
+    case "quota_check_error":
     case "agent_token_generation_failed":
     case "oidc_unknown_error":
     case "oidc_network_error":
@@ -655,6 +658,7 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
         generateErrorPayload(errorCode, `${context}: functionality is not enabled`)
       )
     case "unknown_error":
+    case "quota_check_error":
     case "agent_token_generation_failed":
     case "oidc_unknown_error":
     case "oidc_network_error":

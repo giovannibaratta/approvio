@@ -100,7 +100,12 @@ export type CreateWorkflowRepo = {
   workflow: Workflow
 }
 
-export type CreateWorkflowError = WorkflowValidationError | WorkflowTemplateValidationError | CreateWorkflowRepoError
+export type CreateWorkflowError =
+  | WorkflowValidationError
+  | WorkflowTemplateValidationError
+  | CreateWorkflowRepoError
+  | "quota_exceeded"
+  | "quota_check_error"
 
 export interface CreateWorkflowRequest extends RequestorAwareRequest {
   workflowData: {
