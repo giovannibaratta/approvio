@@ -1,6 +1,7 @@
-import {Node, QuotaFactory, QuotaIdentifier} from "@domain"
+import {Node, QuotaFactory, QuotaIdentifier, WorkflowStatus} from "@domain"
 import {DEFAULT_ORG_ID, QuotaRepository, QuotaService} from "@services"
 import {isRight} from "fp-ts/Either"
+import {randomUUID} from "crypto"
 
 import {Test, TestingModule} from "@nestjs/testing"
 import {ServiceModule} from "@services/service.module"
@@ -13,7 +14,9 @@ import {
   createMockWorkflowTemplateInDb,
   createTestGroup,
   createDomainMockUserInDb,
-  createMockAgentInDb
+  createMockAgentInDb,
+  createMockWorkflowInDb,
+  createMockUserInDb
 } from "@test/mock-data"
 import {ConfigProvider} from "@external/config"
 import {PrismaClient} from "@prisma/client"
@@ -236,5 +239,132 @@ describe("Quota Integration Tests", () => {
     // 5. Can I add 4 more? (2 + 4 <= 5) -> No
     const canAdd4 = await quotaService.isQuotaAvailable(testOrgNode, "MAX_GROUPS", 4)()
     expect(canAdd4).toBeRightOf(false)
+  })
+
+  it("should enforce MAX_SPACES quota at Org level", async () => {
+    // Given: limit of 1 space
+    await upsertQuotaHelper({node: testOrgNode, quotaType: "MAX_SPACES"}, 1)
+    await createMockSpaceInDb(prisma, {name: "Space 1"})
+
+    // When: check quota
+    const result = await quotaService.isQuotaAvailable(testOrgNode, "MAX_SPACES")()
+
+    // Expect: no more spaces allowed
+    expect(result).toBeRightOf(false)
+
+    // Given: limit increased to 2
+    await upsertQuotaHelper({node: testOrgNode, quotaType: "MAX_SPACES"}, 2)
+
+    // When: check quota
+    const result2 = await quotaService.isQuotaAvailable(testOrgNode, "MAX_SPACES")()
+
+    // Expect: space allowed
+    expect(result2).toBeRightOf(true)
+  })
+
+  it("should enforce MAX_CONCURRENT_WORKFLOWS quota at WorkflowTemplate level", async () => {
+    // Given: a template and a limit of 1 concurrent workflow
+    const template = await createMockWorkflowTemplateInDb(prisma)
+    const templateNode: Node = {type: "WorkflowTemplate", identifier: template.id}
+    await upsertQuotaHelper({node: templateNode, quotaType: "MAX_CONCURRENT_WORKFLOWS"}, 1)
+
+    // Create an active workflow for this template
+    await createMockWorkflowInDb(prisma, {
+      name: "Active Workflow",
+      workflowTemplateId: template.id,
+      status: WorkflowStatus.EVALUATION_IN_PROGRESS
+    })
+
+    // When: check quota
+    const result = await quotaService.isQuotaAvailable(templateNode, "MAX_CONCURRENT_WORKFLOWS")()
+
+    // Expect: no more workflows allowed for this template
+    expect(result).toBeRightOf(false)
+  })
+
+  it("should enforce MAX_VOTES_PER_WORKFLOW quota at Workflow level", async () => {
+    // Given: a workflow and a limit of 1 vote
+    const workflow = await createMockWorkflowInDb(prisma, {name: "Workflow with votes"})
+    const workflowNode: Node = {type: "Workflow", identifier: workflow.id}
+    await upsertQuotaHelper({node: workflowNode, quotaType: "MAX_VOTES_PER_WORKFLOW"}, 1)
+
+    // Create a user and a vote
+    const user = await createMockUserInDb(prisma)
+    await prisma.vote.create({
+      data: {
+        id: randomUUID(),
+        workflowId: workflow.id,
+        userId: user.id,
+        voteType: "APPROVE",
+        votedForGroups: [],
+        createdAt: new Date()
+      }
+    })
+
+    // When: check quota
+    const result = await quotaService.isQuotaAvailable(workflowNode, "MAX_VOTES_PER_WORKFLOW")()
+
+    // Expect: no more votes allowed
+    expect(result).toBeRightOf(false)
+  })
+
+  it("should inherit quota from Org level to Space level and allow overrides", async () => {
+    // Given: MAX_WORKFLOW_TEMPLATES_PER_SPACE set at Org level
+    await upsertQuotaHelper({node: testOrgNode, quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE"}, 1)
+
+    const space = await createMockSpaceInDb(prisma, {name: "Space with inheritance"})
+    const spaceNode: Node = {type: "Space", identifier: space.id}
+
+    // Create 1 template in this space (usage = 1)
+    await createMockWorkflowTemplateInDb(prisma, {spaceId: space.id, name: "Template 1"})
+
+    // When: check quota at space level (should inherit limit 1 from Org)
+    const result1 = await quotaService.isQuotaAvailable(spaceNode, "MAX_WORKFLOW_TEMPLATES_PER_SPACE")()
+
+    // Expect: inherited limit reached
+    expect(result1).toBeRightOf(false)
+
+    // Given: override limit at Space level to 2
+    await upsertQuotaHelper({node: spaceNode, quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE"}, 2)
+
+    // When: check quota again
+    const result2 = await quotaService.isQuotaAvailable(spaceNode, "MAX_WORKFLOW_TEMPLATES_PER_SPACE")()
+
+    // Expect: override respected
+    expect(result2).toBeRightOf(true)
+
+    // Create another template (usage = 2)
+    await createMockWorkflowTemplateInDb(prisma, {spaceId: space.id, name: "Template 2"})
+
+    // When: check quota again
+    const result3 = await quotaService.isQuotaAvailable(spaceNode, "MAX_WORKFLOW_TEMPLATES_PER_SPACE")()
+
+    // Expect: override limit reached
+    expect(result3).toBeRightOf(false)
+  })
+
+  it("should handle deep inheritance (Org -> Space -> WorkflowTemplate)", async () => {
+    // MAX_CONCURRENT_WORKFLOWS is evaluated at WorkflowTemplate level.
+    // We can define it at Org level to apply to all templates.
+
+    // Given: limit set at Org level
+    await upsertQuotaHelper({node: testOrgNode, quotaType: "MAX_CONCURRENT_WORKFLOWS"}, 1)
+
+    const space = await createMockSpaceInDb(prisma)
+    const template = await createMockWorkflowTemplateInDb(prisma, {spaceId: space.id})
+    const templateNode: Node = {type: "WorkflowTemplate", identifier: template.id}
+
+    // Create an active workflow
+    await createMockWorkflowInDb(prisma, {
+      name: "Workflow 1",
+      workflowTemplateId: template.id,
+      status: WorkflowStatus.EVALUATION_IN_PROGRESS
+    })
+
+    // When: check quota at template level
+    const result = await quotaService.isQuotaAvailable(templateNode, "MAX_CONCURRENT_WORKFLOWS")()
+
+    // Expect: inherited limit from Org reached
+    expect(result).toBeRightOf(false)
   })
 })

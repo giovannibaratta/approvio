@@ -17,6 +17,7 @@ import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 import {Versioned} from "@domain"
 import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
 import {AgentRepository, AGENT_REPOSITORY_TOKEN} from "@services/agent/interfaces"
+import {QuotaService} from "@services/quota/quota.service"
 import {isUUIDv4, logSuccess} from "@utils"
 import * as A from "fp-ts/Array"
 import {pipe} from "fp-ts/function"
@@ -52,7 +53,8 @@ export class GroupMembershipService {
     @Inject(USER_REPOSITORY_TOKEN)
     private readonly userRepo: UserRepository,
     @Inject(AGENT_REPOSITORY_TOKEN)
-    private readonly agentRepo: AgentRepository
+    private readonly agentRepo: AgentRepository,
+    private readonly quotaService: QuotaService
   ) {}
 
   getGroupByIdentifierWithMembership(
@@ -141,10 +143,25 @@ export class GroupMembershipService {
         memberships: membershipsToAdd
       })
 
+    // TODO: Does this take into account the deduplication ? If not we should do the check
+    // after computing the memberships in the domain. The isQuotaAvailable might not support this
+    // since it wants an added quota, (we might compute the diff between the new  membership length - the old length)
+    const checkQuota = (request: AddMembersToGroupRequest) =>
+      pipe(
+        this.quotaService.isQuotaAvailable(
+          {type: "Group", identifier: request.groupId},
+          "MAX_ENTITIES_PER_GROUP",
+          request.members.length
+        ),
+        TE.mapLeft(() => "quota_check_error" as const),
+        TE.chainW(isAvailable => (isAvailable ? TE.right(undefined) : TE.left("quota_exceeded" as const)))
+      )
+
     return pipe(
       TE.Do,
       TE.bindW("request", () => TE.right(request)),
       TE.bindW("validatedRequest", ({request}) => validateRequest(request)),
+      TE.chainFirstW(({validatedRequest}) => checkQuota(validatedRequest)),
       TE.bindW("validatedRequestor", () => TE.fromEither(validateUserEntity(request.requestor))),
       TE.bindW("membershipsToAdd", ({request}) => this.fetchEntitiesAndCreateMemberships(request.members)),
       TE.bindW("groupMembershipData", ({request}) => fetchGroupMembershipData(request)),

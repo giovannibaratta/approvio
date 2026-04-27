@@ -3,7 +3,12 @@ import {AuthorizationError, ConcurrentModificationError, UnknownError} from "@se
 import {Versioned} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 
-export type UserCreateError = "user_already_exists" | AuthorizationError | UserValidationError | UnknownError
+export type UserCreateError =
+  | "user_already_exists"
+  | AuthorizationError
+  | UserValidationError
+  | UnknownError
+  | "quota_check_error"
 export type UserGetError = "user_not_found" | "request_invalid_user_identifier" | UserValidationError | UnknownError
 export type UserUpdateError = UserGetError | ConcurrentModificationError
 

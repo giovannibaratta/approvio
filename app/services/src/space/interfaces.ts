@@ -49,7 +49,13 @@ export interface ListSpacesResult {
 }
 
 // Repository error types
-export type CreateSpaceRepoError = "space_already_exists" | "concurrency_error" | "unknown_error" | SpaceValidationError
+export type CreateSpaceRepoError =
+  | "space_already_exists"
+  | "concurrency_error"
+  | "unknown_error"
+  | SpaceValidationError
+  | "quota_exceeded"
+  | "quota_check_error"
 export type GetSpaceRepoError = "space_not_found" | "unknown_error" | SpaceValidationError
 export type ListSpacesRepoError = "invalid_page" | "invalid_limit" | "unknown_error" | SpaceValidationError
 export type DeleteSpaceRepoError = "space_not_found" | "unknown_error"

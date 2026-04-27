@@ -69,6 +69,7 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
     case "refresh_token_concurrent_update":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: concurrent update. Try again`))
     case "unknown_error":
+    case "quota_check_error":
     case "agent_token_generation_failed":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: unknown error`))
     case "agent_key_decode_error":
@@ -264,7 +265,8 @@ export function generateErrorResponseForExchangePrivilegeToken(
     case "oidc_network_error":
     case "oidc_invalid_userinfo_response":
     case "oidc_unknown_error":
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: unknown error`))
+    case "quota_check_error":
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "pkce_code_concurrency_conflict":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: concurrent update. Try again`))
     case "requestor_not_authorized":
@@ -323,6 +325,7 @@ export function generateErrorResponseForRefreshAgentToken(
     case "refresh_token_reuse_detected":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: concurrent update. Try again`))
     case "unknown_error":
+    case "quota_check_error":
     case "agent_token_generation_failed":
     case "oidc_unknown_error":
       Logger.error(`Unknown error: ${errorCode}`)
@@ -522,6 +525,7 @@ export function generateErrorResponseForGenerateToken(error: GenerateTokenError,
     case "oidc_unknown_error":
     case "unknown_error":
     case "auth_invalid_redirect_uri":
+    case "quota_check_error":
       return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "request_empty_body":
     case "request_missing_code":

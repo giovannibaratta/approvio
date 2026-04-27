@@ -6,7 +6,13 @@ import {WorkflowGetError} from "../workflow/interfaces"
 
 export const VOTE_REPOSITORY_TOKEN = "VoteRepositoryToken"
 
-export type PersistVoteError = VoteValidationError | UnknownError | "workflow_not_found" | "voter_not_found"
+export type PersistVoteError =
+  | VoteValidationError
+  | UnknownError
+  | "workflow_not_found"
+  | "voter_not_found"
+  | "quota_exceeded"
+  | "quota_check_error"
 export type FindVotesError = VoteValidationError | UnknownError | WorkflowGetError
 export type GetLatestVoteError = UnknownError | VoteValidationError
 

@@ -16,6 +16,7 @@ import {isUUIDv4} from "@utils"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
+import {QuotaService} from "@services/quota/quota.service"
 import {
   CreateWorkflowError,
   CreateWorkflowRepo,
@@ -34,7 +35,8 @@ export class WorkflowService {
     @Inject(WORKFLOW_REPOSITORY_TOKEN)
     private readonly workflowRepo: WorkflowRepository,
     @Inject(WORKFLOW_TEMPLATE_REPOSITORY_TOKEN)
-    private readonly workflowTemplateRepo: WorkflowTemplateRepository
+    private readonly workflowTemplateRepo: WorkflowTemplateRepository,
+    private readonly quotaService: QuotaService
   ) {}
 
   /**
@@ -66,9 +68,21 @@ export class WorkflowService {
       return TE.fromEither(workflow)
     }
 
+    const checkQuota = () =>
+      pipe(
+        this.quotaService.isQuotaAvailable(
+          {type: "WorkflowTemplate", identifier: request.workflowData.workflowTemplateId},
+          "MAX_CONCURRENT_WORKFLOWS",
+          1
+        ),
+        TE.mapLeft(() => "quota_check_error" as const),
+        TE.chainW(isAvailable => (isAvailable ? TE.right(undefined) : TE.left("quota_exceeded" as const)))
+      )
+
     return pipe(
       TE.Do,
       TE.bindW("request", () => TE.right(request)),
+      TE.chainFirstW(() => checkQuota()),
       TE.bindW("template", ({request}) => getWorkflowTemplate(request)),
       TE.bindW("workflow", ({request, template}) => validateAndCreateWorkflow(template, request)),
       TE.chainW(({workflow}) => persistWorkflow({workflow}))

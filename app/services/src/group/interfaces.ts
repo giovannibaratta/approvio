@@ -11,6 +11,8 @@ export type CreateGroupRepoError =
   | GroupValidationError
   | UnknownError
   | MembershipAddError
+  | "quota_exceeded"
+  | "quota_check_error"
 
 export type GetGroupRepoError = "group_not_found" | GroupValidationError | UnknownError
 export type ListGroupsRepoError = PaginationError | GroupValidationError | UnknownError

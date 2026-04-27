@@ -111,6 +111,8 @@ export function generateErrorResponseForCreateWorkflow(
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "quota_exceeded":
+      throw new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded for creating workflow`))
     case "workflow_name_empty":
     case "workflow_name_too_long":
     case "workflow_name_invalid_characters":
@@ -125,6 +127,7 @@ export function generateErrorResponseForCreateWorkflow(
     case "workflow_update_before_create":
     case "workflow_expires_at_in_the_past":
     case "workflow_status_invalid":
+    case "quota_check_error":
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
     case "name_missing":
@@ -621,6 +624,8 @@ export function generateErrorResponseForCastVote(
 ): HttpException {
   const errorCode = error.toUpperCase()
   switch (error) {
+    case "quota_exceeded":
+      throw new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded for casting vote`))
     case "requestor_not_authorized":
       throw new ForbiddenException(
         generateErrorPayload(
@@ -634,6 +639,7 @@ export function generateErrorResponseForCastVote(
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: User not found`))
     case "entity_not_eligible_to_vote":
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: User is not eligible to vote`))
+    case "quota_check_error":
     case "unknown_error":
       return new InternalServerErrorException(
         generateErrorPayload("VOTE_CAST_FAILED", `${context}: An unexpected error occurred while casting vote`)

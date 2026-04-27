@@ -18,6 +18,8 @@ import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 import {Versioned} from "@domain"
 import {isUUIDv4, logSuccess} from "@utils"
 import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
+import {DEFAULT_ORG_ID} from "@services/constants"
+import {QuotaService} from "@services/quota/quota.service"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
@@ -44,7 +46,8 @@ export class GroupService {
     @Inject(GROUP_REPOSITORY_TOKEN)
     private readonly groupRepo: GroupRepository,
     @Inject(USER_REPOSITORY_TOKEN)
-    private readonly userRepo: UserRepository
+    private readonly userRepo: UserRepository,
+    private readonly quotaService: QuotaService
   ) {}
 
   /**
@@ -69,9 +72,17 @@ export class GroupService {
     const persistGroupWithMembershipAndUpdateUser = (data: CreateGroupWithMembershipAndUpdateUserRepo) =>
       this.groupRepo.createGroupWithMembershipAndUpdateUser(data)
 
+    const checkQuota = () =>
+      pipe(
+        this.quotaService.isQuotaAvailable({type: "Org", identifier: DEFAULT_ORG_ID}, "MAX_GROUPS", 1),
+        TE.mapLeft(() => "quota_check_error" as const),
+        TE.chainW(isAvailable => (isAvailable ? TE.right(undefined) : TE.left("quota_exceeded" as const)))
+      )
+
     return pipe(
       TE.Do,
       TE.bindW("requestor", () => validateRequestor()),
+      TE.chainFirstW(() => checkQuota()),
       TE.bindW("group", () => validateGroup(request)),
       TE.bindW("user", ({requestor}) => fetchUser(requestor)),
       TE.bindW("updatedUser", ({user, group}) => addManagePermissions({user, group})),

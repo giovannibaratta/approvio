@@ -29,6 +29,7 @@ import {DistributiveOmit, logSuccess} from "@utils"
 import {isRight} from "fp-ts/Either"
 import {AuthService} from "@services/auth/auth.service"
 import {UseHighPrivilegeTokenError} from "@services/auth/interfaces"
+import {QuotaService} from "@services/quota/quota.service"
 
 @Injectable()
 export class VoteService {
@@ -39,7 +40,8 @@ export class VoteService {
     @Inject(GROUP_MEMBERSHIP_REPOSITORY_TOKEN)
     private readonly groupMembershipRepo: GroupMembershipRepository,
     private readonly queueService: QueueService,
-    private readonly authService: AuthService
+    private readonly authService: AuthService,
+    private readonly quotaService: QuotaService
   ) {}
 
   /**
@@ -157,8 +159,20 @@ export class VoteService {
           )
         }
 
+        const checkQuota = () =>
+          pipe(
+            this.quotaService.isQuotaAvailable(
+              {type: "Workflow", identifier: request.workflowId},
+              "MAX_VOTES_PER_WORKFLOW",
+              1
+            ),
+            TE.mapLeft(() => "quota_check_error" as const),
+            TE.chainW(isAvailable => (isAvailable ? TE.right(undefined) : TE.left("quota_exceeded" as const)))
+          )
+
         return pipe(
-          verifyHighPrivilegeIfNeeded(),
+          checkQuota(),
+          TE.chainW(() => verifyHighPrivilegeIfNeeded()),
           TE.chainW(() => {
             // Create vote with voter object
             const voter = createEntityReference(request.requestor)

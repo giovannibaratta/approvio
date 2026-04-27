@@ -104,6 +104,8 @@ export function mapListGroupMembersResultToApi(
 export function generateErrorResponseForCreateGroup(error: CreateGroupError, context: string): HttpException {
   const errorCode = error.toUpperCase()
   switch (error) {
+    case "quota_exceeded":
+      throw new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded for creating group`))
     case "requestor_not_authorized":
       throw new ForbiddenException(
         generateErrorPayload(
@@ -146,6 +148,7 @@ export function generateErrorResponseForCreateGroup(error: CreateGroupError, con
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid UUID provided`))
     case "membership_entity_already_in_group":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: Entity already in group`))
+    case "quota_check_error":
     case "unknown_error":
     case "membership_duplicated_membership":
     case "group_not_found":
@@ -284,6 +287,10 @@ export function generateErrorResponseForAddMembersToGroup(
       return new ForbiddenException(
         generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
       )
+    case "quota_exceeded":
+      throw new ForbiddenException(
+        generateErrorPayload(errorCode, `${context}: quota exceeded for adding members to group`)
+      )
     case "request_invalid_group_uuid":
     case "request_invalid_entity_uuid":
     case "request_invalid_user_identifier":
@@ -297,6 +304,10 @@ export function generateErrorResponseForAddMembersToGroup(
       return new ConflictException(generateErrorPayload(errorCode, context))
     case "membership_duplicated_membership":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: Duplicated membership`))
+    case "quota_check_error":
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
+      )
     case "group_name_empty":
     case "group_name_too_long":
     case "group_name_invalid_characters":

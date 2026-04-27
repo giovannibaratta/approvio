@@ -61,6 +61,8 @@ export function generateErrorResponseForCreateSpace(error: CreateSpaceError, con
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "quota_exceeded":
+      throw new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded for creating space`))
     case "space_name_empty":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: space name cannot be empty`))
     case "space_name_too_long":
@@ -80,6 +82,7 @@ export function generateErrorResponseForCreateSpace(error: CreateSpaceError, con
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: concurrent modification detected`)
       )
+    case "quota_check_error":
     case "unknown_error":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: an unexpected error occurred`)

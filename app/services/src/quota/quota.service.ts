@@ -35,8 +35,8 @@ import {pipe} from "fp-ts/function"
 import {AuthorizationError} from "@services/error"
 import {sequenceT} from "fp-ts/Apply"
 import {validateUserEntity} from "@services/shared/types"
-import {HierarchyService} from "@services/hierarchy/hierarchy.service"
-import {USER_REPOSITORY_TOKEN, UserRepository} from "@services/user"
+import {HierarchyService} from "../hierarchy/hierarchy.service"
+import {USER_REPOSITORY_TOKEN, UserRepository} from "../user/interfaces"
 import {VOTE_REPOSITORY_TOKEN, VoteRepository} from "../vote/interfaces"
 
 @Injectable()
