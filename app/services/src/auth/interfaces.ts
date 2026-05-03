@@ -108,14 +108,14 @@ export type OidcError = PrefixUnion<
 >
 
 export interface OidcTokenResponse {
-  access_token: string
+  accessToken: string
   /** OAuth 2.0 token type (typically "Bearer"), indicates how the access_token should be used */
-  token_type: string
-  expires_in?: number
-  refresh_token?: string
+  tokenType: string
+  expiresIn?: number
+  refreshToken?: string
   scope?: string
   /** OpenID Connect ID Token — a signed JWT containing user identity claims (sub, auth_time, etc.). Only returned when "openid" scope is requested. */
-  id_token?: string
+  idToken?: string
 }
 
 export interface OidcUserInfo {
@@ -126,20 +126,20 @@ export interface OidcUserInfo {
   /** Email address*/
   readonly email?: string
   /** Whether email has been verified*/
-  readonly email_verified?: boolean
+  readonly emailVerified?: boolean
   /** Preferred username*/
-  readonly preferred_username?: string
+  readonly preferredUsername?: string
   /** Given name (first name)*/
-  readonly given_name?: string
+  readonly givenName?: string
   /** Family name (surname)*/
-  readonly family_name?: string
+  readonly familyName?: string
 }
 
 export interface OidcTokenRequest {
-  grant_type: "authorization_code"
+  grantType: "authorization_code"
   code: string
-  redirect_uri: string
-  code_verifier: string
+  redirectUri: string
+  codeVerifier: string
 }
 
 export type AgentChallengeGetError = "agent_challenge_not_found" | UnknownError

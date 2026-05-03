@@ -85,17 +85,17 @@ export function validateUserInfoResponse(
     ...(rawResponse.email && typeof rawResponse.email === "string" ? {email: rawResponse.email} : {}),
     ...(rawResponse.email_verified !== undefined && rawResponse.email_verified !== null
       ? {
-          email_verified: Boolean(rawResponse.email_verified)
+          emailVerified: Boolean(rawResponse.email_verified)
         }
       : {}),
     ...(rawResponse.preferred_username && typeof rawResponse.preferred_username === "string"
-      ? {preferred_username: rawResponse.preferred_username}
+      ? {preferredUsername: rawResponse.preferred_username}
       : {}),
     ...(rawResponse.given_name && typeof rawResponse.given_name === "string"
-      ? {given_name: rawResponse.given_name}
+      ? {givenName: rawResponse.given_name}
       : {}),
     ...(rawResponse.family_name && typeof rawResponse.family_name === "string"
-      ? {family_name: rawResponse.family_name}
+      ? {familyName: rawResponse.family_name}
       : {})
   }
 

@@ -151,10 +151,10 @@ export class AuthService {
 
   private exchangeCodeForTokens(code: string, pkceData: PkceData): TaskEither<AuthError, OidcTokenResponse> {
     const tokenRequest: OidcTokenRequest = {
-      grant_type: "authorization_code",
+      grantType: "authorization_code",
       code,
-      redirect_uri: pkceData.redirectUri,
-      code_verifier: pkceData.codeVerifier
+      redirectUri: pkceData.redirectUri,
+      codeVerifier: pkceData.codeVerifier
     }
 
     return this.oidcClient.exchangeCodeForTokens(tokenRequest)
@@ -183,7 +183,7 @@ export class AuthService {
       const oidcUser: OidcUser = {
         oidcSubjectId: userInfo.sub,
         email: userInfo.email,
-        displayName: userInfo.name || userInfo.preferred_username || userInfo.email
+        displayName: userInfo.name || userInfo.preferredUsername || userInfo.email
       }
 
       return TE.right(oidcUser)
@@ -191,7 +191,7 @@ export class AuthService {
 
     return pipe(
       this.exchangeCodeForTokens(code, pkceData),
-      TE.chainW(tokenResponse => this.getUserInfoFromProvider(tokenResponse.access_token)),
+      TE.chainW(tokenResponse => this.getUserInfoFromProvider(tokenResponse.accessToken)),
       TE.chainW(mapUserInfoToOidcUser),
       TE.chainW(oidcUser => this.authenticateOrRegisterOidcUser(oidcUser)),
       TE.chainW(user =>
@@ -474,14 +474,14 @@ export class AuthService {
       TE.chainW(pkceData => this.exchangeCodeForTokens(request.code, pkceData)),
       TE.chainW(tokenResponse =>
         pipe(
-          this.getUserInfoFromProvider(tokenResponse.access_token),
+          this.getUserInfoFromProvider(tokenResponse.accessToken),
           TE.chainW(() => {
-            if (!tokenResponse.id_token) {
+            if (!tokenResponse.idToken) {
               Logger.error("Step-up token exchange returned no id_token from IDP")
               return TE.left("oidc_invalid_token_response" as const)
             }
 
-            return this.oidcClient.verifyAssuranceLevel(tokenResponse.id_token, AssuranceLevel.FORCE_LOGIN)
+            return this.oidcClient.verifyAssuranceLevel(tokenResponse.idToken, AssuranceLevel.FORCE_LOGIN)
           })
         )
       ),
