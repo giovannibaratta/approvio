@@ -82,17 +82,17 @@ export class OidcClient implements OidcProvider {
         const rawConfiguration = this.oidcBootstrapService.getRawClientConfiguration()
         const tokens = await client.genericGrantRequest(rawConfiguration, "authorization_code", {
           code: request.code,
-          redirect_uri: request.redirect_uri,
-          code_verifier: request.code_verifier
+          redirect_uri: request.redirectUri,
+          code_verifier: request.codeVerifier
         })
 
         const tokenResponse: OidcTokenResponse = {
-          access_token: tokens.access_token,
-          token_type: tokens.token_type || "Bearer",
-          expires_in: tokens.expires_in,
-          refresh_token: tokens.refresh_token,
+          accessToken: tokens.access_token,
+          tokenType: tokens.token_type || "Bearer",
+          expiresIn: tokens.expires_in,
+          refreshToken: tokens.refresh_token,
           scope: tokens.scope,
-          id_token: tokens.id_token
+          idToken: tokens.id_token
         }
 
         Logger.log("Token exchange completed successfully")
@@ -137,10 +137,10 @@ export class OidcClient implements OidcProvider {
           sub: validatedUserInfo.sub,
           name: validatedUserInfo.name,
           email: validatedUserInfo.email,
-          email_verified: validatedUserInfo.email_verified,
-          preferred_username: validatedUserInfo.preferred_username,
-          given_name: validatedUserInfo.given_name,
-          family_name: validatedUserInfo.family_name
+          emailVerified: validatedUserInfo.emailVerified,
+          preferredUsername: validatedUserInfo.preferredUsername,
+          givenName: validatedUserInfo.givenName,
+          familyName: validatedUserInfo.familyName
         }
 
         Logger.log(`User info fetch completed successfully for sub: ${userInfo.sub}`)

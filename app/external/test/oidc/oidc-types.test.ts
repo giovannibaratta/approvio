@@ -21,10 +21,10 @@ describe("validateUserInfoResponse", () => {
       expect(validatedInfo.sub).toBe("user-12345")
       expect(validatedInfo.name).toBeUndefined()
       expect(validatedInfo.email).toBeUndefined()
-      expect(validatedInfo.email_verified).toBeUndefined()
-      expect(validatedInfo.preferred_username).toBeUndefined()
-      expect(validatedInfo.given_name).toBeUndefined()
-      expect(validatedInfo.family_name).toBeUndefined()
+      expect(validatedInfo.emailVerified).toBeUndefined()
+      expect(validatedInfo.preferredUsername).toBeUndefined()
+      expect(validatedInfo.givenName).toBeUndefined()
+      expect(validatedInfo.familyName).toBeUndefined()
     })
 
     it("should validate full valid response with all optional claims", () => {
@@ -48,10 +48,10 @@ describe("validateUserInfoResponse", () => {
       expect(validatedInfo.sub).toBe("user-12345")
       expect(validatedInfo.name).toBe("John Doe")
       expect(validatedInfo.email).toBe("john.doe@example.com")
-      expect(validatedInfo.email_verified).toBe(true)
-      expect(validatedInfo.preferred_username).toBe("johndoe")
-      expect(validatedInfo.given_name).toBe("John")
-      expect(validatedInfo.family_name).toBe("Doe")
+      expect(validatedInfo.emailVerified).toBe(true)
+      expect(validatedInfo.preferredUsername).toBe("johndoe")
+      expect(validatedInfo.givenName).toBe("John")
+      expect(validatedInfo.familyName).toBe("Doe")
     })
 
     it("should validate partial valid response with some optional claims", () => {
@@ -73,10 +73,10 @@ describe("validateUserInfoResponse", () => {
       expect(validatedInfo.sub).toBe("user-67890")
       expect(validatedInfo.name).toBe("Jane Smith")
       expect(validatedInfo.email).toBe("jane@example.com")
-      expect(validatedInfo.email_verified).toBe(false)
-      expect(validatedInfo.preferred_username).toBeUndefined()
-      expect(validatedInfo.given_name).toBeUndefined()
-      expect(validatedInfo.family_name).toBeUndefined()
+      expect(validatedInfo.emailVerified).toBe(false)
+      expect(validatedInfo.preferredUsername).toBeUndefined()
+      expect(validatedInfo.givenName).toBeUndefined()
+      expect(validatedInfo.familyName).toBeUndefined()
     })
 
     it("should validate response with email_verified as true", () => {
@@ -92,7 +92,7 @@ describe("validateUserInfoResponse", () => {
 
       // Expect: validation succeeds with email_verified as boolean
       expect(E.isRight(result)).toBe(true)
-      expect(unwrapRight(result).email_verified).toBe(true)
+      expect(unwrapRight(result).emailVerified).toBe(true)
     })
 
     it("should accept response with string email_verified claim", () => {
@@ -113,7 +113,7 @@ describe("validateUserInfoResponse", () => {
 
         // Expect: validation succeeds and converts to boolean
         expect(E.isRight(result)).toBe(true)
-        expect(unwrapRight(result).email_verified).toBeBoolean()
+        expect(unwrapRight(result).emailVerified).toBeBoolean()
       }
     })
 
@@ -130,7 +130,7 @@ describe("validateUserInfoResponse", () => {
 
       // Expect: validation succeeds with email_verified as boolean
       expect(E.isRight(result)).toBe(true)
-      expect(unwrapRight(result).email_verified).toBe(false)
+      expect(unwrapRight(result).emailVerified).toBe(false)
     })
 
     it("should handle response with null/undefined optional claims by omitting them", () => {
@@ -153,9 +153,9 @@ describe("validateUserInfoResponse", () => {
       expect(validatedInfo.sub).toBe("user-nulls")
       expect(validatedInfo.name).toBeUndefined()
       expect(validatedInfo.email).toBeUndefined()
-      expect(validatedInfo.preferred_username).toBeUndefined()
-      expect(validatedInfo.given_name).toBeUndefined()
-      expect(validatedInfo.family_name).toBeUndefined()
+      expect(validatedInfo.preferredUsername).toBeUndefined()
+      expect(validatedInfo.givenName).toBeUndefined()
+      expect(validatedInfo.familyName).toBeUndefined()
     })
   })
 
