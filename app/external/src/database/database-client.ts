@@ -6,12 +6,13 @@ import {PrismaPg} from "@prisma/adapter-pg"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import * as E from "fp-ts/Either"
+import {checkMigrationId} from "./migration-utils"
 
 // This constant MUST be updated whenever the repositories need to access properties defined by a
 // a newer migration file. The timestamp provided here is used to check if the database is using
 // a migration that is older than the one required by the repositories. If this is the case, the
 // application will fail to start.
-export const REQUIRED_DB_MIGRATION_TIMESTAMP = "20260208132808"
+export const REQUIRED_DB_MIGRATION_TIMESTAMP = "20260215114500"
 
 export class ConflictingIsolationLevelError extends Error {
   constructor(requested: string, active: string) {
@@ -51,8 +52,8 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
     const result = await this.checkDbVersion()()
 
     if (E.isLeft(result)) {
-      Logger.error("Database version check failed", result.left.message)
-      throw result.left
+      Logger.error("Database version check failed", result.left)
+      throw new Error(result.left)
     }
   }
 
@@ -100,7 +101,7 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
     )
   }
 
-  private checkDbVersion(): TE.TaskEither<Error, void> {
+  private checkDbVersion(): TE.TaskEither<string, void> {
     return pipe(
       TE.tryCatch(
         async () => {
@@ -111,30 +112,12 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
           })
           return result
         },
-        reason => new Error(`Failed to query database changelog: ${String(reason)}`)
+        reason => `Failed to query database changelog: ${String(reason)}`
       ),
       TE.chain(latestMigration => {
-        if (!latestMigration) return TE.left(new Error("No migrations found in database."))
+        if (!latestMigration) return TE.left("No migrations found in database.")
 
-        // The ID should have the following format YYYYMMDDHHMMSS-<arbitrary-string>
-        const timestamp = latestMigration.id.split("-")[0]
-
-        if (timestamp === undefined || timestamp.length !== 14)
-          return TE.left(new Error(`Invalid migration ID format. Found ${latestMigration.id}.`))
-
-        // Convert timestamp and REQUIRED_DB_MIGRATION_TIMESTAMP to Date objects for comparison
-        const timestampDate = new Date(timestamp)
-        const requiredTimestampDate = new Date(REQUIRED_DB_MIGRATION_TIMESTAMP)
-
-        if (timestampDate < requiredTimestampDate) {
-          return TE.left(
-            new Error(
-              `Database version mismatch. Required minimum: ${REQUIRED_DB_MIGRATION_TIMESTAMP}, Found latest: ${latestMigration.id}. Please update your database.`
-            )
-          )
-        }
-
-        return TE.right(undefined)
+        return TE.fromEither(checkMigrationId(latestMigration.id, REQUIRED_DB_MIGRATION_TIMESTAMP))
       })
     )
   }
