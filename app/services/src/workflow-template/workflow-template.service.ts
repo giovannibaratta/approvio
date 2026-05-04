@@ -92,6 +92,7 @@ export class WorkflowTemplateService {
   updateWorkflowTemplate(
     request: UpdateWorkflowTemplateRequest
   ): TaskEither<
+    | WorkflowTemplateGetError
     | WorkflowTemplateGetActiveError
     | WorkflowTemplateUpdateError
     | WorkflowTemplateDeprecationError
@@ -108,7 +109,9 @@ export class WorkflowTemplateService {
       TE.bindW("requestor", () => validateRequestor()),
       TE.bindW("validatedAttributes", validateAttributes),
       TE.bindW("activeTemplate", () =>
-        this.workflowTemplateRepository.getActiveWorkflowTemplateByName(request.templateName)
+        isUUIDv4(request.templateName)
+          ? this.workflowTemplateRepository.getWorkflowTemplateById(request.templateName)
+          : this.workflowTemplateRepository.getActiveWorkflowTemplateByName(request.templateName)
       ),
       // Fail-fast if the active template has been updated since the last read done by the caller
       TE.chainFirstW(({activeTemplate}) => {
@@ -275,7 +278,7 @@ export class WorkflowTemplateService {
   deprecateWorkflowTemplate(
     request: DeprecateWorkflowTemplateRequest
   ): TaskEither<
-    WorkflowTemplateGetActiveError | WorkflowTemplateDeprecateError | AuthorizationError,
+    WorkflowTemplateGetError | WorkflowTemplateGetActiveError | WorkflowTemplateDeprecateError | AuthorizationError,
     Versioned<WorkflowTemplate>
   > {
     const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
@@ -283,7 +286,9 @@ export class WorkflowTemplateService {
       TE.Do,
       TE.bindW("requestor", () => validateRequestor()),
       TE.bindW("activeTemplate", () =>
-        this.workflowTemplateRepository.getActiveWorkflowTemplateByName(request.templateName)
+        isUUIDv4(request.templateName)
+          ? this.workflowTemplateRepository.getWorkflowTemplateById(request.templateName)
+          : this.workflowTemplateRepository.getActiveWorkflowTemplateByName(request.templateName)
       ),
       TE.bindW("deprecatedVersion", ({activeTemplate}) => {
         return TE.fromEither(markTemplateForDeprecation(activeTemplate, request.cancelWorkflows ?? false))

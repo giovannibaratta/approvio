@@ -1058,6 +1058,39 @@ describe("Workflow Templates API", () => {
         expect(newTemplate?.version).toEqual(2) // New template should be 2
       })
 
+      it("should update workflow template by ID (as OrgAdmin)", async () => {
+        // When
+        const response = await put(app, `${endpoint}/${createdTemplate.id}`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(updatePayload)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: WorkflowTemplateApi = response.body
+        expect(body.id).not.toEqual(createdTemplate.id)
+        expect(body.name).toEqual(createdTemplate.name)
+        expect(body.description).toEqual(updatePayload.description)
+      })
+
+      it("should return 400 if updating a non-active template by ID", async () => {
+        // Given a deprecated template
+        await prisma.workflowTemplate.update({
+          where: {id: createdTemplate.id},
+          data: {status: "DEPRECATED"}
+        })
+
+        // When
+        const response = await put(app, `${endpoint}/${createdTemplate.id}`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(updatePayload)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_NOT_ACTIVE")
+      })
+
       it("should update only provided fields", async () => {
         // Given
         const partialUpdate: WorkflowTemplateUpdate = {
@@ -1124,7 +1157,7 @@ describe("Workflow Templates API", () => {
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
       })
 
-      it("should return 409 ACTIVE_WORKFLOW_TEMPLATE_NOT_FOUND for non-existent template", async () => {
+      it("should return 404 WORKFLOW_TEMPLATE_NOT_FOUND for non-existent template", async () => {
         // Given
         const nonExistentId = randomUUID()
 
@@ -1135,8 +1168,8 @@ describe("Workflow Templates API", () => {
           .send(updatePayload)
 
         // Expect
-        expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
-        expect(response.body).toHaveErrorCode("ACTIVE_WORKFLOW_TEMPLATE_NOT_FOUND")
+        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
+        expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_NOT_FOUND")
       })
 
       it("should return 400 BAD_REQUEST (WORKFLOW_TEMPLATE_DESCRIPTION_TOO_LONG) for very long description in update", async () => {
@@ -1155,6 +1188,82 @@ describe("Workflow Templates API", () => {
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_DESCRIPTION_TOO_LONG")
+      })
+    })
+  })
+
+  describe("POST /workflow-templates/:templateIdentifier/deprecate", () => {
+    let createdTemplate: PrismaWorkflowTemplate
+
+    beforeEach(async () => {
+      createdTemplate = await createMockWorkflowTemplateInDb(prisma, {
+        name: "Deprecate Template",
+        status: "ACTIVE"
+      })
+    })
+
+    describe("good cases", () => {
+      it("should deprecate workflow template by name", async () => {
+        // When
+        const response = await post(app, `${endpoint}/${createdTemplate.name}/deprecate`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({})
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        expect(response.body.status).toEqual("PENDING_DEPRECATION")
+
+        const updatedTemplate = await prisma.workflowTemplate.findUnique({where: {id: createdTemplate.id}})
+        expect(updatedTemplate?.status).toEqual("PENDING_DEPRECATION")
+      })
+
+      it("should deprecate workflow template by ID", async () => {
+        const response = await post(app, `${endpoint}/${createdTemplate.id}/deprecate`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({})
+
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        expect(response.body.status).toEqual("PENDING_DEPRECATION")
+
+        const updatedTemplate = await prisma.workflowTemplate.findUnique({where: {id: createdTemplate.id}})
+        expect(updatedTemplate?.status).toEqual("PENDING_DEPRECATION")
+      })
+
+      it("should return 400 if deprecating a non-active template by ID", async () => {
+        // Given a deprecated template
+        await prisma.workflowTemplate.update({
+          where: {id: createdTemplate.id},
+          data: {status: "DEPRECATED"}
+        })
+
+        // When
+        const response = await post(app, `${endpoint}/${createdTemplate.id}/deprecate`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({})
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_NOT_ACTIVE")
+      })
+    })
+
+    describe("bad cases", () => {
+      it("should return 401 UNAUTHORIZED if no token is provided", async () => {
+        const response = await post(app, `${endpoint}/${createdTemplate.name}/deprecate`).build().send({})
+        expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
+      })
+
+      it("should return 404 NOT_FOUND for non-existent template", async () => {
+        const response = await post(app, `${endpoint}/non-existent-template/deprecate`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({})
+
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("ACTIVE_WORKFLOW_TEMPLATE_NOT_FOUND")
       })
     })
   })
