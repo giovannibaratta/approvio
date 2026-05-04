@@ -117,9 +117,9 @@ export class WorkflowTemplatesController {
     return eitherWorkflowTemplate.right
   }
 
-  @Put(":templateName")
+  @Put(":templateIdentifier")
   async updateWorkflowTemplate(
-    @Param("templateName") templateName: string,
+    @Param("templateIdentifier") templateName: string,
     @Body() request: WorkflowTemplateUpdate,
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<WorkflowTemplateApi> {
@@ -144,10 +144,10 @@ export class WorkflowTemplatesController {
     return eitherWorkflowTemplate.right
   }
 
-  @Post(":templateName/deprecate")
+  @Post(":templateIdentifier/deprecate")
   @HttpCode(HttpStatus.OK)
   async deprecateWorkflowTemplate(
-    @Param("templateName") templateName: string,
+    @Param("templateIdentifier") templateName: string,
     @Body() body: WorkflowTemplateDeprecate,
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<WorkflowTemplateApi> {

@@ -419,6 +419,8 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
     case "quota_exceeded":
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded`))
+    case "workflow_template_not_found":
+      return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow template not found`))
   }
 }
 
@@ -485,6 +487,8 @@ export function generateErrorResponseForDeprecateWorkflowTemplate(
       )
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
+    case "workflow_template_not_found":
+      return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow template not found`))
   }
 }
 
