@@ -32,7 +32,7 @@ describe("RequestIdMiddleware Integration", () => {
     app = module.createNestApplication({
       logger: false
     })
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
     healthService = module.get(HealthService)
     await app.init()
   }, 30000)

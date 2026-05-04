@@ -53,7 +53,7 @@ describe("Privilege Flow Integration", () => {
       .compile()
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
     configProvider = module.get(ConfigProvider)
     authService = module.get(AuthService)
     jwtService = module.get(JwtService)

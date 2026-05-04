@@ -24,7 +24,7 @@ export class AgentDbRepository implements AgentRepository {
     return pipe(
       TE.tryCatch(
         () =>
-          this.dbClient.agent.findUnique({
+          this.dbClient.cx.agent.findUnique({
             where: {agentName}
           }),
         this.mapGetError
@@ -38,7 +38,7 @@ export class AgentDbRepository implements AgentRepository {
     return pipe(
       TE.tryCatch(
         () =>
-          this.dbClient.agent.findUnique({
+          this.dbClient.cx.agent.findUnique({
             where: {id: agentId}
           }),
         this.mapGetError
@@ -51,7 +51,7 @@ export class AgentDbRepository implements AgentRepository {
   updateAgent(agent: Versioned<Agent>): TaskEither<AgentUpdateError, Agent> {
     return TE.tryCatchK(
       async () => {
-        const updatedAgent = await this.dbClient.agent.update({
+        const updatedAgent = await this.dbClient.cx.agent.update({
           where: {id: agent.id, occ: agent.occ},
           data: {
             roles: mapRolesToPrisma(agent.roles),
@@ -82,7 +82,7 @@ export class AgentDbRepository implements AgentRepository {
     return (agent: Agent): TaskEither<AgentCreateError, PrismaAgent> =>
       TE.tryCatch(
         () =>
-          this.dbClient.agent.create({
+          this.dbClient.cx.agent.create({
             data: this.mapDomainAgentToPrisma(agent)
           }),
         this.mapCreateError

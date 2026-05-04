@@ -38,7 +38,7 @@ describe("HierarchyService Integration Tests", () => {
     }
 
     hierarchyService = module.get<HierarchyService>(HierarchyService)
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
   })
 
   afterAll(async () => {

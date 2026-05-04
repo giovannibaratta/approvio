@@ -29,7 +29,7 @@ describe("GroupDbRepository Integration", () => {
       ]
     }).compile()
 
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
     repository = module.get(GroupDbRepository)
     userRepository = module.get(UserDbRepository)
   }, 30000)

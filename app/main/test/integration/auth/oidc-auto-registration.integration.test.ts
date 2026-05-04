@@ -50,7 +50,7 @@ describe("OIDC Auto-Registration Integration", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
     configProvider = module.get(ConfigProvider)
 
     await app.init()

@@ -33,7 +33,7 @@ export class RefreshTokenDbRepository implements RefreshTokenRepository {
       TE.tryCatch(
         async () => {
           const prismaData = mapDomainTokenToPrismaForCreate(token)
-          const created = await this.dbClient.refreshToken.create({
+          const created = await this.dbClient.cx.refreshToken.create({
             data: prismaData
           })
           return created
@@ -52,7 +52,7 @@ export class RefreshTokenDbRepository implements RefreshTokenRepository {
     return pipe(
       TE.tryCatch(
         async () => {
-          const token = await this.dbClient.refreshToken.findUnique({
+          const token = await this.dbClient.cx.refreshToken.findUnique({
             where: {tokenHash}
           })
           if (!token) throw new RefreshTokenNotFoundError()
@@ -94,7 +94,7 @@ export class RefreshTokenDbRepository implements RefreshTokenRepository {
 
     return TE.tryCatch(
       async () => {
-        await this.dbClient.$transaction(async tx => {
+        await this.dbClient.transactional(async tx => {
           // Update existing token
           const updated = await tx.refreshToken.update({
             where: {
@@ -131,7 +131,7 @@ export class RefreshTokenDbRepository implements RefreshTokenRepository {
   revokeFamily(familyId: string): TaskEither<RefreshTokenUpdateError, void> {
     return TE.tryCatch(
       async () => {
-        await this.dbClient.refreshToken.updateMany({
+        await this.dbClient.cx.refreshToken.updateMany({
           where: {familyId},
           data: {
             status: RefreshTokenStatus.REVOKED,

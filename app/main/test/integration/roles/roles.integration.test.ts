@@ -29,7 +29,7 @@ describe("Roles Integration Tests", () => {
       .compile()
 
     app = moduleRef.createNestApplication({logger: false})
-    prisma = moduleRef.get(DatabaseClient)
+    prisma = moduleRef.get(DatabaseClient).prisma
     jwtService = moduleRef.get(JwtService)
     configProvider = moduleRef.get(ConfigProvider)
 

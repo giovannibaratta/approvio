@@ -25,7 +25,7 @@ describe("WorkflowTemplateDbRepository Integration", () => {
       ]
     }).compile()
 
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
     repository = module.get(WorkflowTemplateDbRepository)
   }, 30000)
 

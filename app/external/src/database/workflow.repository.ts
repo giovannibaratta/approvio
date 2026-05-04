@@ -148,7 +148,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
   countActiveWorkflowsByTemplateId(templateId: string): TaskEither<UnknownError, number> {
     return TE.tryCatch(
       () =>
-        this.dbClient.workflow.count({
+        this.dbClient.cx.workflow.count({
           where: {
             workflowTemplateId: templateId,
             status: {
@@ -166,7 +166,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
   countActiveWorkflows(): TaskEither<UnknownError, number> {
     return TE.tryCatch(
       () =>
-        this.dbClient.workflow.count({
+        this.dbClient.cx.workflow.count({
           where: {
             status: {
               notIn: WORKFLOW_TERMINAL_STATUSES
@@ -184,7 +184,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
     return pipe(
       TE.tryCatch(
         () =>
-          this.dbClient.workflow.findUnique({
+          this.dbClient.cx.workflow.findUnique({
             where: {id: workflowId},
             select: {workflowTemplateId: true}
           }),
@@ -226,7 +226,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
     const include = includeRef?.workflowTemplates ? {workflowTemplates: true} : undefined
 
     // TODO(long-term): try to remove the cast
-    return this.dbClient.workflow.update({where, data, include}) as unknown as Promise<PrismaDecoratedWorkflow<T>>
+    return this.dbClient.cx.workflow.update({where, data, include}) as unknown as Promise<PrismaDecoratedWorkflow<T>>
   }
 
   private getWorkflow<T extends WorkflowDecoratorSelector>(
@@ -268,7 +268,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
 
     const includeOptions = include?.workflowTemplates !== undefined ? {workflowTemplates: true} : undefined
 
-    return this.dbClient.workflow.findUnique({
+    return this.dbClient.cx.workflow.findUnique({
       where,
       include: includeOptions
     }) as Promise<PrismaDecoratedWorkflow<T> | null>
@@ -278,7 +278,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
     return data =>
       TE.tryCatchK(
         () =>
-          this.dbClient.workflow.create({
+          this.dbClient.cx.workflow.create({
             data: {
               id: data.workflow.id,
               name: data.workflow.name,
@@ -364,17 +364,18 @@ export class WorkflowDbRepository implements WorkflowRepository {
 
       if (orderBy.length === 0) orderBy.push({updatedAt: "desc"})
 
-      const [workflows, total] = await this.dbClient.$transaction([
-        this.dbClient.workflow.findMany({
+      const [rawWorkflows, total] = await Promise.all([
+        this.dbClient.cx.workflow.findMany({
           skip: pagination ? (pagination.page - 1) * pagination.limit : undefined,
           take: pagination ? pagination.limit : undefined,
           include: prismaInclude,
           where,
           orderBy
         }),
-        this.dbClient.workflow.count({where})
+        this.dbClient.cx.workflow.count({where})
       ])
 
+      const workflows = rawWorkflows.map(w => ({...w, occ: BigInt(w.occ)}))
       return {
         workflows: workflows as PrismaDecoratedWorkflow<PrismaSelectors>[],
         pagination: {total, page: pagination ? pagination.page : 1, limit: pagination ? pagination.limit : total}

@@ -71,7 +71,7 @@ export class GroupDbRepository implements GroupRepository {
     return data =>
       TE.tryCatchK(
         () =>
-          this.dbClient.$transaction(async tx => {
+          this.dbClient.transactional(async tx => {
             // 1. Create the group
             const createdGroup = await tx.group.create({
               data: {
@@ -142,7 +142,7 @@ export class GroupDbRepository implements GroupRepository {
     return pipe(
       TE.tryCatchK(
         () =>
-          this.dbClient.group.findUnique({
+          this.dbClient.cx.group.findUnique({
             where: {name: groupName},
             select: {id: true}
           }),
@@ -173,7 +173,7 @@ export class GroupDbRepository implements GroupRepository {
     return userId =>
       TE.tryCatchK(
         () =>
-          this.dbClient.group.findMany({
+          this.dbClient.cx.group.findMany({
             where: {
               groupMemberships: {
                 some: {
@@ -210,7 +210,7 @@ export class GroupDbRepository implements GroupRepository {
 
   countGroups(): TaskEither<UnknownError, number> {
     return TE.tryCatch(
-      () => this.dbClient.group.count(),
+      () => this.dbClient.cx.group.count(),
       error => {
         Logger.error("Error counting groups", error)
         return "unknown_error"
@@ -222,7 +222,7 @@ export class GroupDbRepository implements GroupRepository {
     return agentId =>
       TE.tryCatchK(
         () =>
-          this.dbClient.group.findMany({
+          this.dbClient.cx.group.findMany({
             where: {
               agentGroupMemberships: {
                 some: {
@@ -306,7 +306,7 @@ export class GroupDbRepository implements GroupRepository {
     return request =>
       TE.tryCatchK(
         () =>
-          this.dbClient.group.findUnique({
+          this.dbClient.cx.group.findUnique({
             where: this.buildWhereClauseGetObjectTask(request),
             include: {
               _count: {
@@ -330,10 +330,10 @@ export class GroupDbRepository implements GroupRepository {
     // Wrap in a lambda to preserve the "this" context
     return options =>
       TE.tryCatchK(
-        () => {
+        async () => {
           const whereClause: Prisma.GroupWhereInput = this.buildWhereCloseForListingGroups(options.filter)
 
-          const data = this.dbClient.group.findMany({
+          const data = this.dbClient.cx.group.findMany({
             take: options.take,
             skip: options.skip,
             orderBy: {
@@ -349,11 +349,16 @@ export class GroupDbRepository implements GroupRepository {
               }
             }
           })
-          const stats = this.dbClient.group.count({where: whereClause})
+          const stats = this.dbClient.cx.group.count({where: whereClause})
 
-          return this.dbClient.$transaction([data, stats], {
-            isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead
-          })
+          const [resolvedData, resolvedStats] = await Promise.all([data, stats])
+          return [
+            resolvedData.map((item: PrismaGroupWithCount) => ({
+              ...item,
+              occ: BigInt(item.occ)
+            })),
+            resolvedStats
+          ] as [PrismaGroupWithCount[], number]
         },
         error => {
           Logger.error("Error while retrieving groups. Unknown error", error)

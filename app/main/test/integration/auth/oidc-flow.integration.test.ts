@@ -133,7 +133,7 @@ describe("OIDC Flow Integration", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
     configProvider = module.get(ConfigProvider)
 
     // Create database user with email that matches OIDC user claims

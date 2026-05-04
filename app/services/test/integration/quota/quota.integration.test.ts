@@ -42,7 +42,7 @@ describe("Quota Integration Tests", () => {
 
     quotaService = module.get<QuotaService>(QuotaService)
     quotaRepo = module.get<QuotaRepository>(QUOTA_REPOSITORY_TOKEN)
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
   })
 
   afterAll(async () => {

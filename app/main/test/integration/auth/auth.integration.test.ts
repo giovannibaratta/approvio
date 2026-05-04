@@ -31,7 +31,7 @@ describe("Auth Integration", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
 
     await app.init()
   }, 20000)

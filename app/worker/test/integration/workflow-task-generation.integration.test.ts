@@ -97,7 +97,7 @@ describe("Workflow Task Generation Integration", () => {
     }
 
     processor = module.get<WorkflowEventsProcessor>(WorkflowEventsProcessor)
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
 
     await module.init()
   }, 30000)

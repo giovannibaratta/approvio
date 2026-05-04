@@ -25,7 +25,7 @@ export class VoteDbRepository implements VoteRepository {
     return pipe(
       TE.tryCatchK(
         () =>
-          this.dbClient.$transaction(async tx => {
+          this.dbClient.transactional(async tx => {
             const savedVote = await tx.vote.create({
               data: {
                 id: vote.id,
@@ -80,7 +80,7 @@ export class VoteDbRepository implements VoteRepository {
     return pipe(
       TE.tryCatchK(
         () =>
-          this.dbClient.vote.findFirst({
+          this.dbClient.cx.vote.findFirst({
             where: whereClause,
             orderBy: {
               createdAt: "desc"
@@ -107,7 +107,7 @@ export class VoteDbRepository implements VoteRepository {
     return pipe(
       TE.tryCatchK(
         () =>
-          this.dbClient.vote.findMany({
+          this.dbClient.cx.vote.findMany({
             where: {
               workflowId
             },

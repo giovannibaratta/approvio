@@ -40,7 +40,7 @@ export class AgentChallengeDbRepository implements AgentChallengeRepository {
     return pipe(
       TE.tryCatch(
         () =>
-          this.dbClient.agentChallenge.findUnique({
+          this.dbClient.cx.agentChallenge.findUnique({
             where: {nonce},
             include: {agents: true}
           }),
@@ -54,7 +54,7 @@ export class AgentChallengeDbRepository implements AgentChallengeRepository {
   updateChallenge(challenge: DecoratedAgentChallenge<{occ: true}>): TaskEither<AgentChallengeUpdateError, void> {
     return TE.tryCatch(
       async () => {
-        const result = await this.dbClient.agentChallenge.updateMany({
+        const result = await this.dbClient.cx.agentChallenge.updateMany({
           where: {
             id: challenge.id,
             occ: challenge.occ
@@ -84,7 +84,7 @@ export class AgentChallengeDbRepository implements AgentChallengeRepository {
     return (challenge: AgentChallenge): TaskEither<AgentChallengeCreateError, PrismaAgentChallengeWithAgent> =>
       TE.tryCatch(
         () =>
-          this.dbClient.agentChallenge.create({
+          this.dbClient.cx.agentChallenge.create({
             data: this.mapDomainChallengeToPrisma(challenge),
             include: {
               agents: true

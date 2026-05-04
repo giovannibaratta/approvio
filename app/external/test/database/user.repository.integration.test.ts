@@ -1,7 +1,7 @@
 import {Test, TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
 import {DatabaseClient, UserDbRepository} from "@external"
-import {PrismaClient} from "@prisma/client"
+import type {PrismaClient} from "@prisma/client"
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {createMockUserDomain} from "@test/mock-data"
 import {MockConfigProvider} from "@test/mock-data"
@@ -26,8 +26,11 @@ describe("UserDbRepository Integration", () => {
       ]
     }).compile()
 
-    prisma = module.get(DatabaseClient)
+    const dbClient = module.get(DatabaseClient)
+    prisma = dbClient.prisma
     repository = module.get(UserDbRepository)
+
+    await dbClient.onModuleInit()
   }, 30000)
 
   afterEach(async () => {

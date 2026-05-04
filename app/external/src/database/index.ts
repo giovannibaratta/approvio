@@ -15,3 +15,5 @@ export * from "./task.repository"
 export * from "./refresh-token.repository"
 export * from "./health.repository"
 export * from "./quota.repository"
+
+export * from "./transaction-manager"

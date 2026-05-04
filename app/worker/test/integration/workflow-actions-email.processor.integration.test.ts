@@ -118,7 +118,7 @@ describe("Workflow Action Email Processor Integration", () => {
 
     processor = module.get<WorkflowActionEmailProcessor>(WorkflowActionEmailProcessor)
     emailService = module.get<EmailService>(EmailService)
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
 
     await module.init()
   }, 30000)

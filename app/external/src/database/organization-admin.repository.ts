@@ -54,7 +54,7 @@ export class OrganizationAdminDbRepository implements OrganizationAdminRepositor
     return admin =>
       TE.tryCatchK(
         () =>
-          this.dbClient.organizationAdmin.create({
+          this.dbClient.cx.organizationAdmin.create({
             data: {
               id: admin.id,
               email: admin.email,
@@ -80,7 +80,7 @@ export class OrganizationAdminDbRepository implements OrganizationAdminRepositor
           const {page, limit} = request
           const skip = (page - 1) * limit
 
-          const data = this.dbClient.organizationAdmin.findMany({
+          const data = this.dbClient.cx.organizationAdmin.findMany({
             take: limit,
             skip,
             orderBy: {
@@ -88,7 +88,7 @@ export class OrganizationAdminDbRepository implements OrganizationAdminRepositor
             }
           })
 
-          const count = this.dbClient.organizationAdmin.count()
+          const count = this.dbClient.cx.organizationAdmin.count()
 
           return Promise.all([data, count])
         },
@@ -112,7 +112,7 @@ export class OrganizationAdminDbRepository implements OrganizationAdminRepositor
   ): TaskEither<OrganizationAdminRemoveError, number> {
     return TE.tryCatchK(
       async () => {
-        const count = await this.dbClient.$transaction(
+        const count = await this.dbClient.transactional(
           async tx => {
             const deleted = await tx.organizationAdmin.deleteMany({where: whereClause})
             const remaining = await tx.organizationAdmin.count({})

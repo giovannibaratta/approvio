@@ -35,12 +35,12 @@ import {pipe} from "fp-ts/function"
 
 @Injectable()
 export class PrismaTaskRepository implements TaskRepository {
-  constructor(private readonly prisma: DatabaseClient) {}
+  constructor(private readonly dbClient: DatabaseClient) {}
 
   createEmailTask(task: DecoratedWorkflowActionEmailTask<{occ: true}>): TaskEither<TaskCreateError, void> {
     return TE.tryCatch(
       async () => {
-        await this.prisma.workflowActionsEmailTask.create({
+        await this.dbClient.cx.workflowActionsEmailTask.create({
           data: {
             id: task.id,
             workflowId: task.workflowId,
@@ -69,7 +69,7 @@ export class PrismaTaskRepository implements TaskRepository {
   updateEmailTask(task: WorkflowActionEmailTask, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, Occ> {
     return TE.tryCatch(
       async () => {
-        const updatedTasks = await this.prisma.workflowActionsEmailTask.updateManyAndReturn({
+        const updatedTasks = await this.dbClient.cx.workflowActionsEmailTask.updateManyAndReturn({
           where: {
             id: task.id,
             occ: checks.occ,
@@ -102,7 +102,7 @@ export class PrismaTaskRepository implements TaskRepository {
   createWebhookTask(task: DecoratedWorkflowActionWebhookPendingTask<{occ: true}>): TaskEither<TaskCreateError, void> {
     return TE.tryCatch(
       async () => {
-        await this.prisma.workflowActionsWebhookTask.create({
+        await this.dbClient.cx.workflowActionsWebhookTask.create({
           data: {
             id: task.id,
             workflowId: task.workflowId,
@@ -140,7 +140,7 @@ export class PrismaTaskRepository implements TaskRepository {
       async () => {
         const {responseStatus, responseBody, responseBodyStatus} = extractResponseAttributes(task)
 
-        const updatedTasks = await this.prisma.workflowActionsWebhookTask.updateManyAndReturn({
+        const updatedTasks = await this.dbClient.cx.workflowActionsWebhookTask.updateManyAndReturn({
           where: {
             id: task.id,
             occ: checks.occ,
@@ -229,7 +229,7 @@ export class PrismaTaskRepository implements TaskRepository {
   private getWebhookTaskTE(taskId: string): TaskEither<TaskGetErrorWebhookTask, PrismaWorkflowActionsWebhookTask> {
     return TE.tryCatch(
       async () => {
-        const task = await this.prisma.workflowActionsWebhookTask.findUnique({
+        const task = await this.dbClient.cx.workflowActionsWebhookTask.findUnique({
           where: {id: taskId}
         })
         if (!task) throw new TaskNotFoundError()
@@ -252,7 +252,7 @@ export class PrismaTaskRepository implements TaskRepository {
   ): TaskEither<TaskGetErrorEmailTask, Prisma.WorkflowActionsEmailTaskGetPayload<object>> {
     return TE.tryCatch(
       async () => {
-        const task = await this.prisma.workflowActionsEmailTask.findUnique({
+        const task = await this.dbClient.cx.workflowActionsEmailTask.findUnique({
           where: {id: taskId}
         })
         if (!task) throw new TaskNotFoundError()
@@ -279,13 +279,13 @@ export class PrismaTaskRepository implements TaskRepository {
     return TE.tryCatch(
       async () => {
         if (type === WorkflowActionType.EMAIL) {
-          const updatedTasks = await this.prisma.workflowActionsEmailTask.updateManyAndReturn({
+          const updatedTasks = await this.dbClient.cx.workflowActionsEmailTask.updateManyAndReturn({
             where: {id: taskId, lockedBy: null},
             data: {lockedBy: lockOwner, lockedAt: new Date(), occ: {increment: 1}}
           })
 
           if (updatedTasks.length === 0 || updatedTasks[0] === undefined) {
-            const task = await this.prisma.workflowActionsEmailTask.findUnique({where: {id: taskId}})
+            const task = await this.dbClient.cx.workflowActionsEmailTask.findUnique({where: {id: taskId}})
             if (!task) throw new TaskNotFoundError()
             if (task.lockedBy === lockOwner) return {occ: task.occ}
             throw new TaskLockedByOtherError()
@@ -293,13 +293,13 @@ export class PrismaTaskRepository implements TaskRepository {
 
           return {occ: updatedTasks[0].occ}
         } else {
-          const updatedTasks = await this.prisma.workflowActionsWebhookTask.updateManyAndReturn({
+          const updatedTasks = await this.dbClient.cx.workflowActionsWebhookTask.updateManyAndReturn({
             where: {id: taskId, lockedBy: null},
             data: {lockedBy: lockOwner, lockedAt: new Date(), occ: {increment: 1}}
           })
 
           if (updatedTasks.length === 0 || updatedTasks[0] === undefined) {
-            const task = await this.prisma.workflowActionsWebhookTask.findUnique({where: {id: taskId}})
+            const task = await this.dbClient.cx.workflowActionsWebhookTask.findUnique({where: {id: taskId}})
             if (!task) throw new TaskNotFoundError()
             if (task.lockedBy === lockOwner) return {occ: task.occ}
             throw new TaskLockedByOtherError()
@@ -335,14 +335,14 @@ export class PrismaTaskRepository implements TaskRepository {
         }
 
         if (type === WorkflowActionType.EMAIL) {
-          const result = await this.prisma.workflowActionsEmailTask.updateMany({
+          const result = await this.dbClient.cx.workflowActionsEmailTask.updateMany({
             where: {id: taskId, occ: checks.occ, lockedBy: checks.lockOwner},
             data: baseData
           })
           if (result.count === 0) await this.categorizeErrorTypeAndRaise("WorkflowActionsEmailTask", taskId, checks)
         } else {
           // WorkflowActionType.WEBHOOK
-          const result = await this.prisma.workflowActionsWebhookTask.updateMany({
+          const result = await this.dbClient.cx.workflowActionsWebhookTask.updateMany({
             where: {id: taskId, occ: checks.occ, lockedBy: checks.lockOwner},
             data: baseData
           })
@@ -367,8 +367,8 @@ export class PrismaTaskRepository implements TaskRepository {
     Logger.error(`Failed to update task ${id}: no records have been updated`)
 
     const retrievers = {
-      WorkflowActionsEmailTask: () => this.prisma.workflowActionsEmailTask.findUnique({where: {id}}),
-      WorkflowActionsWebhookTask: () => this.prisma.workflowActionsWebhookTask.findUnique({where: {id}})
+      WorkflowActionsEmailTask: () => this.dbClient.cx.workflowActionsEmailTask.findUnique({where: {id}}),
+      WorkflowActionsWebhookTask: () => this.dbClient.cx.workflowActionsWebhookTask.findUnique({where: {id}})
     }
 
     let actualTask
