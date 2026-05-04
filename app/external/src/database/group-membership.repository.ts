@@ -122,7 +122,7 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
 
   countUserMembersByGroupId(groupId: string): TaskEither<UnknownError, number> {
     return TE.tryCatch(
-      () => this.dbClient.groupMembership.count({where: {groupId}}),
+      () => this.dbClient.cx.groupMembership.count({where: {groupId}}),
       error => {
         Logger.error("Error counting user memberships", error)
         return "unknown_error"
@@ -132,7 +132,7 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
 
   countAgentMembersByGroupId(groupId: string): TaskEither<UnknownError, number> {
     return TE.tryCatch(
-      () => this.dbClient.agentGroupMembership.count({where: {groupId}}),
+      () => this.dbClient.cx.agentGroupMembership.count({where: {groupId}}),
       error => {
         Logger.error("Error counting agent memberships", error)
         return "unknown_error"
@@ -147,7 +147,7 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
     return data =>
       TE.tryCatchK(
         () =>
-          this.dbClient.group.findUnique({
+          this.dbClient.cx.group.findUnique({
             where: this.buildWhereClauseGetObjectTask(data),
             include: GroupMembershipDbRepository.GROUP_WITH_MEMBERSHIPS_INCLUDE
           }),
@@ -227,7 +227,7 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
       }
     )
 
-    return this.dbClient.$transaction(async tx => {
+    return this.dbClient.transactional(async tx => {
       if (userMemberships.length > 0) await tx.groupMembership.createMany({data: userMemberships})
       if (agentMemberships.length > 0) await tx.agentGroupMembership.createMany({data: agentMemberships})
 
@@ -254,7 +254,7 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
       {userIds: [] as string[], agentIds: [] as string[]}
     )
 
-    return this.dbClient.$transaction(async tx => {
+    return this.dbClient.transactional(async tx => {
       if (userIds.length > 0)
         await tx.groupMembership.deleteMany({
           where: {
@@ -289,7 +289,7 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
     return userId =>
       TE.tryCatchK(
         () =>
-          this.dbClient.groupMembership.findMany({
+          this.dbClient.cx.groupMembership.findMany({
             where: {userId},
             include: {users: {include: {organizationAdmins: true}}}
           }),
@@ -306,7 +306,7 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
     return agentId =>
       TE.tryCatchK(
         () =>
-          this.dbClient.agentGroupMembership.findMany({
+          this.dbClient.cx.agentGroupMembership.findMany({
             where: {agentId},
             include: {agents: true}
           }),

@@ -26,7 +26,7 @@ export class QuotaDbRepository implements QuotaRepository {
   getQuotaById(id: string): TE.TaskEither<QuotaGetError, Versioned<Quota>> {
     return pipe(
       TE.tryCatch(
-        () => this.dbClient.quota.findUnique({where: {id}}),
+        () => this.dbClient.cx.quota.findUnique({where: {id}}),
         error => {
           Logger.error("Error retrieving quota by id", error)
           return "quota_unknown_error" as const
@@ -43,7 +43,7 @@ export class QuotaDbRepository implements QuotaRepository {
     return pipe(
       TE.tryCatch(
         () =>
-          this.dbClient.quota.findUnique({
+          this.dbClient.cx.quota.findUnique({
             where: {
               scope_quotaType_targetId: {
                 scope: scope,
@@ -68,7 +68,7 @@ export class QuotaDbRepository implements QuotaRepository {
     return pipe(
       TE.tryCatch(
         () =>
-          this.dbClient.quota.create({
+          this.dbClient.cx.quota.create({
             data: {
               id: quota.id,
               scope: scope,
@@ -98,7 +98,7 @@ export class QuotaDbRepository implements QuotaRepository {
     return pipe(
       TE.tryCatch(
         async () => {
-          return await this.dbClient.$transaction(async tx => {
+          return await this.dbClient.transactional(async tx => {
             const updatedQuotas = await tx.quota.updateManyAndReturn({
               where: {
                 scope: scope,
@@ -158,7 +158,7 @@ export class QuotaDbRepository implements QuotaRepository {
     return pipe(
       TE.tryCatch(
         async () => {
-          await this.dbClient.quota.delete({where: {id}})
+          await this.dbClient.cx.quota.delete({where: {id}})
         },
         error => {
           if (isPrismaRecordNotFoundError(error, Prisma.ModelName.Quota)) return "quota_not_found" as const
@@ -180,17 +180,22 @@ export class QuotaDbRepository implements QuotaRepository {
             if (filter.nodeIdentifier) where.targetId = filter.nodeIdentifier
           }
 
-          const [total, items] = await this.dbClient.$transaction([
-            this.dbClient.quota.count({where}),
-            this.dbClient.quota.findMany({
-              where,
-              take: limit,
-              skip: (page - 1) * limit,
-              orderBy: [{createdAt: "desc"}, {id: "desc"}]
-            })
-          ])
+          return this.dbClient.transactional(
+            async cx => {
+              const [total, items] = await Promise.all([
+                cx.quota.count({where}),
+                cx.quota.findMany({
+                  where,
+                  take: limit,
+                  skip: (page - 1) * limit,
+                  orderBy: [{createdAt: "desc"}, {id: "desc"}]
+                })
+              ])
 
-          return {total, items}
+              return {total, items: items.map(item => ({...item, occ: BigInt(item.occ)}))}
+            },
+            {isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead}
+          )
         },
         error => {
           Logger.error("Error listing quotas", error)

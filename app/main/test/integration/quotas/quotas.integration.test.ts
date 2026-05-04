@@ -41,7 +41,7 @@ describe("Quotas Integration Tests", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
 

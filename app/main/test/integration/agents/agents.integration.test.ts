@@ -44,7 +44,7 @@ describe("Agents API", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
     const jwtService = module.get(JwtService)
     const configProvider = module.get(ConfigProvider)
 

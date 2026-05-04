@@ -5,12 +5,12 @@ import * as TE from "fp-ts/TaskEither"
 
 @Injectable()
 export class PrismaHealthRepository implements HealthRepository {
-  constructor(private readonly prisma: DatabaseClient) {}
+  constructor(private readonly dbClient: DatabaseClient) {}
 
   checkDatabaseConnection(): TE.TaskEither<DbHealthCheckFailed, void> {
     return TE.tryCatch(
       async () => {
-        await this.prisma.$queryRaw`SELECT 1`
+        await this.dbClient.prisma.$queryRaw`SELECT 1`
       },
       error => {
         Logger.error("Failed to check database connection")

@@ -27,7 +27,7 @@ describe("QuotaDbRepository Integration", () => {
       ]
     }).compile()
 
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
     repository = module.get(QuotaDbRepository)
   }, 30000)
 

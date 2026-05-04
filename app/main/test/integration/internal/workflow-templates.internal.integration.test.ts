@@ -40,7 +40,7 @@ describe("Workflow Templates internal API", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
     jwtService = module.get(JwtService)
 
     const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})

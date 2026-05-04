@@ -84,7 +84,7 @@ export class UserDbRepository implements UserRepository {
   hasAnyOrganizationAdmins(): TaskEither<"unknown_error", boolean> {
     return TE.tryCatchK(
       async () => {
-        const count = await this.dbClient.organizationAdmin.count()
+        const count = await this.dbClient.cx.organizationAdmin.count()
         return count > 0
       },
       error => {
@@ -97,7 +97,7 @@ export class UserDbRepository implements UserRepository {
   updateUser(user: Versioned<User>): TaskEither<UserUpdateError, User> {
     return TE.tryCatchK(
       async (): Promise<User> => {
-        const updatedUser = await this.dbClient.user.update({
+        const updatedUser = await this.dbClient.cx.user.update({
           where: {id: user.id, occ: user.occ},
           data: {
             roles: mapRolesToPrisma(user.roles),
@@ -155,7 +155,7 @@ export class UserDbRepository implements UserRepository {
   private persistObjectTask(): (user: User) => TaskEither<UserCreateError, PrismaUserWithOrgAdmin> {
     return user =>
       TE.tryCatchK(
-        () => this.createUserInDb(this.dbClient, user),
+        () => this.createUserInDb(this.dbClient.cx, user),
         error => {
           if (isPrismaUniqueConstraintError(error, ["email"])) return "user_already_exists"
           if (isPrismaUniqueConstraintError(error, ["id"])) return "user_already_exists"
@@ -170,7 +170,7 @@ export class UserDbRepository implements UserRepository {
     return user =>
       TE.tryCatchK(
         () =>
-          this.dbClient.$transaction(async tx => {
+          this.dbClient.transactional(async tx => {
             const createdUser = await this.createUserInDb(tx, user)
 
             const orgAdmin = await tx.organizationAdmin.create({
@@ -200,7 +200,7 @@ export class UserDbRepository implements UserRepository {
     return identifier =>
       TE.tryCatchK(
         () =>
-          this.dbClient.user.findUnique({
+          this.dbClient.cx.user.findUnique({
             where: {
               id: identifier.type === "id" ? identifier.identifier : undefined,
               email: identifier.type === "email" ? identifier.identifier : undefined
@@ -219,13 +219,13 @@ export class UserDbRepository implements UserRepository {
   private getObjectsTask(): (request: ListUsersRepoRequest) => TaskEither<UserListError, [UserSummaryRepo[], number]> {
     return request =>
       TE.tryCatchK(
-        () => {
+        async () => {
           const {search, page, limit} = request
           const skip = (page - 1) * limit
 
           const whereClause: Prisma.UserWhereInput = this.buildWhereCloseForListingUsers(search)
 
-          const data = this.dbClient.user.findMany({
+          const data = this.dbClient.cx.user.findMany({
             take: limit,
             skip,
             orderBy: {
@@ -238,11 +238,10 @@ export class UserDbRepository implements UserRepository {
             },
             where: whereClause
           })
-          const stats = this.dbClient.user.count({where: whereClause})
+          const stats = this.dbClient.cx.user.count({where: whereClause})
 
-          return this.dbClient.$transaction([data, stats], {
-            isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead
-          })
+          const [resolvedData, resolvedStats] = await Promise.all([data, stats])
+          return [resolvedData, resolvedStats] as [UserSummaryRepo[], number]
         },
         error => {
           Logger.error("Error while listing users.", error)

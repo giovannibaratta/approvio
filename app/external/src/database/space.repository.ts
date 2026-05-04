@@ -45,7 +45,7 @@ export class SpaceDbRepository implements SpaceRepository {
     return data =>
       TE.tryCatchK(
         () =>
-          this.dbClient.$transaction(async tx => {
+          this.dbClient.transactional(async tx => {
             // 1. Create the space
             const createdSpace = await tx.space.create({
               data: {
@@ -137,7 +137,7 @@ export class SpaceDbRepository implements SpaceRepository {
     return pipe(
       TE.tryCatchK(
         () =>
-          this.dbClient.space.delete({
+          this.dbClient.cx.space.delete({
             where: {id: data.spaceId}
           }),
         error => {
@@ -153,7 +153,7 @@ export class SpaceDbRepository implements SpaceRepository {
 
   countSpaces(): TaskEither<"unknown_error", number> {
     return TE.tryCatch(
-      () => this.dbClient.space.count(),
+      () => this.dbClient.cx.space.count(),
       error => {
         Logger.error("Error counting spaces", error)
         return "unknown_error"
@@ -169,7 +169,7 @@ export class SpaceDbRepository implements SpaceRepository {
     return request =>
       TE.tryCatchK(
         () =>
-          this.dbClient.space.findUnique({
+          this.dbClient.cx.space.findUnique({
             where: this.buildWhereClauseGetSpaceTask(request)
           }),
         error => {
@@ -182,24 +182,32 @@ export class SpaceDbRepository implements SpaceRepository {
   private getSpacesTask(): (options: ListOptions) => TaskEither<ListSpacesRepoError, [PrismaSpace[], number]> {
     return options =>
       TE.tryCatchK(
-        () => {
+        async () => {
           const whereClause: Prisma.SpaceWhereInput = options.search
             ? {name: {contains: options.search, mode: "insensitive"}}
             : {}
 
-          const data = this.dbClient.space.findMany({
-            take: options.take,
-            skip: options.skip,
-            where: whereClause,
-            orderBy: {
-              createdAt: "asc"
-            }
-          })
-          const stats = this.dbClient.space.count({where: whereClause})
+          return this.dbClient.transactional(
+            async cx => {
+              const data = cx.space.findMany({
+                take: options.take,
+                skip: options.skip,
+                where: whereClause,
+                orderBy: {
+                  createdAt: "asc"
+                }
+              })
+              const stats = cx.space.count({where: whereClause})
 
-          return this.dbClient.$transaction([data, stats], {
-            isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead
-          })
+              const [resolvedData, resolvedStats] = await Promise.all([data, stats])
+
+              return [resolvedData.map((item: PrismaSpace) => ({...item, occ: BigInt(item.occ)})), resolvedStats] as [
+                PrismaSpace[],
+                number
+              ]
+            },
+            {isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead}
+          )
         },
         error => {
           Logger.error("Error while retrieving spaces. Unknown error", error)

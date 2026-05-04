@@ -32,7 +32,7 @@ describe("WorkflowRecalculationProcessor Integration", () => {
     }
 
     processor = module.get<WorkflowRecalculationProcessor>(WorkflowRecalculationProcessor)
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
 
     // Initialize the module to ensure all providers are ready
     await module.init()

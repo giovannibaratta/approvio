@@ -25,7 +25,7 @@ describe("VoteDbRepository Integration", () => {
       ]
     }).compile()
 
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
     repository = module.get(VoteDbRepository)
   }, 30000)
 

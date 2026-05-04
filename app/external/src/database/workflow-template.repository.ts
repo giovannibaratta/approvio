@@ -73,7 +73,7 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
     return pipe(
       TE.tryCatch(
         () =>
-          this.dbClient.workflowTemplate.findUnique({
+          this.dbClient.cx.workflowTemplate.findUnique({
             where: {id: templateId},
             select: {spaceId: true}
           }),
@@ -111,7 +111,7 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
     return pipe(
       TE.tryCatch(
         async () => {
-          const result = await this.dbClient.workflowTemplate.findMany({
+          const result = await this.dbClient.cx.workflowTemplate.findMany({
             where: {
               name: templateName,
               status: WorkflowTemplateStatus.ACTIVE
@@ -139,7 +139,7 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
     return pipe(
       TE.tryCatch(
         async () => {
-          const templates = await this.dbClient.workflowTemplate.findMany({
+          const templates = await this.dbClient.cx.workflowTemplate.findMany({
             where: {
               name: templateName,
               status: {not: WorkflowTemplateStatus.ACTIVE}
@@ -233,13 +233,13 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
           if (orderBy.length === 0) orderBy.push({createdAt: "desc"})
 
           return Promise.all([
-            this.dbClient.workflowTemplate.findMany({
+            this.dbClient.cx.workflowTemplate.findMany({
               skip,
               take: request.pagination.limit,
               orderBy,
               where
             }),
-            this.dbClient.workflowTemplate.count({where})
+            this.dbClient.cx.workflowTemplate.count({where})
           ])
         },
         error => {
@@ -294,7 +294,7 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
     return pipe(
       TE.tryCatch(
         async () =>
-          this.dbClient.workflowTemplate.findMany({
+          this.dbClient.cx.workflowTemplate.findMany({
             where: {id: {in: [...templateIds]}},
             select: {id: true, spaceId: true}
           }),
@@ -322,7 +322,7 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
   countUniqueWorkflowTemplatesBySpaceId(spaceId: string): TaskEither<UnknownError, number> {
     return TE.tryCatch(
       async () => {
-        const result = await this.dbClient.$queryRaw<{count: bigint}[]>(
+        const result = await this.dbClient.cx.$queryRaw<{count: bigint}[]>(
           Prisma.sql`SELECT COUNT(DISTINCT name) as count FROM workflow_templates WHERE space_id = ${spaceId}::uuid`
         )
         return Number(result[0]?.count ?? 0)
@@ -360,33 +360,29 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
   }): Promise<Either<WorkflowTemplateUpdateError | CreateWorkflowTemplateRepoError, PrismaWorkflowTemplate>> {
     const {existingTemplate, newTemplate} = data
 
-    return this.dbClient.$transaction(async tx => {
+    return this.dbClient.transactional(async () => {
       return pipe(
         TE.Do,
         TE.bindW("updatedTemplate", () =>
-          this.updateWorkflowTemplateTask(tx)({data: existingTemplate, occCheck: existingTemplate.occ})
+          this.updateWorkflowTemplateTask()({data: existingTemplate, occCheck: existingTemplate.occ})
         ),
-        TE.bindW("createdTemplate", () => this.persistWorkflowTemplate(tx)(newTemplate)),
+        TE.bindW("createdTemplate", () => this.persistWorkflowTemplate()(newTemplate)),
         TE.map(({createdTemplate}) => createdTemplate)
       )()
     })
   }
 
-  private updateWorkflowTemplateTask(
-    optionalClient?: Prisma.TransactionClient
-  ): (request: {
+  private updateWorkflowTemplateTask(): (request: {
     data: WorkflowTemplate
     occCheck: bigint
   }) => TaskEither<WorkflowTemplateUpdateError, PrismaWorkflowTemplate> {
-    const client = optionalClient ?? this.dbClient
-
     return ({data, occCheck}) =>
       TE.tryCatchK(
         () => {
           const prismaData = mapWorkflowTemplateToPrisma(data)
           const whereClause: Prisma.WorkflowTemplateWhereUniqueInput = {id: data.id, occ: occCheck}
 
-          return client.workflowTemplate.update({
+          return this.dbClient.cx.workflowTemplate.update({
             where: whereClause,
             data: {
               ...prismaData,
@@ -429,7 +425,7 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
                 }
               : {name_version: {name: identifier.name, version: identifier.version}}
 
-          return this.dbClient.workflowTemplate.findUnique({where})
+          return this.dbClient.cx.workflowTemplate.findUnique({where})
         },
         error => {
           Logger.error(`Error while retrieving workflow template by ${identifier.type}. Unknown error`, error)
@@ -438,14 +434,13 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
       )()
   }
 
-  private persistWorkflowTemplate(
-    optionalClient?: Prisma.TransactionClient
-  ): (data: WorkflowTemplate) => TaskEither<CreateWorkflowTemplateRepoError, PrismaWorkflowTemplate> {
-    const client = optionalClient ?? this.dbClient
+  private persistWorkflowTemplate(): (
+    data: WorkflowTemplate
+  ) => TaskEither<CreateWorkflowTemplateRepoError, PrismaWorkflowTemplate> {
     return data =>
       TE.tryCatchK(
         () =>
-          client.workflowTemplate.create({
+          this.dbClient.cx.workflowTemplate.create({
             data: {
               id: data.id,
               name: data.name,

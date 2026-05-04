@@ -15,12 +15,13 @@ import {
   RefreshTokenDbRepository,
   PrismaHealthRepository
 } from "./database/"
-import {GroupDbRepository, QuotaDbRepository} from "./database"
+import {GroupDbRepository, QuotaDbRepository, PrismaTransactionManager} from "./database"
 import {
   AGENT_REPOSITORY_TOKEN,
   AGENT_CHALLENGE_REPOSITORY_TOKEN,
   GROUP_MEMBERSHIP_REPOSITORY_TOKEN,
   GROUP_REPOSITORY_TOKEN,
+  TRANSACTION_MANAGER_TOKEN,
   QUOTA_REPOSITORY_TOKEN,
   ORGANIZATION_ADMIN_REPOSITORY_TOKEN,
   SPACE_REPOSITORY_TOKEN,
@@ -128,6 +129,11 @@ const stepUpTokenRepository = {
   useClass: RedisStepUpTokenRepository
 }
 
+const transactionManager = {
+  provide: TRANSACTION_MANAGER_TOKEN,
+  useClass: PrismaTransactionManager
+}
+
 const repositories = [
   agentRepository,
   agentChallengeRepository,
@@ -144,12 +150,13 @@ const repositories = [
   refreshTokenRepository,
   healthRepository,
   quotaRepository,
-  stepUpTokenRepository
+  stepUpTokenRepository,
+  transactionManager
 ]
 
 @Module({
   imports: [ConfigModule, QueueModule],
   providers: [DatabaseClient, ...repositories, queueProvider, RedisClient],
-  exports: [...repositories, queueProvider]
+  exports: [...repositories, queueProvider, transactionManager]
 })
 export class PersistenceModule {}

@@ -100,7 +100,7 @@ describe("Workflow Action Webhook Processor Integration", () => {
     }
 
     processor = module.get<WorkflowActionWebhookProcessor>(WorkflowActionWebhookProcessor)
-    prisma = module.get(DatabaseClient)
+    prisma = module.get(DatabaseClient).prisma
 
     // Initialize the module to ensure all providers are ready
     await module.init()

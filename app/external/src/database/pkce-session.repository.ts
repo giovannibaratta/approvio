@@ -11,7 +11,7 @@ export class PkceSessionDbRepository implements PkceSessionRepository {
   storePkceData(state: string, data: PkceStorageData): TaskEither<PkceError, void> {
     return TE.tryCatch(
       async () => {
-        await this.dbClient.pkceSession.create({
+        await this.dbClient.cx.pkceSession.create({
           data: {
             state,
             codeVerifier: data.codeVerifier,
@@ -32,7 +32,7 @@ export class PkceSessionDbRepository implements PkceSessionRepository {
   retrievePkceData(state: string): TaskEither<PkceError, PkceSessionData> {
     return TE.tryCatch(
       async () => {
-        const session = await this.dbClient.pkceSession.findUnique({
+        const session = await this.dbClient.cx.pkceSession.findUnique({
           where: {state}
         })
 
@@ -60,7 +60,7 @@ export class PkceSessionDbRepository implements PkceSessionRepository {
   deletePkceData(state: string): TaskEither<PkceError, void> {
     return TE.tryCatch(
       async () => {
-        await this.dbClient.pkceSession.delete({
+        await this.dbClient.cx.pkceSession.delete({
           where: {state}
         })
       },
@@ -74,7 +74,7 @@ export class PkceSessionDbRepository implements PkceSessionRepository {
   updatePkceSession(sessionData: PkceSessionData, currentOcc: bigint): TaskEither<PkceError, void> {
     return TE.tryCatch(
       async () => {
-        const result = await this.dbClient.pkceSession.updateMany({
+        const result = await this.dbClient.cx.pkceSession.updateMany({
           where: {
             state: sessionData.state,
             occ: currentOcc
