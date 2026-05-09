@@ -17,7 +17,7 @@ You can explicitly control this mode via a top-level environmental variable:
 
 > [!IMPORTANT]
 > The high privilege flow **does not support automatic registration**. Only pre-existing users can complete the step-up process. If an authenticated user from the IDP does not match an existing user in Approvio, the flow will fail.
-
+>
 > `DISABLE_HIGH_PRIVILEGE_MODE` will only disable the authentication flow. If the resources have been configured to require a high-privilege token, the application will still attempt to perform the high-privilege token flow, but it will fail fast.
 
 ## OIDC Provider Configuration
@@ -86,7 +86,9 @@ Approvio utilizes a Token Mediated Backend architecture to authenticate requests
 
 The Web flow uses standard OIDC redirection and secures the session via `httpOnly` cookies.
 
-**Endpoints:** `GET /auth/web/login`, `GET /auth/web/callback`, `POST /auth/web/refresh`, `POST /auth/web/initiatePrivilegedTokenExchange`, `POST /auth/web/exchangePrivilegedToken`
+- **Login:** Users are redirected to the Identity Provider to authenticate and grant consent.
+- **Callback:** Upon successful authentication, the Identity Provider redirects back to the application. The backend exchanges the code for OIDC tokens and establishes an Approvio session using `httpOnly` cookies.
+- **Refresh:** Sessions can be transparently refreshed using the refresh token cookie.
 
 ```mermaid
 sequenceDiagram
@@ -112,7 +114,9 @@ sequenceDiagram
 
 The CLI flow involves initiating login via the CLI, performing authentication on the host browser, and finally exchanging the code for programmatic tokens on the CLI.
 
-**Endpoints:** `POST /auth/cli/initiate`, `POST /auth/cli/token`, `POST /auth/cli/refresh`, `GET /auth/cli/initiatePrivilegedTokenExchange`, `POST /auth/cli/exchangePrivilegedToken`
+- **Initiate:** The CLI tool initiates the authentication process and opens a local browser window.
+- **Authenticate:** The user authenticates with the Identity Provider in their browser.
+- **Token Exchange:** The browser redirects back to a local server spun up by the CLI tool, passing the authorization code. The CLI exchanges this code for Approvio Access and Refresh tokens to use for subsequent API calls.
 
 ```mermaid
 sequenceDiagram
@@ -141,7 +145,9 @@ sequenceDiagram
 
 Agents use an asymmetric key-pair (JWT Assertion) mechanism to securely authenticate without interactive logins.
 
-**Endpoints:** `POST /auth/agents/challenge`, `POST /auth/agents/token`, `POST /auth/agents/refresh`
+- **Challenge:** The agent requests an authentication challenge from the server.
+- **Sign:** The agent signs the challenge with its private key, creating a Client Assertion JWT.
+- **Token:** The server validates the signature and returns Access and Refresh tokens for the agent to use.
 
 ```mermaid
 sequenceDiagram

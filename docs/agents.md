@@ -53,16 +53,16 @@ A compliance checking agent can participate in approval processes:
 
 Agents have specific capabilities designed for automated workflow participation while maintaining security boundaries:
 
-| Capability                    | Status | Details                                                |
-| ----------------------------- | ------ | ------------------------------------------------------ |
-| **Vote on workflows**         | ✅     | Can cast APPROVE or VETO votes on workflows            |
-| **Check voting eligibility**  | ✅     | Can query if they can vote on a specific workflow      |
-| **Join approval groups**      | ✅     | Can be added to groups by organization admins          |
-| **Submit multiple votes**     | ✅     | Can vote multiple times on the same workflow           |
-| **Register new agents**       | ❌     | Only users with proper permissions can register agents |
-| **Manage groups**             | ❌     | Cannot add or remove group members                     |
-| **Administrative operations** | ❌     | Cannot manage spaces or workflow templates             |
-| **Assign roles**              | ❌     | Cannot assign roles to themselves or others            |
+| Capability                    | Supported | Details                                                |
+| ----------------------------- | --------- | ------------------------------------------------------ |
+| **Vote on workflows**         | Yes       | Can cast APPROVE or VETO votes on workflows            |
+| **Check voting eligibility**  | Yes       | Can query if they can vote on a specific workflow      |
+| **Join approval groups**      | Yes       | Can be added to groups by organization admins          |
+| **Submit multiple votes**     | Yes       | Can vote multiple times on the same workflow           |
+| **Register new agents**       | No        | Only users with proper permissions can register agents |
+| **Manage groups**             | No        | Cannot add or remove group members                     |
+| **Administrative operations** | No        | Cannot manage spaces or workflow templates             |
+| **Assign roles**              | No        | Cannot assign roles to themselves or others            |
 
 **Requirements for voting:**
 
@@ -73,7 +73,7 @@ Agents have specific capabilities designed for automated workflow participation 
 
 Agents authenticate using a secure two-step challenge-response protocol:
 
-```
+```text
 ┌─────────┐                                           ┌─────────┐
 │  Agent  │                                           │ Server  │
 └────┬────┘                                           └────┬────┘
@@ -100,24 +100,7 @@ Agents authenticate using a secure two-step challenge-response protocol:
 
 ### Authentication Steps
 
-**Step 1: Request Challenge**
-
-- Agent requests authentication challenge from server
-- Provides its unique agent name
-
-**Step 2: Receive Encrypted Challenge**
-
-- Server generates a unique nonce (one-time code)
-- Server encrypts the challenge using the agent's registered public key
-
-**Step 3: Decrypt and Sign**
-
-- Agent decrypts challenge using its private key
-- Agent creates a JWT assertion including the nonce
-- Agent signs the JWT with its private key
-
-**Step 4: Receive Access Token**
-
-- Server validates the JWT signature using agent's public key
-- Server verifies the nonce matches and hasn't been used before
-- Server issues an access token for API operations
+1. **Request Challenge:** The agent requests an authentication challenge from the server, providing its unique name.
+2. **Receive Encrypted Challenge:** The server generates a unique one-time code (nonce) and encrypts it using the agent's registered public key.
+3. **Decrypt and Sign:** The agent decrypts the challenge using its private key, creates a JWT assertion that includes the nonce, and signs it.
+4. **Receive Access Token:** The server validates the signature, ensures the nonce hasn't been used before, and issues an access token for API operations.

@@ -21,10 +21,12 @@ Roles can be scoped at different levels of the organizational hierarchy:
 
 ### Scope Types
 
-1. **Organization (`org`)**: Applies to all resources of a type across the organization
-2. **Space (`space`)**: Applies to a specific space and templates within it
-3. **Group (`group`)**: Applies to a specific group
-4. **Workflow Template (`workflow_template`)**: Applies to a specific workflow template
+| Scope | Description |
+| :--- | :--- |
+| **Organization (`org`)** | Applies to all resources of a type across the organization |
+| **Space (`space`)** | Applies to a specific space and templates within it |
+| **Group (`group`)** | Applies to a specific group |
+| **Workflow Template (`workflow_template`)** | Applies to a specific workflow template |
 
 ## Role Types
 
@@ -99,26 +101,15 @@ Control who can view, cancel, and manage workflow instances:
 
 ## Authorization Rules
 
-### Who Can Assign Roles?
+### Assignment Capabilities
 
-Role assignment is governed by strict authorization rules:
+Role assignment is governed by strict authorization rules based on the user's current role:
 
-**Organization Admins:**
-
-- Can assign any role at any scope
-- Can assign org-wide roles
-- Can override all permission boundaries
-
-**Space Managers:**
-
-- Can assign space-scoped roles for their spaces
-- Can assign template-scoped roles for templates in their spaces
-- Cannot assign org-wide roles
-
-**Group Managers:**
-
-- Can assign group-scoped roles for their groups
-- Cannot assign space or template roles
+| Role | Capabilities | Restrictions |
+| :--- | :--- | :--- |
+| **Organization Admins** | Can assign any role at any scope, can assign org-wide roles, and can override all permission boundaries. | None |
+| **Space Managers** | Can assign space-scoped roles for their spaces, and can assign template-scoped roles for templates in their spaces. | Cannot assign org-wide roles. |
+| **Group Managers** | Can assign group-scoped roles for their groups. | Cannot assign space or template roles. |
 
 ## Integration with Other Features
 

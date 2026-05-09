@@ -30,6 +30,8 @@ For more information about spaces and how to organize your workflow templates, s
 
 Templates have three states:
 
-- **ACTIVE**: Can create new workflows (only one "latest" version)
-- **PENDING_DEPRECATION**: Being phased out, may have active workflows
-- **DEPRECATED**: Cannot create new workflows, voting may be restricted
+| State | Description |
+| :--- | :--- |
+| **ACTIVE** | Can create new workflows (only one "latest" version) |
+| **PENDING_DEPRECATION** | Being phased out, may have active workflows |
+| **DEPRECATED** | Cannot create new workflows, voting may be restricted |
