@@ -138,7 +138,7 @@ __metadata:
     "@types/supertest": "npm:7.2.0"
     "@typescript-eslint/eslint-plugin": "npm:8.59.1"
     "@typescript-eslint/parser": "npm:8.56.1"
-    axios: "npm:1.15.0"
+    axios: "npm:1.15.2"
     bull: "npm:4.16.5"
     chance: "npm:1.1.13"
     class-transformer: "npm:0.5.1"
@@ -4423,7 +4423,18 @@ __metadata:
   languageName: node
   linkType: hard
 
-"axios@npm:1.15.0, axios@npm:^1.13.5":
+"axios@npm:1.15.2":
+  version: 1.15.2
+  resolution: "axios@npm:1.15.2"
+  dependencies:
+    follow-redirects: "npm:^1.15.11"
+    form-data: "npm:^4.0.5"
+    proxy-from-env: "npm:^2.1.0"
+  checksum: 10/eebbd8cb777316d4252cd994a06ec9fb956ef519214a62dab6c5443ae8b753b5116e9a770502316789e6cdef1101e6aae53b6936d6a3791b2d66d75f4d7d2462
+  languageName: node
+  linkType: hard
+
+"axios@npm:^1.13.5":
   version: 1.15.0
   resolution: "axios@npm:1.15.0"
   dependencies:
@@ -6420,9 +6431,9 @@ __metadata:
   linkType: hard
 
 "fast-uri@npm:^3.0.1":
-  version: 3.1.0
-  resolution: "fast-uri@npm:3.1.0"
-  checksum: 10/818b2c96dc913bcf8511d844c3d2420e2c70b325c0653633f51821e4e29013c2015387944435cd0ef5322c36c9beecc31e44f71b257aeb8e0b333c1d62bb17c2
+  version: 3.1.2
+  resolution: "fast-uri@npm:3.1.2"
+  checksum: 10/1dff04865b2a38d3e0659deadfbf72efdf83a776bfbf9667e4aa9e5a3ec31bc341cda9622136b32b7652a857c8ba11896794186e8f876f8b2b72731fce8622f6
   languageName: node
   linkType: hard
 
@@ -7143,9 +7154,9 @@ __metadata:
   linkType: hard
 
 "hono@npm:^4.12.8":
-  version: 4.12.16
-  resolution: "hono@npm:4.12.16"
-  checksum: 10/60ebaf89dc62820a9caf2b15dcc720d29037489c292bdd4e14e59ce3481978f08c1268ad1d179bc15b241e027717dad812ed37eb4bb3dd19589038be5da3ba6f
+  version: 4.12.18
+  resolution: "hono@npm:4.12.18"
+  checksum: 10/0adda91eeb68c921e073bcbedd8758f026cc47dbbe7824147cf0ee8ef03004b1891f4d4edc80f6ab4c6ab33ec1f2fac52c4f7098752f8acf6833bcb76efb39e4
   languageName: node
   linkType: hard
 
