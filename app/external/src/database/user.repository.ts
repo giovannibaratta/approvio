@@ -1,5 +1,5 @@
 import {User} from "@domain"
-import {isPrismaUniqueConstraintError} from "@external/database/errors"
+import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "@external/database/errors"
 import {Injectable, Logger} from "@nestjs/common"
 import {Prisma, User as PrismaUser, OrganizationAdmin as PrismaOrganizationAdmin} from "@prisma/client"
 import {
@@ -116,9 +116,10 @@ export class UserDbRepository implements UserRepository {
         return mappedUser.right
       },
       error => {
-        if (isPrismaUniqueConstraintError(error, ["occ"])) {
+        // Prisma uses P2025 (RecordNotFound) for missing rows in update, which triggers when OCC check fails
+        if (isPrismaRecordNotFoundError(error, Prisma.ModelName.User)) {
           Logger.warn("Optimistic concurrency control conflict during user role update", error)
-          return "unknown_error" as const
+          return "concurrent_modification_error" as const
         }
 
         Logger.error("Error while updating user roles", error)
