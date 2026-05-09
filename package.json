@@ -106,7 +106,7 @@
     "prisma-case-format": "2.2.1",
     "rxjs": "7.8.2",
     "supertest": "7.2.2",
-    "ts-jest": "29.4.6",
+    "ts-jest": "29.4.9",
     "ts-loader": "9.5.4",
     "ts-node": "10.9.2",
     "typescript": "5.9.3",
