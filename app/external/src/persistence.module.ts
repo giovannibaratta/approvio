@@ -1,5 +1,6 @@
 import {Module} from "@nestjs/common"
 import {
+  PostgresAuditLogRepository,
   AgentDbRepository,
   AgentChallengeDbRepository,
   DatabaseClient,
@@ -17,6 +18,7 @@ import {
 } from "./database/"
 import {GroupDbRepository, QuotaDbRepository, PrismaTransactionManager} from "./database"
 import {
+  AUDIT_LOG_REPOSITORY_TOKEN,
   AGENT_REPOSITORY_TOKEN,
   AGENT_CHALLENGE_REPOSITORY_TOKEN,
   GROUP_MEMBERSHIP_REPOSITORY_TOKEN,
@@ -134,7 +136,13 @@ const transactionManager = {
   useClass: PrismaTransactionManager
 }
 
+const auditLogRepository = {
+  provide: AUDIT_LOG_REPOSITORY_TOKEN,
+  useClass: PostgresAuditLogRepository
+}
+
 const repositories = [
+  auditLogRepository,
   agentRepository,
   agentChallengeRepository,
   groupRepository,

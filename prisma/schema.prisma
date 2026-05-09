@@ -287,3 +287,16 @@ model Quota {
   @@unique([scope, quotaType, targetId], map: "quotas_scope_quota_type_target_id_unique")
   @@map("quotas")
 }
+
+model AuditLog {
+  id         String   @id @db.Uuid
+  auditType  String   @map("audit_type") @db.VarChar(255)
+  entityType String   @map("entity_type") @db.VarChar(255)
+  entityId   String   @map("entity_id") @db.Uuid
+  actorId    String   @map("actor_id") @db.Uuid
+  actorType  String   @map("actor_type") @db.VarChar(255)
+  payload    Json
+  createdAt  DateTime @map("created_at") @db.Timestamp(6)
+
+  @@map("audit_logs")
+}

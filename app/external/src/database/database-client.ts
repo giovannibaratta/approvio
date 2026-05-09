@@ -12,7 +12,7 @@ import {checkMigrationId} from "./migration-utils"
 // a newer migration file. The timestamp provided here is used to check if the database is using
 // a migration that is older than the one required by the repositories. If this is the case, the
 // application will fail to start.
-export const REQUIRED_DB_MIGRATION_TIMESTAMP = "20260215114500"
+export const REQUIRED_DB_MIGRATION_TIMESTAMP = "20260509143200"
 
 export class ConflictingIsolationLevelError extends Error {
   constructor(requested: string, active: string) {
@@ -39,11 +39,36 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
     Prisma.TransactionIsolationLevel.ReadCommitted
 
   constructor(readonly config: ConfigProvider) {
-    this.prisma = new PrismaClient({
+    const basePrisma = new PrismaClient({
       adapter: new PrismaPg({
         connectionString: config.dbConnectionUrl
       })
     })
+
+    // Modify the Prisma client to prevent update/delete operations on audit logs.
+    // This is not expected to be the ultimate solution for protection records, but only a
+    // safe mechanism for accidental data loss due to silly mistakes.
+    this.prisma = basePrisma.$extends({
+      query: {
+        auditLog: {
+          async update() {
+            throw new Error("Audit logs are immutable. Action update is not allowed.")
+          },
+          async updateMany() {
+            throw new Error("Audit logs are immutable. Action updateMany is not allowed.")
+          },
+          async delete() {
+            throw new Error("Audit logs are immutable. Action delete is not allowed.")
+          },
+          async deleteMany() {
+            throw new Error("Audit logs are immutable. Action deleteMany is not allowed.")
+          },
+          async upsert() {
+            throw new Error("Audit logs are immutable. Action upsert is not allowed.")
+          }
+        }
+      }
+    }) as PrismaClient
   }
 
   async onModuleInit() {

@@ -55,6 +55,8 @@ export async function cleanRedisByPrefix(prefix: string): Promise<void> {
 
 export async function cleanDatabase(client: PrismaClient): Promise<void> {
   // Clean in dependency order (children before parents)
+  // Use raw query for AuditLog to bypass the immutability protection in DatabaseClient
+  await client.$executeRawUnsafe("DELETE FROM audit_logs;")
   await client.agentChallenge.deleteMany()
   await client.organizationAdmin.deleteMany()
   await client.pkceSession.deleteMany()
