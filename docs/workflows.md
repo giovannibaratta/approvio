@@ -8,11 +8,13 @@ Workflows are specific instances of approval processes created from workflow tem
 
 Workflows progress through several states:
 
-- **EVALUATION_IN_PROGRESS**: Waiting for votes, actively collecting approvals
-- **APPROVED**: Received sufficient approvals based on template rules
-- **REJECTED**: Received a veto vote, blocking approval
-- **EXPIRED**: Reached expiration time without sufficient approvals
-- **CANCELED**: Manually canceled or template deprecated
+| State | Description |
+| :--- | :--- |
+| **EVALUATION_IN_PROGRESS** | Waiting for votes, actively collecting approvals |
+| **APPROVED** | Received sufficient approvals based on template rules |
+| **REJECTED** | Received a veto vote, blocking approval |
+| **EXPIRED** | Reached expiration time without sufficient approvals |
+| **CANCELED** | Manually canceled or template deprecated |
 
 ## Voting System
 
@@ -34,8 +36,10 @@ Both **users** and **agents** can vote on workflows if they meet the requirement
 
 Both users and agents can cast two types of votes:
 
-- **APPROVE**: Positive vote contributing to approval requirements
-- **VETO**: Negative vote that immediately rejects the workflow
+| Vote Type | Description |
+| :--- | :--- |
+| **APPROVE** | Positive vote contributing to approval requirements |
+| **VETO** | Negative vote that immediately rejects the workflow |
 
 ### Approval Logic
 

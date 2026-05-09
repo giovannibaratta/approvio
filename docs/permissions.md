@@ -61,14 +61,16 @@ Voting on workflows requires multiple conditions:
 
 **For Users and Agents:**
 
-- **Group Membership**: Must belong to a group referenced in the workflow's approval rules
-- **Voter Role**: Must have voter role for the workflow template (at org, space, or template scope)
-- **Workflow Status**: Workflow must be in EVALUATION_IN_PROGRESS state
-- **Template Status**: Template must allow voting (not deprecated with voting disabled)
+| Requirement | Description |
+| :--- | :--- |
+| **Group Membership** | Must belong to a group referenced in the workflow's approval rules |
+| **Voter Role** | Must have voter role for the workflow template (at org, space, or template scope) |
+| **Workflow Status** | Workflow must be in EVALUATION_IN_PROGRESS state |
+| **Template Status** | Template must allow voting (not deprecated with voting disabled) |
 
 **Example:**
 
-```
+```text
 User "alice@company.com" can vote on a workflow if:
 ✓ Alice is a member of "Finance Approvers" group
 ✓ Alice has WorkflowTemplateVoter role for the template
@@ -76,29 +78,19 @@ User "alice@company.com" can vote on a workflow if:
 ✓ Workflow is actively accepting votes
 ```
 
-### Space Permissions
+### Resource Permissions
 
-Control who can view and manage spaces:
-
-- **read**: View space information
-- **manage**: Modify and delete spaces
-
-### Template Permissions
-
-Control who can work with workflow templates:
-
-- **read**: View template details
-- **write**: Modify template definitions
-- **instantiate**: Create workflow instances
-- **vote**: Vote on workflows from the template
-
-### Workflow Permissions
-
-Control who can interact with workflow instances:
-
-- **workflow_read**: View workflow details
-- **workflow_list**: List workflows
-- **workflow_cancel**: Cancel workflows
+| Resource | Permission | Description |
+| :--- | :--- | :--- |
+| **Space** | `read` | View space information |
+| **Space** | `manage` | Modify and delete spaces |
+| **Template** | `read` | View template details |
+| **Template** | `write` | Modify template definitions |
+| **Template** | `instantiate` | Create workflow instances |
+| **Template** | `vote` | Vote on workflows from the template |
+| **Workflow** | `workflow_read` | View workflow details |
+| **Workflow** | `workflow_list` | List workflows |
+| **Workflow** | `workflow_cancel` | Cancel workflows |
 
 ## Security Considerations
 
