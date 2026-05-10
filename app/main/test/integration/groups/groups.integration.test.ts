@@ -17,18 +17,19 @@ import {NestApplication} from "@nestjs/core"
 import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient, Group as PrismaGroup, User as PrismaUser} from "@prisma/client"
-import {randomUUID} from "crypto"
+
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {createDomainMockUserInDb, createMockUserInDb, MockConfigProvider} from "@test/mock-data"
 import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import {MAX_LIMIT, TokenPayloadBuilder} from "@services"
 import {EntityType} from "@controllers/groups/groups.mappers"
+import {v7 as uuidv7} from "uuid"
 
 async function createTestGroup(prisma: PrismaClient, name: string, description?: string): Promise<PrismaGroup> {
   const group = await prisma.group.create({
     data: {
-      id: randomUUID(),
+      id: uuidv7(),
       name: name,
       description: description,
       createdAt: new Date(),
@@ -560,7 +561,7 @@ describe("Groups API", () => {
 
       it("should return 404 NOT_FOUND (GROUP_NOT_FOUND) when fetching non-existent ID (as OrgAdmin)", async () => {
         // Given
-        const nonExistentId = randomUUID()
+        const nonExistentId = uuidv7()
 
         // When
         const response = await get(app, `${endpoint}/${nonExistentId}`).withToken(orgAdminUser.token).build()
@@ -695,7 +696,7 @@ describe("Groups API", () => {
 
         it("should return 404 NOT_FOUND (GROUP_NOT_FOUND) if group does not exist (as OrgAdmin)", async () => {
           // Given
-          const nonExistentGroupId = randomUUID()
+          const nonExistentGroupId = uuidv7()
           const requestBody: AddGroupEntitiesRequest = {
             entities: [{entity: {entityId: user1.id, entityType: EntityType.HUMAN}}]
           }
@@ -713,7 +714,7 @@ describe("Groups API", () => {
 
         it("should return 400 BAD_REQUEST (USER_NOT_FOUND) if a user does not exist (as OrgAdmin)", async () => {
           // Given
-          const nonExistentUserId = randomUUID()
+          const nonExistentUserId = uuidv7()
           const requestBody: AddGroupEntitiesRequest = {
             entities: [{entity: {entityId: nonExistentUserId, entityType: EntityType.HUMAN}}]
           }
@@ -851,7 +852,7 @@ describe("Groups API", () => {
 
         it("should return 404 NOT_FOUND (GROUP_NOT_FOUND) if group does not exist (as OrgAdmin)", async () => {
           // Given
-          const nonExistentGroupId = randomUUID()
+          const nonExistentGroupId = uuidv7()
           // When
           const response = await get(app, entitiesEndpoint(nonExistentGroupId)).withToken(orgAdminUser.token).build()
           // Expect
@@ -1001,7 +1002,7 @@ describe("Groups API", () => {
 
         it("should return 404 NOT_FOUND (GROUP_NOT_FOUND) if group does not exist (as OrgAdmin)", async () => {
           // Given
-          const nonExistentGroupId = randomUUID()
+          const nonExistentGroupId = uuidv7()
           const requestBody: RemoveGroupEntitiesRequest = {
             entities: [{entity: {entityId: user1.id, entityType: EntityType.HUMAN}}]
           }

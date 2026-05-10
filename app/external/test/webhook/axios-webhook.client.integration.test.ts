@@ -1,21 +1,18 @@
+import {v7 as uuidv7} from "uuid"
 import {Test, TestingModule} from "@nestjs/testing"
 
 import {AxiosWebhookClient} from "@external/webhook/axios-webhook.client"
 import {createWiremockUrl, getWiremockRequestsFor, setupWiremockStub} from "@test/wiremock"
 import {unwrapRight} from "@utils/either"
 import {ResponseBodyStatus} from "@domain"
-import {Chance} from "chance"
-
 import {SilentLogger} from "@test/logger-helpers"
 
 describe("AxiosWebhookClient (Integration)", () => {
   let client: AxiosWebhookClient
   let endpoint: string
   let wiremockUrl: string
-  let chance: Chance.Chance
 
   beforeEach(async () => {
-    chance = new Chance()
     const module: TestingModule = await Test.createTestingModule({
       providers: [AxiosWebhookClient]
     })
@@ -23,7 +20,7 @@ describe("AxiosWebhookClient (Integration)", () => {
       .compile()
 
     client = module.get<AxiosWebhookClient>(AxiosWebhookClient)
-    endpoint = `/test-axios-client-${chance.guid()}`
+    endpoint = `/test-axios-client-${uuidv7()}`
     wiremockUrl = createWiremockUrl(endpoint)
   })
 

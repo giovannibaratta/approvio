@@ -5,7 +5,7 @@ import {AppModule} from "@app/app.module"
 import {DatabaseClient} from "@external"
 import {AGENTS_ENDPOINT_ROOT} from "@controllers"
 import {PrismaClient} from "@prisma/client"
-import {randomUUID} from "crypto"
+
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {
   createDomainMockUserInDb,
@@ -24,6 +24,7 @@ import "@utils/matchers"
 import {TokenPayloadBuilder} from "@services"
 import {RoleAssignmentRequest, RoleRemovalRequest} from "@approvio/api"
 import {MAX_ROLES_PER_ENTITY} from "@domain"
+import {v7 as uuidv7} from "uuid"
 
 describe("Agent Roles API", () => {
   let app: NestApplication
@@ -501,7 +502,7 @@ describe("Agent Roles API", () => {
         // Given: Valid role assignment request but non-existent agent ID
         const roleAssignmentRequest = createOrgScopeRequest("OrgWideWorkflowTemplateVoter")
 
-        const nonExistentAgentId = randomUUID()
+        const nonExistentAgentId = uuidv7()
 
         // When: Admin tries to assign role to non-existent agent
         const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${nonExistentAgentId}/roles`)
@@ -787,7 +788,7 @@ describe("Agent Roles API", () => {
         // Given: Valid role removal request but non-existent agent ID
         const roleRemovalRequest: RoleRemovalRequest = createOrgScopeRequest("OrgWideWorkflowTemplateVoter")
 
-        const nonExistentAgentId = randomUUID()
+        const nonExistentAgentId = uuidv7()
 
         // When: Admin tries to remove role from non-existent agent
         const response = await del(app, `/${AGENTS_ENDPOINT_ROOT}/${nonExistentAgentId}/roles`)

@@ -3,10 +3,11 @@ import {MailpitClient} from "mailpit-api"
 import {NodemailerEmailProvider} from "@external/email/email.provider"
 import {Test, TestingModule} from "@nestjs/testing"
 import {ThirdPartyModule} from "@external"
-import {randomUUID} from "crypto"
+
 import {ConfigProvider} from "@external/config"
 import {MockConfigProvider} from "@test/mock-data"
 import {isNone} from "fp-ts/Option"
+import {v7 as uuidv7} from "uuid"
 
 /**
  * The integration test is based on the availability of Mailpit.
@@ -32,7 +33,7 @@ describe("NodemailerEmailProvider", () => {
 
     mailpitEndpoint = mailtpitEnvVariable
 
-    senderUniqueTestIdentifier = `${randomUUID()}@localhost.com`
+    senderUniqueTestIdentifier = `${uuidv7()}@localhost.com`
 
     let module: TestingModule
     try {

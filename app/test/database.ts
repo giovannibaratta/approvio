@@ -1,8 +1,9 @@
 import {PrismaClient} from "@prisma/client"
-import {randomUUID} from "crypto"
+
 import {PrismaPg} from "@prisma/adapter-pg"
 
 import Redis from "ioredis"
+import {v7 as uuidv7} from "uuid"
 
 /** Create a duplicated database using the reference database as template
  * @returns the connection string to the new database
@@ -15,9 +16,9 @@ export async function prepareDatabase(): Promise<string> {
   const prismaClient = new PrismaClient({adapter})
 
   // Generate a unique database name to isolate test runs
-  const databaseName = `integration_test_${randomUUID().replace(/-/g, "")}`
+  const databaseName = `integration_test_${uuidv7().replace(/-/g, "")}`
 
-  await prismaClient.$executeRawUnsafe(`CREATE DATABASE ${databaseName} TEMPLATE approvio;`)
+  await prismaClient.$executeRawUnsafe(`CREATE DATABASE "${databaseName}" TEMPLATE approvio;`)
   await prismaClient.$disconnect()
 
   return `postgresql://developer:Safe1!@localhost:5433/${databaseName}?schema=public`
@@ -28,7 +29,7 @@ export async function prepareDatabase(): Promise<string> {
  * @returns a unique prefix string for this test run
  */
 export function prepareRedisPrefix(): string {
-  return `test_${randomUUID()}_`
+  return `test_${uuidv7()}_`
 }
 
 /**

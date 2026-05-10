@@ -1,19 +1,20 @@
 import {VoteFactory, consolidateVotes, Vote, ApproveVote, EntityReference} from "@domain"
-import {randomUUID} from "crypto"
+
 import {addSecondsToDate} from "@utils/date"
+import {v7 as uuidv7} from "uuid"
 
 describe("Vote", () => {
   describe("VoteFactory", () => {
     const validVoter: EntityReference = {
-      entityId: randomUUID(),
+      entityId: uuidv7(),
       entityType: "user"
     }
 
     const validVoteInput: Parameters<typeof VoteFactory.newVote>[0] = {
-      workflowId: randomUUID(),
+      workflowId: uuidv7(),
       voter: validVoter,
       type: "APPROVE",
-      votedForGroups: [randomUUID()]
+      votedForGroups: [uuidv7()]
     }
 
     describe("newVote", () => {
@@ -27,7 +28,7 @@ describe("Vote", () => {
       describe("good cases", () => {
         it("should return a valid vote", () => {
           const vote: Vote = {
-            id: randomUUID(),
+            id: uuidv7(),
             castedAt: new Date(),
             ...validVoteInput
           }
@@ -39,7 +40,7 @@ describe("Vote", () => {
       describe("bad cases", () => {
         it("should return invalid_workflow_id if workflowId is not a UUID", () => {
           const vote: Vote = {
-            id: randomUUID(),
+            id: uuidv7(),
             castedAt: new Date(),
             ...validVoteInput,
             workflowId: "not-a-uuid"
@@ -51,7 +52,7 @@ describe("Vote", () => {
         it("should return invalid_voter_id if voter id is not a UUID", () => {
           // Given
           const vote: Vote = {
-            id: randomUUID(),
+            id: uuidv7(),
             castedAt: new Date(),
             ...validVoteInput,
             voter: {entityId: "not-a-uuid", entityType: "user"}
@@ -66,10 +67,10 @@ describe("Vote", () => {
 
         it("should return invalid_voter_type if voter type is invalid", () => {
           const vote: Vote = {
-            id: randomUUID(),
+            id: uuidv7(),
             castedAt: new Date(),
             ...validVoteInput,
-            voter: {entityId: randomUUID(), entityType: "invalid" as EntityReference["entityType"]}
+            voter: {entityId: uuidv7(), entityType: "invalid" as EntityReference["entityType"]}
           }
           const result = VoteFactory.validate(vote)
           expect(result).toBeLeftOf("vote_invalid_voter_type")
@@ -77,7 +78,7 @@ describe("Vote", () => {
 
         it("should return reason_too_long if reason is too long", () => {
           const vote: Vote = {
-            id: randomUUID(),
+            id: uuidv7(),
             castedAt: new Date(),
             ...validVoteInput,
             reason: "a".repeat(1025)
@@ -88,10 +89,10 @@ describe("Vote", () => {
 
         it("should return invalid_group_id if a groupId is not a UUID for an APPROVE vote", () => {
           const vote: ApproveVote = {
-            id: randomUUID(),
+            id: uuidv7(),
             castedAt: new Date(),
             type: "APPROVE",
-            workflowId: randomUUID(),
+            workflowId: uuidv7(),
             voter: validVoter,
             votedForGroups: ["not-a-uuid"]
           }
@@ -103,11 +104,11 @@ describe("Vote", () => {
   })
 
   describe("consolidateVotes", () => {
-    const userId1 = randomUUID()
-    const userId2 = randomUUID()
-    const agentId1 = randomUUID()
-    const workflowId = randomUUID()
-    const groupId1 = randomUUID()
+    const userId1 = uuidv7()
+    const userId2 = uuidv7()
+    const agentId1 = uuidv7()
+    const workflowId = uuidv7()
+    const groupId1 = uuidv7()
 
     const createVote = (
       voter: EntityReference,
@@ -117,7 +118,7 @@ describe("Vote", () => {
     ): Vote => {
       if (type === "APPROVE") {
         return {
-          id: randomUUID(),
+          id: uuidv7(),
           workflowId,
           voter,
           type,
@@ -125,7 +126,7 @@ describe("Vote", () => {
           votedForGroups
         }
       }
-      return {id: randomUUID(), workflowId, voter, type, castedAt}
+      return {id: uuidv7(), workflowId, voter, type, castedAt}
     }
 
     it("should keep only the most recent non-withdraw vote for each voter", () => {

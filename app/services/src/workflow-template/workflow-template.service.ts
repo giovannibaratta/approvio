@@ -3,7 +3,7 @@ import {AuthorizationError} from "@services/error"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
-import {logSuccess, isUUIDv4} from "@utils"
+import {logSuccess, isUUIDv7} from "@utils"
 import {
   WorkflowTemplate,
   WorkflowTemplateFactory,
@@ -109,7 +109,7 @@ export class WorkflowTemplateService {
       TE.bindW("requestor", () => validateRequestor()),
       TE.bindW("validatedAttributes", validateAttributes),
       TE.bindW("activeTemplate", () =>
-        isUUIDv4(request.templateName)
+        isUUIDv7(request.templateName)
           ? this.workflowTemplateRepository.getWorkflowTemplateById(request.templateName)
           : this.workflowTemplateRepository.getActiveWorkflowTemplateByName(request.templateName)
       ),
@@ -286,7 +286,7 @@ export class WorkflowTemplateService {
       TE.Do,
       TE.bindW("requestor", () => validateRequestor()),
       TE.bindW("activeTemplate", () =>
-        isUUIDv4(request.templateName)
+        isUUIDv7(request.templateName)
           ? this.workflowTemplateRepository.getWorkflowTemplateById(request.templateName)
           : this.workflowTemplateRepository.getActiveWorkflowTemplateByName(request.templateName)
       ),
@@ -312,11 +312,11 @@ export class WorkflowTemplateService {
     const filters = request.filters
       ? {
           spaceId:
-            request.filters.spaceIdentifier && isUUIDv4(request.filters.spaceIdentifier)
+            request.filters.spaceIdentifier && isUUIDv7(request.filters.spaceIdentifier)
               ? request.filters.spaceIdentifier
               : undefined,
           spaceName:
-            request.filters.spaceIdentifier && !isUUIDv4(request.filters.spaceIdentifier)
+            request.filters.spaceIdentifier && !isUUIDv7(request.filters.spaceIdentifier)
               ? request.filters.spaceIdentifier
               : undefined,
           status: request.filters.status

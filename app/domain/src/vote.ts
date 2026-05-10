@@ -1,8 +1,9 @@
 export const VOTE_REASON_MAX_LENGTH = 1024
-import {randomUUID} from "crypto"
+
 import {Either, isLeft, left, right} from "fp-ts/Either"
-import {DistributiveOmit, isUUIDv4, PrefixUnion} from "@utils"
+import {DistributiveOmit, isUUIDv7, PrefixUnion} from "@utils"
 import {EntityReference, getNormalizedEntityId} from "./authenticated-entity"
+import {v7 as uuidv7} from "uuid"
 
 export type Vote = Readonly<ApproveVote | VetoVote | WithdrawVote>
 
@@ -42,7 +43,7 @@ type UnprefixedVoteValidationError =
 
 export class VoteFactory {
   static newVote(data: DistributiveOmit<Vote, "id" | "castedAt">): Either<VoteValidationError, Vote> {
-    const id = randomUUID()
+    const id = uuidv7()
     const castedAt = new Date()
 
     const baseVoteProperties = {
@@ -92,7 +93,7 @@ export class VoteFactory {
 }
 
 function validateUUID<T extends VoteValidationError>(id: string, error: T): Either<T, string> {
-  if (!isUUIDv4(id)) return left(error)
+  if (!isUUIDv7(id)) return left(error)
   return right(id)
 }
 
@@ -108,7 +109,7 @@ function validateVoter(voter: EntityReference): Either<VoteValidationError, Enti
 }
 
 function validateGroupIds(groupIds: ReadonlyArray<string>): Either<VoteValidationError, ReadonlyArray<string>> {
-  if (groupIds.some(id => !isUUIDv4(id))) return left("vote_invalid_group_id")
+  if (groupIds.some(id => !isUUIDv7(id))) return left("vote_invalid_group_id")
   return right(groupIds)
 }
 

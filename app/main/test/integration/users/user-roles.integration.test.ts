@@ -5,7 +5,7 @@ import {AppModule} from "@app/app.module"
 import {DatabaseClient} from "@external"
 import {USERS_ENDPOINT_ROOT} from "@controllers"
 import {PrismaClient} from "@prisma/client"
-import {randomUUID} from "crypto"
+
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {
   createDomainMockUserInDb,
@@ -24,6 +24,7 @@ import {TokenPayloadBuilder, USER_REPOSITORY_TOKEN, UserRepository} from "@servi
 import {RoleAssignmentRequest} from "@approvio/api"
 import {MAX_ROLES_PER_ENTITY} from "@domain"
 import {wrapTaskEitherWithSideEffect} from "@test/injectors"
+import {v7 as uuidv7} from "uuid"
 
 describe("User Roles API", () => {
   let app: NestApplication
@@ -153,7 +154,7 @@ describe("User Roles API", () => {
 
       it("should add space-specific role to user and persist in database", async () => {
         // Given: Valid role assignment request with space scope
-        const spaceId = randomUUID()
+        const spaceId = uuidv7()
         const roleAssignmentRequest = createSpaceRequest("SpaceManager", spaceId)
 
         // When: Admin assigns space role to user
@@ -297,7 +298,7 @@ describe("User Roles API", () => {
 
       it("should return 400 when assigning workflow template role with non-existent resource ID", async () => {
         // Given: Role assignment request with non-existent workflow template ID
-        const nonExistentWorkflowTemplateId = randomUUID()
+        const nonExistentWorkflowTemplateId = uuidv7()
         const roleAssignmentRequest = createWorkflowTemplateRequest(
           "WorkflowTemplateReadOnly",
           nonExistentWorkflowTemplateId
@@ -583,7 +584,7 @@ describe("User Roles API", () => {
           ]
         }
 
-        const nonExistentUserId = randomUUID()
+        const nonExistentUserId = uuidv7()
 
         // When: Admin tries to assign role to non-existent user
         const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${nonExistentUserId}/roles`)
@@ -933,7 +934,7 @@ describe("User Roles API", () => {
 
       it("should deny assignment of workflow template role for non-existent workflow template", async () => {
         // Given: Non-existent workflow template ID
-        const nonExistentTemplateId = randomUUID()
+        const nonExistentTemplateId = uuidv7()
         const roleAssignmentRequest: RoleAssignmentRequest = {
           roles: [
             {
@@ -1216,7 +1217,7 @@ describe("User Roles API", () => {
           ]
         }
 
-        const nonExistentUserId = randomUUID()
+        const nonExistentUserId = uuidv7()
 
         // When: Admin tries to remove role from non-existent user
         const response = await del(app, `/${USERS_ENDPOINT_ROOT}/${nonExistentUserId}/roles`)

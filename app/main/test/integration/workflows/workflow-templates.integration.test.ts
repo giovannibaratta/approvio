@@ -11,7 +11,7 @@ import {
   WorkflowTemplate as WorkflowTemplateApi,
   ListWorkflowTemplates200Response
 } from "@approvio/api"
-import {randomUUID} from "crypto"
+
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {
   createDomainMockUserInDb,
@@ -27,6 +27,7 @@ import {UserWithToken} from "@test/types"
 import "expect-more-jest"
 import "@utils/matchers"
 import {TokenPayloadBuilder} from "@services"
+import {v7 as uuidv7} from "uuid"
 
 /**
  * Type guard assertion that checks if the value is a non-empty array of records.
@@ -115,7 +116,7 @@ describe("Workflow Templates API", () => {
         description: "A test workflow template",
         approvalRule: {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
-          groupId: randomUUID(),
+          groupId: uuidv7(),
           minCount: 1
         },
         actions: [],
@@ -155,7 +156,7 @@ describe("Workflow Templates API", () => {
           name: "High Privilege Template",
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: randomUUID(),
+            groupId: uuidv7(),
             minCount: 1,
             requireHighPrivilege: true
           },
@@ -181,7 +182,7 @@ describe("Workflow Templates API", () => {
           name: "Minimal Template",
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: randomUUID(),
+            groupId: uuidv7(),
             minCount: 1
           },
           spaceId: testSpace.id
@@ -209,7 +210,7 @@ describe("Workflow Templates API", () => {
             rules: [
               {
                 type: ApprovalRuleType.GROUP_REQUIREMENT,
-                groupId: randomUUID(),
+                groupId: uuidv7(),
                 minCount: 2
               },
               {
@@ -217,7 +218,7 @@ describe("Workflow Templates API", () => {
                 rules: [
                   {
                     type: ApprovalRuleType.GROUP_REQUIREMENT,
-                    groupId: randomUUID(),
+                    groupId: uuidv7(),
                     minCount: 1
                   }
                 ]
@@ -244,7 +245,7 @@ describe("Workflow Templates API", () => {
           name: "Webhook Template",
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: randomUUID(),
+            groupId: uuidv7(),
             minCount: 1
           },
           actions: [
@@ -301,7 +302,7 @@ describe("Workflow Templates API", () => {
           name: existingName,
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: randomUUID(),
+            groupId: uuidv7(),
             minCount: 1
           },
           spaceId: testSpace.id
@@ -321,7 +322,7 @@ describe("Workflow Templates API", () => {
           name: "  ", // Whitespace only
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: randomUUID(),
+            groupId: uuidv7(),
             minCount: 1
           },
           spaceId: testSpace.id
@@ -342,7 +343,7 @@ describe("Workflow Templates API", () => {
           name: longName,
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: randomUUID(),
+            groupId: uuidv7(),
             minCount: 1
           },
           spaceId: testSpace.id
@@ -362,7 +363,7 @@ describe("Workflow Templates API", () => {
           name: "template@name!",
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: randomUUID(),
+            groupId: uuidv7(),
             minCount: 1
           },
           spaceId: testSpace.id
@@ -384,7 +385,7 @@ describe("Workflow Templates API", () => {
           description: longDescription,
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: randomUUID(),
+            groupId: uuidv7(),
             minCount: 1
           },
           spaceId: testSpace.id
@@ -404,7 +405,7 @@ describe("Workflow Templates API", () => {
           name: "Invalid Expires Template",
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: randomUUID(),
+            groupId: uuidv7(),
             minCount: 1
           },
           defaultExpiresInHours: 0, // Invalid: must be >= 1
@@ -425,7 +426,7 @@ describe("Workflow Templates API", () => {
           name: "Invalid MinCount Template",
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: randomUUID(),
+            groupId: uuidv7(),
             minCount: 0 // Invalid: minCount must be at least 1
           },
           spaceId: testSpace.id
@@ -504,7 +505,7 @@ describe("Workflow Templates API", () => {
         name: "Invalid Webhook URL Template",
         approvalRule: {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
-          groupId: randomUUID(),
+          groupId: uuidv7(),
           minCount: 1
         },
         actions: [
@@ -531,7 +532,7 @@ describe("Workflow Templates API", () => {
         name: "Missing Method Template",
         approvalRule: {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
-          groupId: randomUUID(),
+          groupId: uuidv7(),
           minCount: 1
         },
         actions: [
@@ -558,7 +559,7 @@ describe("Workflow Templates API", () => {
         name: "Invalid Headers Template",
         approvalRule: {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
-          groupId: randomUUID(),
+          groupId: uuidv7(),
           minCount: 1
         },
         actions: [
@@ -995,7 +996,7 @@ describe("Workflow Templates API", () => {
 
       it("should return 404 NOT_FOUND for non-existent template", async () => {
         // Given
-        const nonExistentId = randomUUID()
+        const nonExistentId = uuidv7()
 
         // When
         const response = await get(app, `${endpoint}/${nonExistentId}`).withToken(orgAdminUser.token).build()
@@ -1159,7 +1160,7 @@ describe("Workflow Templates API", () => {
 
       it("should return 404 WORKFLOW_TEMPLATE_NOT_FOUND for non-existent template", async () => {
         // Given
-        const nonExistentId = randomUUID()
+        const nonExistentId = uuidv7()
 
         // When
         const response = await put(app, `${endpoint}/${nonExistentId}`)

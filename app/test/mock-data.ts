@@ -1,3 +1,4 @@
+import {v7 as uuidv7} from "uuid"
 import {
   Prisma,
   PrismaClient,
@@ -353,12 +354,12 @@ export function createMockWorkflowTemplateDomain(overrides?: Partial<WorkflowTem
       description: chance.sentence(),
       approvalRule: {
         type: "GROUP_REQUIREMENT",
-        groupId: chance.guid(),
+        groupId: uuidv7(),
         minCount: 1
       },
       actions: [],
       defaultExpiresInHours: chance.integer({min: 1, max: 8760}),
-      spaceId: chance.guid()
+      spaceId: uuidv7()
     })
   )
 
@@ -385,9 +386,7 @@ export function createMockUserPrismaPayload(
   }
 ): Prisma.UserCreateInput {
   const randomUser: Prisma.UserCreateInput = {
-    id: chance.guid({
-      version: 4
-    }),
+    id: uuidv7(),
     displayName: chance.name(),
     email: chance.email(),
     occ: POSTGRES_BIGINT_LOWER_BOUND,
@@ -415,7 +414,7 @@ export async function createMockUserInDb(
       data: {
         createdAt: new Date(),
         email: user.email,
-        id: chance.guid()
+        id: uuidv7()
       }
     })
   }
@@ -467,7 +466,7 @@ export async function createMockAgentInDb(
 
   // Create agent with optimized key generation
   const data: Prisma.AgentCreateInput = {
-    id: chance.guid({version: 4}),
+    id: uuidv7(),
     agentName,
     base64PublicKey: Buffer.from(keyPair.publicKey).toString("base64"),
     createdAt: new Date(),
@@ -493,7 +492,7 @@ export async function createTestGroup(
   overrides?: Partial<Omit<Prisma.GroupCreateInput, "id" | "occ">>
 ): Promise<PrismaGroup> {
   const randomGroup: Prisma.GroupCreateInput = {
-    id: chance.guid({version: 4}),
+    id: uuidv7(),
     name: `test-group-${chance.word()}`,
     description: chance.sentence(),
     createdAt: new Date(),
@@ -520,16 +519,12 @@ export async function createMockWorkflowTemplateInDb(
   const spaceId = overrides?.spaceId ?? (await createMockSpaceInDb(prisma)).id
 
   const randomTemplate: Prisma.WorkflowTemplateCreateInput = {
-    id: chance.guid({
-      version: 4
-    }),
-    name: chance.guid({version: 4}),
+    id: uuidv7(),
+    name: uuidv7(),
     description: chance.sentence(),
     approvalRule: {
       type: ApprovalRuleType.GROUP_REQUIREMENT,
-      groupId: chance.guid({
-        version: 4
-      }),
+      groupId: uuidv7(),
       minCount: 1
     },
     actions: [],
@@ -581,7 +576,7 @@ export async function createMockWorkflowInDb(
 
   const workflow = await prisma.workflow.create({
     data: {
-      id: chance.guid({version: 4}),
+      id: uuidv7(),
       name: overrides.name,
       description: overrides.description,
       status: overrides.status ?? WorkflowStatus.APPROVED,
@@ -669,7 +664,7 @@ export async function createMockGroupInDb(
   overrides?: Partial<Omit<Prisma.GroupCreateInput, "id" | "occ">>
 ): Promise<PrismaGroup> {
   const randomGroup: Prisma.GroupCreateInput = {
-    id: chance.guid({version: 4}),
+    id: uuidv7(),
     name: chance.word({length: 10}) + "-" + chance.integer({min: 1, max: 1000}),
     description: chance.sentence(),
     createdAt: new Date(),
@@ -691,7 +686,7 @@ export async function createMockSpaceInDb(
   overrides?: Partial<Omit<Prisma.SpaceCreateInput, "id" | "occ">>
 ): Promise<PrismaSpace> {
   const randomSpace: Prisma.SpaceCreateInput = {
-    id: chance.guid({version: 4}),
+    id: uuidv7(),
     name: chance.company() + "-" + chance.integer({min: 1, max: 1000}),
     description: chance.sentence(),
     createdAt: new Date(),
@@ -735,7 +730,7 @@ export async function createMockRefreshTokenInDb(
 
   const plainToken = randomBytes(32).toString("hex")
   const tokenHash = createSha256Hash(plainToken)
-  const familyId = params.familyId || chance.guid()
+  const familyId = params.familyId || uuidv7()
   const createdAt = params.createdAt || chance.date()
   const expiresInSeconds = params.expiresInSeconds ?? chance.integer({min: 1800, max: 86400})
   const expiresAt = new Date(createdAt.getTime() + expiresInSeconds * 1000)
@@ -744,12 +739,12 @@ export async function createMockRefreshTokenInDb(
   const extraData: {usedAt?: Date | null; nextTokenId?: string | null} = {}
   if (params.status === "used") {
     extraData.usedAt = new Date(createdAt.getTime() + 1000) // Used 1 second after creation
-    extraData.nextTokenId = chance.guid()
+    extraData.nextTokenId = uuidv7()
   }
 
   const token = await prisma.refreshToken.create({
     data: {
-      id: chance.guid(),
+      id: uuidv7(),
       tokenHash,
       familyId,
       userId: params.userId,
@@ -825,10 +820,10 @@ export async function createMockQuotaInDb(
   overrides?: Partial<Omit<Prisma.QuotaCreateInput, "occ">>
 ): Promise<PrismaQuota> {
   const data: Prisma.QuotaCreateInput = {
-    id: chance.guid({version: 4}),
+    id: uuidv7(),
     scope: "Org",
     quotaType: "MAX_GROUPS",
-    targetId: chance.guid({version: 4}),
+    targetId: uuidv7(),
     limit: 10,
     createdAt: new Date(),
     updatedAt: new Date(),

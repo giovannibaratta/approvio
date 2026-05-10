@@ -1,6 +1,7 @@
 import {Either, left, right, isLeft} from "fp-ts/Either"
-import {randomUUID} from "crypto"
-import {isUUIDv4, PrefixUnion} from "@utils"
+
+import {isUUIDv7, PrefixUnion} from "@utils"
+import {v7 as uuidv7} from "uuid"
 
 export const SPACE_NAME_MAX_LENGTH = 255
 export const SPACE_DESCRIPTION_MAX_LENGTH = 2048
@@ -31,7 +32,7 @@ export class SpaceFactory {
   }
 
   static newSpace(data: Omit<Space, "id" | "createdAt" | "updatedAt">): Either<SpaceValidationError, Space> {
-    const uuid = randomUUID()
+    const uuid = uuidv7()
     const now = new Date()
 
     const space: Space = {
@@ -65,7 +66,7 @@ export class SpaceFactory {
 }
 
 function validateId(id: string): Either<SpaceValidationError, string> {
-  if (!isUUIDv4(id)) return left("space_invalid_uuid")
+  if (!isUUIDv7(id)) return left("space_invalid_uuid")
   return right(id)
 }
 

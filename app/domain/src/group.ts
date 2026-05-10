@@ -1,8 +1,9 @@
 import {Either, left, right, isLeft} from "fp-ts/Either"
-import {randomUUID} from "crypto"
+
 import {hasOwnProperty} from "@utils/validation"
 import {PrefixUnion} from "@utils"
 import {OrgRole, User} from "@domain"
+import {v7 as uuidv7} from "uuid"
 
 export const NAME_MAX_LENGTH = 512
 export const DESCRIPTION_MAX_LENGTH = 2048
@@ -41,7 +42,7 @@ export class GroupFactory {
   }
 
   static newGroup(data: Omit<Group, "id" | "createdAt" | "updatedAt">): Either<GroupValidationError, Group> {
-    const uuid = randomUUID()
+    const uuid = uuidv7()
     const now = new Date()
     const group: Group = {
       ...data,

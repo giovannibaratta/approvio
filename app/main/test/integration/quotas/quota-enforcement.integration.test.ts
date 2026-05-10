@@ -5,7 +5,7 @@ import {AppModule} from "@app/app.module"
 import {DatabaseClient} from "@external"
 import {SPACES_ENDPOINT_ROOT, GROUPS_ENDPOINT_ROOT, USERS_ENDPOINT_ROOT, WORKFLOWS_ENDPOINT_ROOT} from "@controllers"
 import {PrismaClient} from "@prisma/client"
-import {randomUUID} from "crypto"
+
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {
   createDomainMockUserInDb,
@@ -18,6 +18,7 @@ import {JwtService} from "@nestjs/jwt"
 import {post, put} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import {TokenPayloadBuilder, DEFAULT_ORG_ID} from "@services"
+import {v7 as uuidv7} from "uuid"
 
 describe("Quota Enforcement API Integration", () => {
   let app: NestApplication
@@ -74,7 +75,7 @@ describe("Quota Enforcement API Integration", () => {
       // Set quota limit to 1
       await prisma.quota.create({
         data: {
-          id: randomUUID(),
+          id: uuidv7(),
           scope: "Org",
           quotaType: "MAX_SPACES",
           targetId: DEFAULT_ORG_ID,
@@ -108,7 +109,7 @@ describe("Quota Enforcement API Integration", () => {
       // Set quota limit to 1
       await prisma.quota.create({
         data: {
-          id: randomUUID(),
+          id: uuidv7(),
           scope: "Org",
           quotaType: "MAX_GROUPS",
           targetId: DEFAULT_ORG_ID,
@@ -142,7 +143,7 @@ describe("Quota Enforcement API Integration", () => {
       // Set quota limit to 1
       await prisma.quota.create({
         data: {
-          id: randomUUID(),
+          id: uuidv7(),
           scope: "Org",
           quotaType: "MAX_ROLES_PER_USER",
           targetId: DEFAULT_ORG_ID,
@@ -182,7 +183,7 @@ describe("Quota Enforcement API Integration", () => {
       // Set quota limit to 1
       await prisma.quota.create({
         data: {
-          id: randomUUID(),
+          id: uuidv7(),
           scope: "Org",
           quotaType: "MAX_CONCURRENT_WORKFLOWS",
           targetId: DEFAULT_ORG_ID,
@@ -223,7 +224,7 @@ describe("Quota Enforcement API Integration", () => {
       // Set quota limit to 1 for this space
       await prisma.quota.create({
         data: {
-          id: randomUUID(),
+          id: uuidv7(),
           scope: "Space",
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE",
           targetId: space.id,
@@ -244,7 +245,7 @@ describe("Quota Enforcement API Integration", () => {
           spaceId: space.id,
           approvalRule: {
             type: "GROUP_REQUIREMENT",
-            groupId: randomUUID(),
+            groupId: uuidv7(),
             minCount: 1
           }
         })
@@ -260,7 +261,7 @@ describe("Quota Enforcement API Integration", () => {
           spaceId: space.id,
           approvalRule: {
             type: "GROUP_REQUIREMENT",
-            groupId: randomUUID(),
+            groupId: uuidv7(),
             minCount: 1
           }
         })

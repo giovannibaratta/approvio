@@ -87,7 +87,7 @@ describe("WorkflowRecalculationProcessor Integration", () => {
     it("should throw an error if workflow does not exist", async () => {
       // Given: A job with a non-existent workflow ID (but valid UUID format)
       const job = {
-        data: {workflowId: "00000000-0000-0000-0000-000000000000"},
+        data: {workflowId: "00000000-0000-7000-8000-000000000000"},
         attemptsMade: 0,
         opts: {attempts: 3},
         id: "job-2"

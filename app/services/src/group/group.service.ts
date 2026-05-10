@@ -16,7 +16,7 @@ import {AuthorizationError} from "@services/error"
 import {MembershipAddError} from "@services/group-membership"
 import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 import {Versioned} from "@domain"
-import {isUUIDv4, logSuccess} from "@utils"
+import {isUUIDv7, logSuccess} from "@utils"
 import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
 import {DEFAULT_ORG_ID} from "@services/constants"
 import {QuotaService} from "@services/quota/quota.service"
@@ -98,7 +98,7 @@ export class GroupService {
     request: GetGroupByIdentifierRequest
   ): TaskEither<GetGroupError, Versioned<GroupWithEntitiesCount>> {
     const {groupIdentifier} = request
-    const isUuid = isUUIDv4(groupIdentifier)
+    const isUuid = isUUIDv7(groupIdentifier)
 
     const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
 

@@ -1,3 +1,4 @@
+import {v7 as uuidv7} from "uuid"
 import {WorkflowEventsProcessor} from "../../src/processor/workflow-events.processor"
 import {TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
@@ -7,7 +8,7 @@ import {DatabaseClient} from "@external"
 import {PrismaClient, Prisma} from "@prisma/client"
 import {Job} from "bull"
 import {WorkflowStatusChangedEvent, WorkflowStatus, WorkflowActionType, EmailAction, WebhookAction} from "@domain"
-import {randomUUID} from "crypto"
+
 import {WebhookActionHttpMethod} from "@domain/workflow-actions"
 import {setupWorkerTestModule} from "./test-helpers"
 
@@ -35,7 +36,7 @@ async function createWorkflowWithTemplate(
 
   const workflow = await prisma.workflow.create({
     data: {
-      id: randomUUID(),
+      id: uuidv7(),
       name: config.workflowName,
       status: config.workflowStatus,
       workflowTemplateId: template.id,
@@ -127,7 +128,7 @@ describe("Workflow Task Generation Integration", () => {
         })
 
         const event: WorkflowStatusChangedEvent = {
-          eventId: randomUUID(),
+          eventId: uuidv7(),
           workflowId,
           oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
           newStatus: WorkflowStatus.APPROVED,
@@ -176,7 +177,7 @@ describe("Workflow Task Generation Integration", () => {
         })
 
         const event: WorkflowStatusChangedEvent = {
-          eventId: randomUUID(),
+          eventId: uuidv7(),
           workflowId,
           oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
           newStatus: WorkflowStatus.APPROVED,
@@ -230,7 +231,7 @@ describe("Workflow Task Generation Integration", () => {
         })
 
         const event: WorkflowStatusChangedEvent = {
-          eventId: randomUUID(),
+          eventId: uuidv7(),
           workflowId,
           oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
           newStatus: WorkflowStatus.APPROVED,
@@ -277,7 +278,7 @@ describe("Workflow Task Generation Integration", () => {
         })
 
         const event: WorkflowStatusChangedEvent = {
-          eventId: randomUUID(),
+          eventId: uuidv7(),
           workflowId,
           oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
           newStatus: WorkflowStatus.APPROVED,
@@ -318,7 +319,7 @@ describe("Workflow Task Generation Integration", () => {
         })
 
         const event: WorkflowStatusChangedEvent = {
-          eventId: randomUUID(),
+          eventId: uuidv7(),
           workflowId,
           oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
           newStatus: WorkflowStatus.APPROVED,
@@ -366,7 +367,7 @@ describe("Workflow Task Generation Integration", () => {
         })
 
         const event: WorkflowStatusChangedEvent = {
-          eventId: randomUUID(),
+          eventId: uuidv7(),
           workflowId,
           oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
           newStatus: WorkflowStatus.REJECTED,
@@ -398,7 +399,7 @@ describe("Workflow Task Generation Integration", () => {
         })
 
         const event: WorkflowStatusChangedEvent = {
-          eventId: randomUUID(),
+          eventId: uuidv7(),
           workflowId,
           oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
           newStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
@@ -432,7 +433,7 @@ describe("Workflow Task Generation Integration", () => {
         })
 
         const event: WorkflowStatusChangedEvent = {
-          eventId: randomUUID(),
+          eventId: uuidv7(),
           workflowId,
           oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
           newStatus: WorkflowStatus.APPROVED,
@@ -483,7 +484,7 @@ describe("Workflow Task Generation Integration", () => {
 
         // And: An event with the snapshot of the initial actions
         const event: WorkflowStatusChangedEvent = {
-          eventId: randomUUID(),
+          eventId: uuidv7(),
           workflowId,
           oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
           newStatus: WorkflowStatus.APPROVED,
@@ -518,8 +519,8 @@ describe("Workflow Task Generation Integration", () => {
         // Given: A job with a non-existent workflow ID
         const job = {
           data: {
-            eventId: randomUUID(),
-            workflowId: randomUUID(),
+            eventId: uuidv7(),
+            workflowId: uuidv7(),
             oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
             newStatus: WorkflowStatus.APPROVED,
             workflowTemplateActions: [],

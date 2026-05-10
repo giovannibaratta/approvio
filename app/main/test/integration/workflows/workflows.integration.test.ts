@@ -17,7 +17,7 @@ import {NestApplication} from "@nestjs/core"
 import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient, Workflow as PrismaWorkflow, WorkflowTemplate as PrismaWorkflowTemplate} from "@prisma/client"
-import {randomUUID} from "crypto"
+
 import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "@test/database"
 import {
   createDomainMockUserInDb,
@@ -32,12 +32,13 @@ import {TokenPayloadBuilder} from "@services"
 import {getQueueToken} from "@nestjs/bull"
 import {WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"
 import {Queue} from "bull"
+import {v7 as uuidv7} from "uuid"
 
 // Helper function to create a mock group for tests
 async function createTestGroup(prisma: PrismaClient, name: string): Promise<{id: string}> {
   const group = await prisma.group.create({
     data: {
-      id: randomUUID(),
+      id: uuidv7(),
       name: name,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -373,7 +374,7 @@ describe("Workflows API", () => {
 
       it("should return 404 NOT_FOUND (WORKFLOW_NOT_FOUND) when fetching non-existent ID (as OrgAdmin)", async () => {
         // Given: a non-existent workflow ID
-        const nonExistentId = randomUUID()
+        const nonExistentId = uuidv7()
 
         // When: a request is sent to get workflow details by the non-existent ID with an OrgAdmin token
         const response = await get(app, `${endpoint}/${nonExistentId}`).withToken(orgAdminUser.token).build()
@@ -627,7 +628,7 @@ describe("Workflows API", () => {
 
       it("should return 400 BAD_REQUEST if workflow does not exist", async () => {
         // Given: a non-existent workflow ID
-        const nonExistentWorkflowId = randomUUID()
+        const nonExistentWorkflowId = uuidv7()
 
         // When: a request is sent to check voting eligibility for the non-existent workflow with an OrgAdmin token
         const response = await get(app, `${endpoint}/${nonExistentWorkflowId}/canVote`)
@@ -874,7 +875,7 @@ describe("Workflows API", () => {
 
       it("should return 400 BAD_REQUEST if workflow does not exist", async () => {
         // Given: a non-existent workflow ID and a vote request body
-        const nonExistentWorkflowId = randomUUID()
+        const nonExistentWorkflowId = uuidv7()
         const requestBody: WorkflowVoteRequestApi = {
           voteType: {
             type: "APPROVE",
@@ -1378,7 +1379,7 @@ describe("Workflows API", () => {
     describe("bad cases", () => {
       it("should return 404 NOT_FOUND (WORKFLOW_NOT_FOUND) when listing votes for non-existent workflow", async () => {
         // Given: a non-existent workflow ID
-        const nonExistentId = randomUUID()
+        const nonExistentId = uuidv7()
 
         // When: listing votes
         const response = await get(app, `${endpoint}/${nonExistentId}/votes`).withToken(orgAdminUser.token).build()

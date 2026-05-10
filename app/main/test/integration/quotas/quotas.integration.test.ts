@@ -1,8 +1,9 @@
+import {v7 as uuidv7} from "uuid"
 import {Test, TestingModule} from "@nestjs/testing"
 import {NestApplication} from "@nestjs/core"
 import {HttpStatus} from "@nestjs/common"
 import {AppModule} from "@app/app.module"
-import {createDomainMockUserInDb, MockConfigProvider} from "@test/mock-data"
+import {createDomainMockUserInDb, createMockQuotaInDb, MockConfigProvider} from "@test/mock-data"
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {DEFAULT_ORG_ID, TokenPayloadBuilder} from "@services"
 import {PrismaClient} from "@prisma/client"
@@ -12,10 +13,6 @@ import {DatabaseClient} from "@external"
 import {get, post, patch, del} from "@test/requests"
 import {QuotaCreate, QuotaUpdate} from "@approvio/api"
 import "@utils/matchers"
-import {Chance} from "chance"
-
-const chance = new Chance()
-
 describe("Quotas Integration Tests", () => {
   let app: NestApplication
   let prisma: PrismaClient
@@ -105,7 +102,7 @@ describe("Quotas Integration Tests", () => {
 
     it("should allow admin to create a targeted quota (MAX_ENTITIES_PER_GROUP)", async () => {
       // Given
-      const targetId = "00000000-0000-0000-0000-000000000001"
+      const targetId = uuidv7()
       const payload: QuotaCreate = {
         scope: "Group",
         quotaType: "MAX_ENTITIES_PER_GROUP",
@@ -146,18 +143,9 @@ describe("Quotas Integration Tests", () => {
   describe("GET /quotas", () => {
     it("should list quotas", async () => {
       // Given: some quotas exist
-      const now = new Date()
-      await prisma.quota.create({
-        data: {
-          id: "00000000-0000-0000-0000-000000000101",
-          scope: "Org",
-          quotaType: "MAX_GROUPS",
-          limit: 10,
-          targetId: DEFAULT_ORG_ID,
-          createdAt: now,
-          updatedAt: now,
-          occ: 0n
-        }
+      await createMockQuotaInDb(prisma, {
+        scope: "Org",
+        quotaType: "MAX_GROUPS"
       })
 
       // When
@@ -172,30 +160,13 @@ describe("Quotas Integration Tests", () => {
 
     it("should filter quotas by scope", async () => {
       // Given
-      const now = new Date()
-      await prisma.quota.createMany({
-        data: [
-          {
-            id: "00000000-0000-0000-0000-000000000101",
-            scope: "Org",
-            quotaType: "MAX_GROUPS",
-            limit: 10,
-            targetId: DEFAULT_ORG_ID,
-            createdAt: now,
-            updatedAt: now,
-            occ: 0n
-          },
-          {
-            id: "00000000-0000-0000-0000-000000000102",
-            scope: "Group",
-            quotaType: "MAX_ENTITIES_PER_GROUP",
-            limit: 5,
-            targetId: "00000000-0000-0000-0000-000000000001",
-            createdAt: now,
-            updatedAt: now,
-            occ: 0n
-          }
-        ]
+      await createMockQuotaInDb(prisma, {
+        scope: "Org",
+        quotaType: "MAX_GROUPS"
+      })
+      await createMockQuotaInDb(prisma, {
+        scope: "Group",
+        quotaType: "MAX_ENTITIES_PER_GROUP"
       })
 
       // When
@@ -214,19 +185,7 @@ describe("Quotas Integration Tests", () => {
   describe("GET /quotas/:id", () => {
     it("should retrieve a quota by id", async () => {
       // Given
-      const now = new Date()
-      const quota = await prisma.quota.create({
-        data: {
-          id: "00000000-0000-0000-0000-000000000101",
-          scope: "Org",
-          quotaType: "MAX_GROUPS",
-          limit: 10,
-          targetId: DEFAULT_ORG_ID,
-          createdAt: now,
-          updatedAt: now,
-          occ: 0n
-        }
-      })
+      const quota = await createMockQuotaInDb(prisma)
 
       // When
       const response = await get(app, `/quotas/${quota.id}`).withToken(adminToken).build().expect(HttpStatus.OK)
@@ -239,18 +198,8 @@ describe("Quotas Integration Tests", () => {
   describe("PATCH /quotas/:id", () => {
     it("should update quota limit", async () => {
       // Given
-      const now = new Date()
-      const quota = await prisma.quota.create({
-        data: {
-          id: "00000000-0000-0000-0000-000000000101",
-          scope: "Org",
-          quotaType: "MAX_GROUPS",
-          limit: 10,
-          targetId: DEFAULT_ORG_ID,
-          createdAt: now,
-          updatedAt: now,
-          occ: 0n
-        }
+      const quota = await createMockQuotaInDb(prisma, {
+        limit: 10
       })
 
       // When
@@ -268,19 +217,7 @@ describe("Quotas Integration Tests", () => {
 
     it("should allow patching with an empty body (limit should be optional)", async () => {
       // Given
-      const now = new Date()
-      const quota = await prisma.quota.create({
-        data: {
-          id: chance.guid(),
-          scope: "Org",
-          quotaType: "MAX_GROUPS",
-          limit: 10,
-          targetId: DEFAULT_ORG_ID,
-          createdAt: now,
-          updatedAt: now,
-          occ: 0n
-        }
-      })
+      const quota = await createMockQuotaInDb(prisma)
 
       // When: sending empty body
       const response = await patch(app, `/quotas/${quota.id}`)
@@ -297,19 +234,7 @@ describe("Quotas Integration Tests", () => {
   describe("DELETE /quotas/:id", () => {
     it("should delete a quota", async () => {
       // Given
-      const now = new Date()
-      const quota = await prisma.quota.create({
-        data: {
-          id: chance.guid(),
-          scope: "Org",
-          quotaType: "MAX_GROUPS",
-          limit: 10,
-          targetId: DEFAULT_ORG_ID,
-          createdAt: now,
-          updatedAt: now,
-          occ: 0n
-        }
-      })
+      const quota = await createMockQuotaInDb(prisma)
 
       // When
       await del(app, `/quotas/${quota.id}`).withToken(adminToken).build().expect(HttpStatus.NO_CONTENT)

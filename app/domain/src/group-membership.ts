@@ -7,7 +7,7 @@ import {
   getNormalizedId,
   EntityReference
 } from "@domain"
-import {isUUIDv4, PrefixUnion} from "@utils"
+import {isUUIDv7, PrefixUnion} from "@utils"
 import * as A from "fp-ts/Array"
 import {Applicative, Do, Either, isLeft, left, right, chain, bindW} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
@@ -44,7 +44,7 @@ interface PrivateMembership {
 }
 
 function validateGroupReference(groupReference: string): Either<MembershipValidationErrorWithGroupRef, string> {
-  if (!isUUIDv4(groupReference)) return left("membership_invalid_group_uuid")
+  if (!isUUIDv7(groupReference)) return left("membership_invalid_group_uuid")
   return right(groupReference)
 }
 

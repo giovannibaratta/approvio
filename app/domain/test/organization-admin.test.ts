@@ -1,6 +1,7 @@
 import {OrganizationAdminFactory, ORG_ADMIN_EMAIL_MAX_LENGTH} from "@domain/organization-admin"
-import {randomUUID} from "crypto"
+
 import "@utils/matchers"
+import {v7 as uuidv7} from "uuid"
 
 describe("OrganizationAdminFactory", () => {
   describe("newOrganizationAdmin", () => {
@@ -18,7 +19,7 @@ describe("OrganizationAdminFactory", () => {
         expect(result).toBeRightOf(
           expect.objectContaining({
             email: "admin@example.com",
-            id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i),
+            id: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i),
             createdAt: expect.any(Date)
           })
         )
@@ -100,7 +101,7 @@ describe("OrganizationAdminFactory", () => {
       it("should validate existing organization admin object", () => {
         // Given: Valid organization admin data
         const adminData = {
-          id: randomUUID(),
+          id: uuidv7(),
           email: "admin@example.com",
           createdAt: new Date()
         }
@@ -132,7 +133,7 @@ describe("OrganizationAdminFactory", () => {
       it("should reject invalid email in existing object", () => {
         // Given: Organization admin data with invalid email
         const adminData = {
-          id: randomUUID(),
+          id: uuidv7(),
           email: "invalid-email",
           createdAt: new Date()
         }

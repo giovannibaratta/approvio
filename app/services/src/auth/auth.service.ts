@@ -50,7 +50,7 @@ import {
 import {TokenPayloadBuilder} from "./auth-token"
 import {createSha256Hash, validateDpopJwt, logSuccess} from "@utils"
 import {AgentService} from "@services/agent"
-import {v4 as uuidv4} from "uuid"
+import {v7 as uuidv7} from "uuid"
 
 const ACCESS_TOKEN_EXPIRY_SECONDS = 60 * 60 // 1 hour
 const STEP_UP_TOKEN_EXPIRY_SECONDS = 60 * 2 // 2 minutes
@@ -486,7 +486,7 @@ export class AuthService {
         )
       ),
       TE.chainW(() => {
-        const jti = uuidv4()
+        const jti = uuidv7()
         return pipe(
           this.stepUpTokenRepo.storeToken(jti, STEP_UP_TOKEN_EXPIRY_SECONDS),
           TE.chainW(() =>

@@ -9,9 +9,10 @@ import {setupWorkerTestModule} from "./test-helpers"
 import {WorkflowActionWebhookTaskFactory, TaskStatus, WebhookActionHttpMethod, WorkflowStatus} from "@domain"
 import {Job} from "bull"
 import {WorkflowActionWebhookEvent} from "@domain/events"
-import {randomUUID} from "crypto"
+
 import {isLeft} from "fp-ts/Either"
 import {createWiremockUrl, getWiremockRequestsFor, setupWiremockStub} from "@test/wiremock"
+import {v7 as uuidv7} from "uuid"
 
 async function createWorkflowWithWebhookTask(
   prisma: PrismaClient,
@@ -27,7 +28,7 @@ async function createWorkflowWithWebhookTask(
   // Create a workflow
   const workflow = await prisma.workflow.create({
     data: {
-      id: randomUUID(),
+      id: uuidv7(),
       name: "Test-Webhook-Workflow",
       status: WorkflowStatus.EVALUATION_IN_PROGRESS,
       workflowTemplateId: template.id,
@@ -41,7 +42,7 @@ async function createWorkflowWithWebhookTask(
 
   // Create a webhook task
   const webhookTaskEither = WorkflowActionWebhookTaskFactory.newWorkflowActionWebhookTask({
-    id: randomUUID(),
+    id: uuidv7(),
     workflowId: workflow.id,
     url: webhookUrl,
     method,
@@ -85,7 +86,7 @@ describe("Workflow Action Webhook Processor Integration", () => {
   beforeEach(async () => {
     const isolatedDb = await prepareDatabase()
     redisPrefix = prepareRedisPrefix()
-    uniqueWebhookPath = `/webhook-${randomUUID()}`
+    uniqueWebhookPath = `/webhook-${uuidv7()}`
     wiremockUrl = createWiremockUrl(uniqueWebhookPath)
 
     try {

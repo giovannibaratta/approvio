@@ -1,7 +1,6 @@
 import {Node, QuotaFactory, QuotaIdentifier, WorkflowStatus} from "@domain"
 import {DEFAULT_ORG_ID, QuotaRepository, QuotaService} from "@services"
 import {isRight} from "fp-ts/Either"
-import {randomUUID} from "crypto"
 
 import {Test, TestingModule} from "@nestjs/testing"
 import {ServiceModule} from "@services/service.module"
@@ -22,6 +21,7 @@ import {ConfigProvider} from "@external/config"
 import {PrismaClient} from "@prisma/client"
 import {DatabaseClient} from "@external"
 import {unwrapRight} from "@utils/either"
+import {v7 as uuidv7} from "uuid"
 
 describe("Quota Integration Tests", () => {
   let module: TestingModule
@@ -292,7 +292,7 @@ describe("Quota Integration Tests", () => {
     const user = await createMockUserInDb(prisma)
     await prisma.vote.create({
       data: {
-        id: randomUUID(),
+        id: uuidv7(),
         workflowId: workflow.id,
         userId: user.id,
         voteType: "APPROVE",

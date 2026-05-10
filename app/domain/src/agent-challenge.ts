@@ -1,9 +1,10 @@
 import * as E from "fp-ts/Either"
 import {Either, left, right} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
-import {constants, publicEncrypt, randomBytes, randomUUID, verify} from "crypto"
-import {isUUIDv4, PrefixUnion, DecorableEntity, isDecoratedWith, DynamicDecorators} from "@utils"
+import {constants, publicEncrypt, randomBytes, verify} from "crypto"
+import {isUUIDv7, PrefixUnion, DecorableEntity, isDecoratedWith, DynamicDecorators} from "@utils"
 import {Agent} from "./agent"
+import {v7 as uuidv7} from "uuid"
 
 export const CHALLENGE_EXPIRY_MINUTES = 10
 export const NONCE_LENGTH = 32
@@ -109,7 +110,7 @@ export class AgentChallengeFactory {
       E.bindW("nonce", () => this.generateNonce()),
       E.bindW("challenge", ({nonce}) => {
         return E.right({
-          id: randomUUID(),
+          id: uuidv7(),
           agentName: data.agentName,
           nonce,
           createdAt,
@@ -309,7 +310,7 @@ export class AgentChallengeFactory {
   }
 
   private static validateChallengeId(id: string): Either<IdValidationError, string> {
-    if (!isUUIDv4(id)) return left("agent_challenge_invalid_uuid")
+    if (!isUUIDv7(id)) return left("agent_challenge_invalid_uuid")
     return right(id)
   }
 

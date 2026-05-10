@@ -19,8 +19,8 @@
  * and picking the first (most specific) defined quota.
  */
 import {PrefixUnion} from "@utils"
-import {v4 as uuid} from "uuid"
-import {isObject, isUUIDv4} from "@utils/validation"
+import {v7 as uuid} from "uuid"
+import {isObject, isUUIDv7} from "@utils/validation"
 import * as E from "fp-ts/Either"
 import {DescendantsOf, getParentsOfType, isNodeType, Node, NodeAtOrAbove, NodeType} from "./hierarchy"
 
@@ -141,7 +141,7 @@ export class QuotaIdentifierFactory {
     const nodeData = node
 
     if (typeof nodeData.type !== "string" || !isNodeType(nodeData.type)) return E.left("quota_invalid_node_type")
-    if (typeof nodeData.identifier !== "string" || !isUUIDv4(nodeData.identifier))
+    if (typeof nodeData.identifier !== "string" || !isUUIDv7(nodeData.identifier))
       return E.left("quota_invalid_target_id")
 
     if (typeof quotaType !== "string" || !isSupportedQuotaType(quotaType)) return E.left("quota_unsupported_quota_type")
@@ -166,7 +166,7 @@ export class QuotaFactory {
     if (E.isLeft(identifierEither)) return E.left("quota_malformed_quota")
 
     if (typeof data.id !== "string") return E.left("quota_malformed_quota")
-    if (!isUUIDv4(data.id)) return E.left("quota_invalid_id")
+    if (!isUUIDv7(data.id)) return E.left("quota_invalid_id")
 
     if (typeof data.limit !== "number" || !Number.isInteger(data.limit) || data.limit < 0)
       return E.left("quota_invalid_limit")

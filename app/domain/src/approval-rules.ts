@@ -1,4 +1,4 @@
-import {isUUIDv4, PrefixUnion} from "@utils"
+import {isUUIDv7, PrefixUnion} from "@utils"
 import * as E from "fp-ts/Either"
 import {Either, left, right} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
@@ -96,7 +96,7 @@ export class ApprovalRuleFactory {
     data: Record<string, unknown>
   ): Either<ApprovalRuleValidationError, GroupRequirementRule> {
     if (typeof data.groupId !== "string") return left("approval_rule_group_rule_invalid_group_id")
-    if (!isUUIDv4(data.groupId)) return left("approval_rule_group_rule_invalid_group_id")
+    if (!isUUIDv7(data.groupId)) return left("approval_rule_group_rule_invalid_group_id")
     if (typeof data.minCount !== "number" || !Number.isInteger(data.minCount))
       return left("approval_rule_group_rule_invalid_min_count")
     if (data.minCount < 1) return left("approval_rule_group_rule_invalid_min_count")

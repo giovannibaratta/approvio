@@ -6,7 +6,7 @@ import {DatabaseClient} from "@external"
 import {USERS_ENDPOINT_ROOT} from "@controllers"
 import {PrismaClient, User as PrismaUser} from "@prisma/client"
 import {UserCreate} from "@approvio/api"
-import {randomUUID} from "crypto"
+
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {createDomainMockUserInDb, createMockUserInDb, MockConfigProvider} from "@test/mock-data"
 import {HttpStatus} from "@nestjs/common"
@@ -17,6 +17,7 @@ import {UserSummary} from "@approvio/api"
 import "expect-more-jest"
 import "@utils/matchers"
 import {TokenPayloadBuilder} from "@services"
+import {v7 as uuidv7} from "uuid"
 
 describe("Users API", () => {
   let app: NestApplication
@@ -233,7 +234,7 @@ describe("Users API", () => {
 
       it("should return 404 NOT_FOUND (USER_NOT_FOUND) when fetching non-existent ID", async () => {
         // Given
-        const nonExistentId = randomUUID()
+        const nonExistentId = uuidv7()
 
         // When
         const response = await get(app, `${endpoint}/${nonExistentId}`).withToken(orgAdminUser.token).build()

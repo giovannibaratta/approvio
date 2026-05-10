@@ -1,6 +1,7 @@
 import {Either, left, right, isLeft} from "fp-ts/Either"
-import {randomUUID} from "crypto"
-import {isEmail, isUUIDv4, PrefixUnion} from "@utils"
+
+import {isEmail, isUUIDv7, PrefixUnion} from "@utils"
+import {v7 as uuidv7} from "uuid"
 
 export const ORG_ADMIN_EMAIL_MAX_LENGTH = 512
 
@@ -32,7 +33,7 @@ export class OrganizationAdminFactory {
     data: Omit<OrganizationAdminData, "id" | "createdAt">
   ): Either<OrganizationAdminValidationError, OrganizationAdmin> {
     const organizationAdmin: OrganizationAdminData = {
-      id: randomUUID(),
+      id: uuidv7(),
       email: data.email,
       createdAt: new Date()
     }
@@ -61,7 +62,7 @@ export class OrganizationAdminFactory {
 }
 
 function validateOrganizationAdminId(id: string): Either<OrganizationAdminValidationError, string> {
-  if (!isUUIDv4(id)) return left("organization_admin_invalid_uuid")
+  if (!isUUIDv7(id)) return left("organization_admin_invalid_uuid")
   return right(id)
 }
 

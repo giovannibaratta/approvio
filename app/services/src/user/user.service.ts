@@ -7,7 +7,7 @@ import * as E from "fp-ts/Either"
 import {TaskEither} from "fp-ts/TaskEither"
 import {USER_REPOSITORY_TOKEN, UserCreateError, UserGetError, UserRepository} from "./interfaces"
 import {Versioned} from "@domain"
-import {isEmail, isUUIDv4, logSuccess} from "@utils"
+import {isEmail, isUUIDv7, logSuccess} from "@utils"
 import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 import {PaginatedUsersList, UserListError} from "./interfaces"
 
@@ -43,7 +43,7 @@ export class UserService {
   }
 
   getUserByIdentifier(userIdentifier: string): TaskEither<UserGetError, Versioned<User>> {
-    const isUuid = isUUIDv4(userIdentifier)
+    const isUuid = isUUIDv7(userIdentifier)
     const isValidEmail = isEmail(userIdentifier)
 
     if (!isUuid && !isValidEmail) return TE.left("request_invalid_user_identifier")

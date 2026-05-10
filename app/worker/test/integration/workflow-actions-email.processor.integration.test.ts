@@ -9,12 +9,13 @@ import {setupWorkerTestModule} from "./test-helpers"
 import {WorkflowActionEmailTaskFactory, TaskStatus, WorkflowStatus} from "@domain"
 import {Job} from "bull"
 import {WorkflowActionEmailEvent} from "@domain/events"
-import {randomUUID} from "crypto"
+
 import {MailpitClient} from "mailpit-api"
 import {isNone} from "fp-ts/Option"
 import {EmailService} from "@services/email/email.service"
 import * as TE from "fp-ts/TaskEither"
 import {unwrapRight} from "@utils/either"
+import {v7 as uuidv7} from "uuid"
 
 async function createWorkflowWithEmailTask(
   prisma: PrismaClient,
@@ -29,7 +30,7 @@ async function createWorkflowWithEmailTask(
   // Create a workflow
   const workflow = await prisma.workflow.create({
     data: {
-      id: randomUUID(),
+      id: uuidv7(),
       name: "Test-Email-Workflow",
       status: WorkflowStatus.EVALUATION_IN_PROGRESS,
       workflowTemplateId: template.id,
@@ -44,7 +45,7 @@ async function createWorkflowWithEmailTask(
   // Create an email task
   const emailTask = unwrapRight(
     WorkflowActionEmailTaskFactory.newWorkflowActionEmailTask({
-      id: randomUUID(),
+      id: uuidv7(),
       workflowId: workflow.id,
       recipients,
       subject,
@@ -94,7 +95,7 @@ describe("Workflow Action Email Processor Integration", () => {
 
     mailpitEndpoint = mailtpitEnvVariable
 
-    senderEmail = `test-sender-${randomUUID()}@localhost.com`
+    senderEmail = `test-sender-${uuidv7()}@localhost.com`
 
     try {
       const moduleBuilder = setupWorkerTestModule([WorkflowActionEmailProcessor])
@@ -137,7 +138,7 @@ describe("Workflow Action Email Processor Integration", () => {
   describe("process", () => {
     it("should successfully process an email task and update task status to COMPLETED", async () => {
       // Given: An email task in PENDING status
-      const recipient = `recipient-${randomUUID()}@localhost.com`
+      const recipient = `recipient-${uuidv7()}@localhost.com`
       const {taskId, workflowId} = await createWorkflowWithEmailTask(prisma, [recipient])
 
       // Create the event to process
