@@ -1,5 +1,6 @@
 import {jest} from "@jest/globals"
 import type {MethodLikeKeys} from "jest-mock"
+import * as E from "fp-ts/Either"
 
 type Task<A> = () => Promise<A>
 
@@ -76,6 +77,27 @@ export function wrapTaskEitherWithSideEffect<
 
       // 3. Return the original result
       return result
+    }
+  })
+}
+
+/**
+ * Forces a method returning a TaskEither to fail with a specific error.
+ *
+ * @param obj The object containing the method to intercept.
+ * @param methodName The name of the method to intercept.
+ * @param error The error to return in the Left side of the TaskEither.
+ */
+export function failTaskEither<
+  T extends object,
+  M extends MethodLikeKeys<T>,
+  F extends (...args: never[]) => Task<unknown> = T[M] extends (...args: never[]) => Task<unknown> ? T[M] : never
+>(obj: T, methodName: M, error: unknown): jest.SpiedFunction<F> {
+  const spy = jest.spyOn(obj, methodName)
+
+  return spy.mockImplementation(() => {
+    return async () => {
+      return E.left(error)
     }
   })
 }
