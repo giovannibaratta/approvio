@@ -1,11 +1,11 @@
-import {randomUUID} from "crypto"
 import * as E from "fp-ts/Either"
 import {Either, isLeft, left, right} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 import {ApprovalRule, ApprovalRuleFactory, ApprovalRuleValidationError} from "./approval-rules"
 import {WorkflowAction, WorkflowActionValidationError, validateWorkflowActions} from "./workflow-actions"
 import {MembershipWithGroupRef, UnconstrainedBoundRole} from "@domain"
-import {PrefixUnion, getStringAsEnum, isUUIDv4} from "@utils"
+import {PrefixUnion, getStringAsEnum, isUUIDv7} from "@utils"
+import {v7 as uuidv7} from "uuid"
 
 export const WORKFLOW_TEMPLATE_NAME_MAX_LENGTH = 512
 export const WORKFLOW_TEMPLATE_DESCRIPTION_MAX_LENGTH = 2048
@@ -166,7 +166,7 @@ export class WorkflowTemplateFactory {
       "id" | "createdAt" | "updatedAt" | "deletedAt" | "status" | "allowVotingOnDeprecatedTemplate" | "version"
     > & {version?: number}
   ): Either<WorkflowTemplateValidationError, WorkflowTemplate> {
-    const uuid = randomUUID()
+    const uuid = uuidv7()
     const now = new Date()
     const template = {
       ...data,
@@ -277,7 +277,7 @@ function validateWorkflowTemplateVersion(
 }
 
 function validateSpaceId(spaceId: string): Either<WorkflowTemplateValidationError, string> {
-  if (!isUUIDv4(spaceId)) return E.left("workflow_template_space_id_invalid_uuid")
+  if (!isUUIDv7(spaceId)) return E.left("workflow_template_space_id_invalid_uuid")
   return E.right(spaceId)
 }
 

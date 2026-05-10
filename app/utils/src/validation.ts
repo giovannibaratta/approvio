@@ -1,11 +1,11 @@
 import {Either, left, right} from "fp-ts/Either"
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const EMAIL_REGEX = new RegExp(
   /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
 )
 
-export const isUUIDv4 = (value: string): boolean => value.match(UUID_REGEX) !== null
+export const isUUIDv7 = (value: string): boolean => value.match(UUID_REGEX) !== null
 
 export const isEmail = (value: string): boolean => EMAIL_REGEX.test(value)
 

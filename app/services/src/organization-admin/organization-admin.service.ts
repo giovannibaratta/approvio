@@ -6,7 +6,7 @@ import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
 import {TaskEither} from "fp-ts/TaskEither"
-import {isUUIDv4, isEmail, logSuccess} from "@utils"
+import {isUUIDv7, isEmail, logSuccess} from "@utils"
 import {
   ORGANIZATION_ADMIN_REPOSITORY_TOKEN,
   OrganizationAdminCreateError,
@@ -97,7 +97,7 @@ export class OrganizationAdminService {
 
     // Wrap repository calls in lambdas to preserve "this" context and discriminate identifier type
     const removeAdmin = (req: RemoveOrganizationAdminRequest) => {
-      if (isUUIDv4(req.identifier)) return this.orgAdminRepo.removeOrganizationAdminIfNotLast(req.identifier)
+      if (isUUIDv7(req.identifier)) return this.orgAdminRepo.removeOrganizationAdminIfNotLast(req.identifier)
       if (isEmail(req.identifier)) return this.orgAdminRepo.removeOrganizationAdminByEmailIfNotLast(req.identifier)
 
       return TE.left("invalid_identifier_format" as const)

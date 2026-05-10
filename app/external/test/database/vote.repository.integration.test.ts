@@ -5,7 +5,7 @@ import {PrismaClient} from "@prisma/client"
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {createMockUserInDb, createMockAgentInDb, createMockWorkflowInDb, MockConfigProvider} from "@test/mock-data"
 import "expect-more-jest"
-import {randomUUID} from "crypto"
+import {v7 as uuidv7} from "uuid"
 
 describe("VoteDbRepository Integration", () => {
   let prisma: PrismaClient
@@ -44,7 +44,7 @@ describe("VoteDbRepository Integration", () => {
       // Manually create a corrupted vote row with both userId and agentId
       await prisma.vote.create({
         data: {
-          id: randomUUID(),
+          id: uuidv7(),
           workflowId: workflow.id,
           userId: user.id,
           agentId: agent.id,

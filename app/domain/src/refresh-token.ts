@@ -5,15 +5,16 @@ import {
   getStringAsEnum,
   hasOwnProperty,
   isDecoratedWith,
-  isUUIDv4,
+  isUUIDv7,
   PrefixUnion
 } from "@utils"
 import * as E from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
-import {randomUUID} from "node:crypto"
+
 import {User} from "./user"
 import {Agent} from "./agent"
 import {EntityType} from "./entityType"
+import {v7 as uuidv7} from "uuid"
 
 /**
  * Refresh token status enum
@@ -204,9 +205,9 @@ export class RefreshTokenFactory {
   }
 
   private static generateTokenBaseProps(familyIdOverride?: string): {tokenValue: string} & RefreshTokenBase {
-    const id = randomUUID()
-    const familyId = familyIdOverride ?? randomUUID()
-    const tokenValue = randomUUID()
+    const id = uuidv7()
+    const familyId = familyIdOverride ?? uuidv7()
+    const tokenValue = uuidv7()
     const tokenHash = createSha256Hash(tokenValue)
     const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
 
@@ -229,10 +230,10 @@ export class RefreshTokenFactory {
   ): E.Either<RefreshTokenValidationError, DecoratedRefreshToken<T>> {
     if (typeof data !== "object" || data === null) return E.left("refresh_token_invalid_structure" as const)
 
-    if (!hasOwnProperty(data, "id") || typeof data.id !== "string" || !isUUIDv4(data.id))
+    if (!hasOwnProperty(data, "id") || typeof data.id !== "string" || !isUUIDv7(data.id))
       return E.left("refresh_token_invalid_id")
 
-    if (!hasOwnProperty(data, "familyId") || typeof data.familyId !== "string" || !isUUIDv4(data.familyId))
+    if (!hasOwnProperty(data, "familyId") || typeof data.familyId !== "string" || !isUUIDv7(data.familyId))
       return E.left("refresh_token_invalid_family_id")
 
     if (!hasOwnProperty(data, "tokenHash") || typeof data.tokenHash !== "string" || data.tokenHash.length === 0)
@@ -354,7 +355,7 @@ export class RefreshTokenFactory {
 
     if (data.usedAt < data.createdAt) return E.left("refresh_token_used_before_create")
 
-    if (!hasOwnProperty(data, "nextTokenId") || typeof data.nextTokenId !== "string" || !isUUIDv4(data.nextTokenId))
+    if (!hasOwnProperty(data, "nextTokenId") || typeof data.nextTokenId !== "string" || !isUUIDv7(data.nextTokenId))
       return E.left("refresh_token_invalid_next_token_id")
 
     return E.right({
@@ -402,7 +403,7 @@ export class RefreshTokenFactory {
   ): E.Either<RefreshTokenValidationError, UserProps> {
     if (typeof data !== "object" || data === null) return E.left("refresh_token_invalid_structure" as const)
 
-    if (!hasOwnProperty(data, "userId") || typeof data.userId !== "string" || !isUUIDv4(data.userId))
+    if (!hasOwnProperty(data, "userId") || typeof data.userId !== "string" || !isUUIDv7(data.userId))
       return E.left("refresh_token_invalid_user_id")
 
     return E.right({
@@ -416,7 +417,7 @@ export class RefreshTokenFactory {
   ): E.Either<RefreshTokenValidationError, AgentProps> {
     if (typeof data !== "object" || data === null) return E.left("refresh_token_invalid_structure" as const)
 
-    if (!hasOwnProperty(data, "agentId") || typeof data.agentId !== "string" || !isUUIDv4(data.agentId))
+    if (!hasOwnProperty(data, "agentId") || typeof data.agentId !== "string" || !isUUIDv7(data.agentId))
       return E.left("refresh_token_invalid_agent_id")
 
     return E.right({

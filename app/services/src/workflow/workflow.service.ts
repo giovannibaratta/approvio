@@ -12,7 +12,7 @@ import {
   WorkflowTemplateGetError,
   WorkflowTemplateRepository
 } from "../workflow-template/interfaces"
-import {isUUIDv4} from "@utils"
+import {isUUIDv7} from "@utils"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
@@ -100,7 +100,7 @@ export class WorkflowService {
     identifier: string,
     includeRef?: T
   ): TaskEither<WorkflowGetError, DecoratedWorkflow<T>> {
-    const isUuid = isUUIDv4(identifier)
+    const isUuid = isUUIDv7(identifier)
 
     const repoGetWorkflow = (value: string) =>
       isUuid
@@ -122,11 +122,11 @@ export class WorkflowService {
       ? {
           includeOnlyNonTerminalState: request.filters.includeOnlyNonTerminalState,
           workflowTemplateId:
-            request.filters.workflowTemplateIdentifier && isUUIDv4(request.filters.workflowTemplateIdentifier)
+            request.filters.workflowTemplateIdentifier && isUUIDv7(request.filters.workflowTemplateIdentifier)
               ? request.filters.workflowTemplateIdentifier
               : undefined,
           workflowTemplateName:
-            request.filters.workflowTemplateIdentifier && !isUUIDv4(request.filters.workflowTemplateIdentifier)
+            request.filters.workflowTemplateIdentifier && !isUUIDv7(request.filters.workflowTemplateIdentifier)
               ? request.filters.workflowTemplateIdentifier
               : undefined,
           includeGroups: request.filters.includeGroups

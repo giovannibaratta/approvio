@@ -11,7 +11,7 @@ import {AgentFactory, AgentWithPrivateKey} from "@domain"
 import {AgentChallengeRequest, AgentTokenRequest} from "@approvio/api"
 import {JwtService} from "@nestjs/jwt"
 
-import {constants, privateDecrypt, sign, randomUUID} from "crypto"
+import {constants, privateDecrypt, sign} from "crypto"
 import * as jose from "jose"
 import "expect-more-jest"
 import "@utils/matchers"
@@ -20,6 +20,7 @@ import {createMockRefreshTokenInDb} from "@test/mock-data"
 import {RefreshTokenStatus, GRACE_PERIOD_SECONDS} from "@domain"
 import {createSha256Hash} from "@utils"
 import {SilentLogger} from "@test/logger-helpers"
+import {v7 as uuidv7} from "uuid"
 
 describe("Agent Authentication Integration", () => {
   let app: INestApplication
@@ -522,7 +523,7 @@ describe("Agent Authentication Integration", () => {
               jwk: jwk
             })
             .setIssuedAt()
-            .setJti(randomUUID())
+            .setJti(uuidv7())
             .sign(privateKey)
         }
 
@@ -624,7 +625,7 @@ describe("Agent Authentication Integration", () => {
           // Create another active token in same family to verify revocation
           await prisma.refreshToken.create({
             data: {
-              id: randomUUID(),
+              id: uuidv7(),
               tokenHash: createSha256Hash("sibling-token"),
               familyId: familyId,
               agentId: testAgent.id,

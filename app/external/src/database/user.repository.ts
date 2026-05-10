@@ -21,7 +21,7 @@ import {mapRolesToPrisma, mapToDomainUserSummary, mapToDomainVersionedUser, mapU
 import {areAllRights, chainNullableToLeft} from "./utils"
 import {isLeft} from "fp-ts/Either"
 import * as E from "fp-ts/Either"
-import {randomUUID} from "crypto"
+import {v7 as uuidv7} from "uuid"
 
 interface Identifier {
   identifier: string
@@ -176,7 +176,7 @@ export class UserDbRepository implements UserRepository {
 
             const orgAdmin = await tx.organizationAdmin.create({
               data: {
-                id: randomUUID(),
+                id: uuidv7(),
                 email: user.email,
                 createdAt: new Date()
               }

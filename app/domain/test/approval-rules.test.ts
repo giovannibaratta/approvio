@@ -6,14 +6,15 @@ import {
   doesVotesCoverApprovalRules
 } from "@domain"
 import {unwrapRight} from "@utils/either"
-import {randomUUID} from "crypto"
+
 import "@utils/matchers"
 import {createAndRule, createGroupRequirementRule, createOrRule} from "./workflow-test-helpers"
+import {v7 as uuidv7} from "uuid"
 
 describe("ApprovalRuleFactory.validate", () => {
   describe("GROUP_REQUIREMENT", () => {
     it("validates a correct group requirement rule", () => {
-      const rule = {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID(), minCount: 2}
+      const rule = {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: uuidv7(), minCount: 2}
       const result = ApprovalRuleFactory.validate(rule)
       expect(result).toBeRight()
     })
@@ -31,13 +32,13 @@ describe("ApprovalRuleFactory.validate", () => {
     })
 
     it("fails if minCount is missing", () => {
-      const rule = {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID()}
+      const rule = {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: uuidv7()}
       const result = ApprovalRuleFactory.validate(rule)
       expect(result).toBeLeftOf("approval_rule_group_rule_invalid_min_count")
     })
 
     it("fails if minCount is not a number", () => {
-      const rule = {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID(), minCount: "2"}
+      const rule = {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: uuidv7(), minCount: "2"}
       const result = ApprovalRuleFactory.validate(rule)
       expect(result).toBeLeftOf("approval_rule_group_rule_invalid_min_count")
     })
@@ -45,7 +46,7 @@ describe("ApprovalRuleFactory.validate", () => {
     it("fails if minCount < 1", () => {
       const rule = {
         type: ApprovalRuleType.GROUP_REQUIREMENT,
-        groupId: randomUUID(),
+        groupId: uuidv7(),
         minCount: 0
       }
       const result = ApprovalRuleFactory.validate(rule)
@@ -58,8 +59,8 @@ describe("ApprovalRuleFactory.validate", () => {
       const rule = {
         type: ApprovalRuleType.AND,
         rules: [
-          {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID(), minCount: 1},
-          {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID(), minCount: 2}
+          {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: uuidv7(), minCount: 1},
+          {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: uuidv7(), minCount: 2}
         ]
       }
       const result = ApprovalRuleFactory.validate(rule)
@@ -89,8 +90,8 @@ describe("ApprovalRuleFactory.validate", () => {
       const rule = {
         type: ApprovalRuleType.OR,
         rules: [
-          {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID(), minCount: 1},
-          {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID(), minCount: 2}
+          {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: uuidv7(), minCount: 1},
+          {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: uuidv7(), minCount: 2}
         ]
       }
       const result = ApprovalRuleFactory.validate(rule)
@@ -125,7 +126,7 @@ describe("ApprovalRuleFactory.validate", () => {
             rules: [
               {
                 type: ApprovalRuleType.AND,
-                rules: [{type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID(), minCount: 1}]
+                rules: [{type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: uuidv7(), minCount: 1}]
               }
             ]
           }
@@ -143,7 +144,7 @@ describe("ApprovalRuleFactory.validate", () => {
             rules: [
               {
                 type: ApprovalRuleType.OR,
-                rules: [{type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID(), minCount: 1}]
+                rules: [{type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: uuidv7(), minCount: 1}]
               }
             ]
           }
@@ -162,7 +163,7 @@ describe("ApprovalRuleFactory.validate", () => {
             rules: [
               {
                 type: ApprovalRuleType.AND,
-                rules: [{type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID(), minCount: 1}]
+                rules: [{type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: uuidv7(), minCount: 1}]
               }
             ]
           }
@@ -178,7 +179,7 @@ describe("ApprovalRuleFactory.validate", () => {
         rules: [
           {
             type: ApprovalRuleType.OR,
-            rules: [{type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: randomUUID(), minCount: 1}]
+            rules: [{type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: uuidv7(), minCount: 1}]
           }
         ]
       }
@@ -206,10 +207,10 @@ describe("ApprovalRuleFactory.validate", () => {
 
 describe("doesVotesCoverApprovalRules", () => {
   const createApproveVote = (votedForGroups: string[], userId?: string): ApproveVote => ({
-    id: randomUUID(),
-    workflowId: randomUUID(),
+    id: uuidv7(),
+    workflowId: uuidv7(),
     voter: {
-      entityId: userId || randomUUID(),
+      entityId: userId || uuidv7(),
       entityType: "user"
     },
     type: "APPROVE",
@@ -221,8 +222,8 @@ describe("doesVotesCoverApprovalRules", () => {
     describe("good cases", () => {
       it("returns true when single user vote satisfies minCount of 1", () => {
         // Given: a group requirement rule with minCount 1 and one user vote for that group
-        const groupId = randomUUID()
-        const userId = randomUUID()
+        const groupId = uuidv7()
+        const userId = uuidv7()
         const rule = createGroupRequirementRule(groupId, 1)
         const votes = [createApproveVote([groupId], userId)]
 
@@ -235,9 +236,9 @@ describe("doesVotesCoverApprovalRules", () => {
 
       it("returns true when vote includes the required group among others", () => {
         // Given: a group requirement rule and a vote for multiple groups including the required one
-        const groupId = randomUUID()
-        const otherGroupId = randomUUID()
-        const userId = randomUUID()
+        const groupId = uuidv7()
+        const otherGroupId = uuidv7()
+        const userId = uuidv7()
         const rule = createGroupRequirementRule(groupId, 1)
         const votes = [createApproveVote([otherGroupId, groupId], userId)]
 
@@ -250,9 +251,9 @@ describe("doesVotesCoverApprovalRules", () => {
 
       it("returns true when multiple different users satisfy minCount requirement", () => {
         // Given: a group requirement rule with minCount 2 and votes from 2 different users
-        const groupId = randomUUID()
-        const userId1 = randomUUID()
-        const userId2 = randomUUID()
+        const groupId = uuidv7()
+        const userId1 = uuidv7()
+        const userId2 = uuidv7()
         const rule = createGroupRequirementRule(groupId, 2)
         const votes = [createApproveVote([groupId], userId1), createApproveVote([groupId], userId2)]
 
@@ -265,10 +266,10 @@ describe("doesVotesCoverApprovalRules", () => {
 
       it("returns true when more users than required vote for the group", () => {
         // Given: a group requirement rule with minCount 2 and votes from 3 different users
-        const groupId = randomUUID()
-        const userId1 = randomUUID()
-        const userId2 = randomUUID()
-        const userId3 = randomUUID()
+        const groupId = uuidv7()
+        const userId1 = uuidv7()
+        const userId2 = uuidv7()
+        const userId3 = uuidv7()
         const rule = createGroupRequirementRule(groupId, 2)
         const votes = [
           createApproveVote([groupId], userId1),
@@ -285,8 +286,8 @@ describe("doesVotesCoverApprovalRules", () => {
 
       it("returns true when same user votes multiple times but only counts once", () => {
         // Given: a group requirement rule with minCount 1 and multiple votes from same user
-        const groupId = randomUUID()
-        const userId = randomUUID()
+        const groupId = uuidv7()
+        const userId = uuidv7()
         const rule = createGroupRequirementRule(groupId, 1)
         const votes = [
           createApproveVote([groupId], userId),
@@ -304,7 +305,7 @@ describe("doesVotesCoverApprovalRules", () => {
     describe("bad cases", () => {
       it("returns false when no votes exist", () => {
         // Given: a group requirement rule and no votes
-        const groupId = randomUUID()
+        const groupId = uuidv7()
         const rule = createGroupRequirementRule(groupId, 1)
         const votes: ApproveVote[] = []
 
@@ -317,9 +318,9 @@ describe("doesVotesCoverApprovalRules", () => {
 
       it("returns false when vote does not include the required group", () => {
         // Given: a group requirement rule and a vote for a different group
-        const groupId = randomUUID()
-        const otherGroupId = randomUUID()
-        const userId = randomUUID()
+        const groupId = uuidv7()
+        const otherGroupId = uuidv7()
+        const userId = uuidv7()
         const rule: ApprovalRuleData = {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
           groupId,
@@ -336,9 +337,9 @@ describe("doesVotesCoverApprovalRules", () => {
 
       it("returns false when not enough unique users vote for the group", () => {
         // Given: a group requirement rule with minCount 3 and votes from only 2 users
-        const groupId = randomUUID()
-        const userId1 = randomUUID()
-        const userId2 = randomUUID()
+        const groupId = uuidv7()
+        const userId1 = uuidv7()
+        const userId2 = uuidv7()
         const rule: ApprovalRuleData = {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
           groupId,
@@ -355,8 +356,8 @@ describe("doesVotesCoverApprovalRules", () => {
 
       it("returns false when same user votes multiple times but minCount requires more users", () => {
         // Given: a group requirement rule with minCount 2 and multiple votes from same user
-        const groupId = randomUUID()
-        const userId = randomUUID()
+        const groupId = uuidv7()
+        const userId = uuidv7()
         const rule: ApprovalRuleData = {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
           groupId,
@@ -381,9 +382,9 @@ describe("doesVotesCoverApprovalRules", () => {
     describe("good cases", () => {
       it("returns true when all nested rules are satisfied", () => {
         // Given: an AND rule with two group requirements and votes that satisfy both
-        const groupId1 = randomUUID()
-        const groupId2 = randomUUID()
-        const userId = randomUUID()
+        const groupId1 = uuidv7()
+        const groupId2 = uuidv7()
+        const userId = uuidv7()
         const rule = createAndRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([groupId1, groupId2], userId)]
 
@@ -396,10 +397,10 @@ describe("doesVotesCoverApprovalRules", () => {
 
       it("returns true when all nested rules are satisfied by different votes", () => {
         // Given: an AND rule with two group requirements and separate votes for each group
-        const groupId1 = randomUUID()
-        const groupId2 = randomUUID()
-        const userId1 = randomUUID()
-        const userId2 = randomUUID()
+        const groupId1 = uuidv7()
+        const groupId2 = uuidv7()
+        const userId1 = uuidv7()
+        const userId2 = uuidv7()
         const rule = createAndRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([groupId1], userId1), createApproveVote([groupId2], userId2)]
 
@@ -414,9 +415,9 @@ describe("doesVotesCoverApprovalRules", () => {
     describe("bad cases", () => {
       it("returns false when only some nested rules are satisfied", () => {
         // Given: an AND rule with two group requirements and votes that satisfy only one
-        const groupId1 = randomUUID()
-        const groupId2 = randomUUID()
-        const userId = randomUUID()
+        const groupId1 = uuidv7()
+        const groupId2 = uuidv7()
+        const userId = uuidv7()
         const rule = createAndRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([groupId1], userId)]
 
@@ -429,10 +430,10 @@ describe("doesVotesCoverApprovalRules", () => {
 
       it("returns false when no nested rules are satisfied", () => {
         // Given: an AND rule with two group requirements and no relevant votes
-        const groupId1 = randomUUID()
-        const groupId2 = randomUUID()
-        const otherGroupId = randomUUID()
-        const userId = randomUUID()
+        const groupId1 = uuidv7()
+        const groupId2 = uuidv7()
+        const otherGroupId = uuidv7()
+        const userId = uuidv7()
         const rule = createAndRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([otherGroupId], userId)]
 
@@ -449,9 +450,9 @@ describe("doesVotesCoverApprovalRules", () => {
     describe("good cases", () => {
       it("returns true when one nested rule is satisfied", () => {
         // Given: an OR rule with two group requirements and votes that satisfy one
-        const groupId1 = randomUUID()
-        const groupId2 = randomUUID()
-        const userId = randomUUID()
+        const groupId1 = uuidv7()
+        const groupId2 = uuidv7()
+        const userId = uuidv7()
         const rule = createOrRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([groupId1], userId)]
 
@@ -464,9 +465,9 @@ describe("doesVotesCoverApprovalRules", () => {
 
       it("returns true when all nested rules are satisfied", () => {
         // Given: an OR rule with two group requirements and votes that satisfy both
-        const groupId1 = randomUUID()
-        const groupId2 = randomUUID()
-        const userId = randomUUID()
+        const groupId1 = uuidv7()
+        const groupId2 = uuidv7()
+        const userId = uuidv7()
         const rule = createOrRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([groupId1, groupId2], userId)]
 
@@ -479,9 +480,9 @@ describe("doesVotesCoverApprovalRules", () => {
 
       it("returns true when the second nested rule is satisfied", () => {
         // Given: an OR rule with two group requirements and votes that satisfy the second one
-        const groupId1 = randomUUID()
-        const groupId2 = randomUUID()
-        const userId = randomUUID()
+        const groupId1 = uuidv7()
+        const groupId2 = uuidv7()
+        const userId = uuidv7()
         const rule = createOrRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([groupId2], userId)]
 
@@ -496,10 +497,10 @@ describe("doesVotesCoverApprovalRules", () => {
     describe("bad cases", () => {
       it("returns false when no nested rules are satisfied", () => {
         // Given: an OR rule with two group requirements and no relevant votes
-        const groupId1 = randomUUID()
-        const groupId2 = randomUUID()
-        const otherGroupId = randomUUID()
-        const userId = randomUUID()
+        const groupId1 = uuidv7()
+        const groupId2 = uuidv7()
+        const otherGroupId = uuidv7()
+        const userId = uuidv7()
         const rule = createOrRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)])
         const votes = [createApproveVote([otherGroupId], userId)]
 
@@ -515,10 +516,10 @@ describe("doesVotesCoverApprovalRules", () => {
   describe("complex nested rules", () => {
     it("handles nested AND within OR correctly", () => {
       // Given: an OR rule containing an AND rule and a simple group requirement
-      const groupId1 = randomUUID()
-      const groupId2 = randomUUID()
-      const groupId3 = randomUUID()
-      const userId = randomUUID()
+      const groupId1 = uuidv7()
+      const groupId2 = uuidv7()
+      const groupId3 = uuidv7()
+      const userId = uuidv7()
       const rule = createOrRule([
         createAndRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)]),
         createGroupRequirementRule(groupId3, 1)
@@ -534,10 +535,10 @@ describe("doesVotesCoverApprovalRules", () => {
 
     it("handles nested OR within AND correctly", () => {
       // Given: an AND rule containing an OR rule and a simple group requirement
-      const groupId1 = randomUUID()
-      const groupId2 = randomUUID()
-      const groupId3 = randomUUID()
-      const userId = randomUUID()
+      const groupId1 = uuidv7()
+      const groupId2 = uuidv7()
+      const groupId3 = uuidv7()
+      const userId = uuidv7()
       const rule = createAndRule([
         createOrRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)]),
         createGroupRequirementRule(groupId3, 1)
@@ -553,10 +554,10 @@ describe("doesVotesCoverApprovalRules", () => {
 
     it("returns false for complex nested rules when not all conditions are met", () => {
       // Given: an AND rule containing an OR rule and a simple group requirement
-      const groupId1 = randomUUID()
-      const groupId2 = randomUUID()
-      const groupId3 = randomUUID()
-      const userId = randomUUID()
+      const groupId1 = uuidv7()
+      const groupId2 = uuidv7()
+      const groupId3 = uuidv7()
+      const userId = uuidv7()
       const rule = createAndRule([
         createOrRule([createGroupRequirementRule(groupId1, 1), createGroupRequirementRule(groupId2, 1)]),
         createGroupRequirementRule(groupId3, 1)
@@ -572,11 +573,11 @@ describe("doesVotesCoverApprovalRules", () => {
 
     it("handles complex minCount requirements with multiple users", () => {
       // Given: an AND rule where one group needs 2 users and another needs 1 user
-      const groupId1 = randomUUID()
-      const groupId2 = randomUUID()
-      const userId1 = randomUUID()
-      const userId2 = randomUUID()
-      const userId3 = randomUUID()
+      const groupId1 = uuidv7()
+      const groupId2 = uuidv7()
+      const userId1 = uuidv7()
+      const userId2 = uuidv7()
+      const userId3 = uuidv7()
       const rule = createAndRule([createGroupRequirementRule(groupId1, 2), createGroupRequirementRule(groupId2, 1)])
       const votes = [
         createApproveVote([groupId1], userId1),
@@ -593,11 +594,11 @@ describe("doesVotesCoverApprovalRules", () => {
 
     it("fails when minCount requirement not met in complex nested structure", () => {
       // Given: an AND rule where one group needs 3 users but only 2 vote
-      const groupId1 = randomUUID()
-      const groupId2 = randomUUID()
-      const userId1 = randomUUID()
-      const userId2 = randomUUID()
-      const userId3 = randomUUID()
+      const groupId1 = uuidv7()
+      const groupId2 = uuidv7()
+      const userId1 = uuidv7()
+      const userId2 = uuidv7()
+      const userId3 = uuidv7()
       const rule = createAndRule([createGroupRequirementRule(groupId1, 3), createGroupRequirementRule(groupId2, 1)])
       const votes = [
         createApproveVote([groupId1], userId1),

@@ -2,7 +2,6 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {INestApplication} from "@nestjs/common"
 import * as request from "supertest"
 import {AppModule} from "@app/app.module"
-import * as crypto from "crypto"
 import {DatabaseClient} from "@external/database"
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {ConfigProvider} from "@external/config"
@@ -11,6 +10,7 @@ import {PrismaClient} from "@prisma/client"
 import "@utils/matchers"
 import {simulateOidcAuthorization, OidcMockUser} from "@test/oidc-test-helpers"
 import "expect-more-jest"
+import {v7 as uuidv7} from "uuid"
 
 /**
  * ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -72,7 +72,7 @@ describe("OIDC Auto-Registration Integration", () => {
 
       // Given: OIDC mock user that doesn't exist in local database
       const uniqueId = Date.now().toString()
-      const uuid = crypto.randomUUID()
+      const uuid = uuidv7()
       const userEmail = `first-user-${uniqueId}@example.com`
       const displayName = "First Bootstrap User"
 
@@ -132,7 +132,7 @@ describe("OIDC Auto-Registration Integration", () => {
       // Given: First user already exists as organization admin
       const firstUser = await prisma.user.create({
         data: {
-          id: crypto.randomUUID(),
+          id: uuidv7(),
           email: "existing-admin@example.com",
           displayName: "Existing Admin",
           createdAt: new Date(),
@@ -141,7 +141,7 @@ describe("OIDC Auto-Registration Integration", () => {
       })
       await prisma.organizationAdmin.create({
         data: {
-          id: crypto.randomUUID(),
+          id: uuidv7(),
           email: firstUser.email,
           createdAt: new Date()
         }
@@ -149,7 +149,7 @@ describe("OIDC Auto-Registration Integration", () => {
 
       // Given: Second OIDC user that doesn't exist in local database
       const uniqueId = Date.now().toString()
-      const uuid = crypto.randomUUID()
+      const uuid = uuidv7()
       const userEmail = `second-user-${uniqueId}@example.com`
       const displayName = "Second Regular User"
 
@@ -213,7 +213,7 @@ describe("OIDC Auto-Registration Integration", () => {
 
       const existingUser = await prisma.user.create({
         data: {
-          id: crypto.randomUUID(),
+          id: uuidv7(),
           email: userEmail,
           displayName: displayName,
           createdAt: new Date(),
@@ -223,7 +223,7 @@ describe("OIDC Auto-Registration Integration", () => {
 
       // Given: OIDC mock user with same email as existing user
       const uniqueId = Date.now().toString()
-      const uuid = crypto.randomUUID()
+      const uuid = uuidv7()
 
       const testUser: OidcMockUser = {
         SubjectId: uuid,

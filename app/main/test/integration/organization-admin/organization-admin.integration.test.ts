@@ -13,7 +13,7 @@ import {NestApplication} from "@nestjs/core"
 import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient} from "@prisma/client"
-import {randomUUID} from "crypto"
+
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {createDomainMockUserInDb, createMockUserInDb, MockConfigProvider} from "@test/mock-data"
 import {get, post, del} from "@test/requests"
@@ -21,6 +21,7 @@ import {UserWithToken} from "@test/types"
 import {TokenPayloadBuilder} from "@services"
 import "expect-more-jest"
 import "@utils/matchers"
+import {v7 as uuidv7} from "uuid"
 
 describe("Organization Admin API", () => {
   let app: NestApplication
@@ -402,7 +403,7 @@ describe("Organization Admin API", () => {
 
       it("should return 204 for idempotent removal (admin doesn't exist)", async () => {
         // Given
-        const nonExistentId = randomUUID()
+        const nonExistentId = uuidv7()
         const requestBody: OrganizationAdminRemove = {
           userId: nonExistentId
         }

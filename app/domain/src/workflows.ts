@@ -1,7 +1,6 @@
-import {randomUUID} from "crypto"
 import * as E from "fp-ts/Either"
 import {Either, isLeft, left, right} from "fp-ts/Either"
-import {DecorableEntity, getStringAsEnum, isDecoratedWith, isUUIDv4, PrefixUnion} from "@utils"
+import {DecorableEntity, getStringAsEnum, isDecoratedWith, isUUIDv7, PrefixUnion} from "@utils"
 import {
   MembershipWithGroupRef,
   Vote,
@@ -11,6 +10,7 @@ import {
   Versioned
 } from "@domain"
 import {WorkflowTemplate, WorkflowTemplateCantVoteReason} from "./workflow-templates"
+import {v7 as uuidv7} from "uuid"
 
 export const WORKFLOW_NAME_MAX_LENGTH = 512
 export const WORKFLOW_DESCRIPTION_MAX_LENGTH = 2048
@@ -79,7 +79,7 @@ export class WorkflowFactory {
       "id" | "createdAt" | "updatedAt" | "status" | "recalculationRequired"
     >
   ): Either<WorkflowValidationError, Workflow> {
-    const uuid = randomUUID()
+    const uuid = uuidv7()
     const now = new Date()
     const workflow = {
       ...data,
@@ -107,7 +107,7 @@ export class WorkflowFactory {
     const descriptionValidation = data.description ? validateWorkflowDescription(data.description) : right(undefined)
     const statusValidation = validateWorkflowStatus(data.status)
 
-    if (!isUUIDv4(data.workflowTemplateId)) return left("workflow_workflow_template_id_invalid_uuid")
+    if (!isUUIDv7(data.workflowTemplateId)) return left("workflow_workflow_template_id_invalid_uuid")
     if (isLeft(nameValidation)) return nameValidation
     if (isLeft(descriptionValidation)) return descriptionValidation
     if (data.createdAt > data.updatedAt) return left("workflow_update_before_create")

@@ -2,7 +2,6 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {INestApplication} from "@nestjs/common"
 import * as request from "supertest"
 import {AppModule} from "@app/app.module"
-import * as crypto from "crypto"
 import {DatabaseClient} from "@external/database"
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {ConfigProvider} from "@external/config"
@@ -11,6 +10,7 @@ import {PrismaClient} from "@prisma/client"
 import "@utils/matchers"
 import {simulateOidcAuthorization, OidcMockUser} from "@test/oidc-test-helpers"
 import "expect-more-jest"
+import {v7 as uuidv7} from "uuid"
 
 /**
  * ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -99,7 +99,7 @@ describe("OIDC Flow Integration", () => {
     // Create test user data for real OIDC server creation
     const uniqueId = Date.now().toString()
     // Generate a proper UUID v4 format
-    const uuid = crypto.randomUUID()
+    const uuid = uuidv7()
     const userEmail = `test-${uniqueId}@localhost.com`
     const displayName = "Test User"
 

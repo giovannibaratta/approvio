@@ -1,5 +1,6 @@
 import {QuotaFactory, QuotaIdentifierFactory, isQuotaTypeApplicableTo} from "../src/quota"
 import {Chance} from "chance"
+import {v7 as uuidv7} from "uuid"
 
 const chance = Chance()
 
@@ -22,7 +23,7 @@ describe("QuotaIdentifierFactory", () => {
     describe("good cases", () => {
       it("should validate a valid identifier with exact node type match", () => {
         // Given
-        const identifier = chance.guid()
+        const identifier = uuidv7()
         const data = {
           node: {type: "Space", identifier},
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE"
@@ -38,7 +39,7 @@ describe("QuotaIdentifierFactory", () => {
       it("should validate an identifier where node is a parent of the metric's base type", () => {
         // Given
         const data = {
-          node: {type: "Org", identifier: chance.guid()},
+          node: {type: "Org", identifier: uuidv7()},
           // MAX_WORKFLOW_TEMPLATES_PER_SPACE is a metric defined for Space, Org is parent of Space
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE"
         }
@@ -83,7 +84,7 @@ describe("QuotaIdentifierFactory", () => {
       it("should fail if node type is invalid", () => {
         // Given
         const data = {
-          node: {type: "InvalidType", identifier: chance.guid()},
+          node: {type: "InvalidType", identifier: uuidv7()},
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE"
         }
 
@@ -111,7 +112,7 @@ describe("QuotaIdentifierFactory", () => {
       it("should fail if metric is not supported", () => {
         // Given
         const data = {
-          node: {type: "Space", identifier: chance.guid()},
+          node: {type: "Space", identifier: uuidv7()},
           quotaType: "INVALID_METRIC"
         }
 
@@ -125,7 +126,7 @@ describe("QuotaIdentifierFactory", () => {
       it("should fail if metric is not supported at node type", () => {
         // Given
         const data = {
-          node: {type: "User", identifier: chance.guid()},
+          node: {type: "User", identifier: uuidv7()},
           // MAX_WORKFLOW_TEMPLATES_PER_SPACE is for Space, User is NOT parent of Space
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE"
         }
@@ -156,7 +157,7 @@ describe("QuotaIdentifierFactory", () => {
   describe("fromNodeAndMetric", () => {
     it("should create a valid identifier", () => {
       // Given
-      const node = {type: "Org" as const, identifier: chance.guid()}
+      const node = {type: "Org" as const, identifier: uuidv7()}
       const metric = "MAX_GROUPS"
 
       // When
@@ -169,9 +170,9 @@ describe("QuotaIdentifierFactory", () => {
 })
 
 describe("QuotaFactory", () => {
-  const validNode = {type: "Org", identifier: chance.guid()}
+  const validNode = {type: "Org", identifier: uuidv7()}
   const validQuotaType = "MAX_GROUPS"
-  const validId = chance.guid()
+  const validId = uuidv7()
   const now = chance.date()
 
   describe("validate", () => {
@@ -211,7 +212,7 @@ describe("QuotaFactory", () => {
         // Given
         const data = {
           id: validId,
-          node: {type: "User", identifier: chance.guid()},
+          node: {type: "User", identifier: uuidv7()},
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE", // Unsupported
           limit: 10,
           createdAt: now,

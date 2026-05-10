@@ -15,7 +15,7 @@ import {
   WorkflowTemplate as PrismaWorkflowTemplate,
   Agent as PrismaAgent
 } from "@prisma/client"
-import {randomUUID} from "crypto"
+
 import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "@test/database"
 import {
   createMockAgentInDb,
@@ -31,6 +31,7 @@ import {isLeft} from "fp-ts/Either"
 import {getQueueToken} from "@nestjs/bull"
 import {WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"
 import {Queue} from "bull"
+import {v7 as uuidv7} from "uuid"
 
 type AgentWithToken = {
   agent: PrismaAgent
@@ -263,7 +264,7 @@ describe("Agent Workflow Voting API", () => {
 
       it("should return 400 BAD_REQUEST for non-existent workflow", async () => {
         // Given: non-existent workflow ID
-        const nonExistentWorkflowId = randomUUID()
+        const nonExistentWorkflowId = uuidv7()
 
         // When: agent checks voting eligibility for non-existent workflow
         const response = await get(app, `${endpoint}/${nonExistentWorkflowId}/canVote`)
@@ -413,7 +414,7 @@ describe("Agent Workflow Voting API", () => {
 
       it("should return 400 BAD_REQUEST for non-existent workflow", async () => {
         // Given: non-existent workflow ID and vote request
-        const nonExistentWorkflowId = randomUUID()
+        const nonExistentWorkflowId = uuidv7()
         const requestBody: WorkflowVoteRequestApi = {
           voteType: {
             type: "APPROVE",

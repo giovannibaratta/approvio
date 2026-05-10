@@ -1,4 +1,3 @@
-import {randomUUID} from "crypto"
 import {
   UnconstrainedBoundRole,
   GroupPermission,
@@ -10,23 +9,24 @@ import {
   OrgScope
 } from "../src/role"
 import {RolePermissionChecker} from "../src/permission-checker"
+import {v7 as uuidv7} from "uuid"
 
 // Test helper functions
 const createOrgScope = (): OrgScope => ({
   type: "org"
 })
 
-const createSpaceScope = (spaceId: string = randomUUID()): SpaceScope => ({
+const createSpaceScope = (spaceId: string = uuidv7()): SpaceScope => ({
   type: "space",
   spaceId
 })
 
-const createGroupScope = (groupId: string = randomUUID()): GroupScope => ({
+const createGroupScope = (groupId: string = uuidv7()): GroupScope => ({
   type: "group",
   groupId
 })
 
-const createWorkflowTemplateScope = (workflowTemplateId: string = randomUUID()): WorkflowTemplateScope => ({
+const createWorkflowTemplateScope = (workflowTemplateId: string = uuidv7()): WorkflowTemplateScope => ({
   type: "workflow_template",
   workflowTemplateId
 })
@@ -78,12 +78,12 @@ const createWorkflowRole = (
 })
 
 describe("RolePermissionChecker", () => {
-  const testSpaceId = randomUUID()
-  const testGroupId = randomUUID()
-  const testWorkflowTemplateId = randomUUID()
-  const otherSpaceId = randomUUID()
-  const otherGroupId = randomUUID()
-  const otherWorkflowTemplateId = randomUUID()
+  const testSpaceId = uuidv7()
+  const testGroupId = uuidv7()
+  const testWorkflowTemplateId = uuidv7()
+  const otherSpaceId = uuidv7()
+  const otherGroupId = uuidv7()
+  const otherWorkflowTemplateId = uuidv7()
 
   describe("Group Permission Checking", () => {
     describe("good cases", () => {

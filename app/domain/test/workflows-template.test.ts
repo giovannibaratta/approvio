@@ -7,9 +7,10 @@ import {
   BoundRole
 } from "@domain"
 import {createMembership, createGroupRequirementRule, createAndRule, createOrRule} from "./workflow-test-helpers"
-import {randomUUID} from "crypto"
+
 import {isRight} from "fp-ts/Either"
 import "@utils/matchers"
+import {v7 as uuidv7} from "uuid"
 
 /**
  * Helper function to create a workflow template instance for testing.
@@ -20,7 +21,7 @@ const getWorkflowTemplate = (rule: ApprovalRule): WorkflowTemplate => {
     description: "A test template",
     approvalRule: rule,
     actions: [],
-    spaceId: randomUUID()
+    spaceId: uuidv7()
   })
 
   if (!isRight(result)) {
@@ -40,10 +41,10 @@ const createVoterRole = (workflowTemplateId: string): BoundRole<"workflow_templa
 }
 
 describe("WorkflowTemplate - canVote method", () => {
-  const group1Id = randomUUID()
-  const group2Id = randomUUID()
-  const group3Id = randomUUID()
-  const unrelatedGroupId = randomUUID()
+  const group1Id = uuidv7()
+  const group2Id = uuidv7()
+  const group3Id = uuidv7()
+  const unrelatedGroupId = uuidv7()
 
   const membershipG1Approver = createMembership(group1Id, "user-1")
   const membershipG1Admin = createMembership(group1Id, "user-1")

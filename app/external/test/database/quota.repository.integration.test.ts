@@ -8,6 +8,7 @@ import {QuotaFactory, SupportedQuotaType} from "@domain"
 import {DEFAULT_ORG_ID} from "@services"
 import {unwrapRight} from "@utils/either"
 import "@utils/matchers"
+import {v7 as uuidv7} from "uuid"
 
 describe("QuotaDbRepository Integration", () => {
   let prisma: PrismaClient
@@ -46,7 +47,7 @@ describe("QuotaDbRepository Integration", () => {
       await repository.createQuota(quota)()
 
       // When: creating a quota with a different ID but same (scope, quotaType, targetId)
-      const duplicateQuota = {...quota, id: "00000000-0000-4000-8000-000000000000"}
+      const duplicateQuota = {...quota, id: uuidv7()}
       const duplicateResult = await repository.createQuota(duplicateQuota)()
 
       // Expect

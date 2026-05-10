@@ -1,8 +1,9 @@
 import {Either, left, right, isLeft} from "fp-ts/Either"
-import {randomUUID} from "crypto"
-import {getStringAsEnum, isEmail, isUUIDv4, PrefixUnion} from "@utils"
+
+import {getStringAsEnum, isEmail, isUUIDv7, PrefixUnion} from "@utils"
 import {UnconstrainedBoundRole, RoleFactory, RoleValidationError, MAX_ROLES_PER_ENTITY} from "./role"
 import {Versioned} from "./shared"
+import {v7 as uuidv7} from "uuid"
 
 export const DISPLAY_NAME_MAX_LENGTH = 255
 export const EMAIL_MAX_LENGTH = 255
@@ -97,7 +98,7 @@ export class UserFactory {
   static newUser(
     data: Omit<User, "id" | "createdAt" | "orgRole" | "roles"> & {orgRole: string}
   ): Either<UserValidationError, User> {
-    const uuid = randomUUID()
+    const uuid = uuidv7()
     const now = new Date()
 
     const validatedOrgRole = validateOrgRole(data.orgRole)
@@ -128,7 +129,7 @@ export class UserFactory {
     },
     isFirstUser: boolean
   ): Either<UserValidationError, User> {
-    const uuid = randomUUID()
+    const uuid = uuidv7()
     const now = new Date()
     const orgRole = isFirstUser ? OrgRole.ADMIN : OrgRole.MEMBER
 
@@ -312,6 +313,6 @@ function validateOrgRole(orgRole: string): Either<UserValidationError, OrgRole> 
 }
 
 function validateId(id: string): Either<UserSummaryValidationError, string> {
-  if (!isUUIDv4(id)) return left("user_invalid_uuid")
+  if (!isUUIDv7(id)) return left("user_invalid_uuid")
   return right(id)
 }

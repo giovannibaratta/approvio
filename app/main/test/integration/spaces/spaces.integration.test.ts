@@ -8,12 +8,13 @@ import {NestApplication} from "@nestjs/core"
 import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient} from "@prisma/client"
-import {randomUUID} from "crypto"
+
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {createDomainMockUserInDb, MockConfigProvider, createMockSpaceInDb} from "@test/mock-data"
 import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import {TokenPayloadBuilder} from "@services"
+import {v7 as uuidv7} from "uuid"
 
 describe("Spaces API", () => {
   let app: NestApplication
@@ -375,7 +376,7 @@ describe("Spaces API", () => {
 
       it("should return 404 NOT_FOUND (SPACE_NOT_FOUND) when fetching non-existent ID", async () => {
         // Given
-        const nonExistentId = randomUUID()
+        const nonExistentId = uuidv7()
 
         // When
         const response = await get(app, `${endpoint}/${nonExistentId}`).withToken(orgAdminUser.token).build()
@@ -465,7 +466,7 @@ describe("Spaces API", () => {
 
       it("should return 404 NOT_FOUND (SPACE_NOT_FOUND) when deleting non-existent space", async () => {
         // Given
-        const nonExistentId = randomUUID()
+        const nonExistentId = uuidv7()
 
         // When
         const response = await del(app, `${endpoint}/${nonExistentId}`).withToken(orgAdminUser.token).build()

@@ -15,7 +15,7 @@ import {Either, right, left, chain} from "fp-ts/Either"
 import * as E from "fp-ts/Either"
 import * as A from "fp-ts/Array"
 import {pipe} from "fp-ts/function"
-import {PrefixUnion, isUUIDv4} from "@utils"
+import {PrefixUnion, isUUIDv7} from "@utils"
 
 /** Map the domain model to the API model */
 export function mapApprovalRuleDataToApi(rule: ApprovalRuleData): ApprovalRuleApi {
@@ -207,6 +207,6 @@ function validateWorkflowTemplateScope(
 
 function validateScopeUuidField(fieldValue: unknown): Either<RoleOperationChangeValidationError, string> {
   if (typeof fieldValue !== "string") return left("request_scope_id_missing")
-  if (!isUUIDv4(fieldValue)) return left("request_scope_id_invalid_uuid")
+  if (!isUUIDv7(fieldValue)) return left("request_scope_id_invalid_uuid")
   return right(fieldValue)
 }

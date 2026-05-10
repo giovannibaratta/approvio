@@ -1,10 +1,11 @@
 import {Either, left, right} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 import * as E from "fp-ts/Either"
-import {KeyPairSyncResult, randomUUID} from "crypto"
-import {isUUIDv4, PrefixUnion, DecorableEntity, isDecoratedWith} from "@utils"
+import {KeyPairSyncResult} from "crypto"
+import {isUUIDv7, PrefixUnion, DecorableEntity, isDecoratedWith} from "@utils"
 import {generateKeyPairSync} from "crypto"
 import {UnconstrainedBoundRole, RoleFactory, RoleValidationError, MAX_ROLES_PER_ENTITY} from "./role"
+import {v7 as uuidv7} from "uuid"
 
 export const AGENT_NAME_MIN_LENGTH = 1
 export const AGENT_NAME_MAX_LENGTH = 1024
@@ -72,7 +73,7 @@ export class AgentFactory {
       E.bindW("keyPair", () => this.generateKeyPair()),
       E.bindW("validatedAgent", ({validatedData, keyPair}) =>
         AgentFactory.validate({
-          id: randomUUID(),
+          id: uuidv7(),
           agentName: validatedData.agentName,
           createdAt: new Date(),
           roles: [],
@@ -213,14 +214,14 @@ export class AgentFactory {
   }
 
   private static validateId(id: string): Either<IdValidationError, string> {
-    if (!isUUIDv4(id)) return left("agent_invalid_uuid")
+    if (!isUUIDv7(id)) return left("agent_invalid_uuid")
     return right(id)
   }
 
   private static validateAgentName(agentName: string): Either<AgentNameValidationError, string> {
     if (!agentName || agentName.trim().length === 0) return left("agent_name_empty")
     if (agentName.length > AGENT_NAME_MAX_LENGTH) return left("agent_name_too_long")
-    if (isUUIDv4(agentName)) return left("agent_name_cannot_be_uuid")
+    if (isUUIDv7(agentName)) return left("agent_name_cannot_be_uuid")
     return right(agentName)
   }
 

@@ -6,7 +6,7 @@
 import axios, {AxiosInstance, isAxiosError} from "axios"
 import {PrismaClient} from "../../generated/prisma/client"
 import {PrismaPg} from "@prisma/adapter-pg"
-import * as crypto from "crypto"
+import {v7 as uuidv7} from "uuid"
 
 // Configuration
 const IDP_URL = process.env.IDP_URL || "http://localhost:4010"
@@ -195,7 +195,7 @@ async function ensureUserInDb(email: string, displayName: string, isAdmin: boole
     console.log(`Creating user ${email} in DB...`)
     user = await prisma.user.create({
       data: {
-        id: crypto.randomUUID(),
+        id: uuidv7(),
         email,
         displayName,
         createdAt: new Date(),
@@ -211,7 +211,7 @@ async function ensureUserInDb(email: string, displayName: string, isAdmin: boole
       if (!orgAdmin) {
         await prisma.organizationAdmin.create({
           data: {
-            id: crypto.randomUUID(),
+            id: uuidv7(),
             email,
             createdAt: new Date()
           }

@@ -18,7 +18,7 @@ import {Versioned} from "@domain"
 import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
 import {AgentRepository, AGENT_REPOSITORY_TOKEN} from "@services/agent/interfaces"
 import {QuotaService} from "@services/quota/quota.service"
-import {isUUIDv4, logSuccess} from "@utils"
+import {isUUIDv7, logSuccess} from "@utils"
 import * as A from "fp-ts/Array"
 import {pipe} from "fp-ts/function"
 import {isLeft} from "fp-ts/Either"
@@ -76,7 +76,7 @@ export class GroupMembershipService {
     const validateRequest = (
       req: GetGroupWithMembershipRequest
     ): TE.TaskEither<"request_invalid_group_uuid", GetGroupWithMembershipRequest> => {
-      if (!isUUIDv4(req.groupId)) return TE.left("request_invalid_group_uuid" as const)
+      if (!isUUIDv7(req.groupId)) return TE.left("request_invalid_group_uuid" as const)
       return TE.right(req)
     }
 
@@ -108,8 +108,8 @@ export class GroupMembershipService {
     const validateRequest = (
       req: AddMembersToGroupRequest
     ): TE.TaskEither<"request_invalid_group_uuid" | "request_invalid_entity_uuid", AddMembersToGroupRequest> => {
-      if (!isUUIDv4(req.groupId)) return TE.left("request_invalid_group_uuid" as const)
-      if (req.members.some(m => !isUUIDv4(m.entityId))) return TE.left("request_invalid_entity_uuid")
+      if (!isUUIDv7(req.groupId)) return TE.left("request_invalid_group_uuid" as const)
+      if (req.members.some(m => !isUUIDv7(m.entityId))) return TE.left("request_invalid_entity_uuid")
       return TE.right(req)
     }
 
@@ -182,8 +182,8 @@ export class GroupMembershipService {
     const validateRequest = (
       req: RemoveMembersFromGroupRequest
     ): TE.TaskEither<"request_invalid_group_uuid" | "request_invalid_entity_uuid", RemoveMembersFromGroupRequest> => {
-      if (!isUUIDv4(req.groupId)) return TE.left("request_invalid_group_uuid" as const)
-      if (req.members.some(m => !isUUIDv4(m.entityId))) return TE.left("request_invalid_entity_uuid")
+      if (!isUUIDv7(req.groupId)) return TE.left("request_invalid_group_uuid" as const)
+      if (req.members.some(m => !isUUIDv7(m.entityId))) return TE.left("request_invalid_entity_uuid")
       return TE.right(req)
     }
 

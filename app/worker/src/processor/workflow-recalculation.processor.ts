@@ -6,7 +6,7 @@ import {RecalculationJobData} from "@external/queue/queue.provider"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"
-import {isUUIDv4} from "@utils"
+import {isUUIDv7} from "@utils"
 
 @Processor(WORKFLOW_STATUS_RECALCULATION_QUEUE)
 export class WorkflowRecalculationProcessor {
@@ -22,7 +22,7 @@ export class WorkflowRecalculationProcessor {
 
     const attempt = job.attemptsMade + 1
 
-    if (!isUUIDv4(workflowId)) {
+    if (!isUUIDv7(workflowId)) {
       Logger.error(`Invalid workflow ID format: ${workflowId}`, {
         workflowId,
         attempt

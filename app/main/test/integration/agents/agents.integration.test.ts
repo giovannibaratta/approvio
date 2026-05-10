@@ -1,3 +1,4 @@
+import {v7 as uuidv7} from "uuid"
 import {Test, TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
 import {NestApplication} from "@nestjs/core"
@@ -95,7 +96,7 @@ describe("Agents API", () => {
 
         // Expect: Valid UUID for agent ID
         expect(response.body.agentId).toMatch(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[17][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
         )
 
         // Expect: Keys are base64 encoded
@@ -192,7 +193,7 @@ describe("Agents API", () => {
         const agentName = "duplicate-agent"
         await prisma.agent.create({
           data: {
-            id: "550e8400-e29b-41d4-a716-446655440000",
+            id: uuidv7(),
             agentName,
             base64PublicKey: "dGVzdC1wdWJsaWMta2V5",
             createdAt: new Date(),
@@ -226,7 +227,7 @@ describe("Agents API", () => {
       it("should reject agent name that is a UUID", async () => {
         // Given: Agent name that is a valid UUID
         const request: AgentRegistrationRequest = {
-          agentName: "550e8400-e29b-41d4-a716-446655440000"
+          agentName: uuidv7()
         }
 
         // When: Posting to registration endpoint as admin
@@ -279,7 +280,7 @@ describe("Agents API", () => {
 
     beforeEach(async () => {
       existingAgent = {
-        id: chance.guid(),
+        id: uuidv7(),
         agentName: chance.word()
       }
       await prisma.agent.create({
@@ -332,7 +333,7 @@ describe("Agents API", () => {
     describe("Bad cases", () => {
       it("should return 404 NOT FOUND if agent does not exist (by ID)", async () => {
         // When: Fetching non-existent agent by ID
-        const response = await get(app, `/${AGENTS_ENDPOINT_ROOT}/${chance.guid()}`)
+        const response = await get(app, `/${AGENTS_ENDPOINT_ROOT}/${uuidv7()}`)
           .withToken(orgAdminUser.token)
           .build()
           .send()
