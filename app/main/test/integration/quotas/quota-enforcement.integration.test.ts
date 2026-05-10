@@ -170,7 +170,7 @@ describe("Quota Enforcement API Integration", () => {
         .withToken(orgAdminUser.token)
         .build()
         .send({
-          roles: [{roleName: "OrgWideSpaceReadOnly", scope: {type: "org"}}]
+          roles: [{roleName: "OrgWideWorkflowTemplateReadOnly", scope: {type: "org"}}]
         })
 
       expect(resp2).toHaveStatusCode(HttpStatus.FORBIDDEN)

@@ -129,12 +129,17 @@ export class GroupMembershipService {
 
       if (!groupManager.canUpdateMembership(requestor)) return TE.left("requestor_not_authorized" as const)
 
+      const initialCount = groupManager.getMemberships().length
+
       // Check if any member to add is already in the group
       for (const membership of membershipsToAdd) {
         const addResult = groupManager.addMembership(membership)
         if (isLeft(addResult)) return TE.left(addResult.left)
       }
-      return TE.right(data.group)
+
+      const newCount = groupManager.getMemberships().length
+
+      return TE.right({group: data.group, addedMembershipsCount: newCount - initialCount})
     }
 
     const persistMemberships = (group: Versioned<Group>, membershipsToAdd: readonly Readonly<Membership>[]) =>
@@ -143,32 +148,32 @@ export class GroupMembershipService {
         memberships: membershipsToAdd
       })
 
-    // TODO: Does this take into account the deduplication ? If not we should do the check
-    // after computing the memberships in the domain. The isQuotaAvailable might not support this
-    // since it wants an added quota, (we might compute the diff between the new  membership length - the old length)
-    const checkQuota = (request: AddMembersToGroupRequest) =>
-      pipe(
+    const checkQuota = (request: AddMembersToGroupRequest, addedMembershipsCount: number) => {
+      return pipe(
         this.quotaService.isQuotaAvailable(
           {type: "Group", identifier: request.groupId},
           "MAX_ENTITIES_PER_GROUP",
-          request.members.length
+          addedMembershipsCount
         ),
         TE.mapLeft(() => "quota_check_error" as const),
         TE.chainW(isAvailable => (isAvailable ? TE.right(undefined) : TE.left("quota_exceeded" as const)))
       )
+    }
 
     return pipe(
       TE.Do,
       TE.bindW("request", () => TE.right(request)),
       TE.bindW("validatedRequest", ({request}) => validateRequest(request)),
-      TE.chainFirstW(({validatedRequest}) => checkQuota(validatedRequest)),
       TE.bindW("validatedRequestor", () => TE.fromEither(validateUserEntity(request.requestor))),
       TE.bindW("membershipsToAdd", ({request}) => this.fetchEntitiesAndCreateMemberships(request.members)),
       TE.bindW("groupMembershipData", ({request}) => fetchGroupMembershipData(request)),
-      TE.bindW("group", ({validatedRequestor, groupMembershipData, membershipsToAdd}) =>
+      TE.bindW("simulationResult", ({validatedRequestor, groupMembershipData, membershipsToAdd}) =>
         simulateAddMemberships(validatedRequestor, groupMembershipData, membershipsToAdd)
       ),
-      TE.chainW(({group, membershipsToAdd}) => persistMemberships(group, membershipsToAdd)),
+      TE.chainFirstW(({validatedRequest, simulationResult}) =>
+        checkQuota(validatedRequest, simulationResult.addedMembershipsCount)
+      ),
+      TE.chainW(({simulationResult, membershipsToAdd}) => persistMemberships(simulationResult.group, membershipsToAdd)),
       logSuccess("Members added to group", "GroupMembershipService", () => ({groupId: request.groupId}))
     )
   }

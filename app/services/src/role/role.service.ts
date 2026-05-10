@@ -151,24 +151,22 @@ export class RoleService {
       )
     }
 
-    // TODO: Does this take into account the deduplication ? If not we should do the check
-    // after computing the roles in the domain. The isQuotaAvailable might not support this
-    // since it wants an added quota, (we might compute the diff between the new role length - the current roles length)
-    const checkQuota = (request: AssignRolesToUserRequest) =>
-      pipe(
+    const checkQuota = (targetUser: User, updatedUser: User) => {
+      const addedRolesCount = updatedUser.roles.length - targetUser.roles.length
+      return pipe(
         this.quotaService.isQuotaAvailable(
-          {type: "User", identifier: request.userId},
+          {type: "User", identifier: targetUser.id},
           "MAX_ROLES_PER_USER",
-          request.roles.length
+          addedRolesCount
         ),
         TE.mapLeft(() => "quota_check_error" as const),
         TE.chainW(isAvailable => (isAvailable ? TE.right(undefined) : TE.left("quota_exceeded" as const)))
       )
+    }
 
     return pipe(
       TE.Do,
       TE.bindW("request", () => TE.right(request)),
-      TE.chainFirstW(({request}) => checkQuota(request)),
       TE.bindW("boundRolesToAssign", ({request}) => TE.fromEither(validateAndCreateBoundRoles(request.roles))),
       TE.bindW("workflowTemplatesParents", ({boundRolesToAssign}) =>
         this.fetchWorkflowTemplateSpaceMappings(boundRolesToAssign)
@@ -177,8 +175,11 @@ export class RoleService {
         validateRequestorAsPermissions(request, boundRolesToAssign, workflowTemplatesParents)
       ),
       TE.bindW("targetUser", ({request}) => this.userRoleRepo.getUserById(request.userId)),
-      TE.chainEitherKW(({targetUser, boundRolesToAssign}) => UserFactory.assignRoles(targetUser, boundRolesToAssign)),
-      TE.chainW(updatedUser => this.userRoleRepo.updateUser(updatedUser)),
+      TE.bindW("updatedUser", ({targetUser, boundRolesToAssign}) =>
+        TE.fromEither(UserFactory.assignRoles(targetUser, boundRolesToAssign))
+      ),
+      TE.chainFirstW(({targetUser, updatedUser}) => checkQuota(targetUser, updatedUser)),
+      TE.chainW(({updatedUser}) => this.userRoleRepo.updateUser(updatedUser)),
       TE.map(() => undefined),
       logSuccess("Roles assigned to user", "RoleService", () => ({userId: request.userId}))
     )
