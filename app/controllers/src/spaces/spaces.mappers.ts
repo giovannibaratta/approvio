@@ -84,6 +84,7 @@ export function generateErrorResponseForCreateSpace(error: CreateSpaceError, con
       )
     case "quota_check_error":
     case "unknown_error":
+    case "conflicting_isolation_level":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: an unexpected error occurred`)
       )
@@ -192,6 +193,7 @@ export function generateErrorResponseForDeleteSpace(error: DeleteSpaceError, con
         generateErrorPayload(errorCode, `${context}: you are not authorized to perform this action`)
       )
     case "unknown_error":
+    case "conflicting_isolation_level":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: an unexpected error occurred`)
       )

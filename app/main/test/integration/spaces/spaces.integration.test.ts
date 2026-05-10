@@ -13,7 +13,8 @@ import {cleanDatabase, prepareDatabase} from "@test/database"
 import {createDomainMockUserInDb, MockConfigProvider, createMockSpaceInDb} from "@test/mock-data"
 import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
-import {TokenPayloadBuilder} from "@services"
+import {TokenPayloadBuilder, AUDIT_LOG_REPOSITORY_TOKEN, AuditLogRepository} from "@services"
+import {failTaskEither} from "@test/injectors"
 import {v7 as uuidv7} from "uuid"
 
 describe("Spaces API", () => {
@@ -23,6 +24,7 @@ describe("Spaces API", () => {
   let orgMemberUser: UserWithToken
   let jwtService: JwtService
   let configProvider: ConfigProvider
+  let auditLogRepo: AuditLogRepository
 
   const endpoint = `/${SPACES_ENDPOINT_ROOT}`
 
@@ -47,6 +49,7 @@ describe("Spaces API", () => {
     prisma = module.get(DatabaseClient).prisma
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
+    auditLogRepo = module.get(AUDIT_LOG_REPOSITORY_TOKEN)
 
     const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
     const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
@@ -120,6 +123,21 @@ describe("Spaces API", () => {
             })
           ])
         )
+
+        // Expect: audit log is created
+        const auditLog = await prisma.auditLog.findFirst({
+          where: {entityId: responseUuid, auditType: "SPACE_CREATED"}
+        })
+        expect(auditLog).toBeDefined()
+        expect(auditLog?.actorId).toEqual(orgAdminUser.user.id)
+        expect(auditLog?.actorType).toEqual("user")
+        expect(auditLog?.entityType).toEqual("SPACE")
+        expect(auditLog?.payload).toEqual(
+          expect.objectContaining({
+            name: requestBody.name,
+            description: requestBody.description
+          })
+        )
       })
 
       it("should create a space with null description if not provided (as OrgMember)", async () => {
@@ -136,6 +154,18 @@ describe("Spaces API", () => {
         const responseUuid: string = response.headers.location?.split("/").reverse()[0] ?? ""
         const spaceDbObject = await prisma.space.findUnique({where: {id: responseUuid}})
         expect(spaceDbObject?.description).toBeNull()
+
+        // Expect: audit log is created
+        const auditLog = await prisma.auditLog.findFirst({
+          where: {entityId: responseUuid, auditType: "SPACE_CREATED"}
+        })
+        expect(auditLog).toBeDefined()
+        expect(auditLog?.payload).toEqual(
+          expect.objectContaining({
+            name: requestBody.name,
+            description: null
+          })
+        )
       })
     })
 
@@ -173,6 +203,27 @@ describe("Spaces API", () => {
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("SPACE_NAME_EMPTY")
+      })
+
+      it("should return 500 UNKNOWN_ERROR and not create a space if audit log creation fails", async () => {
+        // Given
+        const requestBody: SpaceCreate = {
+          name: "audit-fail-space"
+        }
+        failTaskEither(auditLogRepo, "persist", "unknown_error")
+
+        // When
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.INTERNAL_SERVER_ERROR)
+        expect(response.body).toHaveErrorCode("UNKNOWN_ERROR")
+
+        // Validate no side effects (transaction rollback)
+        const spaceDbObject = await prisma.space.findFirst({
+          where: {name: requestBody.name}
+        })
+        expect(spaceDbObject).toBeNull()
       })
     })
   })
@@ -403,6 +454,16 @@ describe("Spaces API", () => {
         // Verify space is deleted
         const deletedSpace = await prisma.space.findUnique({where: {id: createdSpace.id}})
         expect(deletedSpace).toBeNull()
+
+        // Verify audit log
+        const auditLog = await prisma.auditLog.findFirst({
+          where: {entityId: createdSpace.id, auditType: "SPACE_DELETED"}
+        })
+        expect(auditLog).toBeDefined()
+        expect(auditLog?.actorId).toEqual(orgAdminUser.user.id)
+        expect(auditLog?.actorType).toEqual("user")
+        expect(auditLog?.entityType).toEqual("SPACE")
+        expect(auditLog?.payload).toEqual({})
       })
 
       it("should allow user with manage permissions to delete space", async () => {

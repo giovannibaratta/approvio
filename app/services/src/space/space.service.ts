@@ -7,7 +7,8 @@ import {
   RolePermissionChecker,
   SpaceValidationError,
   UserValidationError,
-  RoleValidationError
+  RoleValidationError,
+  CreateAuditLog
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError} from "@services/error"
@@ -33,6 +34,9 @@ import {
   SPACE_REPOSITORY_TOKEN
 } from "./interfaces"
 import {validateUserEntity} from "@services/shared/types"
+import {extractActorDetails} from "@services/shared/actor-extractor"
+import {TransactionManager, TRANSACTION_MANAGER_TOKEN, ExecutionError} from "@services/transaction/interfaces"
+import {AuditLogRepository, AUDIT_LOG_REPOSITORY_TOKEN} from "@services/audit-log/interfaces"
 
 export type CreateSpaceError =
   | CreateSpaceRepoError
@@ -44,9 +48,11 @@ export type CreateSpaceError =
   | "user_not_found_in_db"
   | "user_invalid_uuid"
   | "request_invalid_user_identifier"
+  | ExecutionError
+
 export type GetSpaceError = GetSpaceRepoError | AuthorizationError
 export type ListSpacesError = ListSpacesRepoError | AuthorizationError
-export type DeleteSpaceError = DeleteSpaceRepoError | AuthorizationError
+export type DeleteSpaceError = DeleteSpaceRepoError | AuthorizationError | ExecutionError
 
 export const SPACE_MAX_LIMIT = 100
 
@@ -57,7 +63,11 @@ export class SpaceService {
     private readonly spaceRepo: SpaceRepository,
     @Inject(USER_REPOSITORY_TOKEN)
     private readonly userRepo: UserRepository,
-    private readonly quotaService: QuotaService
+    private readonly quotaService: QuotaService,
+    @Inject(TRANSACTION_MANAGER_TOKEN)
+    private readonly txManager: TransactionManager,
+    @Inject(AUDIT_LOG_REPOSITORY_TOKEN)
+    private readonly auditLogRepo: AuditLogRepository
   ) {}
 
   /**
@@ -69,7 +79,8 @@ export class SpaceService {
 
     const validateSpace = (req: CreateSpaceRequest) => pipe(req.spaceData, SpaceFactory.newSpace, TE.fromEither)
 
-    const fetchUser = (requestor: User) => this.userRepo.getUserById(requestor.id)
+    const fetchUser = (requestor: User): TaskEither<CreateSpaceError, Versioned<User>> =>
+      this.userRepo.getUserById(requestor.id)
 
     const addManagePermissions = ({user, space}: {user: Versioned<User>; space: Space}) => {
       const manageRole = SystemRole.createSpaceManagerRole({type: "space", spaceId: space.id})
@@ -94,11 +105,30 @@ export class SpaceService {
       TE.Do,
       TE.bindW("requestor", () => validateRequestor()),
       TE.chainFirstW(() => checkQuota()),
+      TE.bindW("actor", () => TE.right(extractActorDetails(request.requestor))),
       TE.bindW("space", () => validateSpace(request)),
       TE.bindW("user", ({requestor}) => fetchUser(requestor)),
       TE.bindW("updatedUser", ({user, space}) => addManagePermissions({user, space})),
-      TE.chainW(({space, updatedUser, user}) =>
-        persistSpaceWithUserPermissions({space, updatedUser, userOcc: user.occ})
+      TE.chainW(({space, updatedUser, user, actor}) =>
+        this.txManager.execute(() =>
+          pipe(
+            persistSpaceWithUserPermissions({space, updatedUser, userOcc: user.occ}),
+            TE.chainFirstW(createdSpace => {
+              const auditLog: CreateAuditLog = {
+                auditType: "SPACE_CREATED",
+                entityType: "SPACE",
+                entityId: createdSpace.id,
+                actor: actor,
+                payload: {
+                  name: createdSpace.name,
+                  description: createdSpace.description ?? null
+                },
+                createdAt: createdSpace.createdAt
+              }
+              return this.auditLogRepo.persist(auditLog)
+            })
+          )
+        )
       ),
       logSuccess("Space created", "SpaceService", space => ({id: space.id, name: space.name}))
     )
@@ -178,10 +208,24 @@ export class SpaceService {
       return TE.left("requestor_not_authorized" as AuthorizationError)
     }
 
+    const actorDetails = extractActorDetails(request.requestor)
+
     const deleteSpaceData = (spaceId: string): TaskEither<DeleteSpaceError, void> => {
-      return pipe(
-        this.spaceRepo.deleteSpace({spaceId}),
-        logSuccess("Space deleted", "SpaceService", () => ({spaceId}))
+      return this.txManager.execute(() =>
+        pipe(
+          this.spaceRepo.deleteSpace({spaceId}),
+          TE.chainFirstW(() => {
+            const auditLog: CreateAuditLog = {
+              auditType: "SPACE_DELETED",
+              entityType: "SPACE",
+              entityId: spaceId,
+              actor: actorDetails,
+              payload: {},
+              createdAt: new Date()
+            }
+            return this.auditLogRepo.persist(auditLog)
+          })
+        )
       )
     }
 
@@ -189,7 +233,8 @@ export class SpaceService {
       TE.Do,
       TE.bindW("requestor", () => validateRequestor()),
       TE.bindW("authorizedSpaceId", ({requestor}) => checkPermissions(requestor, request.spaceId)),
-      TE.chainW(({authorizedSpaceId}) => deleteSpaceData(authorizedSpaceId))
+      TE.chainW(({authorizedSpaceId}) => deleteSpaceData(authorizedSpaceId)),
+      logSuccess("Space deleted", "SpaceService", () => ({spaceId: request.spaceId}))
     )
   }
 }
