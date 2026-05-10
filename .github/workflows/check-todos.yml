@@ -1,0 +1,38 @@
+name: Check TODOs
+
+on:
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  check-todos:
+    name: Check for unauthorized TODOs
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for TODOs
+        run: |
+          echo "Checking for TODOs in the new committed code..."
+
+          # Ensure the base branch is fetched for comparison
+          git fetch origin ${{ github.base_ref }}
+
+          # Compare the PR branch against the base branch.
+          # The triple-dot diff (base...HEAD) finds the common ancestor and compares it with HEAD,
+          # ensuring we see all changes introduced in the PR, regardless of the number of commits.
+          # We exclude the workflow file itself and filter for added lines starting with '+'.
+          MATCHES=$(git diff -U0 origin/${{ github.base_ref }}...HEAD -- . ':(exclude).github/workflows/check-todos.yml' | grep -E "^\+.*TODO" | grep -E -v "TODO\s*\(long-term\)" || true)
+
+          if [ -n "$MATCHES" ]; then
+            echo "::error title=Unauthorized TODOs found::Please remove TODOs or mark them as 'TODO (long-term)' if they should be kept."
+            echo "Matches found:"
+            echo "$MATCHES"
+            exit 1
+          else
+            echo "No unauthorized TODOs found."
+          fi
