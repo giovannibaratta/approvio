@@ -395,7 +395,7 @@ export function createMockUserPrismaPayload(
 
   const {roles, ...userOverrides} = overrides || {}
 
-  return {...randomUser, ...userOverrides, roles: roles ? JSON.parse(JSON.stringify(roles)) : null}
+  return {...randomUser, ...userOverrides, roles: roles ? JSON.parse(JSON.stringify(roles)) : []}
 }
 
 export async function createMockUserInDb(

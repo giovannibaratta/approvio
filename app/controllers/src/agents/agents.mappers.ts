@@ -214,11 +214,18 @@ export function generateErrorResponseForAgentRoleAssignment(
     case "agent_role_invalid_structure":
     case "agent_invalid_occ":
     case "agent_name_cannot_be_uuid":
+    case "conflicting_isolation_level":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
     case "unknown_error":
+    case "audit_log_malformed_object":
+    case "audit_log_invalid_audit_type":
+    case "audit_log_invalid_entity_type":
+    case "audit_log_invalid_actor_type":
+    case "audit_log_invalid_payload":
+    case "audit_log_missing_required_fields":
       Logger.error(`${context}: An expected error occurred: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
@@ -317,7 +324,14 @@ export function generateErrorResponseForAgentRoleRemoval(
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
+    case "conflicting_isolation_level":
     case "unknown_error":
+    case "audit_log_malformed_object":
+    case "audit_log_invalid_audit_type":
+    case "audit_log_invalid_entity_type":
+    case "audit_log_invalid_actor_type":
+    case "audit_log_invalid_payload":
+    case "audit_log_missing_required_fields":
       Logger.error(`${context}: An expected error occurred: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)

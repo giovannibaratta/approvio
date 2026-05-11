@@ -8,7 +8,9 @@ import {
   SpaceValidationError,
   UserValidationError,
   RoleValidationError,
-  CreateAuditLog
+  AuditLogFactory,
+  CreateAuditLog,
+  AuditLogValidationError
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError} from "@services/error"
@@ -48,6 +50,7 @@ export type CreateSpaceError =
   | "user_not_found_in_db"
   | "user_invalid_uuid"
   | "request_invalid_user_identifier"
+  | AuditLogValidationError
   | ExecutionError
 
 export type GetSpaceError = GetSpaceRepoError | AuthorizationError
@@ -114,18 +117,20 @@ export class SpaceService {
           pipe(
             persistSpaceWithUserPermissions({space, updatedUser, userOcc: user.occ}),
             TE.chainFirstW(createdSpace => {
-              const auditLog: CreateAuditLog = {
-                auditType: "SPACE_CREATED",
-                entityType: "SPACE",
-                entityId: createdSpace.id,
-                actor: actor,
-                payload: {
-                  name: createdSpace.name,
-                  description: createdSpace.description ?? null
-                },
-                createdAt: createdSpace.createdAt
-              }
-              return this.auditLogRepo.persist(auditLog)
+              return pipe(
+                AuditLogFactory.create({
+                  auditType: "SPACE_CREATED",
+                  entityType: "SPACE",
+                  entityId: createdSpace.id,
+                  actor: actor,
+                  payload: {
+                    name: createdSpace.name,
+                    description: createdSpace.description ?? null
+                  }
+                }),
+                TE.fromEither,
+                TE.chainW(log => this.auditLogRepo.persist(log))
+              )
             })
           )
         )

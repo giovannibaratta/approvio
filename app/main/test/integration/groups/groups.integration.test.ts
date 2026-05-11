@@ -22,8 +22,9 @@ import {cleanDatabase, prepareDatabase} from "@test/database"
 import {createDomainMockUserInDb, createMockUserInDb, MockConfigProvider} from "@test/mock-data"
 import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
-import {MAX_LIMIT, TokenPayloadBuilder} from "@services"
 import {EntityType} from "@controllers/groups/groups.mappers"
+import {AUDIT_LOG_REPOSITORY_TOKEN, AuditLogRepository, MAX_LIMIT, TokenPayloadBuilder} from "@services"
+import {failTaskEither} from "@test/injectors"
 import {v7 as uuidv7} from "uuid"
 
 async function createTestGroup(prisma: PrismaClient, name: string, description?: string): Promise<PrismaGroup> {
@@ -47,13 +48,14 @@ describe("Groups API", () => {
   let orgMemberUser: UserWithToken
   let jwtService: JwtService
   let configProvider: ConfigProvider
+  let auditLogRepo: AuditLogRepository
+  let module: TestingModule
 
   const endpoint = `/${GROUPS_ENDPOINT_ROOT}`
 
   beforeEach(async () => {
     const isolatedDb = await prepareDatabase()
 
-    let module: TestingModule
     try {
       module = await Test.createTestingModule({
         imports: [AppModule]
@@ -69,6 +71,7 @@ describe("Groups API", () => {
     app = module.createNestApplication({logger: false})
 
     prisma = module.get(DatabaseClient).prisma
+    auditLogRepo = module.get<AuditLogRepository>(AUDIT_LOG_REPOSITORY_TOKEN)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
 
@@ -256,6 +259,58 @@ describe("Groups API", () => {
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("GROUP_DESCRIPTION_TOO_LONG")
+      })
+    })
+
+    describe("Audit Logging", () => {
+      it("should create a GROUP_CREATED audit log when group is created", async () => {
+        // Given
+        const requestBody: GroupCreate = {
+          name: "Audit-Log-Group",
+          description: "Test description"
+        }
+
+        // When
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.CREATED)
+        const responseUuid: string = response.headers.location?.split("/").reverse()[0] ?? ""
+
+        const auditLogs = await prisma.auditLog.findMany({
+          where: {
+            auditType: "GROUP_CREATED",
+            entityType: "GROUP",
+            entityId: responseUuid
+          }
+        })
+        expect(auditLogs).toHaveLength(1)
+        expect(auditLogs[0]?.payload).toMatchObject({
+          name: requestBody.name,
+          description: requestBody.description
+        })
+        expect(auditLogs[0]?.actorId).toEqual(orgAdminUser.user.id)
+      })
+
+      it("should return 500 INTERNAL_SERVER_ERROR and NOT create a group if audit log creation fails", async () => {
+        // Given
+        failTaskEither(auditLogRepo, "persist", "repo_error")
+
+        const requestBody: GroupCreate = {
+          name: "Rollback-Group"
+        }
+
+        // When
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.INTERNAL_SERVER_ERROR)
+
+        // Verify side effects were rolled back
+        const groupInDb = await prisma.group.findFirst({
+          where: {name: requestBody.name}
+        })
+        expect(groupInDb).toBeNull()
       })
     })
   })
@@ -776,6 +831,62 @@ describe("Groups API", () => {
           expect(response.body).toHaveErrorCode("REQUEST_INVALID_ENTITY_UUID")
         })
       })
+
+      describe("Audit Logging", () => {
+        it("should create a MEMBERSHIPS_ADDED audit log when members are added", async () => {
+          // Given
+          const requestBody: AddGroupEntitiesRequest = {
+            entities: [{entity: {entityId: user2.id, entityType: EntityType.HUMAN}}]
+          }
+
+          // When
+          const response = await post(app, entitiesEndpoint(group.id))
+            .withToken(orgAdminUser.token)
+            .build()
+            .send(requestBody)
+
+          // Expect
+          expect(response).toHaveStatusCode(HttpStatus.OK)
+
+          const auditLogs = await prisma.auditLog.findMany({
+            where: {
+              auditType: "MEMBERSHIPS_ADDED",
+              entityType: "GROUP",
+              entityId: group.id
+            }
+          })
+          expect(auditLogs).toHaveLength(1)
+          expect(auditLogs[0]?.payload).toMatchObject({
+            members: [{entityId: user2.id, entityType: "user"}]
+          })
+        })
+
+        it("should return 500 INTERNAL_SERVER_ERROR and NOT add members if audit log creation fails", async () => {
+          // Given
+          failTaskEither(auditLogRepo, "persist", "repo_error")
+
+          const requestBody: AddGroupEntitiesRequest = {
+            entities: [{entity: {entityId: user2.id, entityType: EntityType.HUMAN}}]
+          }
+
+          // When
+          const response = await post(app, entitiesEndpoint(group.id))
+            .withToken(orgAdminUser.token)
+            .build()
+            .send(requestBody)
+
+          // Expect
+          expect(response).toHaveStatusCode(HttpStatus.INTERNAL_SERVER_ERROR)
+
+          // Verify side effects were rolled back
+          const memberships = await prisma.groupMembership.findMany({
+            where: {groupId: group.id}
+          })
+          // Should only have the 2 members added in beforeEach
+          expect(memberships).toHaveLength(2)
+          expect(memberships.map(m => m.userId)).not.toContain(user2.id)
+        })
+      })
     })
 
     describe("GET", () => {
@@ -1108,6 +1219,62 @@ describe("Groups API", () => {
           // Expect - should succeed as role system changed
           expect(response).toHaveStatusCode(HttpStatus.OK)
           expect(response.body.entitiesCount).toEqual(0)
+        })
+      })
+
+      describe("Audit Logging", () => {
+        it("should create a MEMBERSHIPS_REMOVED audit log when members are removed", async () => {
+          // Given
+          const requestBody: RemoveGroupEntitiesRequest = {
+            entities: [{entity: {entityId: user1.id, entityType: EntityType.HUMAN}}]
+          }
+
+          // When
+          const response = await del(app, entitiesEndpoint(group.id))
+            .withToken(orgAdminUser.token)
+            .build()
+            .send(requestBody)
+
+          // Expect
+          expect(response).toHaveStatusCode(HttpStatus.OK)
+
+          const auditLogs = await prisma.auditLog.findMany({
+            where: {
+              auditType: "MEMBERSHIPS_REMOVED",
+              entityType: "GROUP",
+              entityId: group.id
+            }
+          })
+          expect(auditLogs).toHaveLength(1)
+          expect(auditLogs[0]?.payload).toMatchObject({
+            members: [{entityId: user1.id, entityType: "user"}]
+          })
+        })
+
+        it("should return 500 INTERNAL_SERVER_ERROR and NOT remove members if audit log creation fails", async () => {
+          // Given
+          failTaskEither(auditLogRepo, "persist", "repo_error")
+
+          const requestBody: RemoveGroupEntitiesRequest = {
+            entities: [{entity: {entityId: user1.id, entityType: EntityType.HUMAN}}]
+          }
+
+          // When
+          const response = await del(app, entitiesEndpoint(group.id))
+            .withToken(orgAdminUser.token)
+            .build()
+            .send(requestBody)
+
+          // Expect
+          expect(response).toHaveStatusCode(HttpStatus.INTERNAL_SERVER_ERROR)
+
+          // Verify side effects were rolled back
+          const memberships = await prisma.groupMembership.findMany({
+            where: {groupId: group.id}
+          })
+          // Should still have both members
+          expect(memberships).toHaveLength(2)
+          expect(memberships.map(m => m.userId)).toContain(user1.id)
         })
       })
     })

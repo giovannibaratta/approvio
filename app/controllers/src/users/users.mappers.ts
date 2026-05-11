@@ -239,6 +239,13 @@ export function generateErrorResponseForUserRoleAssignment(
       )
     case "quota_check_error":
     case "unknown_error":
+    case "conflicting_isolation_level":
+    case "audit_log_malformed_object":
+    case "audit_log_invalid_audit_type":
+    case "audit_log_invalid_entity_type":
+    case "audit_log_invalid_actor_type":
+    case "audit_log_invalid_payload":
+    case "audit_log_missing_required_fields":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
@@ -324,6 +331,13 @@ export function generateErrorResponseForUserRoleRemoval(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
     case "unknown_error":
+    case "conflicting_isolation_level":
+    case "audit_log_malformed_object":
+    case "audit_log_invalid_audit_type":
+    case "audit_log_invalid_entity_type":
+    case "audit_log_invalid_actor_type":
+    case "audit_log_invalid_payload":
+    case "audit_log_missing_required_fields":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
