@@ -149,7 +149,6 @@ export function generateErrorResponseForCreateGroup(error: CreateGroupError, con
     case "membership_entity_already_in_group":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: Entity already in group`))
     case "quota_check_error":
-    case "unknown_error":
     case "membership_duplicated_membership":
     case "group_not_found":
     case "user_display_name_empty":
@@ -209,6 +208,16 @@ export function generateErrorResponseForCreateGroup(error: CreateGroupError, con
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
+    case "unknown_error":
+    case "conflicting_isolation_level":
+    case "audit_log_malformed_object":
+    case "audit_log_invalid_audit_type":
+    case "audit_log_invalid_entity_type":
+    case "audit_log_invalid_actor_type":
+    case "audit_log_invalid_payload":
+    case "audit_log_missing_required_fields":
+      Logger.error(`${context}: An expected error occurred: ${error}`)
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
   }
 }
 
@@ -276,7 +285,7 @@ export function generateErrorResponseForListGroups(
 type AddMembersToGroupServiceError = ExtractLeftFromMethod<typeof GroupMembershipService, "addMembersToGroup">
 
 export function generateErrorResponseForAddMembersToGroup(
-  error: AddMembersToGroupServiceError | AuthorizationError,
+  error: AddMembersToGroupServiceError | AuthorizationError | "conflicting_isolation_level",
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
@@ -371,9 +380,17 @@ export function generateErrorResponseForAddMembersToGroup(
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
+    case "conflicting_isolation_level":
     case "unknown_error":
+    case "audit_log_malformed_object":
+    case "audit_log_invalid_audit_type":
+    case "audit_log_invalid_entity_type":
+    case "audit_log_invalid_actor_type":
+    case "audit_log_invalid_payload":
+    case "audit_log_missing_required_fields":
+      Logger.error(`${context}: An expected error occurred: ${error}`)
       return new InternalServerErrorException(
-        generateErrorPayload(errorCode, `${context}: An unexpected error occurred`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
   }
 }
@@ -384,7 +401,7 @@ type RemoveMembersFromGroupServiceError = ExtractLeftFromMethod<
 >
 
 export function generateErrorResponseForRemoveMembersFromGroup(
-  error: RemoveMembersFromGroupServiceError | AuthorizationError,
+  error: RemoveMembersFromGroupServiceError | AuthorizationError | "conflicting_isolation_level",
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
@@ -471,9 +488,17 @@ export function generateErrorResponseForRemoveMembersFromGroup(
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
+    case "conflicting_isolation_level":
     case "unknown_error":
+    case "audit_log_malformed_object":
+    case "audit_log_invalid_audit_type":
+    case "audit_log_invalid_entity_type":
+    case "audit_log_invalid_actor_type":
+    case "audit_log_invalid_payload":
+    case "audit_log_missing_required_fields":
+      Logger.error(`${context}: An unexpected error occurred: ${error}`)
       return new InternalServerErrorException(
-        generateErrorPayload(errorCode, `${context}: An unexpected error occurred`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
   }
 }
@@ -484,7 +509,12 @@ type ListUsersInGroupServiceError = ExtractLeftFromMethod<
 >
 
 export function generateErrorResponseForListMembersInGroup(
-  error: "invalid_page" | "invalid_limit" | ListUsersInGroupServiceError | AuthorizationError,
+  error:
+    | "invalid_page"
+    | "invalid_limit"
+    | ListUsersInGroupServiceError
+    | AuthorizationError
+    | "conflicting_isolation_level",
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
@@ -560,9 +590,11 @@ export function generateErrorResponseForListMembersInGroup(
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
+    case "conflicting_isolation_level":
     case "unknown_error":
+      Logger.error(`${context}: An expected error occurred: ${error}`)
       return new InternalServerErrorException(
-        generateErrorPayload(errorCode, `${context}: An unexpected error occurred`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
   }
 }

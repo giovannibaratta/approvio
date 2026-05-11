@@ -20,10 +20,16 @@ import {put, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import "expect-more-jest"
 import "@utils/matchers"
-import {TokenPayloadBuilder, USER_REPOSITORY_TOKEN, UserRepository} from "@services"
+import {
+  TokenPayloadBuilder,
+  USER_REPOSITORY_TOKEN,
+  UserRepository,
+  AUDIT_LOG_REPOSITORY_TOKEN,
+  AuditLogRepository
+} from "@services"
 import {RoleAssignmentRequest} from "@approvio/api"
 import {MAX_ROLES_PER_ENTITY} from "@domain"
-import {wrapTaskEitherWithSideEffect} from "@test/injectors"
+import {wrapTaskEitherWithSideEffect, failTaskEither} from "@test/injectors"
 import {v7 as uuidv7} from "uuid"
 
 describe("User Roles API", () => {
@@ -702,6 +708,64 @@ describe("User Roles API", () => {
       })
     })
 
+    describe("audit logging", () => {
+      it("should persist audit log when roles are assigned", async () => {
+        // Given: Valid role assignment request
+        const roleAssignmentRequest = createOrgScopeRequest("OrgWideSpaceManager")
+
+        // When: Admin assigns role to user
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive success response
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Audit log should be persisted in database
+        const auditLogs = await prisma.auditLog.findMany({
+          where: {
+            entityId: targetUser.user.id,
+            auditType: "USER_ROLES_ASSIGNED"
+          }
+        })
+        expect(auditLogs).toHaveLength(1)
+        expect(auditLogs[0]!.payload).toMatchObject({
+          roles: [
+            {
+              roleName: "OrgWideSpaceManager",
+              scope: {type: "org"}
+            }
+          ]
+        })
+      })
+
+      it("should return 500 UNKNOWN_ERROR and not update roles if audit log creation fails", async () => {
+        const auditLogRepo = app.get<AuditLogRepository>(AUDIT_LOG_REPOSITORY_TOKEN)
+
+        // Given: Audit log persistence will fail
+        failTaskEither(auditLogRepo, "persist", "unknown_error")
+
+        // And: Valid role assignment request
+        const roleAssignmentRequest = createOrgScopeRequest("OrgWideSpaceManager")
+
+        // When: Admin assigns role to user
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive 500 Unknown Error
+        expect(response).toHaveStatusCode(HttpStatus.INTERNAL_SERVER_ERROR)
+
+        // And: Roles should NOT be updated in database (transaction rollback)
+        const userFromDb = await prisma.user.findUnique({
+          where: {id: targetUser.user.id}
+        })
+        expect(userFromDb!.roles).toHaveLength(0)
+      })
+    })
+
     describe("workflow template role authorization", () => {
       let spaceId: string
       let otherSpaceId: string
@@ -1145,6 +1209,100 @@ describe("User Roles API", () => {
             scope: {type: "group", groupId: group.id}
           }
         ])
+      })
+    })
+
+    describe("audit logging", () => {
+      it("should persist audit log when roles are removed", async () => {
+        // Given: User has roles assigned
+        const group = await createTestGroup(prisma, {name: "Test Group"})
+        await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({
+            roles: [
+              {
+                roleName: "GroupManager",
+                scope: {type: "group", groupId: group.id}
+              }
+            ]
+          })
+
+        // When: Admin removes role
+        const response = await del(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({
+            roles: [
+              {
+                roleName: "GroupManager",
+                scope: {type: "group", groupId: group.id}
+              }
+            ]
+          })
+
+        // Then: Should receive success response
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Audit log should be persisted in database
+        const auditLogs = await prisma.auditLog.findMany({
+          where: {
+            entityId: targetUser.user.id,
+            auditType: "USER_ROLES_REMOVED"
+          }
+        })
+        expect(auditLogs).toHaveLength(1)
+        expect(auditLogs[0]!.payload).toMatchObject({
+          roles: [
+            {
+              roleName: "GroupManager",
+              scope: {type: "group", groupId: group.id}
+            }
+          ]
+        })
+      })
+
+      it("should return 500 UNKNOWN_ERROR and not remove roles if audit log creation fails", async () => {
+        const auditLogRepo = app.get<AuditLogRepository>(AUDIT_LOG_REPOSITORY_TOKEN)
+
+        // Given: User has roles assigned
+        const group = await createTestGroup(prisma, {name: "Test Group"})
+        await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({
+            roles: [
+              {
+                roleName: "GroupManager",
+                scope: {type: "group", groupId: group.id}
+              }
+            ]
+          })
+
+        // And: Audit log persistence will fail
+        failTaskEither(auditLogRepo, "persist", "unknown_error")
+
+        // When: Admin removes role
+        const response = await del(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({
+            roles: [
+              {
+                roleName: "GroupManager",
+                scope: {type: "group", groupId: group.id}
+              }
+            ]
+          })
+
+        // Then: Should receive 500 Unknown Error
+        expect(response).toHaveStatusCode(HttpStatus.INTERNAL_SERVER_ERROR)
+
+        // And: Roles should NOT be removed in database (transaction rollback)
+        const userFromDb = await prisma.user.findUnique({
+          where: {id: targetUser.user.id}
+        })
+        expect(userFromDb!.roles).toHaveLength(1)
       })
     })
 

@@ -292,7 +292,7 @@ export class RoleFactory {
     return right(role as BoundRole)
   }
 
-  private static isValidRoleScope(scope: unknown): scope is RoleScope {
+  static isValidRoleScope(scope: unknown): scope is RoleScope {
     if (!scope || typeof scope !== "object") return false
     if (!("type" in scope)) return false
     if (typeof scope.type !== "string") return false

@@ -9,10 +9,13 @@ import {
   SystemRole,
   UserValidationError,
   createUserMembershipEntity,
-  RolePermissionChecker
+  RolePermissionChecker,
+  AuditLogFactory,
+  CreateAuditLog,
+  AuditLogValidationError
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
-import {AuthorizationError} from "@services/error"
+import {AuthorizationError, UnknownError} from "@services/error"
 import {MembershipAddError} from "@services/group-membership"
 import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 import {Versioned} from "@domain"
@@ -23,6 +26,9 @@ import {QuotaService} from "@services/quota/quota.service"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
+import {TransactionManager, TRANSACTION_MANAGER_TOKEN, ExecutionError} from "@services/transaction/interfaces"
+import {AuditLogRepository, AUDIT_LOG_REPOSITORY_TOKEN} from "@services/audit-log/interfaces"
+import {extractActorDetails} from "@services/shared/actor-extractor"
 import {
   CreateGroupRepoError,
   CreateGroupWithMembershipAndUpdateUserRepo,
@@ -34,7 +40,14 @@ import {
   ListGroupsResult
 } from "./interfaces"
 
-export type CreateGroupError = CreateGroupRepoError | MembershipAddError | UserValidationError | AuthorizationError
+export type CreateGroupError =
+  | CreateGroupRepoError
+  | MembershipAddError
+  | UserValidationError
+  | AuthorizationError
+  | AuditLogValidationError
+  | ExecutionError
+
 export type GetGroupError = GetGroupRepoError | AuthorizationError
 export type ListGroupsError = ListGroupsRepoError | AuthorizationError
 
@@ -47,7 +60,11 @@ export class GroupService {
     private readonly groupRepo: GroupRepository,
     @Inject(USER_REPOSITORY_TOKEN)
     private readonly userRepo: UserRepository,
-    private readonly quotaService: QuotaService
+    private readonly quotaService: QuotaService,
+    @Inject(TRANSACTION_MANAGER_TOKEN)
+    private readonly txManager: TransactionManager,
+    @Inject(AUDIT_LOG_REPOSITORY_TOKEN)
+    private readonly auditLogRepo: AuditLogRepository
   ) {}
 
   /**
@@ -87,8 +104,26 @@ export class GroupService {
       TE.bindW("user", ({requestor}) => fetchUser(requestor)),
       TE.bindW("updatedUser", ({user, group}) => addManagePermissions({user, group})),
       TE.bindW("membership", ({updatedUser}) => createMembership(updatedUser)),
-      TE.chainW(({group, updatedUser, user, membership}) =>
-        persistGroupWithMembershipAndUpdateUser({group, user: updatedUser, userOcc: user.occ, membership})
+      TE.bindW("actor", () => TE.right(extractActorDetails(request.requestor))),
+      TE.chainW(({group, updatedUser, user, membership, actor}) =>
+        this.txManager.execute(() =>
+          pipe(
+            persistGroupWithMembershipAndUpdateUser({group, user: updatedUser, userOcc: user.occ, membership}),
+            TE.chainFirstW(createdGroup =>
+              this.persistGroupAuditLog({
+                auditType: "GROUP_CREATED",
+                entityType: "GROUP",
+                entityId: createdGroup.id,
+                actor: actor,
+                payload: {
+                  name: createdGroup.name,
+                  description: createdGroup.description ?? null
+                },
+                createdAt: createdGroup.createdAt
+              })
+            )
+          )
+        )
       ),
       logSuccess("Group created", "GroupService", group => ({id: group.id, name: group.name}))
     )
@@ -164,6 +199,14 @@ export class GroupService {
 
   getAgentGroups(agentId: string): TaskEither<GetGroupRepoError, Group[]> {
     return this.groupRepo.getGroupsByAgentId(agentId)
+  }
+
+  private persistGroupAuditLog(data: CreateAuditLog): TaskEither<AuditLogValidationError | UnknownError, void> {
+    return pipe(
+      AuditLogFactory.create(data),
+      TE.fromEither,
+      TE.chainW(validAuditLog => this.auditLogRepo.persist(validAuditLog))
+    )
   }
 }
 

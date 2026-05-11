@@ -7,10 +7,13 @@ import {
   createUserMembershipEntity,
   createAgentMembershipEntity,
   EntityReference,
-  AgentValidationError
+  AgentValidationError,
+  AuditLogFactory,
+  CreateAuditLog,
+  AuditLogValidationError
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
-import {AuthorizationError} from "@services"
+import {AuthorizationError, UnknownError} from "@services"
 import {User} from "@domain"
 import {GetGroupRepoError} from "@services/group/interfaces"
 import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
@@ -18,12 +21,15 @@ import {Versioned} from "@domain"
 import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
 import {AgentRepository, AGENT_REPOSITORY_TOKEN} from "@services/agent/interfaces"
 import {QuotaService} from "@services/quota/quota.service"
-import {isUUIDv7, logSuccess} from "@utils"
+import {isUUIDv7, logSuccess, DistributiveOmit} from "@utils"
 import * as A from "fp-ts/Array"
 import {pipe} from "fp-ts/function"
 import {isLeft} from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
+import {TransactionManager, TRANSACTION_MANAGER_TOKEN, ExecutionError} from "@services/transaction/interfaces"
+import {AuditLogRepository, AUDIT_LOG_REPOSITORY_TOKEN} from "@services/audit-log/interfaces"
+import {extractActorDetails} from "@services/shared/actor-extractor"
 import {
   GetGroupMembershipResult,
   GetGroupWithMembershipRepo,
@@ -54,7 +60,11 @@ export class GroupMembershipService {
     private readonly userRepo: UserRepository,
     @Inject(AGENT_REPOSITORY_TOKEN)
     private readonly agentRepo: AgentRepository,
-    private readonly quotaService: QuotaService
+    private readonly quotaService: QuotaService,
+    @Inject(TRANSACTION_MANAGER_TOKEN)
+    private readonly txManager: TransactionManager,
+    @Inject(AUDIT_LOG_REPOSITORY_TOKEN)
+    private readonly auditLogRepo: AuditLogRepository
   ) {}
 
   getGroupByIdentifierWithMembership(
@@ -67,7 +77,8 @@ export class GroupMembershipService {
     | "membership_inconsistent_dates"
     | AgentKeyDecodeError
     | AgentValidationError
-    | AuthorizationError,
+    | AuthorizationError
+    | ExecutionError,
     GetGroupMembershipResult
   > {
     // Wrap in a lambda to preserve the "this" context
@@ -102,7 +113,12 @@ export class GroupMembershipService {
   addMembersToGroup(
     request: AddMembersToGroupRequest
   ): TaskEither<
-    "request_invalid_group_uuid" | "request_invalid_entity_uuid" | MembershipAddError | AuthorizationError,
+    | "request_invalid_group_uuid"
+    | "request_invalid_entity_uuid"
+    | MembershipAddError
+    | AuthorizationError
+    | AuditLogValidationError
+    | ExecutionError,
     GetGroupMembershipResult
   > {
     const validateRequest = (
@@ -173,7 +189,25 @@ export class GroupMembershipService {
       TE.chainFirstW(({validatedRequest, simulationResult}) =>
         checkQuota(validatedRequest, simulationResult.addedMembershipsCount)
       ),
-      TE.chainW(({simulationResult, membershipsToAdd}) => persistMemberships(simulationResult.group, membershipsToAdd)),
+      TE.bindW("actor", () => TE.right(extractActorDetails(request.requestor))),
+      TE.chainW(({simulationResult, membershipsToAdd, actor}) =>
+        this.txManager.execute(() =>
+          pipe(
+            persistMemberships(simulationResult.group, membershipsToAdd),
+            TE.chainFirstW(() =>
+              this.persistGroupMembershipAuditLog({
+                auditType: "MEMBERSHIPS_ADDED",
+                entityType: "GROUP",
+                entityId: request.groupId,
+                actor: actor,
+                payload: {
+                  members: request.members.map(m => ({entityId: m.entityId, entityType: m.entityType}))
+                }
+              })
+            )
+          )
+        )
+      ),
       logSuccess("Members added to group", "GroupMembershipService", () => ({groupId: request.groupId}))
     )
   }
@@ -181,7 +215,12 @@ export class GroupMembershipService {
   removeEntitiesFromGroup(
     request: RemoveMembersFromGroupRequest
   ): TaskEither<
-    "request_invalid_group_uuid" | "request_invalid_entity_uuid" | MembershipRemoveError | AuthorizationError,
+    | "request_invalid_group_uuid"
+    | "request_invalid_entity_uuid"
+    | MembershipRemoveError
+    | AuthorizationError
+    | AuditLogValidationError
+    | ExecutionError,
     GetGroupMembershipResult
   > {
     const validateRequest = (
@@ -228,10 +267,28 @@ export class GroupMembershipService {
       TE.Do,
       TE.bindW("validatedRequestor", () => TE.fromEither(validateUserEntity(request.requestor))),
       TE.bindW("membershipData", () => fetchGroupMembershipData),
-      TE.chainW(({validatedRequestor, membershipData}) =>
+      TE.bindW("simulatedRemove", ({validatedRequestor, membershipData}) =>
         simulateRemoveMemberships(validatedRequestor, membershipData)
       ),
-      TE.chainW(removeMemberships),
+      TE.bindW("actor", () => TE.right(extractActorDetails(request.requestor))),
+      TE.chainW(({actor, membershipData}) =>
+        this.txManager.execute(() =>
+          pipe(
+            removeMemberships(membershipData),
+            TE.chainFirstW(() =>
+              this.persistGroupMembershipAuditLog({
+                auditType: "MEMBERSHIPS_REMOVED",
+                entityType: "GROUP",
+                entityId: request.groupId,
+                actor: actor,
+                payload: {
+                  members: request.members.map(m => ({entityId: m.entityId, entityType: m.entityType}))
+                }
+              })
+            )
+          )
+        )
+      ),
       logSuccess("Entities removed from group", "GroupMembershipService", () => ({groupId: request.groupId}))
     )
   }
@@ -271,6 +328,16 @@ export class GroupMembershipService {
             return fetchAgentAndCreateMembership(member.entityId)
         }
       })
+    )
+  }
+
+  private persistGroupMembershipAuditLog(
+    data: DistributiveOmit<CreateAuditLog, "createdAt">
+  ): TaskEither<AuditLogValidationError | UnknownError, void> {
+    return pipe(
+      AuditLogFactory.create(data),
+      TE.fromEither,
+      TE.chainW(validAuditLog => this.auditLogRepo.persist(validAuditLog))
     )
   }
 }

@@ -1,7 +1,14 @@
-import {RoleTemplate, RoleValidationError, UserValidationError, AgentValidationError} from "@domain"
+import {
+  RoleTemplate,
+  RoleValidationError,
+  UserValidationError,
+  AgentValidationError,
+  AuditLogValidationError
+} from "@domain"
 import {AuthorizationError, UnknownError} from "@services/error"
 import {UserUpdateError} from "@services/user"
 import {AgentUpdateError} from "@services/agent"
+import {ExecutionError} from "@services/transaction/interfaces"
 
 export type ListRoleTemplatesError = "unknown_error"
 export type ListRoleTemplatesResult = ReadonlyArray<RoleTemplate>
@@ -14,8 +21,11 @@ export type UserRoleAssignmentError =
   | UserUpdateError
   | AuthorizationError
   | UnknownError
+  | ExecutionError
   | "quota_exceeded"
   | "quota_check_error"
+  | AuditLogValidationError
+  | ExecutionError
 
 export type AgentRoleAssignmentError =
   | "agent_not_found"
@@ -25,6 +35,8 @@ export type AgentRoleAssignmentError =
   | AgentUpdateError
   | AuthorizationError
   | UnknownError
+  | AuditLogValidationError
+  | ExecutionError
 
 export type UserRoleRemovalError =
   | "user_not_found"
@@ -34,6 +46,8 @@ export type UserRoleRemovalError =
   | UserUpdateError
   | AuthorizationError
   | UnknownError
+  | AuditLogValidationError
+  | ExecutionError
 
 export type AgentRoleRemovalError =
   | "agent_not_found"
@@ -43,3 +57,5 @@ export type AgentRoleRemovalError =
   | AgentUpdateError
   | AuthorizationError
   | UnknownError
+  | AuditLogValidationError
+  | ExecutionError

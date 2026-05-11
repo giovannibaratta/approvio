@@ -9,7 +9,10 @@ import {
   AuthenticatedEntity,
   RoleAuthorizationChecker,
   User,
-  MAX_ROLES_PER_ENTITY
+  MAX_ROLES_PER_ENTITY,
+  AuditLogFactory,
+  CreateAuditLog,
+  AuditLogValidationError
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {TaskEither} from "fp-ts/TaskEither"
@@ -26,6 +29,9 @@ import {
   AgentRoleRemovalError
 } from "./interfaces"
 import {validateUserEntity} from "@services/shared/types"
+import {TransactionManager, TRANSACTION_MANAGER_TOKEN, ExecutionError} from "@services/transaction/interfaces"
+import {AuditLogRepository, AUDIT_LOG_REPOSITORY_TOKEN} from "@services/audit-log/interfaces"
+import {extractActorDetails} from "@services/shared/actor-extractor"
 import {AGENT_REPOSITORY_TOKEN, AgentRepository} from "@services/agent"
 import {USER_REPOSITORY_TOKEN, UserRepository} from "@services/user"
 import {WORKFLOW_TEMPLATE_REPOSITORY_TOKEN, WorkflowTemplateRepository} from "@services/workflow-template"
@@ -40,7 +46,11 @@ export class RoleService {
     private readonly agentRoleRepo: AgentRepository,
     @Inject(WORKFLOW_TEMPLATE_REPOSITORY_TOKEN)
     private readonly workflowTemplateRepo: WorkflowTemplateRepository,
-    private readonly quotaService: QuotaService
+    private readonly quotaService: QuotaService,
+    @Inject(TRANSACTION_MANAGER_TOKEN)
+    private readonly txManager: TransactionManager,
+    @Inject(AUDIT_LOG_REPOSITORY_TOKEN)
+    private readonly auditLogRepo: AuditLogRepository
   ) {}
 
   /**
@@ -179,7 +189,17 @@ export class RoleService {
         TE.fromEither(UserFactory.assignRoles(targetUser, boundRolesToAssign))
       ),
       TE.chainFirstW(({targetUser, updatedUser}) => checkQuota(targetUser, updatedUser)),
-      TE.chainW(({updatedUser}) => this.userRoleRepo.updateUser(updatedUser)),
+      TE.bindW("actor", () => TE.right(extractActorDetails(request.requestor))),
+      TE.chainW(({updatedUser, actor}) =>
+        this.txManager.execute(() =>
+          pipe(
+            this.userRoleRepo.updateUser(updatedUser),
+            TE.chainFirstW(() =>
+              this.persistUserRolesAuditLog("USER_ROLES_ASSIGNED", request.userId, actor, request.roles)
+            )
+          )
+        )
+      ),
       TE.map(() => undefined),
       logSuccess("Roles assigned to user", "RoleService", () => ({userId: request.userId}))
     )
@@ -222,10 +242,20 @@ export class RoleService {
         validateRequestorAsPermissions(request, boundRolesToAssign, workflowTemplatesParents)
       ),
       TE.bindW("currentAgent", ({request}) => this.agentRoleRepo.getAgentById(request.agentId)),
-      TE.chainEitherKW(({currentAgent, boundRolesToAssign}) =>
-        AgentFactory.assignRoles<{occ: true}>(currentAgent, boundRolesToAssign)
+      TE.bindW("updatedAgent", ({currentAgent, boundRolesToAssign}) =>
+        TE.fromEither(AgentFactory.assignRoles<{occ: true}>(currentAgent, boundRolesToAssign))
       ),
-      TE.chainW(updatedAgent => this.agentRoleRepo.updateAgent(updatedAgent)),
+      TE.bindW("actor", () => TE.right(extractActorDetails(request.requestor))),
+      TE.chainW(({updatedAgent, actor}) =>
+        this.txManager.execute(() =>
+          pipe(
+            this.agentRoleRepo.updateAgent(updatedAgent),
+            TE.chainFirstW(() =>
+              this.persistAgentRolesAuditLog("AGENT_ROLES_ASSIGNED", request.agentId, actor, request.roles)
+            )
+          )
+        )
+      ),
       TE.map(() => undefined),
       logSuccess("Roles assigned to agent", "RoleService", () => ({agentId: request.agentId}))
     )
@@ -268,8 +298,20 @@ export class RoleService {
         validateRequestorAsPermissions(request, boundRolesToRemove, workflowTemplatesParents)
       ),
       TE.bindW("targetUser", ({request}) => this.userRoleRepo.getUserById(request.userId)),
-      TE.chainEitherKW(({targetUser, boundRolesToRemove}) => UserFactory.removeRoles(targetUser, boundRolesToRemove)),
-      TE.chainW(updatedUser => this.userRoleRepo.updateUser(updatedUser)),
+      TE.bindW("updatedUser", ({targetUser, boundRolesToRemove}) =>
+        TE.fromEither(UserFactory.removeRoles(targetUser, boundRolesToRemove))
+      ),
+      TE.bindW("actor", () => TE.right(extractActorDetails(request.requestor))),
+      TE.chainW(({updatedUser, actor}) =>
+        this.txManager.execute(() =>
+          pipe(
+            this.userRoleRepo.updateUser(updatedUser),
+            TE.chainFirstW(() =>
+              this.persistUserRolesAuditLog("USER_ROLES_REMOVED", request.userId, actor, request.roles)
+            )
+          )
+        )
+      ),
       TE.map(() => undefined),
       logSuccess("Roles removed from user", "RoleService", () => ({userId: request.userId}))
     )
@@ -312,12 +354,76 @@ export class RoleService {
         validateRequestorAsPermissions(request, boundRolesToRemove, workflowTemplatesParents)
       ),
       TE.bindW("currentAgent", ({request}) => this.agentRoleRepo.getAgentById(request.agentId)),
-      TE.chainEitherKW(({currentAgent, boundRolesToRemove}) =>
-        AgentFactory.removeRoles<{occ: true}>(currentAgent, boundRolesToRemove)
+      TE.bindW("updatedAgent", ({currentAgent, boundRolesToRemove}) =>
+        TE.fromEither(AgentFactory.removeRoles<{occ: true}>(currentAgent, boundRolesToRemove))
       ),
-      TE.chainW(updatedAgent => this.agentRoleRepo.updateAgent(updatedAgent)),
+      TE.bindW("actor", () => TE.right(extractActorDetails(request.requestor))),
+      TE.chainW(({updatedAgent, actor}) =>
+        this.txManager.execute(() =>
+          pipe(
+            this.agentRoleRepo.updateAgent(updatedAgent),
+            TE.chainFirstW(() =>
+              this.persistAgentRolesAuditLog("AGENT_ROLES_REMOVED", request.agentId, actor, request.roles)
+            )
+          )
+        )
+      ),
       TE.map(() => undefined),
       logSuccess("Roles removed from agent", "RoleService", () => ({agentId: request.agentId}))
+    )
+  }
+
+  /**
+   * Persists an audit log for user role changes
+   */
+  private persistUserRolesAuditLog(
+    auditType: "USER_ROLES_ASSIGNED" | "USER_ROLES_REMOVED",
+    userId: string,
+    actor: CreateAuditLog["actor"],
+    roles: RoleAssignmentItem[]
+  ): TaskEither<AuditLogValidationError | ExecutionError, void> {
+    return pipe(
+      AuditLogFactory.create({
+        auditType,
+        entityType: "USER",
+        entityId: userId,
+        actor,
+        payload: {
+          roles: roles.map(r => ({
+            roleName: r.roleName,
+            scope: r.scope
+          }))
+        }
+      }),
+      TE.fromEither,
+      TE.chainW(auditLog => this.auditLogRepo.persist(auditLog))
+    )
+  }
+
+  /**
+   * Persists an audit log for agent role changes
+   */
+  private persistAgentRolesAuditLog(
+    auditType: "AGENT_ROLES_ASSIGNED" | "AGENT_ROLES_REMOVED",
+    agentId: string,
+    actor: CreateAuditLog["actor"],
+    roles: RoleAssignmentItem[]
+  ): TaskEither<AuditLogValidationError | ExecutionError, void> {
+    return pipe(
+      AuditLogFactory.create({
+        auditType,
+        entityType: "AGENT",
+        entityId: agentId,
+        actor,
+        payload: {
+          roles: roles.map(r => ({
+            roleName: r.roleName,
+            scope: r.scope
+          }))
+        }
+      }),
+      TE.fromEither,
+      TE.chainW(auditLog => this.auditLogRepo.persist(auditLog))
     )
   }
 }

@@ -85,6 +85,12 @@ export function generateErrorResponseForCreateSpace(error: CreateSpaceError, con
     case "quota_check_error":
     case "unknown_error":
     case "conflicting_isolation_level":
+    case "audit_log_malformed_object":
+    case "audit_log_invalid_audit_type":
+    case "audit_log_invalid_entity_type":
+    case "audit_log_invalid_actor_type":
+    case "audit_log_invalid_payload":
+    case "audit_log_missing_required_fields":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: an unexpected error occurred`)
       )
