@@ -141,8 +141,6 @@ __metadata:
     axios: "npm:1.15.2"
     bull: "npm:4.16.5"
     chance: "npm:1.1.13"
-    class-transformer: "npm:0.5.1"
-    class-validator: "npm:0.15.1"
     cookie-parser: "npm:1.4.7"
     dotenv-cli: "npm:11.0.0"
     eslint: "npm:10.2.0"
@@ -3442,13 +3440,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/validator@npm:^13.15.3":
-  version: 13.15.10
-  resolution: "@types/validator@npm:13.15.10"
-  checksum: 10/63117a776ced4d066d7fb63130d90ba487d38209dd45c25641ca1a6f5040e8394cc9a855750b919b72a923c5ffb51f8474f213b10b5aaa27d9db108bef07ad10
-  languageName: node
-  linkType: hard
-
 "@types/yargs-parser@npm:*":
   version: 21.0.3
   resolution: "@types/yargs-parser@npm:21.0.3"
@@ -5043,24 +5034,6 @@ __metadata:
   version: 2.2.0
   resolution: "cjs-module-lexer@npm:2.2.0"
   checksum: 10/fc8eb5c1919504366d8260a150d93c4e857740e770467dc59ca0cc34de4b66c93075559a5af65618f359187866b1be40e036f4e1a1bab2f1e06001c216415f74
-  languageName: node
-  linkType: hard
-
-"class-transformer@npm:0.5.1":
-  version: 0.5.1
-  resolution: "class-transformer@npm:0.5.1"
-  checksum: 10/750327e3e9a5cf233c5234252f4caf6b06c437bf68a24acbdcfb06c8e0bfff7aa97c30428184813e38e08111b42871f20c5cf669ea4490f8ae837c09f08b31e7
-  languageName: node
-  linkType: hard
-
-"class-validator@npm:0.15.1":
-  version: 0.15.1
-  resolution: "class-validator@npm:0.15.1"
-  dependencies:
-    "@types/validator": "npm:^13.15.3"
-    libphonenumber-js: "npm:^1.11.1"
-    validator: "npm:^13.15.22"
-  checksum: 10/ff2f1678313ee9b64fdf4e522922cc05da9fe1156fab57e161dcfddd9e851042ccdb340408dc897524c9c7464b2b58176f57cce77503e86850032451d7472156
   languageName: node
   linkType: hard
 
@@ -8535,13 +8508,6 @@ __metadata:
     prelude-ls: "npm:^1.2.1"
     type-check: "npm:~0.4.0"
   checksum: 10/2e4720ff79f21ae08d42374b0a5c2f664c5be8b6c8f565bb4e1315c96ed3a8acaa9de788ffed82d7f2378cf36958573de07ef92336cb5255ed74d08b8318c9ee
-  languageName: node
-  linkType: hard
-
-"libphonenumber-js@npm:^1.11.1":
-  version: 1.12.23
-  resolution: "libphonenumber-js@npm:1.12.23"
-  checksum: 10/74b00fa8dd51f3b99d3d0be2c108186aa260fbf832f7d29b8d79a1eed4e874a542e9fced315477c5f57e6c6958e4c93f1ea7267873248bd1ad83d04b852ba553
   languageName: node
   linkType: hard
 
@@ -12388,13 +12354,6 @@ __metadata:
   version: 7.0.2
   resolution: "validate-npm-package-name@npm:7.0.2"
   checksum: 10/2a9bdc6fd5e4284c8e02279446bfd3c38c0c01222555fd3b00b4765d9d47b217d4a200910be71b80b958f6baf40d2d32e812a8632633a2ce376a9b3b74811072
-  languageName: node
-  linkType: hard
-
-"validator@npm:^13.15.22":
-  version: 13.15.26
-  resolution: "validator@npm:13.15.26"
-  checksum: 10/22488ae718ca724eda81b7c8bf505005d4d70cb6ff9a319f48fd897a31d40fd9a2971af4a3288667a04c56b4f95912555495519d54a5d8d63c2572bf4970081a
   languageName: node
   linkType: hard
 

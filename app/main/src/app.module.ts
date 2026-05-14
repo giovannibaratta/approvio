@@ -7,9 +7,6 @@ import {JwtAuthGuard} from "./auth"
 import {RateLimiterGuard} from "./rate-limiter"
 import {RequestIdMiddleware} from "./logging/request-id.middleware"
 import * as cookieParser from "cookie-parser"
-import {APP_PIPE} from "@nestjs/core"
-import {globalValidationPipe} from "./validation-pipe"
-
 @Module({
   imports: [ControllersModule, AuthModule, RateLimiterModule],
   controllers: [],
@@ -22,10 +19,6 @@ import {globalValidationPipe} from "./validation-pipe"
     {
       provide: APP_GUARD,
       useExisting: RateLimiterGuard
-    },
-    {
-      provide: APP_PIPE,
-      useValue: globalValidationPipe
     }
   ]
 })

@@ -53,8 +53,6 @@
     "@prisma/driver-adapter-utils": "7.7.0",
     "axios": "1.15.2",
     "bull": "4.16.5",
-    "class-transformer": "0.5.1",
-    "class-validator": "0.15.1",
     "cookie-parser": "1.4.7",
     "express": "5.2.1",
     "fp-ts": "2.16.11",
