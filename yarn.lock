@@ -132,7 +132,7 @@ __metadata:
     "@types/express": "npm:5.0.6"
     "@types/jest": "npm:30.0.0"
     "@types/jsonwebtoken": "npm:9.0.10"
-    "@types/node": "npm:22.19.13"
+    "@types/node": "npm:25.7.0"
     "@types/nodemailer": "npm:6.4.23"
     "@types/passport-jwt": "npm:4.0.1"
     "@types/supertest": "npm:7.2.0"
@@ -3305,12 +3305,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:22.19.13":
-  version: 22.19.13
-  resolution: "@types/node@npm:22.19.13"
+"@types/node@npm:25.7.0":
+  version: 25.7.0
+  resolution: "@types/node@npm:25.7.0"
   dependencies:
-    undici-types: "npm:~6.21.0"
-  checksum: 10/b2d1d0cff2f0e283cbd5a3b60226b8a938c59d868c5c4715d52be619b1e57386c3ce043abc28a833e21c86fa33aaa2d00181e76d23600953f18c9aa69e3d654b
+    undici-types: "npm:~7.21.0"
+  checksum: 10/1b11c865ea517ab90af870c2f58c100804e3dd8dc25a62b5e5af3aea12ad015f9faf513664babc7e0c755bb1c0744649b2ff19b7b434c1648ad8057f2dc6c71a
   languageName: node
   linkType: hard
 
@@ -12087,17 +12087,17 @@ __metadata:
   languageName: node
   linkType: hard
 
-"undici-types@npm:~6.21.0":
-  version: 6.21.0
-  resolution: "undici-types@npm:6.21.0"
-  checksum: 10/ec8f41aa4359d50f9b59fa61fe3efce3477cc681908c8f84354d8567bb3701fafdddf36ef6bff307024d3feb42c837cf6f670314ba37fc8145e219560e473d14
-  languageName: node
-  linkType: hard
-
 "undici-types@npm:~7.13.0":
   version: 7.13.0
   resolution: "undici-types@npm:7.13.0"
   checksum: 10/1088ad68dd57981aa6eced5b3f5d74129ac619fbe558b30cb584d6096d32b084ae30d7cdc480d622226e6ffc8d31e01ac30215816439a0d784e0fe64db873b0f
+  languageName: node
+  linkType: hard
+
+"undici-types@npm:~7.21.0":
+  version: 7.21.0
+  resolution: "undici-types@npm:7.21.0"
+  checksum: 10/e38c0efbeaeabeb84f5d8a49d127fcae1626af09785b04fde4915e8312b47c5f81106c61e655cb63c59e429522460a313183168913e55b485a36e06d67689798
   languageName: node
   linkType: hard
 
