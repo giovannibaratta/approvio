@@ -160,12 +160,10 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
         }
       ),
       TE.chainW(templates => {
-        if (templates.length === 0) {
-          return TE.right(O.none)
-        }
+        if (templates.length === 0) return TE.right(O.none)
 
         const mostRecentResult = getMostRecentVersionFromTuples(templates)
-        if (mostRecentResult._tag === "Left") {
+        if (E.isLeft(mostRecentResult)) {
           Logger.error(`Error finding most recent version for template ${templateName}: ${mostRecentResult.left}`)
           return TE.left("unknown_error" as const)
         }
