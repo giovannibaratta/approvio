@@ -417,19 +417,14 @@ export function markTemplateAsDeprecated(
   return WorkflowTemplateFactory.validate(updatedTemplate)
 }
 
-// TODO: This can be simplified by doing a simple sort
 export function getMostRecentVersionFromTuples<T>(
   tuples: ReadonlyArray<T & {version: number}>
-): Either<"empty_array" | "invalid_version", T> {
+): Either<"empty_array", T> {
   if (tuples.length === 0) return left("empty_array")
 
-  try {
-    const mostRecent = tuples.reduce((mostRecent, current) => {
-      return current.version > mostRecent.version ? current : mostRecent
-    })
+  const mostRecent = tuples.reduce((mostRecent, current) => {
+    return current.version > mostRecent.version ? current : mostRecent
+  })
 
-    return right(mostRecent)
-  } catch {
-    return left("invalid_version")
-  }
+  return right(mostRecent)
 }
