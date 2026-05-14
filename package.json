@@ -94,7 +94,7 @@
     "generate-license-file": "4.1.1",
     "globals": "17.6.0",
     "ioredis": "5.10.1",
-    "jest": "30.3.0",
+    "jest": "30.4.2",
     "license-checker-rseidelsohn": "4.4.2",
     "mailpit-api": "^1.8.1",
     "node-loader": "2.1.0",
