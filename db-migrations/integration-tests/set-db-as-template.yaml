@@ -2,8 +2,8 @@ databaseChangeLog:
   - changeSet:
       id: 20260208132753-set-db-as-template
       author: Giovanni Baratta
-      comment: Set database as tempalte
+      comment: Set database as template
       changes:
         - sql:
             dbms: "postgresql"
-            sql: ALTER DATABASE approvio WITH is_template TRUE
+            sql: ALTER DATABASE ${databaseName} WITH is_template TRUE
