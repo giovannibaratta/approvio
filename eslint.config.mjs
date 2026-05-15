@@ -45,6 +45,14 @@ export default tseslint.config(
     files: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs", "**/*.cjs"],
     extends: [...tseslint.configs.recommended],
     rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          argsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_"
+        }
+      ],
       "@typescript-eslint/no-warning-comments": "off",
       "@typescript-eslint/no-empty-function": "off",
       "@typescript-eslint/no-var-requires": "off",

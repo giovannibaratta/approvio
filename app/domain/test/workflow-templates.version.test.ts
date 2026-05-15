@@ -17,7 +17,7 @@ describe("getMostRecentVersionFromTuples", () => {
     const items = [
       {version: 1, name: "v1"},
       {version: 3, name: "v3"},
-      {version: 2, name: "v2"},
+      {version: 2, name: "v2"}
     ]
     const result = getMostRecentVersionFromTuples(items)
     expect(result).toBeRightOf(items[1])
@@ -28,7 +28,7 @@ describe("getMostRecentVersionFromTuples", () => {
       {version: 1, name: "v1"},
       {version: 3, name: "v3a"},
       {version: 3, name: "v3b"},
-      {version: 2, name: "v2"},
+      {version: 2, name: "v2"}
     ]
     const result = getMostRecentVersionFromTuples(items)
     // Current reduce: current.version > mostRecent.version ? current : mostRecent
