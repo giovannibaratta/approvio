@@ -10,9 +10,9 @@ import {WorkflowActionWebhookTaskFactory, TaskStatus, WebhookActionHttpMethod, W
 import {Job} from "bull"
 import {WorkflowActionWebhookEvent} from "@domain/events"
 
-import {isLeft} from "fp-ts/Either"
 import {createWiremockUrl, getWiremockRequestsFor, setupWiremockStub} from "@test/wiremock"
 import {v7 as uuidv7} from "uuid"
+import {unwrapRight} from "@utils/either"
 
 async function createWorkflowWithWebhookTask(
   prisma: PrismaClient,
@@ -41,20 +41,16 @@ async function createWorkflowWithWebhookTask(
   })
 
   // Create a webhook task
-  const webhookTaskEither = WorkflowActionWebhookTaskFactory.newWorkflowActionWebhookTask({
-    id: uuidv7(),
-    workflowId: workflow.id,
-    url: webhookUrl,
-    method,
-    headers,
-    payload
-  })
-
-  if (isLeft(webhookTaskEither)) {
-    throw new Error(`Failed to create webhook task for testing: ${JSON.stringify(webhookTaskEither.left)}`)
-  }
-
-  const webhookTask = webhookTaskEither.right
+  const webhookTask = unwrapRight(
+    WorkflowActionWebhookTaskFactory.newWorkflowActionWebhookTask({
+      id: uuidv7(),
+      workflowId: workflow.id,
+      url: webhookUrl,
+      method,
+      headers,
+      payload
+    })
+  )
 
   await prisma.workflowActionsWebhookTask.create({
     data: {
@@ -83,11 +79,9 @@ describe("Workflow Action Webhook Processor Integration", () => {
   let uniqueWebhookPath: string
   let wiremockUrl: string
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
     redisPrefix = prepareRedisPrefix()
-    uniqueWebhookPath = `/webhook-${uuidv7()}`
-    wiremockUrl = createWiremockUrl(uniqueWebhookPath)
 
     try {
       const moduleBuilder = setupWorkerTestModule([WorkflowActionWebhookProcessor])
@@ -107,11 +101,19 @@ describe("Workflow Action Webhook Processor Integration", () => {
     await module.init()
   }, 30000)
 
+  afterAll(async () => {
+    await prisma.$disconnect()
+    await module.close()
+  })
+
   afterEach(async () => {
     await cleanDatabase(prisma)
-    await prisma.$disconnect()
     await cleanRedisByPrefix(redisPrefix)
-    await module.close()
+  })
+
+  beforeEach(async () => {
+    uniqueWebhookPath = `/webhook-${uuidv7()}`
+    wiremockUrl = createWiremockUrl(uniqueWebhookPath)
   })
 
   it("should be defined", () => {

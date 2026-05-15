@@ -35,7 +35,7 @@ describe("Agent Roles API", () => {
   let targetAgent: {id: string; agentName: string}
   let agentToken: string
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
 
     let module: TestingModule
@@ -56,6 +56,10 @@ describe("Agent Roles API", () => {
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
 
+    await app.init()
+  }, 30000)
+
+  beforeEach(async () => {
     const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
     const agent = await createMockAgentInDb(prisma, {agentName: "test-agent"})
 
@@ -85,9 +89,9 @@ describe("Agent Roles API", () => {
     orgAdminUser = {user: adminUser, token: createUserToken(adminUser)}
     targetAgent = {id: agent.id, agentName: agent.agentName}
     agentToken = createAgentToken(targetAgent)
+  })
 
-    await app.init()
-  }, 30000)
+  afterAll(async () => {})
 
   afterEach(async () => {
     await cleanDatabase(prisma)

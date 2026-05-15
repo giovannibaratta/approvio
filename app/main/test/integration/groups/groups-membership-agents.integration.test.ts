@@ -15,9 +15,9 @@ import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import {TokenPayloadBuilder} from "@services"
 import {mapAgentToDomain} from "@external/database/shared"
-import {isLeft} from "fp-ts/Either"
 import {EntityType} from "@controllers/groups/groups.mappers"
 import {v7 as uuidv7} from "uuid"
+import {unwrapRight} from "@utils/either"
 
 type AgentWithToken = {
   agent: PrismaAgent
@@ -35,7 +35,7 @@ describe("Groups API - Agent Membership", () => {
 
   const endpoint = `/${GROUPS_ENDPOINT_ROOT}`
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
 
     let module: TestingModule
@@ -56,13 +56,14 @@ describe("Groups API - Agent Membership", () => {
     prisma = module.get(DatabaseClient).prisma
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
+    await app.init()
+  }, 30000)
 
+  beforeEach(async () => {
     const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
     const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
     const agent = await createMockAgentInDb(prisma, {agentName: "test-group-agent"})
-    const domainAgent = mapAgentToDomain(agent)
-
-    if (isLeft(domainAgent)) throw new Error("Failed to init agent mock")
+    const domainAgent = unwrapRight(mapAgentToDomain(agent))
 
     const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
       issuer: configProvider.jwtConfig.issuer,
@@ -74,7 +75,7 @@ describe("Groups API - Agent Membership", () => {
     })
 
     // Create agent token payload - agents should have entityType: "agent"
-    const agentTokenPayload = TokenPayloadBuilder.fromAgent(domainAgent.right, {
+    const agentTokenPayload = TokenPayloadBuilder.fromAgent(domainAgent, {
       issuer: configProvider.jwtConfig.issuer,
       audience: [configProvider.jwtConfig.audience]
     })
@@ -82,14 +83,15 @@ describe("Groups API - Agent Membership", () => {
     orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
     orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
     testAgent = {agent, token: jwtService.sign(agentTokenPayload)}
+  })
 
-    await app.init()
-  }, 30000)
+  afterAll(async () => {
+    await prisma.$disconnect()
+    await app.close()
+  })
 
   afterEach(async () => {
     await cleanDatabase(prisma)
-    await prisma.$disconnect()
-    await app.close()
   })
 
   it("should be defined", () => {

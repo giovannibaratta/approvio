@@ -23,7 +23,7 @@ describe("Workflow Templates internal API", () => {
 
   const endpoint = `/${WORKFLOW_TEMPLATE_INTERNAL_ENDPOINT_ROOT}`
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
 
     let module: TestingModule
@@ -55,10 +55,13 @@ describe("Workflow Templates internal API", () => {
     await app.init()
   }, 30000)
 
-  afterEach(async () => {
-    await cleanDatabase(prisma)
+  afterAll(async () => {
     await prisma.$disconnect()
     await app.close()
+  })
+
+  afterEach(async () => {
+    await cleanDatabase(prisma)
   })
 
   describe("POST /internal/workflow-template/:templateId/cancel-workflows", () => {

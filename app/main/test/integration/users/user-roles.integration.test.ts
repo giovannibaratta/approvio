@@ -40,7 +40,7 @@ describe("User Roles API", () => {
   let orgAdminUser: UserWithToken
   let targetUser: UserWithToken
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
 
     let module: TestingModule
@@ -61,6 +61,10 @@ describe("User Roles API", () => {
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
 
+    await app.init()
+  }, 30000)
+
+  beforeEach(async () => {
     const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
     const userToAssignRoles = await createDomainMockUserInDb(prisma, {orgAdmin: false})
 
@@ -78,12 +82,13 @@ describe("User Roles API", () => {
 
     orgAdminUser = {user: adminUser, token: createUserToken(adminUser)}
     targetUser = {user: userToAssignRoles, token: createUserToken(userToAssignRoles)}
+  })
 
-    await app.init()
-  }, 30000)
+  afterAll(async () => {})
 
   afterEach(async () => {
     await cleanDatabase(prisma)
+    jest.restoreAllMocks()
   })
 
   afterAll(async () => {

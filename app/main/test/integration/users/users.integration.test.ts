@@ -24,10 +24,12 @@ describe("Users API", () => {
   let prisma: PrismaClient
   let orgAdminUser: UserWithToken
   let orgMemberUser: UserWithToken
+  let jwtService: JwtService
+  let configProvider: ConfigProvider
 
   const endpoint = `/${USERS_ENDPOINT_ROOT}`
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
 
     let module: TestingModule
@@ -45,9 +47,13 @@ describe("Users API", () => {
 
     app = module.createNestApplication({logger: false})
     prisma = module.get(DatabaseClient).prisma
-    const jwtService = module.get(JwtService)
-    const configProvider = module.get(ConfigProvider)
+    jwtService = module.get(JwtService)
+    configProvider = module.get(ConfigProvider)
 
+    await app.init()
+  }, 30000)
+
+  beforeEach(async () => {
     const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
     const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
 
@@ -62,14 +68,15 @@ describe("Users API", () => {
 
     orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
     orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
+  })
 
-    await app.init()
-  }, 30000)
+  afterAll(async () => {
+    await prisma.$disconnect()
+    await app.close()
+  })
 
   afterEach(async () => {
     await cleanDatabase(prisma)
-    await prisma.$disconnect()
-    await app.close()
   })
 
   describe("POST /users", () => {

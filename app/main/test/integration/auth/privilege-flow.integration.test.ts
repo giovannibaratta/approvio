@@ -23,7 +23,7 @@ describe("Privilege Flow Integration", () => {
   let authService: AuthService
   let jwtService: JwtService
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
 
     // Create test user data for real OIDC server creation
@@ -67,10 +67,13 @@ describe("Privilege Flow Integration", () => {
     await app.init()
   }, 20000)
 
-  afterEach(async () => {
-    await cleanDatabase(prisma)
+  afterAll(async () => {
     await prisma.$disconnect()
     await app.close()
+  })
+
+  afterEach(async () => {
+    await cleanDatabase(prisma)
   })
 
   describe("Complete Privilege Token Flow", () => {

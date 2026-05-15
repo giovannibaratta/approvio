@@ -18,7 +18,7 @@ describe("RequestIdMiddleware Integration", () => {
   let redisPrefix: string
   let healthService: HealthService
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
     redisPrefix = prepareRedisPrefix()
 
@@ -37,11 +37,14 @@ describe("RequestIdMiddleware Integration", () => {
     await app.init()
   }, 30000)
 
+  afterAll(async () => {
+    await prisma.$disconnect()
+    await app.close()
+  })
+
   afterEach(async () => {
     await cleanDatabase(prisma)
-    await prisma.$disconnect()
     await cleanRedisByPrefix(redisPrefix)
-    await app.close()
   })
 
   it("should generate a valid traceparent if missing and populate RequestContext", async () => {

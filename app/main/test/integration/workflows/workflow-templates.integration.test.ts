@@ -58,10 +58,11 @@ describe("Workflow Templates API", () => {
   let orgMemberUser: UserWithToken
   let jwtService: JwtService
   let testSpace: PrismaSpace
+  let configProvider: ConfigProvider
 
   const endpoint = `/${WORKFLOW_TEMPLATES_ENDPOINT_ROOT}`
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
 
     let module: TestingModule
@@ -80,8 +81,12 @@ describe("Workflow Templates API", () => {
     app = module.createNestApplication({logger: false})
     prisma = module.get(DatabaseClient).prisma
     jwtService = module.get(JwtService)
-    const configProvider = module.get(ConfigProvider)
+    configProvider = module.get(ConfigProvider)
 
+    await app.init()
+  }, 30000)
+
+  beforeEach(async () => {
     const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
     const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
     const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
@@ -97,14 +102,15 @@ describe("Workflow Templates API", () => {
     orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
 
     testSpace = await createMockSpaceInDb(prisma)
+  })
 
-    await app.init()
-  }, 30000)
+  afterAll(async () => {
+    await prisma.$disconnect()
+    await app.close()
+  })
 
   afterEach(async () => {
     await cleanDatabase(prisma)
-    await prisma.$disconnect()
-    await app.close()
   })
 
   describe("POST /workflow-templates", () => {

@@ -14,7 +14,7 @@ describe("Auth Integration", () => {
   let app: INestApplication
   let prisma: PrismaClient
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
 
     let module: TestingModule
@@ -36,10 +36,13 @@ describe("Auth Integration", () => {
     await app.init()
   }, 20000)
 
-  afterEach(async () => {
-    await cleanDatabase(prisma)
+  afterAll(async () => {
     await prisma.$disconnect()
     await app.close()
+  })
+
+  afterEach(async () => {
+    await cleanDatabase(prisma)
   })
 
   // Helper to create a user and a refresh token
