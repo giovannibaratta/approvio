@@ -14,11 +14,9 @@ export type ExtractLeftFromFn<T> = T extends (...args: unknown[]) => Either<infe
  * @template MethodName The name of the method on the class instance.
  */
 export type ExtractLeftFromMethod<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ClassType extends new (...args: any[]) => any, // Constraint: ensure it's a constructor
+  ClassType extends new (...args: unknown[]) => any, // Constraint: ensure it's a constructor
   MethodName extends keyof InstanceType<ClassType> // Constraint: ensure MethodName is a key of the instance
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-> = ExtractReturnType<ClassType, MethodName> extends TaskEither<infer E, any> ? E : never
+> = ExtractReturnType<ClassType, MethodName> extends TaskEither<infer E, unknown> ? E : never
 
 /**
  * Extracts the return type of a method on a class instance.
@@ -26,8 +24,7 @@ export type ExtractLeftFromMethod<
  * @template MethodName The name of the method on the class instance.
  */
 type ExtractReturnType<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  ClassType extends new (...args: any[]) => any, // Constraint: ensure it's a constructor
+  ClassType extends new (...args: unknown[]) => any, // Constraint: ensure it's a constructor
   MethodName extends keyof InstanceType<ClassType> // Constraint: ensure MethodName is a key of the instance
 > =
   // Get the return type of the specified method
