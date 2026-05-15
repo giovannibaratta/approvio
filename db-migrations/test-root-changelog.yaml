@@ -2,6 +2,8 @@ databaseChangeLog:
   # Include all standard migrations first
   - include:
       file: root-changelog.yaml
+  - include:
+      file: integration-tests/set-db-as-template.yaml
 
   # Convert all tables to UNLOGGED for test performance
   - include:
