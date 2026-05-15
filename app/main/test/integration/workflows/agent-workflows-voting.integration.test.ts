@@ -27,11 +27,11 @@ import {
 import {get, post} from "@test/requests"
 import {TokenPayloadBuilder} from "@services"
 import {mapAgentToDomain} from "@external/database/shared"
-import {isLeft} from "fp-ts/Either"
 import {getQueueToken} from "@nestjs/bull"
 import {WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"
 import {Queue} from "bull"
 import {v7 as uuidv7} from "uuid"
+import {unwrapRight} from "@utils/either"
 
 type AgentWithToken = {
   agent: PrismaAgent
@@ -73,7 +73,7 @@ describe("Agent Workflow Voting API", () => {
 
   const endpoint = `/${WORKFLOWS_ENDPOINT_ROOT}`
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
     redisPrefix = prepareRedisPrefix()
 
@@ -95,7 +95,12 @@ describe("Agent Workflow Voting API", () => {
     prisma = module.get(DatabaseClient).prisma
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
+    recalculationQueue = module.get<Queue>(getQueueToken(WORKFLOW_STATUS_RECALCULATION_QUEUE))
 
+    await app.init()
+  }, 30000)
+
+  beforeEach(async () => {
     const testGroup = await createTestGroup(prisma, {name: "Test-Agent-Voter-Group"})
     mockGroupId = testGroup.id
 
@@ -113,13 +118,9 @@ describe("Agent Workflow Voting API", () => {
     const agentWithRole = await createMockAgentInDb(prisma, {agentName: "test-agent-with-role"})
 
     // Map agents to domain objects
-    const domainAgent = mapAgentToDomain(agent)
-    const domainAgentNotInGroup = mapAgentToDomain(agentNotInGroup)
-    const domainAgentWithRole = mapAgentToDomain(agentWithRole)
-
-    if (isLeft(domainAgent) || isLeft(domainAgentNotInGroup) || isLeft(domainAgentWithRole)) {
-      throw new Error("Failed to initialize agent mocks")
-    }
+    const domainAgent = unwrapRight(mapAgentToDomain(agent))
+    const domainAgentNotInGroup = unwrapRight(mapAgentToDomain(agentNotInGroup))
+    const domainAgentWithRole = unwrapRight(mapAgentToDomain(agentWithRole))
 
     // Add voter roles for agents (preparing for future schema support)
     const voterRole = SystemRole.createWorkflowTemplateVoterRole({
@@ -147,15 +148,15 @@ describe("Agent Workflow Voting API", () => {
     await addAgentToGroup(prisma, mockGroupId, agentWithRole.id)
 
     // Create agent token payloads
-    const agentTokenPayload = TokenPayloadBuilder.fromAgent(domainAgent.right, {
+    const agentTokenPayload = TokenPayloadBuilder.fromAgent(domainAgent, {
       issuer: configProvider.jwtConfig.issuer,
       audience: [configProvider.jwtConfig.audience]
     })
-    const agentNotInGroupTokenPayload = TokenPayloadBuilder.fromAgent(domainAgentNotInGroup.right, {
+    const agentNotInGroupTokenPayload = TokenPayloadBuilder.fromAgent(domainAgentNotInGroup, {
       issuer: configProvider.jwtConfig.issuer,
       audience: [configProvider.jwtConfig.audience]
     })
-    const agentWithRoleTokenPayload = TokenPayloadBuilder.fromAgent(domainAgentWithRole.right, {
+    const agentWithRoleTokenPayload = TokenPayloadBuilder.fromAgent(domainAgentWithRole, {
       issuer: configProvider.jwtConfig.issuer,
       audience: [configProvider.jwtConfig.audience]
     })
@@ -163,17 +164,16 @@ describe("Agent Workflow Voting API", () => {
     testAgent = {agent, token: jwtService.sign(agentTokenPayload)}
     testAgentNotInGroup = {agent: agentNotInGroup, token: jwtService.sign(agentNotInGroupTokenPayload)}
     testAgentWithRole = {agent: agentWithRole, token: jwtService.sign(agentWithRoleTokenPayload)}
+  })
 
-    recalculationQueue = module.get<Queue>(getQueueToken(WORKFLOW_STATUS_RECALCULATION_QUEUE))
-
-    await app.init()
-  }, 30000)
+  afterAll(async () => {
+    await prisma.$disconnect()
+    await app.close()
+  })
 
   afterEach(async () => {
     await cleanDatabase(prisma)
-    await prisma.$disconnect()
     await cleanRedisByPrefix(redisPrefix)
-    await app.close()
   })
 
   it("should be defined", () => {

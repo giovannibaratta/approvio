@@ -80,7 +80,7 @@ describe("Workflow Action Email Processor Integration", () => {
   let mailpitEndpoint: string
   let senderEmail: string
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const originalEmailConfig = ConfigProvider.validateEmailProviderConfig()
 
     if (isNone(originalEmailConfig)) throw new Error("Email provider configuration is not valid.")
@@ -124,11 +124,14 @@ describe("Workflow Action Email Processor Integration", () => {
     await module.init()
   }, 30000)
 
+  afterAll(async () => {
+    await prisma.$disconnect()
+    await module.close()
+  })
+
   afterEach(async () => {
     await cleanDatabase(prisma)
-    await prisma.$disconnect()
     await cleanRedisByPrefix(redisPrefix)
-    await module.close()
   })
 
   it("should be defined", () => {

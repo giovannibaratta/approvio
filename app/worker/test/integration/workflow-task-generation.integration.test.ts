@@ -82,7 +82,7 @@ describe("Workflow Task Generation Integration", () => {
   let redisPrefix: string
   let module: TestingModule
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
     redisPrefix = prepareRedisPrefix()
 
@@ -103,11 +103,14 @@ describe("Workflow Task Generation Integration", () => {
     await module.init()
   }, 30000)
 
+  afterAll(async () => {
+    await prisma.$disconnect()
+    await module.close()
+  })
+
   afterEach(async () => {
     await cleanDatabase(prisma)
-    await prisma.$disconnect()
     await cleanRedisByPrefix(redisPrefix)
-    await module.close()
   })
 
   it("should be defined", () => {

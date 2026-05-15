@@ -93,7 +93,7 @@ describe("OIDC Flow Integration", () => {
   let testUser: OidcMockUser
   let configProvider: ConfigProvider
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
 
     // Create test user data for real OIDC server creation
@@ -145,10 +145,13 @@ describe("OIDC Flow Integration", () => {
     await app.init()
   }, 20000)
 
-  afterEach(async () => {
-    await cleanDatabase(prisma)
+  afterAll(async () => {
     await prisma.$disconnect()
     await app.close()
+  })
+
+  afterEach(async () => {
+    await cleanDatabase(prisma)
   })
 
   describe("Complete OIDC Authentication Flow", () => {

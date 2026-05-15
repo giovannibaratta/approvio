@@ -34,7 +34,7 @@ describe("Organization Admin API", () => {
   const endpoint = `/${ORGANIZATION_ADMIN_ENDPOINT_ROOT}`
   const organizationName = "default"
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
 
     let module: TestingModule
@@ -56,6 +56,10 @@ describe("Organization Admin API", () => {
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
 
+    await app.init()
+  }, 30000)
+
+  beforeEach(async () => {
     const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
     const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
     const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
@@ -69,14 +73,15 @@ describe("Organization Admin API", () => {
 
     orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
     orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
+  })
 
-    await app.init()
-  }, 30000)
+  afterAll(async () => {
+    await prisma.$disconnect()
+    await app.close()
+  })
 
   afterEach(async () => {
     await cleanDatabase(prisma)
-    await prisma.$disconnect()
-    await app.close()
   })
 
   it("should be defined", () => {

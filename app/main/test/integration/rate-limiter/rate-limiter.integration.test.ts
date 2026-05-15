@@ -30,7 +30,7 @@ describe("Rate Limiter Integration", () => {
 
   let authenticatedUser: UserWithToken
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
     redisPrefix = prepareRedisPrefix()
 
@@ -64,7 +64,10 @@ describe("Rate Limiter Integration", () => {
     prisma = module.get(DatabaseClient).prisma
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
+    await app.init()
+  }, 30000)
 
+  beforeEach(async () => {
     const user = await createDomainMockUserInDb(prisma)
     const tokenPayload = TokenPayloadBuilder.fromUser(user, {
       issuer: configProvider.jwtConfig.issuer,
@@ -72,15 +75,16 @@ describe("Rate Limiter Integration", () => {
     })
 
     authenticatedUser = {user, token: jwtService.sign(tokenPayload)}
+  })
 
-    await app.init()
-  }, 30000)
+  afterAll(async () => {
+    await prisma.$disconnect()
+    await app.close()
+  })
 
   afterEach(async () => {
     await cleanDatabase(prisma)
-    await prisma.$disconnect()
     await cleanRedisByPrefix(redisPrefix)
-    await app.close()
   })
 
   it("should not rate-limit unauthenticated requests", async () => {

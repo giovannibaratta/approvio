@@ -108,7 +108,7 @@ describe("Workflows API", () => {
 
   const endpoint = `/${WORKFLOWS_ENDPOINT_ROOT}`
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
     redisPrefix = prepareRedisPrefix()
 
@@ -126,16 +126,20 @@ describe("Workflows API", () => {
     }
 
     app = module.createNestApplication({logger: false})
-
+    configProvider = module.get(ConfigProvider)
     prisma = module.get(DatabaseClient).prisma
     jwtService = module.get(JwtService)
 
+    recalculationQueue = module.get<Queue>(getQueueToken(WORKFLOW_STATUS_RECALCULATION_QUEUE))
+    await app.init()
+  }, 30000)
+
+  beforeEach(async () => {
     const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
     const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
     const testGroup1 = await createTestGroup(prisma, "Test-Approver-Group-1")
     const testGroup2 = await createTestGroup(prisma, "Test-Approver-Group-2")
 
-    configProvider = module.get(ConfigProvider)
     const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
       issuer: configProvider.jwtConfig.issuer,
       audience: [configProvider.jwtConfig.audience]
@@ -157,16 +161,16 @@ describe("Workflows API", () => {
         minCount: 1
       }
     })
+  })
 
-    recalculationQueue = module.get<Queue>(getQueueToken(WORKFLOW_STATUS_RECALCULATION_QUEUE))
-    await app.init()
-  }, 30000)
+  afterAll(async () => {
+    await prisma.$disconnect()
+    await app.close()
+  })
 
   afterEach(async () => {
     await cleanDatabase(prisma)
-    await prisma.$disconnect()
     await cleanRedisByPrefix(redisPrefix)
-    await app.close()
   })
 
   it("should be defined", () => {

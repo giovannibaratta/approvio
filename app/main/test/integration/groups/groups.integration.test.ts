@@ -53,7 +53,7 @@ describe("Groups API", () => {
 
   const endpoint = `/${GROUPS_ENDPOINT_ROOT}`
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
 
     try {
@@ -75,6 +75,20 @@ describe("Groups API", () => {
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
 
+    await app.init()
+  }, 30000)
+
+  afterAll(async () => {
+    await prisma.$disconnect()
+    await app.close()
+  })
+
+  afterEach(async () => {
+    await cleanDatabase(prisma)
+    jest.restoreAllMocks()
+  })
+
+  beforeEach(async () => {
     const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
     const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
     const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
@@ -88,14 +102,6 @@ describe("Groups API", () => {
 
     orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
     orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
-
-    await app.init()
-  }, 30000)
-
-  afterEach(async () => {
-    await cleanDatabase(prisma)
-    await prisma.$disconnect()
-    await app.close()
   })
 
   it("should be defined", () => {

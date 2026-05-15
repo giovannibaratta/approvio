@@ -33,7 +33,7 @@ describe("OIDC Auto-Registration Integration", () => {
   let prisma: PrismaClient
   let configProvider: ConfigProvider
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
 
     let module: TestingModule
@@ -56,10 +56,13 @@ describe("OIDC Auto-Registration Integration", () => {
     await app.init()
   }, 20000)
 
-  afterEach(async () => {
-    await cleanDatabase(prisma)
+  afterAll(async () => {
     await prisma.$disconnect()
     await app.close()
+  })
+
+  afterEach(async () => {
+    await cleanDatabase(prisma)
   })
 
   describe("First User Bootstrap Scenario", () => {

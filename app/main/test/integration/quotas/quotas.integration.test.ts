@@ -21,7 +21,7 @@ describe("Quotas Integration Tests", () => {
   let adminToken: string
   let userToken: string
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
 
     let module: TestingModule
@@ -42,6 +42,10 @@ describe("Quotas Integration Tests", () => {
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
 
+    await app.init()
+  }, 30000)
+
+  beforeEach(async () => {
     // Setup users and tokens
     const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
     const regularUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
@@ -67,14 +71,15 @@ describe("Quotas Integration Tests", () => {
         audience: [configProvider.jwtConfig.audience]
       })
     )
+  })
 
-    await app.init()
-  }, 30000)
+  afterAll(async () => {
+    await prisma.$disconnect()
+    await app.close()
+  })
 
   afterEach(async () => {
     await cleanDatabase(prisma)
-    await prisma.$disconnect()
-    await app.close()
   })
 
   describe("POST /quotas", () => {

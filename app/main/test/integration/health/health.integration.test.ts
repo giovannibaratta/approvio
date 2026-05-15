@@ -18,7 +18,7 @@ describe("Health API", () => {
   let redisPrefix: string
   let healthRepository: HealthRepository
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
     redisPrefix = prepareRedisPrefix()
 
@@ -41,11 +41,14 @@ describe("Health API", () => {
     await app.init()
   }, 30000)
 
+  afterAll(async () => {
+    await prisma.$disconnect()
+    await app.close()
+  })
+
   afterEach(async () => {
     await cleanDatabase(prisma)
-    await prisma.$disconnect()
     await cleanRedisByPrefix(redisPrefix)
-    await app.close()
   })
 
   describe("Good cases", () => {

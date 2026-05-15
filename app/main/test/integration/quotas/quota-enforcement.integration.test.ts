@@ -27,7 +27,7 @@ describe("Quota Enforcement API Integration", () => {
   let configProvider: ConfigProvider
   let orgAdminUser: UserWithToken
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
 
     let module: TestingModule
@@ -47,7 +47,10 @@ describe("Quota Enforcement API Integration", () => {
     prisma = module.get(DatabaseClient).prisma
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
+    await app.init()
+  }, 30000)
 
+  beforeEach(async () => {
     const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
 
     const tokenPayload = TokenPayloadBuilder.from({
@@ -60,14 +63,15 @@ describe("Quota Enforcement API Integration", () => {
     })
 
     orgAdminUser = {user: adminUser, token: jwtService.sign(tokenPayload)}
+  })
 
-    await app.init()
-  }, 30000)
+  afterAll(async () => {
+    await prisma.$disconnect()
+    await app.close()
+  })
 
   afterEach(async () => {
     await cleanDatabase(prisma)
-    await prisma.$disconnect()
-    await app.close()
   })
 
   describe("MAX_SPACES enforcement", () => {
