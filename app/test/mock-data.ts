@@ -542,7 +542,6 @@ export async function createMockWorkflowTemplateInDb(
     updatedAt: dates.updatedAt
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const {spaceId: _, ...overridesWithoutSpaceId} = overrides ?? {}
 
   const data: Prisma.WorkflowTemplateCreateInput = {
