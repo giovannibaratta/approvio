@@ -50,8 +50,11 @@ describe("Rate Limiter Integration", () => {
             points: RATE_LIMIT_POINTS,
             durationInSeconds: RATE_LIMIT_DURATION_SECONDS,
             redis: {
-              host: process.env.REDIS_HOST,
-              port: parseInt(process.env.REDIS_PORT),
+              connection: {
+                type: "plain",
+                host: process.env.REDIS_HOST,
+                port: parseInt(process.env.REDIS_PORT)
+              },
               db: parseInt(process.env.REDIS_DB),
               prefix: redisPrefix
             }

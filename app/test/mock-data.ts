@@ -294,16 +294,22 @@ export class MockConfigProvider implements ConfigProviderInterface {
         audience: "approvio.test.localhost"
       },
       redisConfig: {
-        host: "localhost",
-        port: 1234,
+        connection: {
+          type: "plain",
+          host: "localhost",
+          port: 1234
+        },
         db: 5
       },
       rateLimitConfig: {
         points: 100,
         durationInSeconds: 1,
         redis: {
-          host: "localhost",
-          port: 1234,
+          connection: {
+            type: "plain",
+            host: "localhost",
+            port: 1234
+          },
           db: 5
         }
       },
