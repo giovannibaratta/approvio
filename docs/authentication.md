@@ -22,14 +22,16 @@ You can explicitly control this mode via a top-level environmental variable:
 
 ## OIDC Provider Configuration
 
-These variables are required for all providers:
+The following environment variables are required to configure the OIDC provider:
 
-- `OIDC_PROVIDER`: The type of OIDC provider being used. Acceptable values are `auth0`, `zitadel`, `keycloak`, or `custom`. Defaults to `custom`.
-- `OIDC_ISSUER_URL`: The Issuer URL of the IDP (e.g., `https://accounts.google.com`).
-- `OIDC_CLIENT_ID`: The Client ID obtained from the IDP.
-- `OIDC_CLIENT_SECRET`: The Client Secret obtained from the IDP.
-- `OIDC_REDIRECT_URI`: The callback URL where the IDP redirects after login (e.g., `http://localhost:3000/auth/web/callback`).
-- `OIDC_SCOPES`: (Optional) Space-separated list of scopes to request. Defaults to `openid profile email`.
+| Variable             | Description                                                                                                                    |
+| :------------------- | :----------------------------------------------------------------------------------------------------------------------------- |
+| `OIDC_PROVIDER`      | The type of OIDC provider being used. Acceptable values are `auth0`, `zitadel`, `keycloak`, or `custom`. Defaults to `custom`. |
+| `OIDC_ISSUER_URL`    | The Issuer URL of the IDP (e.g., `https://accounts.google.com`).                                                               |
+| `OIDC_CLIENT_ID`     | The Client ID obtained from the IDP.                                                                                           |
+| `OIDC_CLIENT_SECRET` | The Client Secret obtained from the IDP.                                                                                       |
+| `OIDC_REDIRECT_URI`  | The callback URL where the IDP redirects after login (e.g., `http://localhost:3000/auth/web/callback`).                        |
+| `OIDC_SCOPES`        | (Optional) Space-separated list of scopes to request. Defaults to `openid profile email`.                                      |
 
 ### Discovery (Recommended)
 
@@ -39,9 +41,11 @@ By default, the application uses OIDC Discovery (`.well-known/openid-configurati
 
 If your provider does not support OIDC Discovery, you can manually configure the endpoints. To bypass the discovery process, you must set **ALL** of the following variables:
 
-- `OIDC_AUTHORIZATION_ENDPOINT`: The authorization endpoint URL.
-- `OIDC_TOKEN_ENDPOINT`: The token endpoint URL.
-- `OIDC_USERINFO_ENDPOINT`: The userinfo endpoint URL.
+| Variable                      | Description                     |
+| :---------------------------- | :------------------------------ |
+| `OIDC_AUTHORIZATION_ENDPOINT` | The authorization endpoint URL. |
+| `OIDC_TOKEN_ENDPOINT`         | The token endpoint URL.         |
+| `OIDC_USERINFO_ENDPOINT`      | The userinfo endpoint URL.      |
 
 **Note:** If you choose to configure manually, you must provide **all three** endpoints. If you provide some but not all, the application will throw an error at startup to prevent misconfiguration.
 
@@ -93,7 +97,7 @@ The Web flow uses standard OIDC redirection and secures the session via `httpOnl
 ```mermaid
 sequenceDiagram
     participant F as Frontend (Browser)
-    participant W as WebAuthController
+    participant W as Backend
     participant O as OIDC Provider
 
     F->>W: GET /auth/web/login
@@ -101,8 +105,8 @@ sequenceDiagram
     F->>O: User Authentication & Consent
     O-->>F: 302 Redirect to /auth/web/callback
     F->>W: GET /auth/web/callback?code=...&state=...
-    Note over W,O: Backend exchanges code for OIDC tokens <br/> server-to-server via OidcClient
-    Note over W: Validates PKCE & JIT Provisions User <br/> Generates Approvio TokenPair
+    Note over W,O: Backend exchanges code for OIDC tokens <br/> server-to-server
+    Note over W: Validates and Provisions User <br/> Generates Session Token
     W-->>F: 302 Redirect to Frontend URL <br/> (Sets httpOnly access_token + refresh_token Cookies)
 
     Note over F,W: Token Refresh
@@ -122,7 +126,7 @@ The CLI flow involves initiating login via the CLI, performing authentication on
 sequenceDiagram
     participant C as CLI
     participant B as Host Browser
-    participant A as CliAuthController
+    participant A as Backend
     participant O as OIDC Provider
 
     C->>A: POST /auth/cli/initiate { redirectUri }
@@ -132,8 +136,8 @@ sequenceDiagram
     O-->>B: 302 Redirect to CLI local server (redirectUri)
     B-->>C: Returns code & state
     C->>A: POST /auth/cli/token { code, state }
-    Note over A,O: Backend exchanges code for OIDC tokens <br/> server-to-server via OidcClient
-    Note over A: Validates PKCE & JIT Provisions User <br/> Generates Approvio TokenPair
+    Note over A,O: Backend exchanges code for OIDC tokens <br/> server-to-server
+    Note over A: Validates and Provisions User <br/> Generates Approvio Tokens
     A-->>C: 200 Returns Approvio Access & Refresh Tokens (JSON)
 
     Note over C,A: Token Refresh
@@ -152,18 +156,18 @@ Agents use an asymmetric key-pair (JWT Assertion) mechanism to securely authenti
 ```mermaid
 sequenceDiagram
     participant M as Trusted Agent
-    participant A as AuthController
+    participant A as Backend
 
     M->>A: POST /auth/agents/challenge { agentId }
     A-->>M: 200 Returns PKCE Challenge
     Note over M: Agent signs the challenge <br/> with its private key (Client Assertion JWT)
     M->>A: POST /auth/agents/token { clientAssertion }
-    Note over A: Validates JWT Signature <br/> JIT Provisioning (if applicable)
-    A-->>M: 200 Returns AgentTokenResponse (Access + Refresh Tokens)
+    Note over A: Validates JWT Signature <br/> Registers agent if applicable
+    A-->>M: 200 Returns Access + Refresh Tokens
 
-    Note over M,A: Token Refresh (DPoP-bound)
-    M->>A: POST /auth/agents/refresh { refreshToken } + DPoP header
-    Note over A: Validates DPoP proof <br/> Verifies method & URL binding
+    Note over M,A: Token Refresh
+    M->>A: POST /auth/agents/refresh { refreshToken }
+    Note over A: Validates Request
     A-->>M: 200 Returns new TokenResponse
 ```
 
