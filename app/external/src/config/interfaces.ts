@@ -39,9 +39,23 @@ export interface JwtConfig {
   accessTokenExpirationSec?: number
 }
 
+export type RedisConnection =
+  | {
+      type: "plain"
+      host: string
+      port: number
+      password?: string
+    }
+  | {
+      type: "sentinel"
+      sentinels: {host: string; port: number}[]
+      name: string
+      sentinelPassword?: string
+      password?: string
+    }
+
 export interface RedisConfig {
-  host: string
-  port: number
+  connection: RedisConnection
   db: number
   prefix?: string
 }

@@ -6,7 +6,7 @@ import {ConsumePointsError, RateLimiterProvider} from "@services"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {TaskEither} from "fp-ts/TaskEither"
-import {waitForRedisConnection} from "../redis/redis.utils"
+import {toRedisOptions, waitForRedisConnection} from "../redis/redis.utils"
 
 export {RateLimiterRes} from "rate-limiter-flexible"
 
@@ -20,12 +20,7 @@ export class RedisRateLimiterProvider implements RateLimiterProvider, OnModuleIn
   async onModuleInit() {
     const config = this.configProvider.rateLimitConfig.redis
 
-    this.redisClient = new Redis({
-      host: config.host,
-      port: config.port,
-      db: config.db,
-      enableOfflineQueue: false
-    })
+    this.redisClient = new Redis(toRedisOptions(config, {enableOfflineQueue: false}))
 
     await waitForRedisConnection(this.getRedisClient(), "rate-limiter-redis-client")
 

@@ -34,6 +34,8 @@ export class ConfigProvider implements ConfigProviderInterface {
     this.emailProviderConfig = ConfigProvider.validateEmailProviderConfig()
     this.oidcConfig = this.validateOidcProviderConfig()
     this.jwtConfig = this.validateJwtConfig()
+    // redisConfig must be initialized BEFORE rateLimitConfig because the latter
+    // falls back to the main redisConfig if no specific rate limit connection is provided.
     this.redisConfig = this.validateRedisConfig()
     this.rateLimitConfig = this.validateRateLimitConfig()
     this.frontendUrl = this.validateFrontendUrl()
@@ -248,12 +250,7 @@ export class ConfigProvider implements ConfigProviderInterface {
   }
 
   private validateRedisConfig(): RedisConfig {
-    return this.readRedisConfig({
-      host: "REDIS_HOST",
-      port: "REDIS_PORT",
-      db: "REDIS_DB",
-      prefix: "REDIS_PREFIX"
-    })
+    return this.readRedisConfig("REDIS_")
   }
 
   private validateRateLimitConfig(): RateLimitConfig {
@@ -275,56 +272,72 @@ export class ConfigProvider implements ConfigProviderInterface {
         throw new Error("RATE_LIMIT_DURATION must be a valid number > 0")
     }
 
-    const redis = this.readRedisConfig(
-      {
-        host: "RATE_LIMIT_REDIS_HOST",
-        port: "RATE_LIMIT_REDIS_PORT",
-        db: "RATE_LIMIT_REDIS_DB",
-        prefix: "RATE_LIMIT_REDIS_PREFIX"
-      },
-      this.redisConfig
-    )
+    // If no specific Rate Limit Redis connection is defined, reuse the main one.
+    const hasRateLimitConnection =
+      process.env.RATE_LIMIT_REDIS_HOST !== undefined || process.env.RATE_LIMIT_REDIS_SENTINELS !== undefined
+    const redis = hasRateLimitConnection ? this.readRedisConfig("RATE_LIMIT_REDIS_") : this.redisConfig
 
     return {
       points,
       durationInSeconds,
       redis: {
         ...redis,
-        prefix: redis.prefix || "rl"
+        prefix: process.env.RATE_LIMIT_REDIS_PREFIX || redis.prefix || "rl"
       }
     }
   }
 
-  private readRedisConfig(
-    envVars: {
-      host: string
-      port: string
-      db: string
-      prefix: string
-    },
-    defaults?: RedisConfig
-  ): RedisConfig {
-    const host = process.env[envVars.host] || defaults?.host
-    const unparsedPort = process.env[envVars.port] || defaults?.port.toString()
-    const unparsedDb = process.env[envVars.db] || defaults?.db.toString() || "0"
-    const prefix = process.env[envVars.prefix] || defaults?.prefix
+  /**
+   * Reads Redis configuration from environment variables using a specific prefix.
+   *
+   * @param prefix - The environment variable prefix (e.g., "REDIS_" or "RATE_LIMIT_REDIS_").
+   * @returns A complete RedisConfig object.
+   */
+  private readRedisConfig(prefix: string): RedisConfig {
+    const host = process.env[`${prefix}HOST`]
+    const unparsedPort = process.env[`${prefix}PORT`]
+    const sentinels = this.parseSentinels(prefix, process.env[`${prefix}SENTINELS`])
+    const name = process.env[`${prefix}SENTINEL_NAME`] || "mymaster"
+    const sentinelPassword = process.env[`${prefix}SENTINEL_PASSWORD`]
+    const password = process.env[`${prefix}PASSWORD`]
 
-    if (host === undefined) throw new Error(`${envVars.host} is not defined`)
-    if (unparsedPort === undefined || unparsedPort === "") throw new Error("port is not defined")
-
-    const port: number = parseInt(unparsedPort, 10)
-
-    if (isNaN(port) || port <= 0 || port > 65535)
-      throw new Error(`${envVars.port} must be a valid number between 1 and 65535`)
+    const unparsedDb = process.env[`${prefix}DB`] || "0"
+    const redisPrefix = process.env[`${prefix}PREFIX`]
 
     const db: number = parseInt(unparsedDb, 10)
-    if (isNaN(db) || db < 0 || db > 15) throw new Error(`${envVars.db} must be a valid number between 0 and 15`)
+    if (isNaN(db) || db < 0 || db > 15) throw new Error(`${prefix}DB must be a valid number between 0 and 15`)
 
-    return {
-      host,
-      port,
-      db,
-      prefix
+    if (sentinels) {
+      return {
+        connection: {
+          type: "sentinel",
+          sentinels,
+          name,
+          sentinelPassword,
+          password
+        },
+        db,
+        prefix: redisPrefix
+      }
+    } else {
+      if (host === undefined) throw new Error(`${prefix}HOST or ${prefix}SENTINELS is not defined`)
+      if (unparsedPort === undefined || unparsedPort === "") throw new Error(`${prefix}PORT is not defined`)
+
+      const port: number = parseInt(unparsedPort, 10)
+
+      if (isNaN(port) || port <= 0 || port > 65535)
+        throw new Error(`${prefix}PORT must be a valid number between 1 and 65535`)
+
+      return {
+        connection: {
+          type: "plain",
+          host: host,
+          port: port,
+          password
+        },
+        db,
+        prefix: redisPrefix
+      }
     }
   }
 
@@ -352,5 +365,17 @@ export class ConfigProvider implements ConfigProviderInterface {
       throw new Error("COOKIE_SECURE must be 'true' or 'false'")
 
     return cookieSecureRaw.toLowerCase() !== "false"
+  }
+
+  private parseSentinels(prefix: string, raw?: string): {host: string; port: number}[] | undefined {
+    if (!raw) return undefined
+
+    return raw.split(",").map(s => {
+      const [shost, sport] = s.split(":")
+      if (!shost || !sport) throw new Error(`Invalid sentinel configuration in ${prefix}SENTINELS`)
+      const port = parseInt(sport, 10)
+      if (isNaN(port) || port <= 0 || port > 65535) throw new Error(`Invalid sentinel port in ${prefix}SENTINELS`)
+      return {host: shost, port}
+    })
   }
 }
