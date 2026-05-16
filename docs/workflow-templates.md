@@ -6,23 +6,13 @@ Workflow Templates are reusable blueprints that define the structure and approva
 
 ### Template Structure
 
-A template defines:
-
-- **Approval Rules**: Who can approve and the voting logic
-- **Actions**: Automated tasks like email notifications that will be performed by the system when specified conditions are met (e.g. workflow is approved)
-- **Versioning**: Templates can be updated while preserving existing workflows
-- **Space Assignment**: Every template belongs to exactly one space for organizational grouping
+A template serves as a comprehensive definition for a workflow process. It specifies the necessary approval rules, dictating exactly who can approve and what voting logic must be satisfied. It also outlines actions, which are automated tasks—such as email notifications—that the system will execute when specific conditions are met, like when a workflow is finally approved. Furthermore, the template system inherently supports versioning, allowing administrators to update templates while ensuring that existing workflows are safely preserved. Finally, every template requires a space assignment to ensure proper organizational grouping.
 
 ### Space Relationship
 
-Every workflow template must belong to a space. Spaces are logical containers that help organize related approval processes.
+The relationship between a workflow template and a space is strict and permanent. Spaces serve as logical containers to organize related approval processes.
 
-**Key Points:**
-
-- Each template has a **spaceId** that identifies its parent space
-- Templates cannot exist without a space
-- Templates cannot be moved between spaces after creation
-- When a space is deleted, all its templates are deleted
+Every template must belong to exactly one space, tracked internally via a unique space identifier, and cannot exist independently. Once a template is created within a specific space, it cannot be moved to another space later. This tight coupling also means that if a space is ever deleted, all of its associated templates are inherently deleted as well.
 
 For more information about spaces and how to organize your workflow templates, see [Spaces](./spaces.md).
 
@@ -30,8 +20,8 @@ For more information about spaces and how to organize your workflow templates, s
 
 Templates have three states:
 
-| State | Description |
-| :--- | :--- |
-| **ACTIVE** | Can create new workflows (only one "latest" version) |
-| **PENDING_DEPRECATION** | Being phased out, may have active workflows |
-| **DEPRECATED** | Cannot create new workflows, voting may be restricted |
+| State                   | Description                                           |
+| :---------------------- | :---------------------------------------------------- |
+| **ACTIVE**              | Can create new workflows (only one "latest" version)  |
+| **PENDING_DEPRECATION** | Being phased out, may have active workflows           |
+| **DEPRECATED**          | Cannot create new workflows, voting may be restricted |

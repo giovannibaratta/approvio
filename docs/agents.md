@@ -6,12 +6,9 @@ Agents are automated, non-human entities that represent systems, applications, o
 
 ### What Are Agents?
 
-Agents are first-class entities in the system, similar to users but designed for machine-to-machine interactions:
+Agents are first-class entities in the system, similar to users but designed for machine-to-machine interactions. They possess a unique identity, typically a machine or system name, rather than a human email address. Instead of passwords or typical user tokens, agents authenticate using an asymmetric cryptographic key pair, employing a challenge-response mechanism to obtain access.
 
-- **Identity**: Each agent has a unique name and cryptographic key pair (RSA 4096-bit)
-- **Authentication**: Agents use challenge-response authentication with JWT assertions
-- **Purpose**: Enable automated systems to participate in approval workflows
-- **Examples**: CI/CD pipelines, monitoring systems, automated compliance tools
+The primary purpose of an agent is to enable automated systems—such as CI/CD pipelines, monitoring systems, and automated compliance tools—to participate in approval workflows in a secure, programmatic manner.
 
 ### Agents vs Users
 
@@ -27,27 +24,15 @@ Agents are first-class entities in the system, similar to users but designed for
 
 #### Automated CI/CD Approvals
 
-A CI/CD pipeline agent can automatically approve deployments that pass all tests:
-
-- Agent is added to "CI Systems" group
-- Agent has voter role for "Deployment Approval" workflow template
-- Pipeline runs tests and votes to approve successful builds
+A CI/CD pipeline agent can automatically approve deployments that pass all tests. To achieve this, the agent is added to the relevant approval group and assigned a voter role for the corresponding workflow template. Once the pipeline successfully completes its tests, the agent casts an approval vote, allowing the deployment to proceed without manual intervention.
 
 #### Monitoring System Integration
 
-A monitoring agent can veto deployments during incidents:
-
-- Agent monitors system health metrics
-- Agent has voter role for deployment workflows
-- Agent casts VETO vote if critical alerts are active
+A monitoring agent can act as a safeguard by vetoing deployments during system incidents. By continuously monitoring system health metrics, an agent with voting permissions can immediately cast a VETO vote if critical alerts become active, preventing potentially destabilizing changes.
 
 #### Compliance Automation
 
-A compliance checking agent can participate in approval processes:
-
-- Agent validates regulatory requirements
-- Agent votes to approve compliant changes
-- Agent provides audit trail of automated checks
+Agents can be integrated into compliance checking systems to ensure regulatory requirements are met. The agent can validate necessary conditions and automatically vote to approve compliant changes, simultaneously providing an automated audit trail of the checks performed.
 
 ## Agent Capabilities
 
@@ -66,17 +51,16 @@ Agents have specific capabilities designed for automated workflow participation 
 
 **Requirements for voting:**
 
-- Must have voter role for the specific workflow template
-- Must be members of required approval groups
+To participate in a workflow, an agent must have the voter role for the specific workflow template and must be a member of the required approval groups.
 
 ## Authentication Flow
 
 Agents authenticate using a secure two-step challenge-response protocol:
 
 ```text
-┌─────────┐                                           ┌─────────┐
-│  Agent  │                                           │ Server  │
-└────┬────┘                                           └────┬────┘
+┌─────────┐                                            ┌─────────┐
+│  Agent  │                                            │ Server  │
+└────┬────┘                                            └────┬────┘
      │                                                      │
      │  1. Request Challenge                                │
      │  POST /auth/agents/challenge                         │
@@ -100,7 +84,6 @@ Agents authenticate using a secure two-step challenge-response protocol:
 
 ### Authentication Steps
 
-1. **Request Challenge:** The agent requests an authentication challenge from the server, providing its unique name.
-2. **Receive Encrypted Challenge:** The server generates a unique one-time code (nonce) and encrypts it using the agent's registered public key.
-3. **Decrypt and Sign:** The agent decrypts the challenge using its private key, creates a JWT assertion that includes the nonce, and signs it.
-4. **Receive Access Token:** The server validates the signature, ensures the nonce hasn't been used before, and issues an access token for API operations.
+The authentication process begins when an agent requests a challenge from the server using its unique name. The server responds by generating a unique one-time code (nonce) and encrypting it with the agent's registered public key.
+
+Upon receiving the encrypted challenge, the agent decrypts it using its private key. It then creates a signed assertion that includes this decrypted nonce. Finally, the agent submits this assertion back to the server. The server validates the signature, ensures the nonce has not been reused, and issues an access token granting the agent API access.

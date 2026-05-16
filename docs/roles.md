@@ -6,12 +6,7 @@ The role system provides fine-grained access control through a comprehensive Rol
 
 ### What Are Roles?
 
-Roles are named sets of permissions that grant specific capabilities on resources. Each role:
-
-- Has a **name** that describes its purpose (e.g., "SpaceManager", "WorkflowTemplateVoter")
-- Contains a set of **permissions** (e.g., read, write, manage)
-- Applies to a **resource type** (e.g., spaces, workflow templates, workflows)
-- Operates within a **scope** (e.g., organization-wide, specific space, specific template)
+Roles are named sets of permissions that grant specific capabilities on resources. A role is defined by several key attributes. First, it has a distinct name that describes its purpose, such as "SpaceManager" or "WorkflowTemplateVoter". Second, it contains a specific set of permissions like read, write, or manage. Third, a role applies to a specific resource type, which could be spaces, workflow templates, or workflows. Finally, each role operates within a defined scope, ranging from an organization-wide impact to being restricted to a specific space or template.
 
 ### Role Scopes
 
@@ -21,12 +16,12 @@ Roles can be scoped at different levels of the organizational hierarchy:
 
 ### Scope Types
 
-| Scope | Description |
-| :--- | :--- |
-| **Organization (`org`)** | Applies to all resources of a type across the organization |
-| **Space (`space`)** | Applies to a specific space and templates within it |
-| **Group (`group`)** | Applies to a specific group |
-| **Workflow Template (`workflow_template`)** | Applies to a specific workflow template |
+| Scope                                       | Description                                                |
+| :------------------------------------------ | :--------------------------------------------------------- |
+| **Organization (`org`)**                    | Applies to all resources of a type across the organization |
+| **Space (`space`)**                         | Applies to a specific space and templates within it        |
+| **Group (`group`)**                         | Applies to a specific group                                |
+| **Workflow Template (`workflow_template`)** | Applies to a specific workflow template                    |
 
 ## Role Types
 
@@ -95,9 +90,7 @@ Control who can view, cancel, and manage workflow instances:
 
 ## Role Limits
 
-- Maximum **128 roles** per user or agent
-- Duplicate roles (same name + scope) are automatically deduplicated
-- Role assignments are additive - assigning new roles keeps existing roles
+The system enforces specific limits and behaviors regarding roles to maintain efficiency and clarity. A user or agent can have a maximum of 128 roles assigned to them. If duplicate roles—meaning roles with the exact same name and scope—are assigned, the system automatically deduplicates them.
 
 ## Authorization Rules
 
@@ -105,43 +98,28 @@ Control who can view, cancel, and manage workflow instances:
 
 Role assignment is governed by strict authorization rules based on the user's current role:
 
-| Role | Capabilities | Restrictions |
-| :--- | :--- | :--- |
-| **Organization Admins** | Can assign any role at any scope, can assign org-wide roles, and can override all permission boundaries. | None |
-| **Space Managers** | Can assign space-scoped roles for their spaces, and can assign template-scoped roles for templates in their spaces. | Cannot assign org-wide roles. |
-| **Group Managers** | Can assign group-scoped roles for their groups. | Cannot assign space or template roles. |
+| Role                    | Capabilities                                                                                                        | Restrictions                           |
+| :---------------------- | :------------------------------------------------------------------------------------------------------------------ | :------------------------------------- |
+| **Organization Admins** | Can assign any role at any scope, can assign org-wide roles, and can override all permission boundaries.            | None                                   |
+| **Space Managers**      | Can assign space-scoped roles for their spaces, and can assign template-scoped roles for templates in their spaces. | Cannot assign org-wide roles.          |
+| **Group Managers**      | Can assign group-scoped roles for their groups.                                                                     | Cannot assign space or template roles. |
 
 ## Integration with Other Features
 
 ### Spaces
 
-When a user creates a space, they automatically receive:
-
-- **SpaceManager** role for that space
-- Both read and manage permissions
+When a user creates a space, they are automatically granted the **SpaceManager** role for that specific space. This built-in assignment ensures the creator immediately has both read and manage permissions, allowing them to fully administer their new space.
 
 ### Groups
 
-Group membership is separate from roles:
-
-- Group membership determines voting eligibility
-- Group roles control group management
-- Both are needed: membership + voter role to vote
+It is essential to understand that group membership is separate from roles. While group roles are responsible for controlling the management of the group itself, it is the group membership that ultimately determines an entity's voting eligibility in workflows. To successfully cast a vote, an entity must possess both the appropriate membership in the required group and the corresponding voter role.
 
 ### Voting
 
-To vote on a workflow, an entity (user or agent) needs:
-
-1. **Voter role** for the workflow template (at any scope)
-2. **Group membership** in the required approval group
-3. Workflow must be in **EVALUATION_IN_PROGRESS** state
+Voting on a workflow is a multi-conditional action. For an entity (whether a user or an agent) to cast a vote, they must hold the **Voter role** for the workflow template at an applicable scope. They must also hold membership in the required approval group. Finally, the workflow itself must currently be in the **EVALUATION_IN_PROGRESS** state.
 
 ### Workflow Templates
 
-Template permissions control:
-
-- Who can modify template definitions (write permission)
-- Who can create workflows from templates (instantiate permission)
-- Who can vote on workflows from templates (vote permission)
+Permissions at the template level act as the primary control mechanism for the lifecycle of workflows. They dictate who is authorized to modify the template definitions via the write permission, who is allowed to create new workflow instances via the instantiate permission, and who is permitted to participate by voting on those workflows via the vote permission.
 
 See [Workflow Templates](./workflow-templates.md) for more details.

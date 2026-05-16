@@ -6,41 +6,24 @@ The permissions system controls access to resources and operations through a com
 
 ### Organizational Roles
 
-Users have organizational-level roles that provide system-wide permissions:
+Users are assigned organizational-level roles that provide foundational system-wide permissions.
 
-- **Admin**: Full system access, can manage all resources and users
-- **Member**: Standard user with permissions based on assigned roles
-
-**Key Points:**
-
-- Organization admins can override all permission checks
-- Organization admins can assign any roles at any scope
-- Members require specific role assignments for resource access
+| Role       | Description                                                                                                                                 |
+| :--------- | :------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Admin**  | Full system access. They can manage all resources and users, override all permission checks, and assign any roles at any scope.             |
+| **Member** | A standard user whose access is determined strictly by their specific role assignments. Members require explicit roles for resource access. |
 
 ### Group Membership
 
-Groups are collections of users and agents used for approval workflows:
+Groups are collections of users and agents that define who can participate in approval processes. These groups operate at an organization-wide scope, meaning they can be utilized across any space. They are flexible enough to include both human users and automated agents.
 
-- **Purpose**: Define who can participate in approval processes
-- **Scope**: Organization-wide, can be used across any space
-- **Members**: Can include both users and agents
-- **Voting Eligibility**: Group membership is required but not sufficient for voting
-
-To vote on a workflow, entities need **both**:
-
-1. Membership in a required approval group
-2. Voter role for the workflow template
+It is important to note that while group membership determines who is eligible to vote in a specific process, it is not sufficient on its own. To cast a vote on a workflow, an entity must belong to a required approval group **and** possess the voter role for the corresponding workflow template.
 
 See [Groups](./groups.md) for more about group management.
 
 ### Fine-Grained RBAC
 
-The system uses a comprehensive role-based access control model with:
-
-- **Role Types**: Space, Group, Workflow Template, Workflow roles
-- **Scopes**: Organization-wide, space-specific, group-specific, template-specific
-- **Permissions**: Read, write, manage, instantiate, vote, cancel, and more
-- **Entities**: Roles can be assigned to both users and agents
+The system relies on a comprehensive role-based access control (RBAC) model. This model features various role types (such as Space, Group, Workflow Template, and Workflow roles) that operate at different scopes, ranging from organization-wide to specific resources. These roles grant specific permissions, such as the ability to read, write, manage, instantiate, vote, or cancel workflows, and can be assigned to both users and agents alike.
 
 For detailed information about the role system, see [Roles](./roles.md).
 
@@ -61,12 +44,12 @@ Voting on workflows requires multiple conditions:
 
 **For Users and Agents:**
 
-| Requirement | Description |
-| :--- | :--- |
-| **Group Membership** | Must belong to a group referenced in the workflow's approval rules |
-| **Voter Role** | Must have voter role for the workflow template (at org, space, or template scope) |
-| **Workflow Status** | Workflow must be in EVALUATION_IN_PROGRESS state |
-| **Template Status** | Template must allow voting (not deprecated with voting disabled) |
+| Requirement          | Description                                                                       |
+| :------------------- | :-------------------------------------------------------------------------------- |
+| **Group Membership** | Must belong to a group referenced in the workflow's approval rules                |
+| **Voter Role**       | Must have voter role for the workflow template (at org, space, or template scope) |
+| **Workflow Status**  | Workflow must be in EVALUATION_IN_PROGRESS state                                  |
+| **Template Status**  | Template must allow voting (not deprecated with voting disabled)                  |
 
 **Example:**
 
@@ -80,24 +63,23 @@ User "alice@company.com" can vote on a workflow if:
 
 ### Resource Permissions
 
-| Resource | Permission | Description |
-| :--- | :--- | :--- |
-| **Space** | `read` | View space information |
-| **Space** | `manage` | Modify and delete spaces |
-| **Template** | `read` | View template details |
-| **Template** | `write` | Modify template definitions |
-| **Template** | `instantiate` | Create workflow instances |
-| **Template** | `vote` | Vote on workflows from the template |
-| **Workflow** | `workflow_read` | View workflow details |
-| **Workflow** | `workflow_list` | List workflows |
-| **Workflow** | `workflow_cancel` | Cancel workflows |
+| Resource     | Permission        | Description                         |
+| :----------- | :---------------- | :---------------------------------- |
+| **Space**    | `read`            | View space information              |
+| **Space**    | `manage`          | Modify and delete spaces            |
+| **Template** | `read`            | View template details               |
+| **Template** | `write`           | Modify template definitions         |
+| **Template** | `instantiate`     | Create workflow instances           |
+| **Template** | `vote`            | Vote on workflows from the template |
+| **Workflow** | `workflow_read`   | View workflow details               |
+| **Workflow** | `workflow_list`   | List workflows                      |
+| **Workflow** | `workflow_cancel` | Cancel workflows                    |
 
 ## Security Considerations
 
 ### Vote Integrity
 
-- Vote permissions are validated at vote time, not workflow creation time
-- Template changes don't affect existing workflow voting permissions
+The system ensures vote integrity by validating voting permissions dynamically at the time a vote is cast, rather than at the time the workflow is created. Furthermore, if a template is changed after a workflow has been instantiated, those modifications do not retroactively alter the voting permissions for the existing workflows.
 
 ## Related Documentation
 
