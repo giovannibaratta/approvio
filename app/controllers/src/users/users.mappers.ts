@@ -1,5 +1,5 @@
-import {ListUsers200Response, User as UserApi, UserCreate} from "@approvio/api"
-import {AuthenticatedEntity, User as UserDomain} from "@domain"
+import {ListUsers200Response, User as UserApi, UserCreate, RoleOperationRequestValidationError} from "@approvio/api"
+import {AuthenticatedEntity, User as UserDomain, Group, Versioned} from "@domain"
 import {
   BadRequestException,
   ConflictException,
@@ -16,17 +16,17 @@ import {
   ListUsersRequest,
   PaginatedUsersList,
   UserCreateError,
-  UserGetError,
   UserListError,
   UserRoleAssignmentError,
-  UserRoleRemovalError
+  UserRoleRemovalError,
+  UserService
 } from "@services"
 import {bindW, Do, Either, map, right, left} from "fp-ts/Either"
 import {generateErrorPayload} from "../error"
 import {pipe} from "fp-ts/function"
 import * as O from "fp-ts/Option"
 import {Option} from "fp-ts/Option"
-import {RoleAssignmentValidationError, RoleRemovalValidationError} from "@controllers/shared"
+import {ExtractLeftFromMethod} from "@utils"
 
 export function createUserApiToServiceModel(data: {
   userData: UserCreate
@@ -38,13 +38,22 @@ export function createUserApiToServiceModel(data: {
   })
 }
 
-export function mapUserToApi(user: UserDomain): UserApi {
+export function mapUserToApi(user: Versioned<UserDomain>, groups: Group[]): UserApi {
   return {
     id: user.id,
     displayName: user.displayName,
     email: user.email,
     createdAt: user.createdAt.toISOString(),
-    orgRole: user.orgRole
+    orgRole: user.orgRole,
+    groups: groups.map(g => ({
+      groupId: g.id,
+      groupName: g.name
+    })),
+    roles: user.roles.map(r => ({
+      roleName: r.name,
+      scope: r.scope
+    })),
+    concurrencyControl: {version: user.occ.toString()}
   }
 }
 
@@ -100,7 +109,9 @@ export function generateErrorResponseForCreateUser(
   }
 }
 
-export function generateErrorResponseForGetUser(error: UserGetError, context: string): HttpException {
+type GetUserLeft = ExtractLeftFromMethod<typeof UserService, "getUserWithGroupsByIdentifier">
+
+export function generateErrorResponseForGetUser(error: GetUserLeft, context: string): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (error) {
@@ -138,6 +149,13 @@ export function generateErrorResponseForGetUser(error: UserGetError, context: st
     case "role_total_roles_exceed_maximum":
     case "role_unknown_role_name":
     case "role_scope_incompatible_with_template":
+    case "group_not_found":
+    case "group_name_empty":
+    case "group_name_too_long":
+    case "group_name_invalid_characters":
+    case "group_update_before_create":
+    case "group_description_too_long":
+    case "group_entities_count_invalid":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
@@ -162,7 +180,7 @@ export function mapUsersToApi(paginatedUsers: PaginatedUsersList): ListUsers200R
 }
 
 export function generateErrorResponseForUserRoleAssignment(
-  error: UserRoleAssignmentError | RoleAssignmentValidationError,
+  error: UserRoleAssignmentError | RoleOperationRequestValidationError,
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
@@ -172,19 +190,10 @@ export function generateErrorResponseForUserRoleAssignment(
       throw new ForbiddenException(
         generateErrorPayload(errorCode, `${context}: quota exceeded for assigning roles to user`)
       )
-    case "request_malformed":
-    case "request_roles_missing":
-    case "request_roles_not_array":
-    case "request_roles_empty":
-    case "request_role_name_missing":
-    case "request_role_name_not_string":
-    case "request_role_name_empty":
-    case "request_scope_missing":
-    case "request_scope_not_object":
-    case "request_scope_type_missing":
-    case "request_scope_type_invalid":
-    case "request_scope_id_missing":
-    case "request_scope_id_invalid_uuid":
+    case "malformed_object":
+    case "missing_roles":
+    case "invalid_roles":
+    case "invalid_concurrency_control":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request format`))
     case "user_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: User not found`))
@@ -259,25 +268,16 @@ export function generateErrorResponseForUserRoleAssignment(
 }
 
 export function generateErrorResponseForUserRoleRemoval(
-  error: UserRoleRemovalError | RoleRemovalValidationError,
+  error: UserRoleRemovalError | RoleOperationRequestValidationError,
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (error) {
-    case "request_malformed":
-    case "request_roles_missing":
-    case "request_roles_not_array":
-    case "request_roles_empty":
-    case "request_role_name_missing":
-    case "request_role_name_not_string":
-    case "request_role_name_empty":
-    case "request_scope_missing":
-    case "request_scope_not_object":
-    case "request_scope_type_missing":
-    case "request_scope_type_invalid":
-    case "request_scope_id_missing":
-    case "request_scope_id_invalid_uuid":
+    case "malformed_object":
+    case "missing_roles":
+    case "invalid_roles":
+    case "invalid_concurrency_control":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request format`))
     case "user_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: User not found`))

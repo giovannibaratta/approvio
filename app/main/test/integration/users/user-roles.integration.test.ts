@@ -96,7 +96,8 @@ describe("User Roles API", () => {
     await prisma.$disconnect()
   })
 
-  const createOrgScopeRequest = (roleName: string): RoleAssignmentRequest => ({
+  const createOrgScopeRequest = (roleName: string, occVersion = "-9223372036854775808"): RoleAssignmentRequest => ({
+    concurrencyControl: {version: occVersion},
     roles: [
       {
         roleName,
@@ -105,7 +106,12 @@ describe("User Roles API", () => {
     ]
   })
 
-  const createSpaceRequest = (roleName: string, spaceId: string): RoleAssignmentRequest => ({
+  const createSpaceRequest = (
+    roleName: string,
+    spaceId: string,
+    occVersion = "-9223372036854775808"
+  ): RoleAssignmentRequest => ({
+    concurrencyControl: {version: occVersion},
     roles: [
       {
         roleName,
@@ -114,7 +120,12 @@ describe("User Roles API", () => {
     ]
   })
 
-  const createGroupRequest = (roleName: string, groupId: string): RoleAssignmentRequest => ({
+  const createGroupRequest = (
+    roleName: string,
+    groupId: string,
+    occVersion = "-9223372036854775808"
+  ): RoleAssignmentRequest => ({
+    concurrencyControl: {version: occVersion},
     roles: [
       {
         roleName,
@@ -123,7 +134,12 @@ describe("User Roles API", () => {
     ]
   })
 
-  const createWorkflowTemplateRequest = (roleName: string, workflowTemplateId: string): RoleAssignmentRequest => ({
+  const createWorkflowTemplateRequest = (
+    roleName: string,
+    workflowTemplateId: string,
+    occVersion = "-9223372036854775808"
+  ): RoleAssignmentRequest => ({
+    concurrencyControl: {version: occVersion},
     roles: [
       {
         roleName,
@@ -229,7 +245,9 @@ describe("User Roles API", () => {
         // Given: Valid role assignment request with multiple roles
         const group = await createTestGroup(prisma, {name: "Test Group"})
 
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {roleName: "OrgWideSpaceReadOnly", scope: {type: "org"}},
             {roleName: "GroupReadOnly", scope: {type: "group", groupId: group.id}}
@@ -280,7 +298,8 @@ describe("User Roles API", () => {
           .send(firstAssignment)
 
         // When: Admin adds additional roles
-        const secondAssignment = createGroupRequest("GroupManager", group2.id)
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
+        const secondAssignment = createGroupRequest("GroupManager", group2.id, userToUpdate.occ.toString())
 
         const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
           .withToken(orgAdminUser.token)
@@ -352,7 +371,10 @@ describe("User Roles API", () => {
           }
         })
 
-        const roleAssignmentRequest: RoleAssignmentRequest = {roles}
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles,
+          concurrencyControl: {version: "-9223372036854775808"}
+        }
 
         // When: Admin assigns maximum number of unique roles
         const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
@@ -374,7 +396,9 @@ describe("User Roles API", () => {
         // Given: Role assignment request with duplicate roles (should be consolidated)
         const group = await createTestGroup(prisma, {name: "Test Group"})
 
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {roleName: "GroupReadOnly", scope: {type: "group", groupId: group.id}},
             {roleName: "GroupReadOnly", scope: {type: "group", groupId: group.id}},
@@ -450,7 +474,9 @@ describe("User Roles API", () => {
     describe("bad cases", () => {
       it("should return 401 for unauthenticated requests", async () => {
         // Given: Valid role assignment request but no auth token
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {
               roleName: "GroupReadOnly",
@@ -472,7 +498,9 @@ describe("User Roles API", () => {
 
       it("should return BAD REQUEST with invalid authentication token", async () => {
         // Given: Valid role assignment request but invalid token
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {
               roleName: "GroupReadOnly",
@@ -497,7 +525,9 @@ describe("User Roles API", () => {
 
       it("should return 400 for empty roles array", async () => {
         // Given: Empty roles assignment request
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: []
         }
 
@@ -513,7 +543,9 @@ describe("User Roles API", () => {
 
       it("should return 400 for unknown role name", async () => {
         // Given: Role assignment request with invalid role name
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {
               roleName: "UnknownRole",
@@ -560,7 +592,9 @@ describe("User Roles API", () => {
 
       it("should return 400 for invalid UUID format in scope", async () => {
         // Given: Role assignment request with invalid UUID format
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {
               roleName: "GroupManager",
@@ -584,7 +618,9 @@ describe("User Roles API", () => {
 
       it("should return 404 for non-existent user", async () => {
         // Given: Valid role assignment request but non-existent user ID
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {
               roleName: "OrgWideSpaceReadOnly",
@@ -625,7 +661,9 @@ describe("User Roles API", () => {
 
       it("should return 400 for role with incorrect scope type", async () => {
         // Given: Role assignment request with incompatible scope
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {
               roleName: "GroupReadOnly", // Group role
@@ -658,7 +696,10 @@ describe("User Roles API", () => {
           })
         }
 
-        const roleAssignmentRequest: RoleAssignmentRequest = {roles}
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles,
+          concurrencyControl: {version: "-9223372036854775808"}
+        }
 
         // When: Admin tries to assign more than maximum allowed roles in single request
         const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
@@ -688,7 +729,10 @@ describe("User Roles API", () => {
         await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
           .withToken(orgAdminUser.token)
           .build()
-          .send({roles: existingRoles})
+          .send({
+            concurrencyControl: {version: "-9223372036854775808"},
+            roles: existingRoles
+          })
 
         // When: Admin tries to add more roles that would exceed total limit
         const additionalRoles = []
@@ -703,10 +747,14 @@ describe("User Roles API", () => {
           })
         }
 
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
           .withToken(orgAdminUser.token)
           .build()
-          .send({roles: additionalRoles})
+          .send({
+            concurrencyControl: {version: userToUpdate.occ.toString()},
+            roles: additionalRoles
+          })
 
         // Then: Should receive bad request response
         expect(response).toHaveStatusCode(HttpStatus.UNPROCESSABLE_ENTITY)
@@ -835,7 +883,9 @@ describe("User Roles API", () => {
 
       it("should allow org admin to assign workflow template role", async () => {
         // Given: Org admin wants to assign workflow template role
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {
               roleName: "WorkflowTemplateVoter",
@@ -870,7 +920,9 @@ describe("User Roles API", () => {
 
       it("should allow space manager to assign workflow template role for template in their space", async () => {
         // Given: Space manager wants to assign workflow template role for template in their managed space
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {
               roleName: "WorkflowTemplateVoter",
@@ -931,7 +983,9 @@ describe("User Roles API", () => {
           })
         )
 
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {
               roleName: "WorkflowTemplateVoter",
@@ -955,7 +1009,9 @@ describe("User Roles API", () => {
 
       it("should deny regular user without space manage permission from assigning workflow template role", async () => {
         // Given: Regular user without any manage permissions
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {
               roleName: "WorkflowTemplateVoter",
@@ -979,7 +1035,9 @@ describe("User Roles API", () => {
 
       it("should deny space manager from assigning workflow template role for template in different space", async () => {
         // Given: Space manager trying to assign role for template in a different space they don't manage
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {
               roleName: "WorkflowTemplateVoter",
@@ -1004,7 +1062,9 @@ describe("User Roles API", () => {
       it("should deny assignment of workflow template role for non-existent workflow template", async () => {
         // Given: Non-existent workflow template ID
         const nonExistentTemplateId = uuidv7()
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {
               roleName: "WorkflowTemplateVoter",
@@ -1037,6 +1097,7 @@ describe("User Roles API", () => {
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: "-9223372036854775808"},
             roles: [
               {
                 roleName: "OrgWideSpaceManager",
@@ -1050,10 +1111,12 @@ describe("User Roles API", () => {
           })
 
         // When: Admin removes one role
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const response = await del(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: userToUpdate.occ.toString()},
             roles: [
               {
                 roleName: "GroupManager",
@@ -1086,6 +1149,7 @@ describe("User Roles API", () => {
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: "-9223372036854775808"},
             roles: [
               {
                 roleName: "OrgWideSpaceManager",
@@ -1103,10 +1167,12 @@ describe("User Roles API", () => {
           })
 
         // When: Admin removes multiple roles
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const response = await del(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: userToUpdate.occ.toString()},
             roles: [
               {
                 roleName: "GroupManager",
@@ -1141,6 +1207,7 @@ describe("User Roles API", () => {
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: "-9223372036854775808"},
             roles: [
               {
                 roleName: "OrgWideSpaceManager",
@@ -1150,10 +1217,12 @@ describe("User Roles API", () => {
           })
 
         // When: Admin removes all roles
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const response = await del(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: userToUpdate.occ.toString()},
             roles: [
               {
                 roleName: "OrgWideSpaceManager",
@@ -1179,6 +1248,7 @@ describe("User Roles API", () => {
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: "-9223372036854775808"},
             roles: [
               {
                 roleName: "GroupManager",
@@ -1188,10 +1258,12 @@ describe("User Roles API", () => {
           })
 
         // When: Admin tries to remove a different role
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const response = await del(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: userToUpdate.occ.toString()},
             roles: [
               {
                 roleName: "OrgWideSpaceManager",
@@ -1225,6 +1297,7 @@ describe("User Roles API", () => {
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: "-9223372036854775808"},
             roles: [
               {
                 roleName: "GroupManager",
@@ -1234,10 +1307,12 @@ describe("User Roles API", () => {
           })
 
         // When: Admin removes role
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const response = await del(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: userToUpdate.occ.toString()},
             roles: [
               {
                 roleName: "GroupManager",
@@ -1276,6 +1351,7 @@ describe("User Roles API", () => {
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: "-9223372036854775808"},
             roles: [
               {
                 roleName: "GroupManager",
@@ -1288,10 +1364,12 @@ describe("User Roles API", () => {
         failTaskEither(auditLogRepo, "persist", "unknown_error")
 
         // When: Admin removes role
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const response = await del(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: userToUpdate.occ.toString()},
             roles: [
               {
                 roleName: "GroupManager",
@@ -1314,7 +1392,9 @@ describe("User Roles API", () => {
     describe("bad cases", () => {
       it("should return 401 for unauthenticated requests", async () => {
         // Given: Valid role removal request but no auth token
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleRemovalRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {
               roleName: "GroupReadOnly",
@@ -1334,7 +1414,9 @@ describe("User Roles API", () => {
 
       it("should return BAD REQUEST for invalid token", async () => {
         // Given: Valid role removal request but invalid token
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleRemovalRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {
               roleName: "GroupReadOnly",
@@ -1355,7 +1437,9 @@ describe("User Roles API", () => {
 
       it("should return 400 for empty roles array", async () => {
         // Given: Empty roles removal request
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleRemovalRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: []
         }
 
@@ -1371,7 +1455,9 @@ describe("User Roles API", () => {
 
       it("should return 404 for non-existent user", async () => {
         // Given: Valid role removal request but non-existent user ID
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleRemovalRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: userToUpdate.occ.toString()},
           roles: [
             {
               roleName: "OrgWideSpaceReadOnly",

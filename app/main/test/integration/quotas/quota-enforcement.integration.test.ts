@@ -160,21 +160,28 @@ describe("Quota Enforcement API Integration", () => {
 
       const targetUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
 
+      const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.id}})
+
       // Add first role (success)
       const resp1 = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.id}/roles`)
         .withToken(orgAdminUser.token)
         .build()
         .send({
-          roles: [{roleName: "OrgWideSpaceReadOnly", scope: {type: "org"}}]
+          roles: [{roleName: "OrgWideSpaceReadOnly", scope: {type: "org"}}],
+          concurrencyControl: {version: userToUpdate.occ.toString()}
         })
       expect(resp1).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+      // Fetch updated user to get new OCC version
+      const updatedUser = await prisma.user.findUniqueOrThrow({where: {id: targetUser.id}})
 
       // Add second role (failure)
       const resp2 = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.id}/roles`)
         .withToken(orgAdminUser.token)
         .build()
         .send({
-          roles: [{roleName: "OrgWideWorkflowTemplateReadOnly", scope: {type: "org"}}]
+          roles: [{roleName: "OrgWideWorkflowTemplateReadOnly", scope: {type: "org"}}],
+          concurrencyControl: {version: updatedUser.occ.toString()}
         })
 
       expect(resp2).toHaveStatusCode(HttpStatus.FORBIDDEN)

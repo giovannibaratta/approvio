@@ -546,11 +546,33 @@ export function generateErrorResponseForGenerateToken(error: GenerateTokenError,
 }
 
 export function mapToEntityInfoResponse(entity: AuthenticatedEntity, groups: Group[]): GetEntityInfo200Response {
-  return {
-    entityType: entity.entityType,
+  const baseInfo = {
     groups: groups.map(g => ({
       groupId: g.id,
       groupName: g.name
+    }))
+  }
+
+  if (entity.entityType === "user")
+    return {
+      ...baseInfo,
+      entityType: "user",
+      id: entity.user.id,
+      roles: entity.user.roles.map(r => ({
+        roleName: r.name,
+        scope: r.scope
+      })),
+      orgRole: entity.user.orgRole,
+      concurrencyControl: {version: entity.user.occ.toString()}
+    }
+
+  return {
+    ...baseInfo,
+    entityType: "agent",
+    id: entity.agent.id,
+    roles: entity.agent.roles.map(r => ({
+      roleName: r.name,
+      scope: r.scope
     }))
   }
 }

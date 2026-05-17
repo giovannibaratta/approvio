@@ -3,7 +3,9 @@ import {
   AgentRegistrationResponse,
   RoleAssignmentRequest,
   RoleRemovalRequest,
-  AgentGet200Response
+  AgentGet200Response,
+  validateRoleAssignmentRequest,
+  validateRoleRemovalRequest
 } from "@approvio/api"
 import {GetAuthenticatedEntity} from "@app/auth"
 import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Logger, Param, Post, Put, Res} from "@nestjs/common"
@@ -27,7 +29,6 @@ import {
   mapAgentToRegistrationResponse,
   mapAgentToApi
 } from "./agents.mappers"
-import {validateRoleAssignmentRequest, validateRoleRemovalRequest} from "../shared/mappers"
 import {AuthenticatedEntity} from "@domain"
 import {logSuccess} from "@utils"
 
@@ -90,7 +91,8 @@ export class AgentsController {
     const mapToServiceModel = (req: RoleAssignmentRequest) => ({
       agentId,
       roles: req.roles,
-      requestor
+      requestor,
+      occVersion: BigInt(req.concurrencyControl.version)
     })
     const assignRole = (req: AssignRolesToAgentRequest) => this.roleService.assignRolesToAgent(req)
 
@@ -119,7 +121,8 @@ export class AgentsController {
     const mapToServiceModel = (req: RoleRemovalRequest) => ({
       agentId,
       roles: req.roles,
-      requestor
+      requestor,
+      occVersion: BigInt(req.concurrencyControl.version)
     })
     const removeRole = (req: RemoveRolesFromAgentRequest) => this.roleService.removeRolesFromAgent(req)
 

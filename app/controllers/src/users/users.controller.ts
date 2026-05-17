@@ -4,7 +4,9 @@ import {
   UserCreate,
   UserSummary as UserSummaryApi,
   RoleAssignmentRequest,
-  RoleRemovalRequest
+  RoleRemovalRequest,
+  validateRoleAssignmentRequest,
+  validateRoleRemovalRequest
 } from "@approvio/api"
 import {GetAuthenticatedEntity} from "@app/auth"
 import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
@@ -31,7 +33,6 @@ import {
   mapUserToApi,
   mapUsersToApi
 } from "./users.mappers"
-import {validateRoleAssignmentRequest, validateRoleRemovalRequest} from "../shared/mappers"
 import {AuthenticatedEntity} from "@domain"
 import {logSuccess} from "@utils"
 
@@ -97,16 +98,14 @@ export class UsersController {
   @HttpCode(HttpStatus.OK)
   async getUser(@Param("userIdentifier") userIdentifier: string): Promise<UserApi> {
     const eitherUser = await pipe(
-      this.userService.getUserByIdentifier(userIdentifier),
-      logSuccess("User retrieved", "UsersController", user => ({id: user.id}))
+      this.userService.getUserWithGroupsByIdentifier(userIdentifier),
+      logSuccess("User retrieved", "UsersController", ({user}) => ({id: user.id}))
     )()
 
-    if (isLeft(eitherUser)) {
-      throw generateErrorResponseForGetUser(eitherUser.left, "Failed to get user")
-    }
+    if (isLeft(eitherUser)) throw generateErrorResponseForGetUser(eitherUser.left, "Failed to get user")
 
-    const user = eitherUser.right
-    return mapUserToApi(user)
+    const {user, groups} = eitherUser.right
+    return mapUserToApi(user, groups)
   }
 
   @Put(":userId/roles")
@@ -119,7 +118,8 @@ export class UsersController {
     const mapToServiceModel = (req: RoleAssignmentRequest) => ({
       userId,
       roles: req.roles,
-      requestor
+      requestor,
+      occVersion: BigInt(req.concurrencyControl.version)
     })
     const assignRole = (req: AssignRolesToUserRequest) => this.roleService.assignRolesToUser(req)
 
@@ -147,7 +147,8 @@ export class UsersController {
     const mapToServiceModel = (req: RoleRemovalRequest) => ({
       userId,
       roles: req.roles,
-      requestor
+      requestor,
+      occVersion: BigInt(req.concurrencyControl.version)
     })
     const removeRole = (req: RemoveRolesFromUserRequest) => this.roleService.removeRolesFromUser(req)
 

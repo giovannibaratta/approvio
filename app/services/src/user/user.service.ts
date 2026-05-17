@@ -1,4 +1,4 @@
-import {OrgRole, User, UserFactory} from "@domain"
+import {OrgRole, User, UserFactory, Group, Versioned} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError, UnknownError} from "@services/error"
 import {pipe} from "fp-ts/function"
@@ -6,10 +6,12 @@ import * as TE from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
 import {TaskEither} from "fp-ts/TaskEither"
 import {USER_REPOSITORY_TOKEN, UserCreateError, UserGetError, UserRepository} from "./interfaces"
-import {Versioned} from "@domain"
 import {isEmail, isUUIDv7, logSuccess} from "@utils"
 import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 import {PaginatedUsersList, UserListError} from "./interfaces"
+import {GroupService} from "../group/group.service"
+import {sequenceS} from "fp-ts/Apply"
+import {GetGroupRepoError} from "@services/group"
 
 const MIN_PAGE = 1
 const MIN_LIMIT = 1
@@ -21,7 +23,8 @@ const MAX_SEARCH_LENGTH = 100
 export class UserService {
   constructor(
     @Inject(USER_REPOSITORY_TOKEN)
-    private readonly userRepo: UserRepository
+    private readonly userRepo: UserRepository,
+    private readonly groupService: GroupService
   ) {}
 
   createUser(request: CreateUserRequest): TaskEither<UserCreateError | AuthorizationError, User> {
@@ -48,15 +51,36 @@ export class UserService {
 
     if (!isUuid && !isValidEmail) return TE.left("request_invalid_user_identifier")
 
-    // Wrap in a lambda to preserve the "this" context
-    const repoGetUser = (value: string) =>
-      isUuid ? this.userRepo.getUserById(value) : this.userRepo.getUserByEmail(value)
+    const query = isUuid ? this.userRepo.getUserById(userIdentifier) : this.userRepo.getUserByEmail(userIdentifier)
 
     return pipe(
-      userIdentifier,
-      TE.right,
-      TE.chainW(repoGetUser),
+      query,
       logSuccess("User retrieved", "UserService", user => ({id: user.id}))
+    )
+  }
+
+  getUserWithGroupsByIdentifier(
+    userIdentifier: string
+  ): TaskEither<UserGetError | GetGroupRepoError, {user: Versioned<User>; groups: Group[]}> {
+    const isUuid = isUUIDv7(userIdentifier)
+    const isValidEmail = isEmail(userIdentifier)
+
+    if (!isUuid && !isValidEmail) return TE.left("request_invalid_user_identifier")
+
+    if (isUuid)
+      return pipe(
+        sequenceS(TE.ApplicativePar)({
+          user: this.userRepo.getUserById(userIdentifier),
+          groups: this.groupService.getUserGroups(userIdentifier)
+        }),
+        logSuccess("User retrieved with groups", "UserService", ({user}) => ({id: user.id}))
+      )
+
+    return pipe(
+      this.userRepo.getUserByEmail(userIdentifier),
+      TE.bindTo("user"),
+      TE.bindW("groups", ({user}) => this.groupService.getUserGroups(user.id)),
+      logSuccess("User retrieved with groups", "UserService", ({user}) => ({id: user.id}))
     )
   }
 
