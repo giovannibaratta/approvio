@@ -102,7 +102,8 @@ describe("Agent Roles API", () => {
     await prisma.$disconnect()
   })
 
-  const createOrgScopeRequest = (roleName: string): RoleAssignmentRequest => ({
+  const createOrgScopeRequest = (roleName: string, occVersion = "-9223372036854775808"): RoleAssignmentRequest => ({
+    concurrencyControl: {version: occVersion},
     roles: [
       {
         roleName,
@@ -111,7 +112,12 @@ describe("Agent Roles API", () => {
     ]
   })
 
-  const createWorkflowTemplateRequest = (roleName: string, workflowTemplateId: string): RoleAssignmentRequest => ({
+  const createWorkflowTemplateRequest = (
+    roleName: string,
+    workflowTemplateId: string,
+    occVersion = "-9223372036854775808"
+  ): RoleAssignmentRequest => ({
+    concurrencyControl: {version: occVersion},
     roles: [
       {
         roleName,
@@ -121,15 +127,20 @@ describe("Agent Roles API", () => {
   })
 
   const createMultipleWorkflowTemplateRequest = (
-    roles: Array<{roleName: string; workflowTemplateId: string}>
+    roles: Array<{roleName: string; workflowTemplateId: string}>,
+    occVersion = "-9223372036854775808"
   ): RoleAssignmentRequest => ({
+    concurrencyControl: {version: occVersion},
     roles: roles.map(({roleName, workflowTemplateId}) => ({
       roleName,
       scope: {type: "workflow_template", workflowTemplateId}
     }))
   })
 
-  const emptyRolesRequest: RoleAssignmentRequest = {roles: []}
+  const emptyRolesRequest: RoleAssignmentRequest = {
+    concurrencyControl: {version: "-9223372036854775808"},
+    roles: []
+  }
 
   describe("PUT /agents/{agentId}/roles", () => {
     describe("good cases", () => {
@@ -273,8 +284,13 @@ describe("Agent Roles API", () => {
           .build()
           .send(firstAssignment)
 
+        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
+        const secondAssignment = createWorkflowTemplateRequest(
+          "WorkflowTemplateInstantiator",
+          workflowTemplate2.id,
+          agentToUpdate.occ.toString()
+        )
         // When: Admin adds additional workflow roles
-        const secondAssignment = createWorkflowTemplateRequest("WorkflowTemplateInstantiator", workflowTemplate2.id)
 
         const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
           .withToken(orgAdminUser.token)
@@ -305,7 +321,9 @@ describe("Agent Roles API", () => {
         // Given: Role assignment request with duplicate workflow roles (should be consolidated)
         const workflowTemplate = await createMockWorkflowTemplateInDb(prisma)
 
+        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: agentToUpdate.occ.toString()},
           roles: [
             {
               roleName: "WorkflowTemplateVoter",
@@ -421,7 +439,9 @@ describe("Agent Roles API", () => {
         // Given: Role assignment request with group role (not allowed for agents)
         const group = await createTestGroup(prisma, {name: "Test Group"})
 
+        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: agentToUpdate.occ.toString()},
           roles: [
             {
               roleName: "GroupManager",
@@ -480,7 +500,9 @@ describe("Agent Roles API", () => {
 
       it("should return 400 for invalid UUID format in scope", async () => {
         // Given: Role assignment request with invalid UUID format
+        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: agentToUpdate.occ.toString()},
           roles: [
             {
               roleName: "WorkflowTemplateVoter",
@@ -546,7 +568,10 @@ describe("Agent Roles API", () => {
           })
         }
 
-        const roleAssignmentRequest: RoleAssignmentRequest = {roles}
+        const roleAssignmentRequest: RoleAssignmentRequest = {
+          roles,
+          concurrencyControl: {version: "-9223372036854775808"}
+        }
 
         // When: Admin tries to assign more than maximum allowed roles in single request
         const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
@@ -580,7 +605,10 @@ describe("Agent Roles API", () => {
         await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
           .withToken(orgAdminUser.token)
           .build()
-          .send({roles: existingRoles})
+          .send({
+            concurrencyControl: {version: "-9223372036854775808"},
+            roles: existingRoles
+          })
 
         // When: Admin tries to add more roles that would exceed total limit
         const additionalRoles = []
@@ -597,10 +625,14 @@ describe("Agent Roles API", () => {
           })
         }
 
+        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
         const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
           .withToken(orgAdminUser.token)
           .build()
-          .send({roles: additionalRoles})
+          .send({
+            concurrencyControl: {version: agentToUpdate.occ.toString()},
+            roles: additionalRoles
+          })
 
         // Then: Should receive bad request response
         expect(response).toHaveStatusCode(HttpStatus.UNPROCESSABLE_ENTITY)
@@ -616,6 +648,7 @@ describe("Agent Roles API", () => {
         const workflowTemplate2 = await createMockWorkflowTemplateInDb(prisma)
 
         const rolePutRequest: RoleAssignmentRequest = {
+          concurrencyControl: {version: "-9223372036854775808"},
           roles: [
             {
               roleName: "WorkflowTemplateVoter",
@@ -633,7 +666,9 @@ describe("Agent Roles API", () => {
           .build()
           .send(rolePutRequest)
 
+        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
         const delRequest: RoleRemovalRequest = {
+          concurrencyControl: {version: agentToUpdate.occ.toString()},
           roles: [
             {
               roleName: "WorkflowTemplateInstantiator",
@@ -671,6 +706,7 @@ describe("Agent Roles API", () => {
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: "-9223372036854775808"},
             roles: [
               {
                 roleName: "WorkflowTemplateVoter",
@@ -680,10 +716,12 @@ describe("Agent Roles API", () => {
           })
 
         // When: Admin removes all roles
+        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
         const response = await del(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: agentToUpdate.occ.toString()},
             roles: [
               {
                 roleName: "WorkflowTemplateVoter",
@@ -710,6 +748,7 @@ describe("Agent Roles API", () => {
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: "-9223372036854775808"},
             roles: [
               {
                 roleName: "WorkflowTemplateVoter",
@@ -719,10 +758,12 @@ describe("Agent Roles API", () => {
           })
 
         // When: Admin tries to remove a different role
+        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
         const response = await del(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
           .withToken(orgAdminUser.token)
           .build()
           .send({
+            concurrencyControl: {version: agentToUpdate.occ.toString()},
             roles: [
               {
                 roleName: "WorkflowTemplateInstantiator",

@@ -1,4 +1,9 @@
-import {AgentRegistrationRequest, AgentRegistrationResponse, AgentGet200Response} from "@approvio/api"
+import {
+  AgentRegistrationRequest,
+  AgentRegistrationResponse,
+  AgentGet200Response,
+  RoleOperationRequestValidationError
+} from "@approvio/api"
 import {Agent, AgentWithPrivateKey, AuthenticatedEntity} from "@domain"
 import {
   BadRequestException,
@@ -19,8 +24,6 @@ import {
 } from "@services"
 import {Either, right} from "fp-ts/Either"
 import {generateErrorPayload} from "../error"
-import {RoleAssignmentValidationError, RoleRemovalValidationError} from "@controllers/shared"
-
 export function agentRegistrationApiToServiceModel(data: {
   agentData: AgentRegistrationRequest
   requestor: AuthenticatedEntity
@@ -139,25 +142,16 @@ export function generateErrorResponseForGetAgent(error: AgentGetError, context: 
 }
 
 export function generateErrorResponseForAgentRoleAssignment(
-  error: AgentRoleAssignmentError | RoleAssignmentValidationError,
+  error: AgentRoleAssignmentError | RoleOperationRequestValidationError,
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (error) {
-    case "request_malformed":
-    case "request_roles_missing":
-    case "request_roles_not_array":
-    case "request_roles_empty":
-    case "request_role_name_missing":
-    case "request_role_name_not_string":
-    case "request_role_name_empty":
-    case "request_scope_missing":
-    case "request_scope_not_object":
-    case "request_scope_type_missing":
-    case "request_scope_type_invalid":
-    case "request_scope_id_missing":
-    case "request_scope_id_invalid_uuid":
+    case "malformed_object":
+    case "missing_roles":
+    case "invalid_roles":
+    case "invalid_concurrency_control":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request format`))
     case "agent_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Agent not found`))
@@ -245,25 +239,16 @@ export function generateErrorResponseForAgentRoleAssignment(
 }
 
 export function generateErrorResponseForAgentRoleRemoval(
-  error: AgentRoleRemovalError | RoleRemovalValidationError,
+  error: AgentRoleRemovalError | RoleOperationRequestValidationError,
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (error) {
-    case "request_malformed":
-    case "request_roles_missing":
-    case "request_roles_not_array":
-    case "request_roles_empty":
-    case "request_role_name_missing":
-    case "request_role_name_not_string":
-    case "request_role_name_empty":
-    case "request_scope_missing":
-    case "request_scope_not_object":
-    case "request_scope_type_missing":
-    case "request_scope_type_invalid":
-    case "request_scope_id_missing":
-    case "request_scope_id_invalid_uuid":
+    case "malformed_object":
+    case "missing_roles":
+    case "invalid_roles":
+    case "invalid_concurrency_control":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request format`))
     case "agent_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Agent not found`))

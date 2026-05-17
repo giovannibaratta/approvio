@@ -185,6 +185,9 @@ export class RoleService {
         validateRequestorAsPermissions(request, boundRolesToAssign, workflowTemplatesParents)
       ),
       TE.bindW("targetUser", ({request}) => this.userRoleRepo.getUserById(request.userId)),
+      TE.chainFirstW(({targetUser, request}) =>
+        targetUser.occ === request.occVersion ? TE.right(undefined) : TE.left("concurrent_modification_error" as const)
+      ),
       TE.bindW("updatedUser", ({targetUser, boundRolesToAssign}) =>
         TE.fromEither(UserFactory.assignRoles(targetUser, boundRolesToAssign))
       ),
@@ -242,6 +245,11 @@ export class RoleService {
         validateRequestorAsPermissions(request, boundRolesToAssign, workflowTemplatesParents)
       ),
       TE.bindW("currentAgent", ({request}) => this.agentRoleRepo.getAgentById(request.agentId)),
+      TE.chainFirstW(({currentAgent, request}) =>
+        currentAgent.occ === request.occVersion
+          ? TE.right(undefined)
+          : TE.left("concurrent_modification_error" as const)
+      ),
       TE.bindW("updatedAgent", ({currentAgent, boundRolesToAssign}) =>
         TE.fromEither(AgentFactory.assignRoles<{occ: true}>(currentAgent, boundRolesToAssign))
       ),
@@ -298,6 +306,9 @@ export class RoleService {
         validateRequestorAsPermissions(request, boundRolesToRemove, workflowTemplatesParents)
       ),
       TE.bindW("targetUser", ({request}) => this.userRoleRepo.getUserById(request.userId)),
+      TE.chainFirstW(({targetUser, request}) =>
+        targetUser.occ === request.occVersion ? TE.right(undefined) : TE.left("concurrent_modification_error" as const)
+      ),
       TE.bindW("updatedUser", ({targetUser, boundRolesToRemove}) =>
         TE.fromEither(UserFactory.removeRoles(targetUser, boundRolesToRemove))
       ),
@@ -354,6 +365,11 @@ export class RoleService {
         validateRequestorAsPermissions(request, boundRolesToRemove, workflowTemplatesParents)
       ),
       TE.bindW("currentAgent", ({request}) => this.agentRoleRepo.getAgentById(request.agentId)),
+      TE.chainFirstW(({currentAgent, request}) =>
+        currentAgent.occ === request.occVersion
+          ? TE.right(undefined)
+          : TE.left("concurrent_modification_error" as const)
+      ),
       TE.bindW("updatedAgent", ({currentAgent, boundRolesToRemove}) =>
         TE.fromEither(AgentFactory.removeRoles<{occ: true}>(currentAgent, boundRolesToRemove))
       ),
@@ -437,22 +453,26 @@ export interface AssignRolesToUserRequest {
   readonly userId: string
   readonly roles: RoleAssignmentItem[]
   readonly requestor: AuthenticatedEntity
+  readonly occVersion: bigint
 }
 
 export interface AssignRolesToAgentRequest {
   readonly agentId: string
   readonly roles: RoleAssignmentItem[]
   readonly requestor: AuthenticatedEntity
+  readonly occVersion: bigint
 }
 
 export interface RemoveRolesFromUserRequest {
   readonly userId: string
   readonly roles: RoleAssignmentItem[]
   readonly requestor: AuthenticatedEntity
+  readonly occVersion: bigint
 }
 
 export interface RemoveRolesFromAgentRequest {
   readonly agentId: string
   readonly roles: RoleAssignmentItem[]
   readonly requestor: AuthenticatedEntity
+  readonly occVersion: bigint
 }
