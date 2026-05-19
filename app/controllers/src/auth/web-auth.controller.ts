@@ -153,6 +153,15 @@ export class WebAuthController {
     res.send()
   }
 
+  @PublicRoute()
+  @Post("logout")
+  @HttpCode(204)
+  async logout(@Res() res: Response): Promise<void> {
+    res.clearCookie("access_token", {path: "/"})
+    res.clearCookie("refresh_token", {path: "/auth/web/refresh"})
+    res.send()
+  }
+
   /**
    * Configures and sets authentication cookies according to ADR-001 (Token Mediated Backend).
    *
