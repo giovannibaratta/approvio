@@ -276,6 +276,32 @@ describe("Auth Integration", () => {
     })
   })
 
+  describe("POST /auth/web/logout", () => {
+    it("should clear access_token and refresh_token cookies and return 204 No Content", async () => {
+      // When: Requesting logout
+      const response = await request(app.getHttpServer()).post("/auth/web/logout")
+
+      // Expect: 204 No Content
+      expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+      // Expect: Set-Cookie headers clear the cookies with exact paths and past expiration
+      const setCookieHeaders = response.headers["set-cookie"] as unknown as string[]
+      expect(setCookieHeaders).toBeDefined()
+
+      const accessTokenCookie = setCookieHeaders.find(c => c.startsWith("access_token="))
+      expect(accessTokenCookie).toBeDefined()
+      expect(accessTokenCookie).toContain("access_token=;")
+      expect(accessTokenCookie!.toLowerCase()).toContain("path=/")
+      expect(accessTokenCookie!.toLowerCase()).toContain("expires=thu, 01 jan 1970")
+
+      const refreshTokenCookie = setCookieHeaders.find(c => c.startsWith("refresh_token="))
+      expect(refreshTokenCookie).toBeDefined()
+      expect(refreshTokenCookie).toContain("refresh_token=;")
+      expect(refreshTokenCookie!.toLowerCase()).toContain("path=/auth/web/refresh")
+      expect(refreshTokenCookie!.toLowerCase()).toContain("expires=thu, 01 jan 1970")
+    })
+  })
+
   describe("POST /auth/cli/initiate", () => {
     it("should redirect to OIDC provider and return auth URL", async () => {
       // Given: loopback redirect URI
