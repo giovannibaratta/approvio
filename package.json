@@ -44,7 +44,7 @@
     "@approvio/api": "0.0.49",
     "@nestjs/bull": "11.0.4",
     "@nestjs/common": "11.1.18",
-    "@nestjs/core": "11.1.18",
+    "@nestjs/core": "11.1.21",
     "@nestjs/jwt": "11.0.2",
     "@nestjs/passport": "11.0.5",
     "@nestjs/platform-express": "11.1.19",
