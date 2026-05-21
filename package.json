@@ -41,7 +41,7 @@
   },
   "packageManager": "yarn@4.7.0",
   "dependencies": {
-    "@approvio/api": "0.0.49",
+    "@approvio/api": "0.0.50",
     "@nestjs/bull": "11.0.4",
     "@nestjs/common": "11.1.18",
     "@nestjs/core": "11.1.18",

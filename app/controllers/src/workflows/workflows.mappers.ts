@@ -21,7 +21,8 @@ import {
   GetWorkflowVotes200Response,
   WorkflowVote,
   validateListWorkflowsParams,
-  ListWorkflowsParams
+  ListWorkflowsParams,
+  CantVoteReason
 } from "@approvio/api"
 
 import {
@@ -112,7 +113,7 @@ export function generateErrorResponseForCreateWorkflow(
 
   switch (error) {
     case "quota_exceeded":
-      throw new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded for creating workflow`))
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded for creating workflow`))
     case "workflow_name_empty":
     case "workflow_name_too_long":
     case "workflow_name_invalid_characters":
@@ -375,7 +376,7 @@ export function mapCanVoteResponseToApi(response: CanVoteResponse): CanVoteRespo
   }
 }
 
-function mapCantVoteReasonToApi(response: CanVoteResponse): string | undefined {
+function mapCantVoteReasonToApi(response: CanVoteResponse): CantVoteReason | undefined {
   if (response.canVote) return undefined
   switch (response.reason) {
     case "workflow_expired":
@@ -390,8 +391,6 @@ function mapCantVoteReasonToApi(response: CanVoteResponse): string | undefined {
       return "WORKFLOW_TEMPLATE_NOT_ACTIVE"
     case "entity_not_eligible_to_vote":
       return "NO_PERMISSIONS"
-    case "inconsistent_memberships":
-      return "INCONSISTENT_MEMBERSHIPS"
   }
 }
 
@@ -495,7 +494,10 @@ export function createCastVoteApiToServiceModel(data: {
   }
 }
 
-export function generateErrorResponseForCanVote(error: CanVoteError, context: string): HttpException {
+export function generateErrorResponseForCanVote(
+  error: CanVoteError | "inconsistent_memberships",
+  context: string
+): HttpException {
   const errorCode = error.toUpperCase()
   switch (error) {
     case "workflow_not_found":
@@ -604,12 +606,13 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
     case "agent_name_cannot_be_uuid":
+    case "inconsistent_memberships":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
     case "requestor_not_authorized":
-      throw new ForbiddenException(
+      return new ForbiddenException(
         generateErrorPayload(
           errorCode,
           `${context}: entity does not have sufficient permissions to perform this operation`
@@ -625,9 +628,9 @@ export function generateErrorResponseForCastVote(
   const errorCode = error.toUpperCase()
   switch (error) {
     case "quota_exceeded":
-      throw new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded for casting vote`))
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded for casting vote`))
     case "requestor_not_authorized":
-      throw new ForbiddenException(
+      return new ForbiddenException(
         generateErrorPayload(
           errorCode,
           `${context}: entity does not have sufficient permissions to perform this operation`

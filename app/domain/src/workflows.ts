@@ -132,7 +132,7 @@ export function canVoteOnWorkflow(
   memberships: ReadonlyArray<MembershipWithGroupRef>,
   entityRoles: ReadonlyArray<UnconstrainedBoundRole>,
   votedForGroups?: ReadonlyArray<string>
-): Either<CantVoteReason, {canVote: true; requireHighPrivilege: boolean}> {
+): Either<CantVoteReason | "inconsistent_memberships", {canVote: true; requireHighPrivilege: boolean}> {
   if (WORKFLOW_TERMINAL_STATUSES.includes(workflow.status))
     return left(generateCantVoteReasonForTerminalStatus(workflow.status))
 

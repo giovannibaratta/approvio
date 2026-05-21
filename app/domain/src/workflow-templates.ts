@@ -60,7 +60,6 @@ export type WorkflowTemplateCantVoteReason =
   | "entity_not_in_required_group"
   | "workflow_template_not_active"
   | "entity_not_eligible_to_vote"
-  | "inconsistent_memberships"
 
 interface WorkflowTemplateLogic {
   /**
@@ -75,7 +74,7 @@ interface WorkflowTemplateLogic {
     memberships: ReadonlyArray<MembershipWithGroupRef>,
     entityRoles: ReadonlyArray<UnconstrainedBoundRole>,
     votedForGroups?: ReadonlyArray<string>
-  ): Either<WorkflowTemplateCantVoteReason, {canVote: true; requireHighPrivilege: boolean}>
+  ): Either<WorkflowTemplateCantVoteReason | "inconsistent_memberships", {canVote: true; requireHighPrivilege: boolean}>
 }
 
 export type WorkflowTemplateValidationError =
@@ -306,7 +305,7 @@ function canVote(
   memberships: ReadonlyArray<MembershipWithGroupRef>,
   entityRoles: ReadonlyArray<UnconstrainedBoundRole>,
   votedForGroups?: ReadonlyArray<string>
-): Either<WorkflowTemplateCantVoteReason, {canVote: true; requireHighPrivilege: boolean}> {
+): Either<WorkflowTemplateCantVoteReason | "inconsistent_memberships", {canVote: true; requireHighPrivilege: boolean}> {
   if (workflowTemplate.status !== WorkflowTemplateStatus.ACTIVE && !workflowTemplate.allowVotingOnDeprecatedTemplate)
     return left("workflow_template_not_active")
 

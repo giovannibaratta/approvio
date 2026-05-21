@@ -62,25 +62,27 @@ export class VoteService {
           entityMemberships: this.getEntityMemberships(request.requestor)
         })
       ),
-      TE.map(({scope}) => {
+      TE.chainW(({scope}) => {
         const {workflowWithTemplate, vote, entityMemberships} = scope
         const status = this.getVoteStatus(vote)
         const entityRoles = getEntityRoles(request.requestor)
         const canVoteResult = canVoteOnWorkflow(workflowWithTemplate, entityMemberships, entityRoles)
 
         if (isRight(canVoteResult)) {
-          return {
+          return TE.right({
             canVote: true,
             requireHighPrivilege: canVoteResult.right.requireHighPrivilege,
             status
-          }
+          })
         }
 
-        return {
+        if (canVoteResult.left === "inconsistent_memberships") return TE.left("inconsistent_memberships" as const)
+
+        return TE.right({
           canVote: false,
           reason: canVoteResult.left,
           status
-        }
+        })
       })
     )
   }
@@ -231,6 +233,7 @@ export type CanVoteResponse = {status: VoteStatus} & (
 
 export type CanVoteError =
   | "concurrency_error"
+  | "inconsistent_memberships"
   | WorkflowGetError
   | MembershipValidationErrorWithGroupRef
   | UserValidationError
