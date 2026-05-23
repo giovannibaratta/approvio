@@ -4,6 +4,7 @@ import {
   GroupWithEntitiesCount,
   ListFilterFactory,
   MembershipFactory,
+  MembershipValidationError,
   User,
   UserFactory,
   SystemRole,
@@ -16,7 +17,6 @@ import {
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError, UnknownError} from "@services/error"
-import {MembershipAddError} from "@services/group-membership"
 import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 import {Versioned} from "@domain"
 import {isUUIDv7, logSuccess} from "@utils"
@@ -42,11 +42,14 @@ import {
 
 export type CreateGroupError =
   | CreateGroupRepoError
-  | MembershipAddError
+  | MembershipValidationError
   | UserValidationError
   | AuthorizationError
   | AuditLogValidationError
   | ExecutionError
+  | "quota_exceeded"
+  | "quota_check_error"
+  | "request_invalid_user_identifier"
 
 export type GetGroupError = GetGroupRepoError | AuthorizationError
 export type ListGroupsError = ListGroupsRepoError | AuthorizationError

@@ -26,7 +26,8 @@ import {get, post, put} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import "expect-more-jest"
 import "@utils/matchers"
-import {TokenPayloadBuilder} from "@services"
+import {TokenPayloadBuilder, WORKFLOW_TEMPLATE_REPOSITORY_TOKEN, WorkflowTemplateRepository} from "@services"
+import {wrapTaskEitherWithSideEffect} from "@test/injectors"
 import {v7 as uuidv7} from "uuid"
 
 /**
@@ -1195,6 +1196,38 @@ describe("Workflow Templates API", () => {
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_DESCRIPTION_TOO_LONG")
+      })
+    })
+
+    describe("race conditions", () => {
+      let spy: jest.SpiedFunction<WorkflowTemplateRepository["getActiveWorkflowTemplateByName"]> | undefined
+
+      afterEach(() => {
+        spy?.mockRestore()
+      })
+
+      it("should return 409 Conflict if OCC condition fails during template update", async () => {
+        const repo = app.get<WorkflowTemplateRepository>(WORKFLOW_TEMPLATE_REPOSITORY_TOKEN)
+
+        // Intercept getActiveWorkflowTemplateByName to trigger concurrent modification
+        spy = wrapTaskEitherWithSideEffect(repo, "getActiveWorkflowTemplateByName", async name => {
+          if (name === createdTemplate.name) {
+            await prisma.workflowTemplate.update({
+              where: {id: createdTemplate.id},
+              data: {occ: {increment: 1}}
+            })
+          }
+        })
+
+        // When
+        const response = await put(app, `${endpoint}/${createdTemplate.name}`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(updatePayload)
+
+        // Then
+        expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
+        expect(response.body.code).toBe("CONCURRENCY_ERROR")
       })
     })
   })

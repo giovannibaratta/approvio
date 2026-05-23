@@ -22,6 +22,8 @@ import {UserWithToken} from "@test/types"
 import "expect-more-jest"
 import "@utils/matchers"
 import {TokenPayloadBuilder} from "@services"
+import {AGENT_REPOSITORY_TOKEN, AgentRepository} from "@services"
+import {wrapTaskEitherWithSideEffect} from "@test/injectors"
 import {RoleAssignmentRequest, RoleRemovalRequest} from "@approvio/api"
 import {MAX_ROLES_PER_ENTITY} from "@domain"
 import {v7 as uuidv7} from "uuid"
@@ -636,6 +638,44 @@ describe("Agent Roles API", () => {
 
         // Then: Should receive bad request response
         expect(response).toHaveStatusCode(HttpStatus.UNPROCESSABLE_ENTITY)
+      })
+    })
+
+    describe("race conditions", () => {
+      let spy: jest.SpiedFunction<AgentRepository["getAgentById"]> | undefined
+
+      afterEach(() => {
+        spy?.mockRestore()
+      })
+
+      it("should return 409 Conflict if OCC condition fails during role assignment", async () => {
+        const agentRepository = app.get<AgentRepository>(AGENT_REPOSITORY_TOKEN)
+
+        // Given: Valid role assignment request
+        const roleAssignmentRequest = createOrgScopeRequest("WorkflowTemplateVoter")
+
+        // Intercept getAgentById to trigger concurrent modification
+        spy = wrapTaskEitherWithSideEffect(agentRepository, "getAgentById", async agentId => {
+          // Only trigger side effect if fetching the target agent
+          if (agentId === targetAgent.id) {
+            // Manually increment the OCC in the database via raw prisma query
+            // This simulates a concurrent update to the agent between read and write
+            await prisma.agent.update({
+              where: {id: targetAgent.id},
+              data: {occ: {increment: 1}}
+            })
+          }
+        })
+
+        // When: Admin assigns role to agent
+        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive a 409 Conflict because of the concurrent update
+        expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
+        expect(response.body.code).toBe("CONCURRENT_MODIFICATION_ERROR")
       })
     })
   })

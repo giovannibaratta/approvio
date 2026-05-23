@@ -142,15 +142,14 @@ export function generateErrorResponseForCreateGroup(error: CreateGroupError, con
     case "group_already_exists":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: group already exists`))
     case "user_not_found":
-    case "agent_not_found":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Creator entity not found`))
     case "user_invalid_uuid":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid UUID provided`))
-    case "membership_entity_already_in_group":
-      return new ConflictException(generateErrorPayload(errorCode, `${context}: Entity already in group`))
+    case "concurrency_error":
+      return new ConflictException(
+        generateErrorPayload(errorCode, `${context}: the data have been modified by another request`)
+      )
     case "quota_check_error":
-    case "membership_duplicated_membership":
-    case "group_not_found":
     case "user_display_name_empty":
     case "user_display_name_too_long":
     case "user_email_empty":
@@ -158,11 +157,6 @@ export function generateErrorResponseForCreateGroup(error: CreateGroupError, con
     case "user_email_invalid":
     case "membership_inconsistent_dates":
     case "membership_invalid_entity_uuid":
-    case "concurrent_modification_error":
-    case "membership_group_not_found":
-    case "membership_user_not_found":
-    case "membership_agent_not_found":
-    case "concurrency_error":
     case "user_role_assignments_invalid_format":
     case "role_invalid_uuid":
     case "role_name_empty":
@@ -176,35 +170,12 @@ export function generateErrorResponseForCreateGroup(error: CreateGroupError, con
     case "role_resource_required_for_scope":
     case "role_resource_not_allowed_for_scope":
     case "user_duplicate_roles":
-    case "agent_key_decode_error":
-    case "agent_invalid_uuid":
-    case "agent_name_empty":
-    case "agent_name_too_long":
-    case "agent_role_invalid_uuid":
-    case "agent_role_name_empty":
-    case "agent_role_name_too_long":
-    case "agent_role_name_invalid_characters":
-    case "agent_role_permissions_empty":
-    case "agent_role_permission_invalid":
-    case "agent_role_invalid_scope":
-    case "agent_role_resource_id_invalid":
-    case "agent_role_resource_required_for_scope":
-    case "agent_role_resource_not_allowed_for_scope":
-    case "agent_role_invalid_structure":
     case "role_assignments_empty":
     case "role_assignments_exceed_maximum":
     case "role_total_roles_exceed_maximum":
     case "role_unknown_role_name":
     case "role_scope_incompatible_with_template":
-    case "agent_role_assignments_empty":
-    case "agent_role_assignments_exceed_maximum":
-    case "agent_role_total_roles_exceed_maximum":
-    case "agent_role_unknown_role_name":
-    case "agent_role_scope_incompatible_with_template":
-    case "agent_invalid_occ":
-    case "agent_name_cannot_be_uuid":
     case "role_entity_type_role_restriction":
-    case "agent_role_entity_type_role_restriction":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )

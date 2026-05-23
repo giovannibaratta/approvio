@@ -13,6 +13,9 @@ import {DatabaseClient} from "@external"
 import {get, post, patch, del} from "@test/requests"
 import {QuotaCreate, QuotaUpdate} from "@approvio/api"
 import "@utils/matchers"
+import {QUOTA_REPOSITORY_TOKEN, QuotaRepository} from "@services"
+import {wrapTaskEitherWithSideEffect} from "@test/injectors"
+
 describe("Quotas Integration Tests", () => {
   let app: NestApplication
   let prisma: PrismaClient
@@ -233,6 +236,37 @@ describe("Quotas Integration Tests", () => {
 
       // Then: limit should remain 10
       expect(response.body.limit).toBe(10)
+    })
+
+    describe("race conditions", () => {
+      let spy: jest.SpiedFunction<QuotaRepository["getQuotaById"]> | undefined
+
+      afterEach(() => {
+        spy?.mockRestore()
+      })
+
+      it("should return 409 Conflict if OCC condition fails during quota update", async () => {
+        const repo = app.get<QuotaRepository>(QUOTA_REPOSITORY_TOKEN)
+
+        const quota = await createMockQuotaInDb(prisma)
+
+        // Intercept getQuotaById to trigger concurrent modification
+        spy = wrapTaskEitherWithSideEffect(repo, "getQuotaById", async id => {
+          if (id === quota.id) {
+            await prisma.quota.update({
+              where: {id: quota.id},
+              data: {occ: {increment: 1}}
+            })
+          }
+        })
+
+        const payload: QuotaUpdate = {limit: 50}
+
+        const response = await patch(app, `/quotas/${quota.id}`).withToken(adminToken).build().send(payload)
+
+        expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
+        expect(response.body.code).toBe("QUOTA_CONCURRENT_MODIFICATION_ERROR")
+      })
     })
   })
 

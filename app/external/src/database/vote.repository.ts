@@ -39,6 +39,11 @@ export class VoteDbRepository implements VoteRepository {
               }
             })
 
+            // We intentionally do not enforce an OCC check on the workflow here when appending votes.
+            // Casting a vote is designed to be highly concurrent, and votes are additive (non-overwriting) entries.
+            // Enforcing OCC here would reject concurrent votes and return a 409 Conflict to voters.
+            // The actual OCC check is performed during status evaluation/recalculation in the background worker
+            // to ensure the final status is safely committed based on a consistent snapshot of votes.
             await tx.workflow.update({
               where: {id: vote.workflowId},
               data: {recalculationRequired: true, occ: {increment: 1}}

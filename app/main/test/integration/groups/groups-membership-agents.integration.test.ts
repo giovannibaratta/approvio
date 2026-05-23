@@ -13,9 +13,10 @@ import {cleanDatabase, prepareDatabase} from "@test/database"
 import {createDomainMockUserInDb, createMockAgentInDb, createTestGroup, MockConfigProvider} from "@test/mock-data"
 import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
-import {TokenPayloadBuilder} from "@services"
+import {AGENT_REPOSITORY_TOKEN, AgentRepository, TokenPayloadBuilder, QuotaService} from "@services"
 import {mapAgentToDomain} from "@external/database/shared"
 import {EntityType} from "@controllers/groups/groups.mappers"
+import {wrapTaskEitherWithSideEffect} from "@test/injectors"
 import {v7 as uuidv7} from "uuid"
 import {unwrapRight} from "@utils/either"
 
@@ -289,6 +290,110 @@ describe("Groups API - Agent Membership", () => {
             .send(requestBody)
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
           expect(response.body).toHaveErrorCode("REQUEST_INVALID_ENTITY_UUID")
+        })
+      })
+
+      describe("race conditions", () => {
+        let spy: jest.SpyInstance | undefined
+
+        afterEach(() => {
+          spy?.mockRestore()
+        })
+
+        it("should return 409 Conflict if another request concurrently adds the same membership", async () => {
+          const agentRepository = app.get<AgentRepository>(AGENT_REPOSITORY_TOKEN)
+
+          // Given
+          const requestBody: AddGroupEntitiesRequest = {
+            entities: [{entity: {entityId: agent1.id, entityType: EntityType.SYSTEM}}]
+          }
+
+          // Simulate concurrent insertion by another request during the getAgentById fetch
+          spy = wrapTaskEitherWithSideEffect(agentRepository, "getAgentById", async id => {
+            if (id === agent1.id) {
+              await prisma.agentGroupMembership.create({
+                data: {
+                  groupId: group.id,
+                  agentId: agent1.id,
+                  createdAt: new Date(),
+                  updatedAt: new Date()
+                }
+              })
+            }
+          })
+
+          // When
+          const response = await post(app, entitiesEndpoint(group.id))
+            .withToken(orgAdminUser.token)
+            .build()
+            .send(requestBody)
+
+          // Then
+          expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
+          expect(response.body.code).toBe("MEMBERSHIP_ENTITY_ALREADY_IN_GROUP")
+        })
+
+        it("should return 404 Not Found if the group is deleted concurrently during the read phase (before existence validation)", async () => {
+          const agentRepository = app.get<AgentRepository>(AGENT_REPOSITORY_TOKEN)
+
+          // Given
+          const requestBody: AddGroupEntitiesRequest = {
+            entities: [{entity: {entityId: agent1.id, entityType: EntityType.SYSTEM}}]
+          }
+
+          // Simulate concurrent group deletion during the read phase (getAgentById fetch).
+          // At this point, the service has not yet fetched the group or checked its existence.
+          spy = wrapTaskEitherWithSideEffect(agentRepository, "getAgentById", async id => {
+            if (id === agent1.id) {
+              await prisma.group.delete({
+                where: {id: group.id}
+              })
+            }
+          })
+
+          // When
+          const response = await post(app, entitiesEndpoint(group.id))
+            .withToken(orgAdminUser.token)
+            .build()
+            .send(requestBody)
+
+          // Then:
+          // Because the group is already deleted when the service subsequently performs its read validation
+          // (fetchGroupMembershipData), the read validation fails and cleanly returns a 404 GROUP_NOT_FOUND.
+          expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
+          expect(response.body.code).toBe("GROUP_NOT_FOUND")
+        })
+
+        it("should return 409 Conflict if the group is deleted concurrently during the write phase (after existence validation)", async () => {
+          const quotaService = app.get(QuotaService)
+
+          // Given
+          const requestBody: AddGroupEntitiesRequest = {
+            entities: [{entity: {entityId: agent1.id, entityType: EntityType.SYSTEM}}]
+          }
+
+          // Simulate concurrent group deletion right before the write transaction starts.
+          // By intercepting `isQuotaAvailable`, we ensure the service has already successfully
+          // validated group existence in the read phase, but the parent group is deleted right
+          // before the transactional write begins.
+          spy = wrapTaskEitherWithSideEffect(quotaService, "isQuotaAvailable", async () => {
+            await prisma.group.delete({
+              where: {id: group.id}
+            })
+          })
+
+          // When
+          const response = await post(app, entitiesEndpoint(group.id))
+            .withToken(orgAdminUser.token)
+            .build()
+            .send(requestBody)
+
+          // Then:
+          // Because the write transaction attempts to write to a deleted group, it hits a database
+          // foreign key constraint violation. Our database repository maps this write-phase failure
+          // directly to a 409 CONCURRENT_MODIFICATION_ERROR.
+          expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
+          expect(response.body.code).toBe("CONCURRENT_MODIFICATION_ERROR")
         })
       })
     })

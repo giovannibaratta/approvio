@@ -1,6 +1,6 @@
 import {Agent, Versioned} from "@domain"
-import {isPrismaUniqueConstraintError} from "@external/database/errors"
-import {Injectable} from "@nestjs/common"
+import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "@external/database/errors"
+import {Injectable, Logger} from "@nestjs/common"
 import {Agent as PrismaAgent, Prisma} from "@prisma/client"
 import {AgentRepository, AgentCreateError, AgentGetError, AgentUpdateError} from "@services"
 import * as TE from "fp-ts/TaskEither"
@@ -67,12 +67,9 @@ export class AgentDbRepository implements AgentRepository {
         return mappedAgent.right
       },
       error => {
-        if (isPrismaUniqueConstraintError(error, ["occ"])) {
-          console.warn("Optimistic concurrency control conflict during agent role update", error)
-          return "unknown_error" as const
-        }
+        if (isPrismaRecordNotFoundError(error, Prisma.ModelName.Agent)) return "concurrent_modification_error" as const
 
-        console.error("Error while updating agent roles", error)
+        Logger.error("Error while updating agent roles", error)
         return "unknown_error" as const
       }
     )()

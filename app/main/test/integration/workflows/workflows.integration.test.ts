@@ -28,7 +28,8 @@ import {
 } from "@test/mock-data"
 import {get, post} from "@test/requests"
 import {UserWithToken} from "@test/types"
-import {TokenPayloadBuilder} from "@services"
+import {TokenPayloadBuilder, WORKFLOW_REPOSITORY_TOKEN, WorkflowRepository} from "@services"
+import {wrapTaskEitherWithSideEffect} from "@test/injectors"
 import {getQueueToken} from "@nestjs/bull"
 import {WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"
 import {Queue} from "bull"
@@ -221,6 +222,59 @@ describe("Workflows API", () => {
         const responseUuid: string = response.headers.location?.split("/").reverse()[0] ?? ""
         const workflowDbObject = await prisma.workflow.findUnique({where: {id: responseUuid}})
         expect(workflowDbObject?.description).toBeNull()
+      })
+    })
+
+    describe("race conditions", () => {
+      let spy: jest.SpiedFunction<WorkflowRepository["getWorkflowById"]> | undefined
+
+      afterEach(() => {
+        spy?.mockRestore()
+      })
+
+      it("should successfully record the vote even if concurrent modification occurred (optimistic lock is not checked during voting)", async () => {
+        const repo = app.get<WorkflowRepository>(WORKFLOW_REPOSITORY_TOKEN)
+
+        const workflowForRaceVoting = await createMockWorkflowInDb(prisma, {
+          name: "Workflow-For-Race-Condition-Voting",
+          description: "Voting Test",
+          status: WorkflowStatus.EVALUATION_IN_PROGRESS,
+          workflowTemplateId: mockWorkflowTemplate.id,
+          expiresAt: "active"
+        })
+        await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id)
+        await addVoterRoleToUser(prisma, orgAdminUser.user.id, mockWorkflowTemplate.id)
+
+        // Intercept getWorkflowById to trigger concurrent modification
+        spy = wrapTaskEitherWithSideEffect(repo, "getWorkflowById", async id => {
+          if (id === workflowForRaceVoting.id) {
+            await prisma.workflow.update({
+              where: {id: workflowForRaceVoting.id},
+              data: {occ: {increment: 1}}
+            })
+          }
+        })
+
+        const requestBody: WorkflowVoteRequestApi = {
+          voteType: {
+            type: "APPROVE",
+            votedForGroups: [mockGroupId1]
+          }
+        }
+
+        const response = await post(app, `${endpoint}/${workflowForRaceVoting.id}/vote`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(requestBody)
+
+        expect(response).toHaveStatusCode(HttpStatus.ACCEPTED)
+
+        // Assert that the vote was successfully recorded despite the OCC increment
+        const voteInDb = await prisma.vote.findFirst({
+          where: {workflowId: workflowForRaceVoting.id, userId: orgAdminUser.user.id}
+        })
+        expect(voteInDb).toBeDefined()
+        expect(voteInDb?.voteType).toEqual("APPROVE")
       })
     })
 
