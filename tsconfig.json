@@ -9,6 +9,7 @@
     "experimentalDecorators": true,
     "allowJs": true,
     "noUncheckedIndexedAccess": true,
+    "esModuleInterop": true,
     "paths": {
       // Avoid issues with multiple versions of fp-ts
       "fp-ts": ["node_modules/fp-ts"],

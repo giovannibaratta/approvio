@@ -1,6 +1,6 @@
 import {NestApplication} from "@nestjs/core"
 
-import * as request from "supertest"
+import request from "supertest"
 
 type Method = "get" | "post" | "put" | "delete" | "patch"
 

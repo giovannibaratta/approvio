@@ -6,7 +6,7 @@ import {APP_GUARD} from "@nestjs/core"
 import {JwtAuthGuard} from "./auth"
 import {RateLimiterGuard} from "./rate-limiter"
 import {RequestIdMiddleware} from "./logging/request-id.middleware"
-import * as cookieParser from "cookie-parser"
+import cookieParser from "cookie-parser"
 @Module({
   imports: [ControllersModule, AuthModule, RateLimiterModule],
   controllers: [],
