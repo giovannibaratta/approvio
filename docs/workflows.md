@@ -33,8 +33,10 @@ Both **users** and **agents** can vote on workflows if they meet the requirement
 
 **Participants:**
 
-- **Users**: Human participants who review details and cast votes through the user interface or API.
-- **Agents**: Automated systems configured to vote programmatically based on pre-defined checks (see [Agents](./agents.md)).
+| Participant | Description |
+| :---------- | :---------- |
+| **Users** | Human participants who review details and cast votes through the user interface or API. |
+| **Agents** | Automated systems configured to vote programmatically based on pre-defined checks (see [Agents](./agents.md)). |
 
 ### Vote Types
 

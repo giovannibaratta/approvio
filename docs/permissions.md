@@ -31,12 +31,14 @@ For detailed information about the role system, see [Roles](./roles.md).
 
 ### How Permissions Work
 
-Permissions follow a hierarchical model:
+Permissions follow a hierarchical model based on the scope of the assigned roles:
 
-1. **Organization Admin**: Bypasses all permission checks
-2. **Organization-wide Roles**: Apply to all resources of that type
-3. **Space-scoped Roles**: Apply to a space and its templates
-4. **Resource-specific Roles**: Apply to individual templates or groups
+| Level | Scope | Description |
+| :---- | :---- | :---------- |
+| 1 | **Organization Admin** | Bypasses all permission checks, granting full access across the system. |
+| 2 | **Organization-wide Roles** | Grants permissions that apply to all resources of that type across the organization. |
+| 3 | **Space-scoped Roles** | Grants permissions that apply only to a specific space and the templates within it. |
+| 4 | **Resource-specific Roles** | Grants precise permissions applied only to individual workflow templates or groups. |
 
 ### Voting Permissions
 
