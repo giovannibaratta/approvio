@@ -2,6 +2,8 @@
   "extends": "./tsconfig-google.json",
   "compilerOptions": {
     "baseUrl": "./",
+    "rootDir": "./",
+    "ignoreDeprecations": "6.0",
     "types": ["jest", "node"],
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
