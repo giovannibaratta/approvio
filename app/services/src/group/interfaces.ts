@@ -2,7 +2,6 @@ import {Group, GroupValidationError, GroupWithEntitiesCount, ListGroupsFilter, U
 import {TaskEither} from "fp-ts/TaskEither"
 import {PaginationError, UnknownError} from "@services/error"
 import {Versioned} from "@domain"
-import {MembershipAddError} from "@services/group-membership/interfaces"
 
 export type CreateGroupRepoError =
   | "group_already_exists"
@@ -10,9 +9,6 @@ export type CreateGroupRepoError =
   | "concurrency_error"
   | GroupValidationError
   | UnknownError
-  | MembershipAddError
-  | "quota_exceeded"
-  | "quota_check_error"
 
 export type GetGroupRepoError = "group_not_found" | GroupValidationError | UnknownError
 export type ListGroupsRepoError = PaginationError | GroupValidationError | UnknownError

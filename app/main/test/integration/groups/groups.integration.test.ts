@@ -22,8 +22,17 @@ import {cleanDatabase, prepareDatabase} from "@test/database"
 import {createDomainMockUserInDb, createMockUserInDb, MockConfigProvider} from "@test/mock-data"
 import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
+
 import {EntityType} from "@controllers/groups/groups.mappers"
-import {AUDIT_LOG_REPOSITORY_TOKEN, AuditLogRepository, MAX_LIMIT, TokenPayloadBuilder} from "@services"
+import {wrapTaskEitherWithSideEffect} from "@test/injectors"
+import {
+  AUDIT_LOG_REPOSITORY_TOKEN,
+  AuditLogRepository,
+  MAX_LIMIT,
+  TokenPayloadBuilder,
+  USER_REPOSITORY_TOKEN,
+  UserRepository
+} from "@services"
 import {failTaskEither} from "@test/injectors"
 import {v7 as uuidv7} from "uuid"
 
@@ -265,6 +274,43 @@ describe("Groups API", () => {
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("GROUP_DESCRIPTION_TOO_LONG")
+      })
+    })
+
+    describe("race conditions", () => {
+      let spy: jest.SpiedFunction<UserRepository["getUserById"]> | undefined
+
+      afterEach(() => {
+        spy?.mockRestore()
+      })
+
+      it("should return 409 Conflict if OCC condition fails during group creation", async () => {
+        const userRepository = app.get<UserRepository>(USER_REPOSITORY_TOKEN)
+
+        // Given
+        const requestBody: GroupCreate = {
+          name: "Test-Race-Group"
+        }
+
+        // Intercept getUserById to trigger concurrent modification
+        spy = wrapTaskEitherWithSideEffect(userRepository, "getUserById", async userId => {
+          // Only trigger side effect if fetching the requestor
+          if (userId === orgAdminUser.user.id) {
+            // Manually increment the OCC in the database via raw prisma query
+            // This simulates a concurrent update to the user between read and write
+            await prisma.user.update({
+              where: {id: orgAdminUser.user.id},
+              data: {occ: {increment: 1}}
+            })
+          }
+        })
+
+        // When
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+        // Then
+        expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
+        expect(response.body.code).toBe("CONCURRENCY_ERROR")
       })
     })
 

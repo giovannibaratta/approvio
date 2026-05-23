@@ -13,7 +13,14 @@ import {cleanDatabase, prepareDatabase} from "@test/database"
 import {createDomainMockUserInDb, MockConfigProvider, createMockSpaceInDb} from "@test/mock-data"
 import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
-import {TokenPayloadBuilder, AUDIT_LOG_REPOSITORY_TOKEN, AuditLogRepository} from "@services"
+import {
+  TokenPayloadBuilder,
+  USER_REPOSITORY_TOKEN,
+  UserRepository,
+  AUDIT_LOG_REPOSITORY_TOKEN,
+  AuditLogRepository
+} from "@services"
+import {wrapTaskEitherWithSideEffect} from "@test/injectors"
 import {failTaskEither} from "@test/injectors"
 import {v7 as uuidv7} from "uuid"
 
@@ -229,6 +236,40 @@ describe("Spaces API", () => {
           where: {name: requestBody.name}
         })
         expect(spaceDbObject).toBeNull()
+      })
+    })
+
+    describe("race conditions", () => {
+      let spy: jest.SpiedFunction<UserRepository["getUserById"]> | undefined
+
+      afterEach(() => {
+        spy?.mockRestore()
+      })
+
+      it("should return 409 Conflict if OCC condition fails during space creation", async () => {
+        const userRepository = app.get<UserRepository>(USER_REPOSITORY_TOKEN)
+
+        // Given
+        const requestBody: SpaceCreate = {
+          name: "Test-Race-Space"
+        }
+
+        // Intercept getUserById to trigger concurrent modification
+        spy = wrapTaskEitherWithSideEffect(userRepository, "getUserById", async userId => {
+          if (userId === orgAdminUser.user.id) {
+            await prisma.user.update({
+              where: {id: orgAdminUser.user.id},
+              data: {occ: {increment: 1}}
+            })
+          }
+        })
+
+        // When
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+        // Then
+        expect(response).toHaveStatusCode(HttpStatus.INTERNAL_SERVER_ERROR)
+        expect(response.body.code).toBe("CONCURRENCY_ERROR")
       })
     })
   })

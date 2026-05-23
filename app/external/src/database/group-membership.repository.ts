@@ -183,9 +183,15 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
         () => this.createMembershipWithOccCheck(data),
         error => {
           if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_group"))
-            return "membership_group_not_found"
+            return "concurrent_modification_error"
+          if (isPrismaForeignKeyConstraintError(error, "fk_agent_group_memberships_group"))
+            return "concurrent_modification_error"
           if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_user")) return "membership_user_not_found"
+          if (isPrismaForeignKeyConstraintError(error, "fk_agent_group_memberships_agent"))
+            return "membership_agent_not_found"
           if (isPrismaUniqueConstraintError(error, ["group_id", "user_id"])) return "membership_entity_already_in_group"
+          if (isPrismaUniqueConstraintError(error, ["group_id", "agent_id"]))
+            return "membership_entity_already_in_group"
           if (error instanceof ConcurrentModificationError) return "concurrent_modification_error"
           return "unknown_error"
         }
@@ -199,7 +205,6 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
       TE.tryCatchK(
         () => this.deleteMembershipAndUpdateGroup(data),
         error => {
-          if (error instanceof ConcurrentModificationError) return "concurrent_modification_error"
           if (isPrismaRecordNotFoundError(error, Prisma.ModelName.Group)) return "group_not_found"
           return "unknown_error"
         }
@@ -231,13 +236,15 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
       if (userMemberships.length > 0) await tx.groupMembership.createMany({data: userMemberships})
       if (agentMemberships.length > 0) await tx.agentGroupMembership.createMany({data: agentMemberships})
 
-      const updatedGroup = await tx.group.update({
-        where: {id: data.group.id, occ: data.group.occ},
-        data: {updatedAt: new Date()},
+      // We do not update the parent Group's updatedAt or occ here to prevent unnecessary
+      // concurrent modification conflicts, keeping membership modifications and quota checks optimistic.
+      // If a stricter policy is needed in the future, we can lock and increment the parent's occ version.
+      const updatedGroup = await tx.group.findUnique({
+        where: {id: data.group.id},
         include: GroupMembershipDbRepository.GROUP_WITH_MEMBERSHIPS_INCLUDE
       })
 
-      if (!updatedGroup) throw new ConcurrentModificationError("Group not found or version mismatch")
+      if (!updatedGroup) throw new ConcurrentModificationError(`Group not found: ${data.group.id}`)
 
       return updatedGroup
     })
@@ -271,13 +278,13 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
           }
         })
 
-      const updatedGroup = await tx.group.update({
+      // We do not update parent Group's updatedAt/occ here to maintain parity with the addition flow
+      const updatedGroup = await tx.group.findUnique({
         where: {id: data.groupId},
-        data: {updatedAt: new Date()},
         include: GroupMembershipDbRepository.GROUP_WITH_MEMBERSHIPS_INCLUDE
       })
 
-      if (!updatedGroup) throw new ConcurrentModificationError("Group not found or version mismatch")
+      if (!updatedGroup) throw new Error(`Group not found: ${data.groupId}`)
 
       return updatedGroup
     })

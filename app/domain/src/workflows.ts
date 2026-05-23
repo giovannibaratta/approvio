@@ -159,6 +159,28 @@ function generateCantVoteReasonForTerminalStatus(status: WorkflowStatus): CantVo
   }
 }
 
+/**
+ * Evaluates the status of a workflow based on its votes.
+ *
+ * DESIGN APPROACH: Chronological Sequential State-Machine (Event Log)
+ * To prevent write-after-read race conditions (where an approval at t1 is concurrently
+ * accompanied by a veto at t2, and an out-of-order execution or OCC retry evaluates both
+ * together), we play the votes chronologically:
+ *
+ * 1. Votes are sorted in ascending order of their `castedAt` timestamp.
+ * 2. If two votes have identical millisecond timestamps, we prioritize VETO over APPROVE
+ *    as a safety measure.
+ * 3. We iterate over the votes sequentially, accumulating them and consolidating them
+ *    up to that timestamp in the timeline.
+ * 4. As soon as a terminal state (like APPROVED) is reached, we halt processing immediately.
+ *    Any subsequent votes in the timeline are ignored because the workflow is already closed.
+ * 5. A REJECTED state (due to a veto) is non-terminal, as a subsequent vote in the timeline
+ *    could be a WITHDRAW vote from the vetoer, returning the status back to progress.
+ *
+ * @param workflow The workflow to evaluate, decorated with its template.
+ * @param votes All votes cast for this workflow.
+ * @returns Either a validation error or the workflow with its updated status.
+ */
 export function evaluateWorkflowStatus(
   workflow: DecoratedWorkflow<{workflowTemplate: true}>,
   votes: ReadonlyArray<Vote>
@@ -170,19 +192,47 @@ export function evaluateWorkflowStatus(
     return changeStatusAndMarkAsRecalculated(workflow, workflow.status)
   if (workflow.expiresAt < now) return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.EXPIRED)
 
-  const votesConsolidated = consolidateVotes(votes)
-  const votesAgainst = votesConsolidated.filter(vote => vote.type === "VETO")
-  const votesFor = votesConsolidated.filter(vote => vote.type === "APPROVE")
+  // 1. Sort all votes in ascending order of their castedAt timestamp (chronological timeline)
+  const votesSortedAsc = [...votes].sort((a, b) => {
+    const timeDiff = a.castedAt.getTime() - b.castedAt.getTime()
+    if (timeDiff !== 0) return timeDiff
 
-  if (votesConsolidated.length === 0)
-    return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.EVALUATION_IN_PROGRESS)
+    // If timestamps are identical, prioritize VETO over other votes
+    if (a.type === "VETO" && b.type !== "VETO") return -1
+    if (b.type === "VETO" && a.type !== "VETO") return 1
+    return 0
+  })
 
-  if (votesAgainst.length > 0) return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.REJECTED)
+  // 2. Play the votes sequentially through time
+  let currentStatus = WorkflowStatus.EVALUATION_IN_PROGRESS
+  const votesAccumulated: Vote[] = []
 
-  if (doesVotesCoverApprovalRules(workflow.workflowTemplate.approvalRule, votesFor))
-    return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.APPROVED)
+  for (const vote of votesSortedAsc) {
+    votesAccumulated.push(vote)
+    const votesConsolidated = consolidateVotes(votesAccumulated)
 
-  return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.EVALUATION_IN_PROGRESS)
+    const votesAgainst = votesConsolidated.filter(v => v.type === "VETO")
+    const votesFor = votesConsolidated.filter(v => v.type === "APPROVE")
+
+    if (votesAgainst.length > 0) {
+      currentStatus = WorkflowStatus.REJECTED
+      // REJECTED is not in WORKFLOW_TERMINAL_STATUSES because it can be resurrected
+      // if the vetoer subsequently casts a WITHDRAW vote at a later timestamp in the loop.
+      // So we continue playing the timeline instead of breaking.
+    } else if (doesVotesCoverApprovalRules(workflow.workflowTemplate.approvalRule, votesFor)) {
+      currentStatus = WorkflowStatus.APPROVED
+      break // Terminal state APPROVED reached! Stop playing subsequent votes.
+    } else {
+      currentStatus = WorkflowStatus.EVALUATION_IN_PROGRESS
+    }
+  }
+
+  // 3. Fallback check for expired status if no terminal status was reached
+  if (currentStatus === WorkflowStatus.EVALUATION_IN_PROGRESS && workflow.expiresAt < now) {
+    currentStatus = WorkflowStatus.EXPIRED
+  }
+
+  return changeStatusAndMarkAsRecalculated(workflow, currentStatus)
 }
 
 function changeStatusAndMarkAsRecalculated(
