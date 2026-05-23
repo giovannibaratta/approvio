@@ -126,7 +126,7 @@ __metadata:
     "@nestjs/testing": "npm:11.1.19"
     "@prisma/adapter-pg": "npm:7.7.0"
     "@prisma/client": "npm:7.4.2"
-    "@prisma/driver-adapter-utils": "npm:7.7.0"
+    "@prisma/driver-adapter-utils": "npm:7.8.0"
     "@types/chance": "npm:1.1.7"
     "@types/cookie-parser": "npm:1.4.10"
     "@types/express": "npm:5.0.6"
@@ -2556,6 +2556,15 @@ __metadata:
   dependencies:
     "@prisma/debug": "npm:7.7.0"
   checksum: 10/fb2d685236f445aa81c7299689ce24e6f491b195e8257cdb747d8a10e2e0ea439864c04a5454841b3991a7558b0049050e5132298d1ea60c9f724ede450960fd
+  languageName: node
+  linkType: hard
+
+"@prisma/driver-adapter-utils@npm:7.8.0":
+  version: 7.8.0
+  resolution: "@prisma/driver-adapter-utils@npm:7.8.0"
+  dependencies:
+    "@prisma/debug": "npm:7.8.0"
+  checksum: 10/f13a424f6a1f9b1e1a96753e87b39838c79ca58ebc073e0fa7d259224daa7c5d16de5e453b1a77861e48ff91be9ca58ddef4603b565bde578235aa5c34f67407
   languageName: node
   linkType: hard
 
