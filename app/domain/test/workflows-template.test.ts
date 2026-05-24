@@ -33,10 +33,10 @@ const getWorkflowTemplate = (rule: ApprovalRule): WorkflowTemplate => {
 /**
  * Helper function to create a voter role for a specific workflow template
  */
-const createVoterRole = (workflowTemplateId: string): BoundRole<"workflow_template"> => {
+const createVoterRole = (templateName: string): BoundRole<"workflow_template"> => {
   return SystemRole.createWorkflowTemplateVoterRole({
     type: "workflow_template",
-    workflowTemplateId
+    templateName
   })
 }
 
@@ -60,7 +60,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const rule = createGroupRequirementRule(group1Id)
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [membershipG1Approver]
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       // When: canVote is called
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be true
@@ -72,7 +72,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const rule = createGroupRequirementRule(group1Id)
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [membershipG1Admin]
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       // When: canVote is called
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be true
@@ -84,7 +84,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const rule = createGroupRequirementRule(group1Id)
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [membershipG1Owner]
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       // When: canVote is called
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
@@ -97,7 +97,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [membershipG2Approver, membershipG1Approver]
       // When: canVote is called
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
       expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
@@ -109,7 +109,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [membershipG1Approver]
       // When: canVote is called
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
       expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
@@ -121,7 +121,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [membershipG2Approver]
       // When: canVote is called
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
       expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
@@ -133,7 +133,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [membershipG1Approver, membershipG2Approver]
       // When: canVote is called
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
       expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
@@ -145,7 +145,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [membershipG1Approver]
       // When: canVote is called
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
       expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
@@ -157,7 +157,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [membershipG2Approver]
       // When: canVote is called
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
       expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
@@ -169,7 +169,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [membershipG1Approver, membershipG2Approver]
       // When: canVote is called
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
       expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
@@ -184,7 +184,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [membershipG1Approver]
       // When: canVote is called
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Right(true)
       expect(result).toBeRightOf({canVote: true, requireHighPrivilege: false})
@@ -198,7 +198,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships: MembershipWithGroupRef[] = []
       // When: canVote is called
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Left(ENTITY_NOT_IN_REQUIRED_GROUP)
       expect(result).toBeLeftOf("entity_not_in_required_group")
@@ -210,7 +210,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [membershipG2Approver] // User is in group2, rule requires group1
       // When: canVote is called
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Left(ENTITY_NOT_IN_REQUIRED_GROUP)
       expect(result).toBeLeftOf("entity_not_in_required_group")
@@ -232,7 +232,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const rule = createGroupRequirementRule(group1Id)
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [createMembership(group1Id, "user-1"), createMembership(group2Id, "user-2")]
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
 
       // When: canVote is called
       const result = workflowTemplate.canVote(memberships, voterRoles)
@@ -247,7 +247,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [membershipG2Approver, membershipG3Approver]
       // When: canVote is called
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Left(ENTITY_NOT_IN_REQUIRED_GROUP)
       expect(result).toBeLeftOf("entity_not_in_required_group")
@@ -259,7 +259,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [membershipUnrelatedApprover]
       // When: canVote is called
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Left(ENTITY_NOT_IN_REQUIRED_GROUP)
       expect(result).toBeLeftOf("entity_not_in_required_group")
@@ -271,7 +271,7 @@ describe("WorkflowTemplate - canVote method", () => {
       const workflowTemplate = getWorkflowTemplate(rule)
       const memberships = [membershipUnrelatedApprover]
       // When: canVote is called
-      const voterRoles = [createVoterRole(workflowTemplate.id)]
+      const voterRoles = [createVoterRole(workflowTemplate.name)]
       const result = workflowTemplate.canVote(memberships, voterRoles)
       // Expect: the result to be Left(ENTITY_NOT_IN_REQUIRED_GROUP)
       expect(result).toBeLeftOf("entity_not_in_required_group")

@@ -334,7 +334,7 @@ function mapScopeToPrisma(scope: UnconstrainedBoundRole["scope"]): Prisma.JsonOb
     case "workflow_template":
       return {
         type: scope.type,
-        workflowTemplateId: scope.workflowTemplateId
+        templateName: scope.templateName
       }
     case "org":
       return {

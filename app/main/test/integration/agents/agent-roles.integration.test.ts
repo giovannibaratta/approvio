@@ -116,26 +116,26 @@ describe("Agent Roles API", () => {
 
   const createWorkflowTemplateRequest = (
     roleName: string,
-    workflowTemplateId: string,
+    templateName: string,
     occVersion = "-9223372036854775808"
   ): RoleAssignmentRequest => ({
     concurrencyControl: {version: occVersion},
     roles: [
       {
         roleName,
-        scope: {type: "workflow_template", workflowTemplateId}
+        scope: {type: "workflow_template", templateName}
       }
     ]
   })
 
   const createMultipleWorkflowTemplateRequest = (
-    roles: Array<{roleName: string; workflowTemplateId: string}>,
+    roles: Array<{roleName: string; templateName: string}>,
     occVersion = "-9223372036854775808"
   ): RoleAssignmentRequest => ({
     concurrencyControl: {version: occVersion},
-    roles: roles.map(({roleName, workflowTemplateId}) => ({
+    roles: roles.map(({roleName, templateName}) => ({
       roleName,
-      scope: {type: "workflow_template", workflowTemplateId}
+      scope: {type: "workflow_template", templateName}
     }))
   })
 
@@ -178,7 +178,7 @@ describe("Agent Roles API", () => {
       it("should add workflow template-specific role to agent and persist in database", async () => {
         // Given: Valid role assignment request with workflow template scope
         const workflowTemplate = await createMockWorkflowTemplateInDb(prisma)
-        const roleAssignmentRequest = createWorkflowTemplateRequest("WorkflowTemplateVoter", workflowTemplate.id)
+        const roleAssignmentRequest = createWorkflowTemplateRequest("WorkflowTemplateVoter", workflowTemplate.name)
 
         // When: Admin assigns workflow template role to agent
         const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
@@ -198,7 +198,7 @@ describe("Agent Roles API", () => {
             name: "WorkflowTemplateVoter",
             resourceType: "workflow_template",
             scopeType: "workflow_template",
-            scope: {type: "workflow_template", workflowTemplateId: workflowTemplate.id},
+            scope: {type: "workflow_template", templateName: workflowTemplate.name},
             permissions: expect.any(Array)
           }
         ])
@@ -207,7 +207,7 @@ describe("Agent Roles API", () => {
       it("should add workflow read permissions to agent and persist in database", async () => {
         // Given: Valid role assignment request for workflow read permissions
         const workflowTemplate = await createMockWorkflowTemplateInDb(prisma)
-        const roleAssignmentRequest = createWorkflowTemplateRequest("WorkflowReadOnly", workflowTemplate.id)
+        const roleAssignmentRequest = createWorkflowTemplateRequest("WorkflowReadOnly", workflowTemplate.name)
 
         // When: Admin assigns workflow read role to agent
         const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
@@ -227,7 +227,7 @@ describe("Agent Roles API", () => {
             name: "WorkflowReadOnly",
             resourceType: "workflow_template",
             scopeType: "workflow_template",
-            scope: {type: "workflow_template", workflowTemplateId: workflowTemplate.id},
+            scope: {type: "workflow_template", templateName: workflowTemplate.name},
             permissions: expect.any(Array)
           }
         ])
@@ -239,8 +239,8 @@ describe("Agent Roles API", () => {
         const workflowTemplate2 = await createMockWorkflowTemplateInDb(prisma)
 
         const roleAssignmentRequest = createMultipleWorkflowTemplateRequest([
-          {roleName: "WorkflowTemplateInstantiator", workflowTemplateId: workflowTemplate1.id},
-          {roleName: "WorkflowTemplateVoter", workflowTemplateId: workflowTemplate2.id}
+          {roleName: "WorkflowTemplateInstantiator", templateName: workflowTemplate1.name},
+          {roleName: "WorkflowTemplateVoter", templateName: workflowTemplate2.name}
         ])
 
         // When: Admin assigns multiple workflow roles to agent
@@ -262,13 +262,13 @@ describe("Agent Roles API", () => {
             name: "WorkflowTemplateInstantiator",
             resourceType: "workflow_template",
             scopeType: "workflow_template",
-            scope: {type: "workflow_template", workflowTemplateId: workflowTemplate1.id}
+            scope: {type: "workflow_template", templateName: workflowTemplate1.name}
           },
           {
             name: "WorkflowTemplateVoter",
             resourceType: "workflow_template",
             scopeType: "workflow_template",
-            scope: {type: "workflow_template", workflowTemplateId: workflowTemplate2.id}
+            scope: {type: "workflow_template", templateName: workflowTemplate2.name}
           }
         ])
       })
@@ -279,7 +279,7 @@ describe("Agent Roles API", () => {
         const workflowTemplate2 = await createMockWorkflowTemplateInDb(prisma)
 
         // First assignment
-        const firstAssignment = createWorkflowTemplateRequest("WorkflowTemplateVoter", workflowTemplate1.id)
+        const firstAssignment = createWorkflowTemplateRequest("WorkflowTemplateVoter", workflowTemplate1.name)
 
         await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
           .withToken(orgAdminUser.token)
@@ -289,7 +289,7 @@ describe("Agent Roles API", () => {
         const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
         const secondAssignment = createWorkflowTemplateRequest(
           "WorkflowTemplateInstantiator",
-          workflowTemplate2.id,
+          workflowTemplate2.name,
           agentToUpdate.occ.toString()
         )
         // When: Admin adds additional workflow roles
@@ -310,11 +310,11 @@ describe("Agent Roles API", () => {
         expect(agentFromDb!.roles).toMatchObject([
           {
             name: "WorkflowTemplateVoter",
-            scope: {type: "workflow_template", workflowTemplateId: workflowTemplate1.id}
+            scope: {type: "workflow_template", templateName: workflowTemplate1.name}
           },
           {
             name: "WorkflowTemplateInstantiator",
-            scope: {type: "workflow_template", workflowTemplateId: workflowTemplate2.id}
+            scope: {type: "workflow_template", templateName: workflowTemplate2.name}
           }
         ])
       })
@@ -329,11 +329,11 @@ describe("Agent Roles API", () => {
           roles: [
             {
               roleName: "WorkflowTemplateVoter",
-              scope: {type: "workflow_template", workflowTemplateId: workflowTemplate.id}
+              scope: {type: "workflow_template", templateName: workflowTemplate.name}
             },
             {
               roleName: "WorkflowTemplateVoter",
-              scope: {type: "workflow_template", workflowTemplateId: workflowTemplate.id}
+              scope: {type: "workflow_template", templateName: workflowTemplate.name}
             },
             {
               roleName: "OrgWideWorkflowTemplateInstantiator",
@@ -359,7 +359,7 @@ describe("Agent Roles API", () => {
         expect(agentFromDb!.roles).toMatchObject([
           {
             name: "WorkflowTemplateVoter",
-            scope: {type: "workflow_template", workflowTemplateId: workflowTemplate.id}
+            scope: {type: "workflow_template", templateName: workflowTemplate.name}
           },
           {
             name: "OrgWideWorkflowTemplateInstantiator",
@@ -477,14 +477,14 @@ describe("Agent Roles API", () => {
       })
 
       it("should return 400 for missing required scope identifier", async () => {
-        // Given: Role assignment request missing required workflowTemplateId
+        // Given: Role assignment request missing required templateName
         const roleAssignmentRequest = {
           roles: [
             {
               roleName: "WorkflowTemplateVoter",
               scope: {
                 type: "workflow_template"
-                // Missing workflowTemplateId
+                // Missing templateName
               }
             }
           ]
@@ -500,8 +500,8 @@ describe("Agent Roles API", () => {
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
       })
 
-      it("should return 400 for invalid UUID format in scope", async () => {
-        // Given: Role assignment request with invalid UUID format
+      it("should return 400 for empty template name in scope", async () => {
+        // Given: Role assignment request with empty template name
         const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
           concurrencyControl: {version: agentToUpdate.occ.toString()},
@@ -510,7 +510,7 @@ describe("Agent Roles API", () => {
               roleName: "WorkflowTemplateVoter",
               scope: {
                 type: "workflow_template",
-                workflowTemplateId: "invalid-uuid"
+                templateName: ""
               }
             }
           ]
@@ -598,7 +598,7 @@ describe("Agent Roles API", () => {
             roleName: "WorkflowTemplateVoter",
             scope: {
               type: "workflow_template",
-              workflowTemplateId: template.id
+              templateName: template.name
             }
           })
         }
@@ -622,7 +622,7 @@ describe("Agent Roles API", () => {
             roleName: "WorkflowTemplateInstantiator",
             scope: {
               type: "workflow_template",
-              workflowTemplateId: template.id
+              templateName: template.name
             }
           })
         }
@@ -692,11 +692,11 @@ describe("Agent Roles API", () => {
           roles: [
             {
               roleName: "WorkflowTemplateVoter",
-              scope: {type: "workflow_template", workflowTemplateId: workflowTemplate1.id}
+              scope: {type: "workflow_template", templateName: workflowTemplate1.name}
             },
             {
               roleName: "WorkflowTemplateInstantiator",
-              scope: {type: "workflow_template", workflowTemplateId: workflowTemplate2.id}
+              scope: {type: "workflow_template", templateName: workflowTemplate2.name}
             }
           ]
         }
@@ -712,7 +712,7 @@ describe("Agent Roles API", () => {
           roles: [
             {
               roleName: "WorkflowTemplateInstantiator",
-              scope: {type: "workflow_template", workflowTemplateId: workflowTemplate2.id}
+              scope: {type: "workflow_template", templateName: workflowTemplate2.name}
             }
           ]
         }
@@ -734,7 +734,7 @@ describe("Agent Roles API", () => {
         expect(agentFromDb!.roles).toMatchObject([
           {
             name: "WorkflowTemplateVoter",
-            scope: {type: "workflow_template", workflowTemplateId: workflowTemplate1.id}
+            scope: {type: "workflow_template", templateName: workflowTemplate1.name}
           }
         ])
       })
@@ -750,7 +750,7 @@ describe("Agent Roles API", () => {
             roles: [
               {
                 roleName: "WorkflowTemplateVoter",
-                scope: {type: "workflow_template", workflowTemplateId: workflowTemplate.id}
+                scope: {type: "workflow_template", templateName: workflowTemplate.name}
               }
             ]
           })
@@ -765,7 +765,7 @@ describe("Agent Roles API", () => {
             roles: [
               {
                 roleName: "WorkflowTemplateVoter",
-                scope: {type: "workflow_template", workflowTemplateId: workflowTemplate.id}
+                scope: {type: "workflow_template", templateName: workflowTemplate.name}
               }
             ]
           })
@@ -792,7 +792,7 @@ describe("Agent Roles API", () => {
             roles: [
               {
                 roleName: "WorkflowTemplateVoter",
-                scope: {type: "workflow_template", workflowTemplateId: workflowTemplate1.id}
+                scope: {type: "workflow_template", templateName: workflowTemplate1.name}
               }
             ]
           })
@@ -807,7 +807,7 @@ describe("Agent Roles API", () => {
             roles: [
               {
                 roleName: "WorkflowTemplateInstantiator",
-                scope: {type: "workflow_template", workflowTemplateId: workflowTemplate2.id}
+                scope: {type: "workflow_template", templateName: workflowTemplate2.name}
               }
             ]
           })
@@ -823,7 +823,7 @@ describe("Agent Roles API", () => {
         expect(agentFromDb!.roles).toMatchObject([
           {
             name: "WorkflowTemplateVoter",
-            scope: {type: "workflow_template", workflowTemplateId: workflowTemplate1.id}
+            scope: {type: "workflow_template", templateName: workflowTemplate1.name}
           }
         ])
       })

@@ -91,11 +91,11 @@ export interface WorkflowTemplateRepository {
 
   /**
    * Retrieves space mappings for a batch of workflow template IDs.
-   * @param templateIds Array of workflow template IDs to look up
-   * @returns A map of templateId to spaceId, or an error if any template is not found or missing spaceId
+   * @param templateNames Array of workflow template names to look up
+   * @returns A map of templateName to spaceId, or an error if any template is not found or missing spaceId
    */
-  getWorkflowTemplatesParents(
-    templateIds: ReadonlyArray<string>
+  getWorkflowTemplatesParentsByNames(
+    templateNames: ReadonlyArray<string>
   ): TaskEither<"workflow_template_not_found", ReadonlyMap<string, string>>
 
   /**

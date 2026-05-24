@@ -125,7 +125,7 @@ describe("Agent Workflow Voting API", () => {
     // Add voter roles for agents (preparing for future schema support)
     const voterRole = SystemRole.createWorkflowTemplateVoterRole({
       type: "workflow_template",
-      workflowTemplateId: mockWorkflowTemplate.id
+      templateName: mockWorkflowTemplate.name
     })
     const roleForDb = JSON.parse(JSON.stringify(voterRole))
 

@@ -375,7 +375,7 @@ export function mapCanVoteResponseToApi(response: CanVoteResponse): CanVoteRespo
   }
 }
 
-function mapCantVoteReasonToApi(response: CanVoteResponse): string | undefined {
+function mapCantVoteReasonToApi(response: CanVoteResponse): CanVoteResponseApi["cantVoteReason"] {
   if (response.canVote) return undefined
   switch (response.reason) {
     case "workflow_expired":
@@ -390,8 +390,6 @@ function mapCantVoteReasonToApi(response: CanVoteResponse): string | undefined {
       return "WORKFLOW_TEMPLATE_NOT_ACTIVE"
     case "entity_not_eligible_to_vote":
       return "NO_PERMISSIONS"
-    case "inconsistent_memberships":
-      return "INCONSISTENT_MEMBERSHIPS"
   }
 }
 
@@ -604,6 +602,7 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
     case "agent_name_cannot_be_uuid":
+    case "inconsistent_memberships":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)

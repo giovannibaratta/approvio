@@ -136,14 +136,14 @@ describe("User Roles API", () => {
 
   const createWorkflowTemplateRequest = (
     roleName: string,
-    workflowTemplateId: string,
+    templateName: string,
     occVersion = "-9223372036854775808"
   ): RoleAssignmentRequest => ({
     concurrencyControl: {version: occVersion},
     roles: [
       {
         roleName,
-        scope: {type: "workflow_template", workflowTemplateId}
+        scope: {type: "workflow_template", templateName}
       }
     ]
   })
@@ -822,7 +822,7 @@ describe("User Roles API", () => {
     describe("workflow template role authorization", () => {
       let spaceId: string
       let otherSpaceId: string
-      let workflowTemplateId: string
+      let templateName: string
       let workflowTemplateInOtherSpace: string
       let spaceManagerUser: UserWithToken
       let regularUser: UserWithToken
@@ -842,8 +842,8 @@ describe("User Roles API", () => {
           name: "Template in Other Space",
           spaceId: otherSpaceId
         })
-        workflowTemplateId = template.id
-        workflowTemplateInOtherSpace = templateInOther.id
+        templateName = template.name
+        workflowTemplateInOtherSpace = templateInOther.name
 
         // Given: Create users
         const managerUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
@@ -891,7 +891,7 @@ describe("User Roles API", () => {
               roleName: "WorkflowTemplateVoter",
               scope: {
                 type: "workflow_template",
-                workflowTemplateId: workflowTemplateId
+                templateName: templateName
               }
             }
           ]
@@ -913,7 +913,7 @@ describe("User Roles API", () => {
         expect(userFromDb!.roles).toMatchObject([
           {
             name: "WorkflowTemplateVoter",
-            scope: {type: "workflow_template", workflowTemplateId: workflowTemplateId}
+            scope: {type: "workflow_template", templateName: templateName}
           }
         ])
       })
@@ -928,7 +928,7 @@ describe("User Roles API", () => {
               roleName: "WorkflowTemplateVoter",
               scope: {
                 type: "workflow_template",
-                workflowTemplateId: workflowTemplateId
+                templateName: templateName
               }
             }
           ]
@@ -950,7 +950,7 @@ describe("User Roles API", () => {
         expect(userFromDb!.roles).toMatchObject([
           {
             name: "WorkflowTemplateVoter",
-            scope: {type: "workflow_template", workflowTemplateId: workflowTemplateId}
+            scope: {type: "workflow_template", templateName: templateName}
           }
         ])
       })
@@ -991,7 +991,7 @@ describe("User Roles API", () => {
               roleName: "WorkflowTemplateVoter",
               scope: {
                 type: "workflow_template",
-                workflowTemplateId: workflowTemplateId
+                templateName: templateName
               }
             }
           ]
@@ -1017,7 +1017,7 @@ describe("User Roles API", () => {
               roleName: "WorkflowTemplateVoter",
               scope: {
                 type: "workflow_template",
-                workflowTemplateId: workflowTemplateId
+                templateName: templateName
               }
             }
           ]
@@ -1043,7 +1043,7 @@ describe("User Roles API", () => {
               roleName: "WorkflowTemplateVoter",
               scope: {
                 type: "workflow_template",
-                workflowTemplateId: workflowTemplateInOtherSpace
+                templateName: workflowTemplateInOtherSpace
               }
             }
           ]
@@ -1070,7 +1070,7 @@ describe("User Roles API", () => {
               roleName: "WorkflowTemplateVoter",
               scope: {
                 type: "workflow_template",
-                workflowTemplateId: nonExistentTemplateId
+                templateName: nonExistentTemplateId
               }
             }
           ]

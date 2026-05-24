@@ -111,7 +111,7 @@ export class RoleService {
       case "group":
         return `${roleName}:group:${scope.groupId}`
       case "workflow_template":
-        return `${roleName}:workflow_template:${scope.workflowTemplateId}`
+        return `${roleName}:workflow_template:${scope.templateName}`
     }
   }
 
@@ -128,11 +128,9 @@ export class RoleService {
   private fetchWorkflowTemplateSpaceMappings(
     boundRoles: ReadonlyArray<BoundRole>
   ): TaskEither<"workflow_template_not_found", ReadonlyMap<string, string>> {
-    const workflowTemplateIds = boundRoles
-      .filter(this.isWorkflowTemplateRole)
-      .map(role => role.scope.workflowTemplateId)
+    const workflowTemplateNames = boundRoles.filter(this.isWorkflowTemplateRole).map(role => role.scope.templateName)
 
-    return this.workflowTemplateRepo.getWorkflowTemplatesParents(workflowTemplateIds)
+    return this.workflowTemplateRepo.getWorkflowTemplatesParentsByNames(workflowTemplateNames)
   }
 
   /**

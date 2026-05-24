@@ -60,7 +60,6 @@ export type WorkflowTemplateCantVoteReason =
   | "entity_not_in_required_group"
   | "workflow_template_not_active"
   | "entity_not_eligible_to_vote"
-  | "inconsistent_memberships"
 
 interface WorkflowTemplateLogic {
   /**
@@ -75,7 +74,7 @@ interface WorkflowTemplateLogic {
     memberships: ReadonlyArray<MembershipWithGroupRef>,
     entityRoles: ReadonlyArray<UnconstrainedBoundRole>,
     votedForGroups?: ReadonlyArray<string>
-  ): Either<WorkflowTemplateCantVoteReason, {canVote: true; requireHighPrivilege: boolean}>
+  ): Either<WorkflowTemplateCantVoteReason | "inconsistent_memberships", {canVote: true; requireHighPrivilege: boolean}>
 }
 
 export type WorkflowTemplateValidationError =
@@ -306,7 +305,7 @@ function canVote(
   memberships: ReadonlyArray<MembershipWithGroupRef>,
   entityRoles: ReadonlyArray<UnconstrainedBoundRole>,
   votedForGroups?: ReadonlyArray<string>
-): Either<WorkflowTemplateCantVoteReason, {canVote: true; requireHighPrivilege: boolean}> {
+): Either<WorkflowTemplateCantVoteReason | "inconsistent_memberships", {canVote: true; requireHighPrivilege: boolean}> {
   if (workflowTemplate.status !== WorkflowTemplateStatus.ACTIVE && !workflowTemplate.allowVotingOnDeprecatedTemplate)
     return left("workflow_template_not_active")
 
@@ -359,7 +358,7 @@ function hasVotePermissionForWorkflowTemplate(
   workflowTemplate: WorkflowTemplateData,
   entityRoles: ReadonlyArray<UnconstrainedBoundRole>
 ): boolean {
-  const workflowTemplateId = workflowTemplate.id
+  const templateName = workflowTemplate.name
   const parentSpaceId = workflowTemplate.spaceId
 
   return entityRoles.some(role => {
@@ -372,7 +371,7 @@ function hasVotePermissionForWorkflowTemplate(
     if (role.scope.type === "space" && role.scope.spaceId === parentSpaceId) return true
 
     // Check workflow template-level vote permission
-    if (role.scope.type === "workflow_template" && role.scope.workflowTemplateId === workflowTemplateId) return true
+    if (role.scope.type === "workflow_template" && role.scope.templateName === templateName) return true
 
     return false
   })

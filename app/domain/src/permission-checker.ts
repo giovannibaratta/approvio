@@ -53,9 +53,9 @@ export class RolePermissionChecker {
     if (roleScope.type === "group" && requestedScope.type === "group")
       return roleScope.groupId === requestedScope.groupId
 
-    // For workflow template scopes, check workflowTemplateId match
+    // For workflow template scopes, check templateName match
     if (roleScope.type === "workflow_template" && requestedScope.type === "workflow_template")
-      return roleScope.workflowTemplateId === requestedScope.workflowTemplateId
+      return roleScope.templateName === requestedScope.templateName
 
     // The conditions above should cover all possible cases, but to be sure
     // we default to false.
@@ -135,7 +135,7 @@ export class RoleAuthorizationChecker {
       case "workflow_template": {
         if (!workflowTemplatesParents) return false
 
-        const parentSpaceId = workflowTemplatesParents.get(scope.workflowTemplateId)
+        const parentSpaceId = workflowTemplatesParents.get(scope.templateName)
         if (!parentSpaceId) return false
 
         const parentSpaceScope: SpaceScope = {type: "space", spaceId: parentSpaceId}

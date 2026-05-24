@@ -47,7 +47,7 @@ export interface GroupScope {
 
 export interface WorkflowTemplateScope {
   readonly type: "workflow_template"
-  readonly workflowTemplateId: string
+  readonly templateName: string
 }
 
 export type RoleScope = OrgScope | SpaceScope | GroupScope | WorkflowTemplateScope
@@ -248,7 +248,7 @@ export class RoleFactory {
       case "group":
         return scope1.groupId === (scope2 as GroupScope).groupId
       case "workflow_template":
-        return scope1.workflowTemplateId === (scope2 as WorkflowTemplateScope).workflowTemplateId
+        return scope1.templateName === (scope2 as WorkflowTemplateScope).templateName
     }
   }
 
@@ -327,8 +327,8 @@ export class RoleFactory {
     return (
       "type" in scope &&
       scope.type === "workflow_template" &&
-      "workflowTemplateId" in scope &&
-      typeof scope.workflowTemplateId === "string"
+      "templateName" in scope &&
+      typeof scope.templateName === "string"
     )
   }
 
