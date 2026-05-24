@@ -3,6 +3,7 @@ import {AuthorizationError} from "@services/error"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
+import * as O from "fp-ts/Option"
 import {logSuccess, isUUIDv7} from "@utils"
 import {
   WorkflowTemplate,
@@ -82,10 +83,33 @@ export class WorkflowTemplateService {
     )
   }
 
-  getWorkflowTemplateById(templateId: string): TaskEither<WorkflowTemplateGetError, Versioned<WorkflowTemplate>> {
+  getWorkflowTemplateByIdentifier(
+    templateIdentifier: string
+  ): TaskEither<WorkflowTemplateGetError | WorkflowTemplateGetActiveError, Versioned<WorkflowTemplate>> {
+    if (isUUIDv7(templateIdentifier)) {
+      return pipe(
+        this.workflowTemplateRepository.getWorkflowTemplateById(templateIdentifier),
+        logSuccess("Workflow template retrieved by id", "WorkflowTemplateService", t => ({id: t.id}))
+      )
+    }
+
     return pipe(
-      this.workflowTemplateRepository.getWorkflowTemplateById(templateId),
-      logSuccess("Workflow template retrieved", "WorkflowTemplateService", t => ({id: t.id}))
+      this.workflowTemplateRepository.getActiveWorkflowTemplateByName(templateIdentifier),
+      TE.altW(() =>
+        pipe(
+          this.workflowTemplateRepository.getMostRecentNonActiveWorkflowTemplateByName(templateIdentifier),
+          TE.chainW(maybeTemplate =>
+            pipe(
+              maybeTemplate,
+              O.fold(
+                () => TE.left("workflow_template_not_found" as const),
+                template => TE.right(template)
+              )
+            )
+          )
+        )
+      ),
+      logSuccess("Workflow template retrieved by name", "WorkflowTemplateService", t => ({id: t.id}))
     )
   }
 

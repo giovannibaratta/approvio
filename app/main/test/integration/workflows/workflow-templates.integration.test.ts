@@ -956,7 +956,7 @@ describe("Workflow Templates API", () => {
     })
   })
 
-  describe("GET /workflow-templates/:templateId", () => {
+  describe("GET /workflow-templates/:templateIdentifier", () => {
     let createdTemplate: PrismaWorkflowTemplate
 
     beforeEach(async () => {
@@ -990,6 +990,41 @@ describe("Workflow Templates API", () => {
         const body: WorkflowTemplateApi = response.body
         expect(body.id).toEqual(createdTemplate.id)
       })
+
+      it("should return workflow template details when fetching by active name (as OrgAdmin)", async () => {
+        // When
+        const response = await get(app, `${endpoint}/${createdTemplate.name}`).withToken(orgAdminUser.token).build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: WorkflowTemplateApi = response.body
+        expect(body.id).toEqual(createdTemplate.id)
+        expect(body.name).toEqual(createdTemplate.name)
+        expect(body.status).toEqual("ACTIVE")
+      })
+
+      it("should return workflow template details for the most recent version when fetching by name and no active version exists", async () => {
+        // Given: Deprecate the existing active template and create a deprecated v2
+        await prisma.workflowTemplate.update({
+          where: {id: createdTemplate.id},
+          data: {status: "DEPRECATED"}
+        })
+        const deprecatedV2 = await createMockWorkflowTemplateInDb(prisma, {
+          name: createdTemplate.name,
+          version: 2,
+          status: "DEPRECATED"
+        })
+
+        // When
+        const response = await get(app, `${endpoint}/${createdTemplate.name}`).withToken(orgAdminUser.token).build()
+
+        // Expect: Should successfully return the v2 deprecated version (latest version by name)
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: WorkflowTemplateApi = response.body
+        expect(body.id).toEqual(deprecatedV2.id)
+        expect(body.version).toEqual("2")
+        expect(body.status).toEqual("DEPRECATED")
+      })
     })
 
     describe("bad cases", () => {
@@ -1001,12 +1036,21 @@ describe("Workflow Templates API", () => {
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
       })
 
-      it("should return 404 NOT_FOUND for non-existent template", async () => {
+      it("should return 404 NOT_FOUND for non-existent template ID", async () => {
         // Given
         const nonExistentId = uuidv7()
 
         // When
         const response = await get(app, `${endpoint}/${nonExistentId}`).withToken(orgAdminUser.token).build()
+
+        // Expect
+        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
+        expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_NOT_FOUND")
+      })
+
+      it("should return 404 NOT_FOUND when fetching by non-existent name", async () => {
+        // When
+        const response = await get(app, `${endpoint}/non-existent-template-name`).withToken(orgAdminUser.token).build()
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)

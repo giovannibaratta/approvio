@@ -308,7 +308,7 @@ export function generateErrorResponseForCreateWorkflowTemplate(
   }
 }
 
-type GetWorkflowTemplateLeft = ExtractLeftFromMethod<typeof WorkflowTemplateService, "getWorkflowTemplateById">
+type GetWorkflowTemplateLeft = ExtractLeftFromMethod<typeof WorkflowTemplateService, "getWorkflowTemplateByIdentifier">
 
 export function generateErrorResponseForGetWorkflowTemplate(
   error: GetWorkflowTemplateLeft,
@@ -318,6 +318,7 @@ export function generateErrorResponseForGetWorkflowTemplate(
 
   switch (error) {
     case "workflow_template_not_found":
+    case "active_workflow_template_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow template not found`))
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))

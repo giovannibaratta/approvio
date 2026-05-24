@@ -99,12 +99,13 @@ export class WorkflowTemplatesController {
     return eitherWorkflowTemplates.right
   }
 
-  @Get(":templateId")
-  async getWorkflowTemplate(@Param("templateId") templateId: string): Promise<WorkflowTemplateApi> {
-    const getWorkflowTemplateService = (id: string) => this.workflowTemplateService.getWorkflowTemplateById(id)
+  @Get(":templateIdentifier")
+  async getWorkflowTemplate(@Param("templateIdentifier") templateIdentifier: string): Promise<WorkflowTemplateApi> {
+    const getWorkflowTemplateService = (identifier: string) =>
+      this.workflowTemplateService.getWorkflowTemplateByIdentifier(identifier)
 
     const eitherWorkflowTemplate = await pipe(
-      templateId,
+      templateIdentifier,
       TE.right,
       TE.chainW(getWorkflowTemplateService),
       TE.map(versioned => mapWorkflowTemplateToApi(versioned)),
