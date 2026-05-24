@@ -1,7 +1,8 @@
 {
   "extends": "./tsconfig-google.json",
   "compilerOptions": {
-    "baseUrl": "./",
+    "rootDir": ".",
+    "moduleResolution": "bundler",
     "types": ["jest", "node"],
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
@@ -9,22 +10,22 @@
     "noUncheckedIndexedAccess": true,
     "paths": {
       // Avoid issues with multiple versions of fp-ts
-      "fp-ts": ["node_modules/fp-ts"],
-      "fp-ts/*": ["node_modules/fp-ts/*"],
-      "@app": ["app/main/src"],
-      "@app/*": ["app/main/src/*"],
-      "@services": ["app/services/src"],
-      "@services/*": ["app/services/src/*"],
-      "@domain": ["app/domain/src"],
-      "@domain/*": ["app/domain/src/*"],
-      "@external": ["app/external/src"],
-      "@external/*": ["app/external/src/*"],
-      "@controllers": ["app/controllers/src"],
-      "@controllers/*": ["app/controllers/src/*"],
-      "@utils": ["app/utils/src"],
-      "@utils/*": ["app/utils/src/*"],
-      "@test/*": ["app/test/*"],
-      "@prisma/client": ["generated/prisma/client.ts"]
+      "fp-ts": ["./node_modules/fp-ts"],
+      "fp-ts/*": ["./node_modules/fp-ts/*"],
+      "@app": ["./app/main/src"],
+      "@app/*": ["./app/main/src/*"],
+      "@services": ["./app/services/src"],
+      "@services/*": ["./app/services/src/*"],
+      "@domain": ["./app/domain/src"],
+      "@domain/*": ["./app/domain/src/*"],
+      "@external": ["./app/external/src"],
+      "@external/*": ["./app/external/src/*"],
+      "@controllers": ["./app/controllers/src"],
+      "@controllers/*": ["./app/controllers/src/*"],
+      "@utils": ["./app/utils/src"],
+      "@utils/*": ["./app/utils/src/*"],
+      "@test/*": ["./app/test/*"],
+      "@prisma/client": ["./generated/prisma/client.ts"]
     }
   },
   "exclude": ["node_modules", "dist"]

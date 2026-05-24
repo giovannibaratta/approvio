@@ -1,7 +1,7 @@
 import {Test} from "@nestjs/testing"
 import {NestApplication} from "@nestjs/core"
 import {HttpStatus} from "@nestjs/common"
-import * as request from "supertest"
+import request from "supertest"
 import {AppModule} from "@app/app.module"
 import {createDomainMockUserInDb, MockConfigProvider} from "@test/mock-data"
 import {cleanDatabase, prepareDatabase} from "@test/database"

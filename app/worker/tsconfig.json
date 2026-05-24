@@ -3,6 +3,6 @@
   "compilerOptions": {
     "outDir": "../../dist/worker"
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "../../generated/prisma/**/*.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

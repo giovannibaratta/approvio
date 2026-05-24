@@ -1,6 +1,6 @@
 import {Test, TestingModule} from "@nestjs/testing"
 import {HttpStatus, INestApplication} from "@nestjs/common"
-import * as supertest from "supertest"
+import supertest from "supertest"
 import {AppModule} from "@app/app.module"
 import {DatabaseClient} from "@external/database"
 import {cleanDatabase, prepareDatabase} from "@test/database"
