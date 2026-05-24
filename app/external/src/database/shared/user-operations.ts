@@ -44,7 +44,7 @@ function mapRolesToJsonValue(roles: ReadonlyArray<UnconstrainedBoundRole>): Pris
       type: role.scope.type,
       ...(role.scope.type === "space" && {spaceId: role.scope.spaceId}),
       ...(role.scope.type === "group" && {groupId: role.scope.groupId}),
-      ...(role.scope.type === "workflow_template" && {workflowTemplateId: role.scope.workflowTemplateId})
+      ...(role.scope.type === "workflow_template" && {templateName: role.scope.templateName})
     }
   }))
 }

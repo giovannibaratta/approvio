@@ -26,9 +26,9 @@ const createGroupScope = (groupId: string = uuidv7()): GroupScope => ({
   groupId
 })
 
-const createWorkflowTemplateScope = (workflowTemplateId: string = uuidv7()): WorkflowTemplateScope => ({
+const createWorkflowTemplateScope = (templateName: string = uuidv7()): WorkflowTemplateScope => ({
   type: "workflow_template",
-  workflowTemplateId
+  templateName
 })
 
 const createGroupRole = (permissions: GroupPermission[], scope: GroupScope): UnconstrainedBoundRole => ({

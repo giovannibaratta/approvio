@@ -80,10 +80,10 @@ async function addUserToGroup(prisma: PrismaClient, groupId: string, userId: str
   })
 }
 
-async function addVoterRoleToUser(prisma: PrismaClient, userId: string, workflowTemplateId: string): Promise<void> {
+async function addVoterRoleToUser(prisma: PrismaClient, userId: string, templateName: string): Promise<void> {
   const voterRole = SystemRole.createWorkflowTemplateVoterRole({
     type: "workflow_template",
-    workflowTemplateId
+    templateName
   })
   const roleForDb = JSON.parse(JSON.stringify(voterRole))
   const user = await prisma.user.findUnique({where: {id: userId}})
@@ -243,7 +243,7 @@ describe("Workflows API", () => {
           expiresAt: "active"
         })
         await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id)
-        await addVoterRoleToUser(prisma, orgAdminUser.user.id, mockWorkflowTemplate.id)
+        await addVoterRoleToUser(prisma, orgAdminUser.user.id, mockWorkflowTemplate.name)
 
         // Intercept getWorkflowById to trigger concurrent modification
         spy = wrapTaskEitherWithSideEffect(repo, "getWorkflowById", async id => {
@@ -481,8 +481,8 @@ describe("Workflows API", () => {
       await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id)
 
       // Add voter roles for this workflow template
-      await addVoterRoleToUser(prisma, orgMemberUser.user.id, template.id)
-      await addVoterRoleToUser(prisma, orgAdminUser.user.id, template.id)
+      await addVoterRoleToUser(prisma, orgMemberUser.user.id, template.name)
+      await addVoterRoleToUser(prisma, orgAdminUser.user.id, template.name)
 
       // Given: a generic workflow for other tests (e.g., admin access)
       testWorkflow = await createMockWorkflowInDb(prisma, {
@@ -523,7 +523,7 @@ describe("Workflows API", () => {
         })
 
         // Also add user as voter
-        await addVoterRoleToUser(prisma, orgMemberUser.user.id, highPrivTemplate.id)
+        await addVoterRoleToUser(prisma, orgMemberUser.user.id, highPrivTemplate.name)
 
         // Add user to required group
         await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id)
@@ -566,7 +566,7 @@ describe("Workflows API", () => {
         })
 
         // Give OrgMember voter role
-        await addVoterRoleToUser(prisma, orgMemberUser.user.id, complexTemplate.id)
+        await addVoterRoleToUser(prisma, orgMemberUser.user.id, complexTemplate.name)
 
         // Test user only in group 1 (Requires High Privilege)
         await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id)
@@ -587,7 +587,7 @@ describe("Workflows API", () => {
             roles: [
               SystemRole.createWorkflowTemplateVoterRole({
                 type: "workflow_template",
-                workflowTemplateId: complexTemplate.id
+                templateName: complexTemplate.name
               })
             ]
           },
@@ -630,7 +630,7 @@ describe("Workflows API", () => {
         // Given: a new user with voter role but not in any group related to this workflow
         const voterRole = SystemRole.createWorkflowTemplateVoterRole({
           type: "workflow_template",
-          workflowTemplateId: template.id
+          templateName: template.name
         })
         const nonMemberUser = await createDomainMockUserInDb(prisma, {
           orgAdmin: false,
@@ -727,8 +727,8 @@ describe("Workflows API", () => {
         await addUserToGroup(prisma, mockGroupId1, orgAdminUser.user.id)
 
         // Add voter roles for the workflow template
-        await addVoterRoleToUser(prisma, orgMemberUser.user.id, workflowTemplate.id)
-        await addVoterRoleToUser(prisma, orgAdminUser.user.id, workflowTemplate.id)
+        await addVoterRoleToUser(prisma, orgMemberUser.user.id, workflowTemplate.name)
+        await addVoterRoleToUser(prisma, orgAdminUser.user.id, workflowTemplate.name)
       })
 
       it("should allow OrgMember in the group to APPROVE a workflow and return 200 OK", async () => {
@@ -854,7 +854,7 @@ describe("Workflows API", () => {
           workflowTemplateId: complexTemplate.id
         })
 
-        await addVoterRoleToUser(prisma, orgMemberUser.user.id, complexTemplate.id)
+        await addVoterRoleToUser(prisma, orgMemberUser.user.id, complexTemplate.name)
 
         // Test user only in group 1 (Requires High Privilege)
         await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id)
@@ -882,7 +882,7 @@ describe("Workflows API", () => {
             roles: [
               SystemRole.createWorkflowTemplateVoterRole({
                 type: "workflow_template",
-                workflowTemplateId: complexTemplate.id
+                templateName: complexTemplate.name
               })
             ]
           },
@@ -964,7 +964,7 @@ describe("Workflows API", () => {
         // Given: a new user not in any group related to this workflow
         const voterRole = SystemRole.createWorkflowTemplateVoterRole({
           type: "workflow_template",
-          workflowTemplateId: workflowTemplate.id
+          templateName: workflowTemplate.name
         })
         const nonVoter = await createDomainMockUserInDb(prisma, {
           orgAdmin: false,
@@ -1011,7 +1011,7 @@ describe("Workflows API", () => {
         })
 
         // Give user permission to vote on this generic template too
-        await addVoterRoleToUser(prisma, orgMemberUser.user.id, highPrivTemplate.id)
+        await addVoterRoleToUser(prisma, orgMemberUser.user.id, highPrivTemplate.name)
 
         await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id)
 
@@ -1382,7 +1382,7 @@ describe("Workflows API", () => {
       await addUserToGroup(prisma, mockGroupId1, orgMemberUser.user.id)
 
       // Add voter roles
-      await addVoterRoleToUser(prisma, orgMemberUser.user.id, workflowTemplate.id)
+      await addVoterRoleToUser(prisma, orgMemberUser.user.id, workflowTemplate.name)
 
       // Cast a vote
       const voteRequest: WorkflowVoteRequestApi = {

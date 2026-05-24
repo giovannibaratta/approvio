@@ -29,7 +29,7 @@ describe("RoleFactory", () => {
 
   const createValidWorkflowTemplateScope = (): WorkflowTemplateScope => ({
     type: "workflow_template",
-    workflowTemplateId: "template-123"
+    templateName: "template-123"
   })
 
   const createValidGroupRole = (permissions: GroupPermission[] = ["read"]): UnconstrainedBoundRole => ({
@@ -569,7 +569,7 @@ describe("RoleFactory", () => {
           expect(result).toBeLeftOf("role_invalid_scope")
         })
 
-        it("should reject workflow_template scope without workflowTemplateId", () => {
+        it("should reject workflow_template scope without templateName", () => {
           // Given
           const role = {
             name: "TestRole",
@@ -587,14 +587,14 @@ describe("RoleFactory", () => {
           expect(result).toBeLeftOf("role_invalid_scope")
         })
 
-        it("should reject workflow_template scope with non-string workflowTemplateId", () => {
+        it("should reject workflow_template scope with non-string templateName", () => {
           // Given
           const role = {
             name: "TestRole",
             resourceType: "workflow_template",
             permissions: ["read"],
             scopeType: "workflow_template",
-            scope: {type: "workflow_template", workflowTemplateId: 123}
+            scope: {type: "workflow_template", templateName: 123}
           }
           const rolesData = [role]
 

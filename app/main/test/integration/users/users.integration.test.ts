@@ -298,12 +298,15 @@ describe("Users API", () => {
 
       it("should return users matching fuzzy display name search (as OrgAdmin)", async () => {
         // Given
-        const user1 = await createMockUserInDb(prisma, {displayName: "Alice Smith", email: "alice.smith@example.com"})
+        const user1 = await createMockUserInDb(prisma, {
+          displayName: "VeryUnlkikelyNameToBeFound Smith",
+          email: "veryunlkikelynametobefound.smith@example.com"
+        })
         await createMockUserInDb(prisma, {displayName: "Bob Johnson", email: "bob.j@example.com"})
         await createMockUserInDb(prisma, {displayName: "Charlie Brown", email: "charlie.b@example.com"})
 
         // When
-        const response = await get(app, endpoint).withToken(orgAdminUser.token).query({search: "alic"}).build()
+        const response = await get(app, endpoint).withToken(orgAdminUser.token).query({search: "veryunlkikely"}).build()
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.OK)
