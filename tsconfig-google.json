@@ -6,6 +6,8 @@
     "forceConsistentCasingInFileNames": true,
     "lib": ["es2022"],
     "module": "commonjs",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
     "noEmitOnError": true,
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,

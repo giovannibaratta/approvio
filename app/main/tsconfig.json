@@ -3,5 +3,5 @@
   "compilerOptions": {
     "outDir": "../../dist/backend"
   },
-  "include": ["./src/**/*.ts", "./test/**/*.ts"]
+  "include": ["./src/**/*.ts", "./test/**/*.ts", "../../generated/prisma/**/*.ts"]
 }
