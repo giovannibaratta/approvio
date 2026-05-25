@@ -23,9 +23,11 @@ import {JwtModule} from "@nestjs/jwt"
 import {RateLimiterService} from "./rate-limiter"
 import {QuotaService} from "./quota"
 import {HierarchyService} from "./hierarchy/hierarchy.service"
+import {AuditLogService} from "./audit-log"
 
 const services = [
   AgentService,
+  AuditLogService,
   GroupService,
   GroupMembershipService,
   OrganizationAdminService,
