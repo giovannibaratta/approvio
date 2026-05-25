@@ -13,6 +13,7 @@ import {AuthController, WebAuthController, CliAuthController} from "./auth"
 import {RolesController} from "./roles"
 import {HealthController} from "./health"
 import {QuotasController} from "./quotas"
+import {AuditLogsController} from "./audit-logs"
 
 import {ConfigModule} from "@external/config.module"
 
@@ -34,6 +35,7 @@ const internalControllers = [WorkflowTemplateInternalController]
     RolesController,
     HealthController,
     QuotasController,
+    AuditLogsController,
     ...internalControllers
   ],
   providers: [],

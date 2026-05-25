@@ -47,3 +47,24 @@ databaseChangeLog:
                   type: TIMESTAMP(6)
                   constraints:
                     nullable: false
+        - createIndex:
+            tableName: audit_logs
+            indexName: idx_audit_logs_actor_id_created_at
+            columns:
+              - column:
+                  name: actor_id
+              - column:
+                  name: created_at
+                  descending: true
+        - createIndex:
+            tableName: audit_logs
+            indexName: idx_audit_logs_entity_id_created_at
+            columns:
+              - column:
+                  name: entity_id
+              - column:
+                  name: created_at
+                  descending: true
+        - sql:
+            sql: CREATE INDEX idx_audit_logs_created_at_brin ON audit_logs USING brin (created_at);
+

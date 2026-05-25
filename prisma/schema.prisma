@@ -298,5 +298,8 @@ model AuditLog {
   payload    Json
   createdAt  DateTime @map("created_at") @db.Timestamp(6)
 
+  @@index([actorId, createdAt(sort: Desc)], map: "idx_audit_logs_actor_id_created_at")
+  @@index([entityId, createdAt(sort: Desc)], map: "idx_audit_logs_entity_id_created_at")
+  @@index([createdAt], map: "idx_audit_logs_created_at_brin", type: Brin)
   @@map("audit_logs")
 }

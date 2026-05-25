@@ -950,7 +950,7 @@ describe("User Roles API", () => {
         expect(userFromDb!.roles).toMatchObject([
           {
             name: "WorkflowTemplateVoter",
-            scope: {type: "workflow_template", templateName: templateName}
+            scope: {type: "workflow_template", templateName}
           }
         ])
       })
