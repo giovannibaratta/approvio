@@ -5,6 +5,7 @@ import {
   GroupPermission,
   SpacePermission,
   WorkflowTemplatePermission,
+  AuditPermission,
   GroupScope,
   SpaceScope,
   OrgScope,
@@ -82,6 +83,14 @@ export class RolePermissionChecker {
     roles: ReadonlyArray<UnconstrainedBoundRole>,
     scope: WorkflowTemplateScope | SpaceScope | OrgScope,
     permission: WorkflowTemplatePermission
+  ): boolean {
+    return this.hasPermission(roles, scope, permission)
+  }
+
+  static hasAuditPermission(
+    roles: ReadonlyArray<UnconstrainedBoundRole>,
+    scope: OrgScope,
+    permission: AuditPermission
   ): boolean {
     return this.hasPermission(roles, scope, permission)
   }

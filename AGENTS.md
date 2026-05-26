@@ -28,6 +28,8 @@ Always USE the following skills to assist with tasks:
 - **`backend-development`**: For following the standard development lifecycle (schema -> domain -> controller).
 - **`script-runner`**: For executing project scripts (start, test, deps).
 - **`test-runner`**: For running tests.
+- **`role-management`**: For defining new permissions or roles in the RBAC system.
+  - _Example:_ "Define a new 'AuditorViewer' role with organization-wide read access."
 
 ## Agent Behavior Guidelines
 

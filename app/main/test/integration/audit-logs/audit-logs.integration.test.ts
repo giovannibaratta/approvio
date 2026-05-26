@@ -13,6 +13,7 @@ import {JwtService} from "@nestjs/jwt"
 import {get} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import {TokenPayloadBuilder} from "@services"
+import {SystemRole} from "@domain"
 import {v7 as uuidv7} from "uuid"
 
 describe("Audit Logs API", () => {
@@ -47,7 +48,7 @@ describe("Audit Logs API", () => {
     configProvider = module.get(ConfigProvider)
 
     await app.init()
-  })
+  }, 30000)
 
   beforeEach(async () => {
     await cleanDatabase(prisma)
@@ -123,7 +124,7 @@ describe("Audit Logs API", () => {
   })
 
   describe("GET /audit-logs", () => {
-    it("should return 403 Forbidden for non-admin user", async () => {
+    it("should return 403 Forbidden for a non-org admin user without the AuditorViewer role", async () => {
       // Given
       const nonAdminToken = orgMemberUser.token
 
@@ -132,6 +133,33 @@ describe("Audit Logs API", () => {
 
       // Expect
       expect(response.status).toBe(HttpStatus.FORBIDDEN)
+    })
+
+    it("should return 200 OK for a non-org admin user who has the AuditorViewer role", async () => {
+      // Given
+      const auditorViewerRole = SystemRole.createAuditViewerRole({type: "org"})
+      const domainAuditorUser = await createDomainMockUserInDb(prisma, {
+        orgAdmin: false,
+        roles: [auditorViewerRole]
+      })
+
+      const auditorToken = await jwtService.signAsync(
+        TokenPayloadBuilder.fromUser(domainAuditorUser, {
+          issuer: configProvider.jwtConfig.issuer,
+          audience: [configProvider.jwtConfig.audience]
+        }),
+        {
+          secret: configProvider.jwtConfig.secret
+        }
+      )
+
+      // When
+      const response = await get(app, endpoint).withToken(auditorToken).build()
+
+      // Expect
+      expect(response.status).toBe(HttpStatus.OK)
+      expect(response.body).toHaveProperty("auditLogs")
+      expect(response.body.auditLogs).toHaveLength(2)
     })
 
     it("should return 200 OK for admin user and return keyset paginated audit logs (filtering out >7 days old)", async () => {
