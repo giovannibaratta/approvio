@@ -1,55 +1,23 @@
 ---
-name: development-workflow
+name: backend-development
 description: Guides the development process from schema updates to controller implementation.
 ---
 
-# Development Workflow Skill
+# Backend Development Workflow Skill
 
-This skill outlines the standard workflow for implementing new features or modifying existing ones.
+This skill is describe the process of development on the backend.
 
-## Standard Development Steps
+To follow the standard development process, please refer to the detailed workflow here:
+[Backend Development Workflow](../../../.agents/workflows/backend-development.md)
 
-1.  **Schema Update (if needed):**
-    - See `db-schema-changes` skill.
+## Summary of Steps
 
-2.  **Define Domain Unit Tests.**
-    - Write tests for your entities and value objects.
-    - Ensure validation logic is covered.
-
-3.  **Implement Domain Logic.**
-    - Create or update entities in `app/domain`.
-    - Implement factory methods and validation.
-
-4.  **Write Controller Integration Tests.**
-    - Define the expected API behavior.
-    - These tests should fail initially.
-
-5.  **Define Service and Dependency Interfaces.**
-    - Define repository interfaces in the service layer.
-    - Define any 3rd-party provider interfaces.
-
-6.  **Implement External Dependencies.**
-    - Implement the repository interfaces in `app/external`.
-    - Map Prisma types to Domain types.
-
-7.  **Implement Service Logic.**
-    - Implement the business logic in `app/services`.
-    - Use `TaskEither` and `fp-ts` patterns.
-
-8.  **Implement Controller Logic.**
-    - Implement the HTTP endpoints in `app/controllers`.
-    - Map requests/responses (OpenAPI <-> Service).
-
-9.  **Code Review**
-    - Use the `code-review` skill to review the code.
-
-## Validation
-
-Use test-runner skill to run tests.
-
-Ensure correctness and prevent regressions before proceeding.
-
-## Constraints
-
-- **No Direct Git Actions:** Do not use `git commit`, `git stash`, or `git push` directly unless instructed.
-- **Package Manager:** Use `yarn`, not `npm` or `npx`.
+1. **Schema Update** (using `db-schema-changes`)
+2. **Domain Unit Tests**
+3. **Domain Logic Implementation**
+4. **Controller Integration Tests**
+5. **Service & Dependency Interfaces**
+6. **External Dependencies Implementation**
+7. **Service Logic Implementation**
+8. **Controller Logic Implementation**
+9. **Code Review**
