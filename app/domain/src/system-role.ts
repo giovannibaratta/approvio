@@ -7,6 +7,8 @@ import {
   SpaceRoleTemplate,
   WorkflowTemplateRole,
   WorkflowTemplateRoleTemplate,
+  AuditRole,
+  AuditRoleTemplate,
   BoundRole,
   ScopeType,
   ResourceType
@@ -246,6 +248,19 @@ export class SystemRole {
     }
   }
 
+  // Audit role templates
+  static getAuditViewerTemplate(scopeType: AuditRoleTemplate["scopeType"] = "org"): AuditRoleTemplate {
+    const baseRoleName = "AuditorViewer"
+    const name = scopeType === "org" ? baseRoleName : SystemRole.generateRoleName("AuditorViewer", scopeType)
+
+    return {
+      name,
+      resourceType: "audit",
+      permissions: ["read"],
+      scopeType: scopeType
+    }
+  }
+
   /**
    * Returns all predefined role templates available in the system.
    * Includes all scope variations for comprehensive coverage.
@@ -292,7 +307,10 @@ export class SystemRole {
       SystemRole.getWorkflowCancelTemplate("org"),
       SystemRole.getWorkflowFullAccessTemplate("workflow_template"),
       SystemRole.getWorkflowFullAccessTemplate("space"),
-      SystemRole.getWorkflowFullAccessTemplate("org")
+      SystemRole.getWorkflowFullAccessTemplate("org"),
+
+      // Audit role templates
+      SystemRole.getAuditViewerTemplate("org")
     ]
   }
 
@@ -383,5 +401,9 @@ export class SystemRole {
 
   static createWorkflowFullAccessRole(scope: RoleScope): WorkflowTemplateRole {
     return SystemRole.createRoleForScope(SystemRole.getWorkflowFullAccessTemplate(), scope)
+  }
+
+  static createAuditViewerRole(scope: RoleScope): AuditRole {
+    return SystemRole.createRoleForScope(SystemRole.getAuditViewerTemplate(), scope)
   }
 }

@@ -59,7 +59,7 @@ export type ScopeType = RoleScope["type"]
  * This is the independent source of truth for what resources exist.
  * Everything else in the type system derives from this array.
  */
-export const RESOURCE_TYPES = ["group", "space", "workflow_template"] as const
+export const RESOURCE_TYPES = ["group", "space", "workflow_template", "audit"] as const
 
 // Typescript type based on the RESOURCE_TYPES
 export type ResourceType = (typeof RESOURCE_TYPES)[number]
@@ -73,7 +73,8 @@ export type ResourceType = (typeof RESOURCE_TYPES)[number]
 const ALLOWED_SCOPE_TYPES_BY_RESOURCE = {
   group: ["group"],
   space: ["space", "org"],
-  workflow_template: ["workflow_template", "space", "org"]
+  workflow_template: ["workflow_template", "space", "org"],
+  audit: ["org"]
 } as const satisfies Record<ResourceType, ReadonlyArray<ScopeType>>
 
 /**
@@ -124,7 +125,8 @@ export type BoundRole<RType extends ResourceType = ResourceType> = RoleTemplate<
 const RESOURCE_PERMISSIONS = {
   group: ["read", "write", "manage"],
   space: ["read", "manage"],
-  workflow_template: ["read", "write", "instantiate", "vote", "workflow_read", "workflow_list", "workflow_cancel"]
+  workflow_template: ["read", "write", "instantiate", "vote", "workflow_read", "workflow_list", "workflow_cancel"],
+  audit: ["read"]
 } as const satisfies Record<ResourceType, ReadonlyArray<string>>
 
 /**
@@ -134,16 +136,19 @@ const RESOURCE_PERMISSIONS = {
 export type GroupPermission = (typeof RESOURCE_PERMISSIONS)["group"][number]
 export type SpacePermission = (typeof RESOURCE_PERMISSIONS)["space"][number]
 export type WorkflowTemplatePermission = (typeof RESOURCE_PERMISSIONS)["workflow_template"][number]
+export type AuditPermission = (typeof RESOURCE_PERMISSIONS)["audit"][number]
 
 // Template type aliases for unbound roles
 export type GroupRoleTemplate = RoleTemplate<"group">
 export type SpaceRoleTemplate = RoleTemplate<"space">
 export type WorkflowTemplateRoleTemplate = RoleTemplate<"workflow_template">
+export type AuditRoleTemplate = RoleTemplate<"audit">
 
 // Bound role type aliases
 export type GroupRole = BoundRole<"group">
 export type SpaceRole = BoundRole<"space">
 export type WorkflowTemplateRole = BoundRole<"workflow_template">
+export type AuditRole = BoundRole<"audit">
 
 // Unconstrained bound role for cases where resource type is unknown
 export type UnconstrainedBoundRole = BoundRole<ResourceType>
