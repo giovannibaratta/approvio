@@ -25,7 +25,7 @@ Always USE the following skills to assist with tasks:
   - _Example:_ "Create a new migration to add the `status` column to the `orders` table."
 - **`troubleshooting`**: For debugging, and type issues.
 - **`lint-and-build`**: For verifying code integrity.
-- **`development-workflow`**: For following the standard development lifecycle (schema -> domain -> controller).
+- **`backend-development`**: For following the standard development lifecycle (schema -> domain -> controller).
 - **`script-runner`**: For executing project scripts (start, test, deps).
 - **`test-runner`**: For running tests.
 
