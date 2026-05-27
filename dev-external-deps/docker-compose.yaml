@@ -10,7 +10,7 @@ services:
   # Local DB used for development and manual testing
   db:
     profiles: [dev]
-    image: postgres:17.4
+    image: mirror.gcr.io/library/postgres:17.4
     environment:
       POSTGRES_USER: developer
       POSTGRES_PASSWORD: Safe1!
@@ -21,7 +21,7 @@ services:
   # Local DB used for integration tests
   integration-test-db:
     profiles: [test]
-    image: postgres:17.4
+    image: mirror.gcr.io/library/postgres:17.4
     # These tweaks are not safe to use in production, but they can speed up local development
     # Apply some performance improvements to pg as these guarantees are not needed while running locally
     command: "postgres -c 'shared_buffers=128MB' -c 'fsync=off' -c 'synchronous_commit=off' -c 'full_page_writes=off' -c 'max_connections=100' -c 'client_min_messages=warning'"
@@ -35,7 +35,7 @@ services:
   # Redis for queue processing (development)
   redis-dev:
     profiles: [dev]
-    image: redis:8-alpine
+    image: mirror.gcr.io/library/redis:8-alpine
     ports:
       - "6379:6379"
     volumes:
@@ -50,7 +50,7 @@ services:
   # Redis for queue processing (testing)
   redis-test:
     profiles: [test]
-    image: redis:8-alpine
+    image: mirror.gcr.io/library/redis:8-alpine
     ports:
       - "6380:6379"
     volumes:
@@ -64,7 +64,7 @@ services:
 
   cert-generator-dev:
     profiles: [dev]
-    image: alpine
+    image: ghcr.io/linuxcontainers/alpine
     command: >
       sh -c "
         # Ensure openssl is installed
@@ -79,7 +79,7 @@ services:
 
   cert-generator-test:
     profiles: [test]
-    image: alpine
+    image: ghcr.io/linuxcontainers/alpine
     command: >
       sh -c "
         # Ensure openssl is installed
@@ -95,7 +95,7 @@ services:
   # Local smtp server used for integration tests
   mailpit-test:
     profiles: [test]
-    image: axllent/mailpit:v1.27.1
+    image: ghcr.io/axllent/mailpit:v1.27.1 
     ports:
       - "1026:1025" # SMTP port
       - "8026:8025" # Web UI port
@@ -114,7 +114,7 @@ services:
   # Local smtp server used for development
   mailpit-dev:
     profiles: [dev]
-    image: axllent/mailpit:v1.27.1
+    image: ghcr.io/axllent/mailpit:v1.27.1
     ports:
       - "1025:1025" # SMTP port
       - "8025:8025" # Web UI port
@@ -252,7 +252,7 @@ services:
 
   wiremock-test:
     profiles: [test]
-    image: wiremock/wiremock:3.13.2
+    image: ghcr.io/wiremock/wiremock:3.13.2-3
     ports:
       - "9090:8080"
     environment:
