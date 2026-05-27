@@ -678,6 +678,98 @@ describe("Agent Roles API", () => {
         expect(response.body.code).toBe("CONCURRENT_MODIFICATION_ERROR")
       })
     })
+
+    describe("audit logging", () => {
+      it("should persist audit log when roles are assigned", async () => {
+        // Given: Valid role assignment request
+        const roleAssignmentRequest = createOrgScopeRequest("OrgWideWorkflowTemplateInstantiator")
+
+        // When: Admin assigns role to agent
+        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(roleAssignmentRequest)
+
+        // Then: Should receive success response
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Audit log should be persisted in database
+        const auditLogs = await prisma.auditLog.findMany({
+          where: {
+            entityId: targetAgent.id,
+            auditType: "AGENT_ROLES_ASSIGNED"
+          }
+        })
+        expect(auditLogs).toHaveLength(1)
+        expect(auditLogs[0]!.payload).toMatchObject({
+          roles: [
+            {
+              roleName: "OrgWideWorkflowTemplateInstantiator",
+              scope: {type: "org"}
+            }
+          ]
+        })
+      })
+
+      it("should only log newly assigned roles and ignore already existing ones", async () => {
+        // Given: Agent already has a role assigned
+        const workflowTemplate1 = await createMockWorkflowTemplateInDb(prisma)
+        await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({
+            concurrencyControl: {version: "-9223372036854775808"},
+            roles: [
+              {
+                roleName: "WorkflowTemplateVoter",
+                scope: {type: "workflow_template", templateName: workflowTemplate1.name}
+              }
+            ]
+          })
+
+        // When: Admin assigns both the existing role and a new one
+        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
+        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({
+            concurrencyControl: {version: agentToUpdate.occ.toString()},
+            roles: [
+              {
+                roleName: "WorkflowTemplateVoter",
+                scope: {type: "workflow_template", templateName: workflowTemplate1.name}
+              },
+              {
+                roleName: "OrgWideWorkflowTemplateInstantiator",
+                scope: {type: "org"}
+              }
+            ]
+          })
+
+        // Then: Should receive success response
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Audit log should only contain the newly assigned role
+        const auditLogs = await prisma.auditLog.findMany({
+          where: {
+            entityId: targetAgent.id,
+            auditType: "AGENT_ROLES_ASSIGNED"
+          },
+          orderBy: {createdAt: "desc"}
+        })
+
+        // Note: The first PUT created one audit log. The second PUT should only log the new one.
+        expect(auditLogs).toHaveLength(2)
+        expect(auditLogs[0]!.payload).toMatchObject({
+          roles: [
+            {
+              roleName: "OrgWideWorkflowTemplateInstantiator",
+              scope: {type: "org"}
+            }
+          ]
+        })
+      })
+    })
   })
 
   describe("DELETE /agents/{agentId}/roles", () => {
@@ -826,6 +918,117 @@ describe("Agent Roles API", () => {
             scope: {type: "workflow_template", templateName: workflowTemplate1.name}
           }
         ])
+      })
+    })
+
+    describe("audit logging", () => {
+      it("should persist audit log when roles are removed", async () => {
+        // Given: Agent has roles assigned
+        const workflowTemplate = await createMockWorkflowTemplateInDb(prisma)
+        await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({
+            concurrencyControl: {version: "-9223372036854775808"},
+            roles: [
+              {
+                roleName: "WorkflowTemplateVoter",
+                scope: {type: "workflow_template", templateName: workflowTemplate.name}
+              }
+            ]
+          })
+
+        // When: Admin removes role
+        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
+        const response = await del(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({
+            concurrencyControl: {version: agentToUpdate.occ.toString()},
+            roles: [
+              {
+                roleName: "WorkflowTemplateVoter",
+                scope: {type: "workflow_template", templateName: workflowTemplate.name}
+              }
+            ]
+          })
+
+        // Then: Should receive success response
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Audit log should be persisted in database
+        const auditLogs = await prisma.auditLog.findMany({
+          where: {
+            entityId: targetAgent.id,
+            auditType: "AGENT_ROLES_REMOVED"
+          }
+        })
+        expect(auditLogs).toHaveLength(1)
+        expect(auditLogs[0]!.payload).toMatchObject({
+          roles: [
+            {
+              roleName: "WorkflowTemplateVoter",
+              scope: {type: "workflow_template", templateName: workflowTemplate.name}
+            }
+          ]
+        })
+      })
+
+      it("should only log roles that were actually present and removed", async () => {
+        // Given: Agent has a role assigned
+        const workflowTemplate1 = await createMockWorkflowTemplateInDb(prisma)
+        const workflowTemplate2 = await createMockWorkflowTemplateInDb(prisma)
+        await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({
+            concurrencyControl: {version: "-9223372036854775808"},
+            roles: [
+              {
+                roleName: "WorkflowTemplateVoter",
+                scope: {type: "workflow_template", templateName: workflowTemplate1.name}
+              }
+            ]
+          })
+
+        // When: Admin requests to remove one existing role and one non-existent role
+        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
+        const response = await del(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({
+            concurrencyControl: {version: agentToUpdate.occ.toString()},
+            roles: [
+              {
+                roleName: "WorkflowTemplateVoter",
+                scope: {type: "workflow_template", templateName: workflowTemplate1.name}
+              },
+              {
+                roleName: "WorkflowTemplateInstantiator",
+                scope: {type: "workflow_template", templateName: workflowTemplate2.name}
+              }
+            ]
+          })
+
+        // Then: Should receive success response
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Audit log should only contain the removed role that was actually present
+        const auditLogs = await prisma.auditLog.findMany({
+          where: {
+            entityId: targetAgent.id,
+            auditType: "AGENT_ROLES_REMOVED"
+          }
+        })
+        expect(auditLogs).toHaveLength(1)
+        expect(auditLogs[0]!.payload).toMatchObject({
+          roles: [
+            {
+              roleName: "WorkflowTemplateVoter",
+              scope: {type: "workflow_template", templateName: workflowTemplate1.name}
+            }
+          ]
+        })
       })
     })
 
