@@ -817,6 +817,65 @@ describe("User Roles API", () => {
         })
         expect(userFromDb!.roles).toHaveLength(0)
       })
+
+      it("should only log newly assigned roles and ignore already existing ones", async () => {
+        // Given: User already has "GroupReadOnly" role
+        const group = await createTestGroup(prisma, {name: "Test Group"})
+        await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({
+            concurrencyControl: {version: "-9223372036854775808"},
+            roles: [
+              {
+                roleName: "GroupReadOnly",
+                scope: {type: "group", groupId: group.id}
+              }
+            ]
+          })
+
+        // When: Admin assigns both the existing "GroupReadOnly" and a new "OrgWideSpaceManager" role
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
+        const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({
+            concurrencyControl: {version: userToUpdate.occ.toString()},
+            roles: [
+              {
+                roleName: "GroupReadOnly",
+                scope: {type: "group", groupId: group.id}
+              },
+              {
+                roleName: "OrgWideSpaceManager",
+                scope: {type: "org"}
+              }
+            ]
+          })
+
+        // Then: Should receive success response
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Audit log should only contain the newly assigned role
+        const auditLogs = await prisma.auditLog.findMany({
+          where: {
+            entityId: targetUser.user.id,
+            auditType: "USER_ROLES_ASSIGNED"
+          },
+          orderBy: {createdAt: "desc"}
+        })
+
+        // Note: The first PUT created one audit log with GroupReadOnly. The second PUT should only log OrgWideSpaceManager.
+        expect(auditLogs).toHaveLength(2)
+        expect(auditLogs[0]!.payload).toMatchObject({
+          roles: [
+            {
+              roleName: "OrgWideSpaceManager",
+              scope: {type: "org"}
+            }
+          ]
+        })
+      })
     })
 
     describe("workflow template role authorization", () => {
@@ -1386,6 +1445,62 @@ describe("User Roles API", () => {
           where: {id: targetUser.user.id}
         })
         expect(userFromDb!.roles).toHaveLength(1)
+      })
+
+      it("should only log roles that were actually present and removed", async () => {
+        // Given: User has "GroupReadOnly" role
+        const group = await createTestGroup(prisma, {name: "Test Group"})
+        await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({
+            concurrencyControl: {version: "-9223372036854775808"},
+            roles: [
+              {
+                roleName: "GroupReadOnly",
+                scope: {type: "group", groupId: group.id}
+              }
+            ]
+          })
+
+        // When: Admin requests to remove "GroupReadOnly" (exists) and "OrgWideSpaceManager" (does not exist)
+        const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
+        const response = await del(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
+          .withToken(orgAdminUser.token)
+          .build()
+          .send({
+            concurrencyControl: {version: userToUpdate.occ.toString()},
+            roles: [
+              {
+                roleName: "GroupReadOnly",
+                scope: {type: "group", groupId: group.id}
+              },
+              {
+                roleName: "OrgWideSpaceManager",
+                scope: {type: "org"}
+              }
+            ]
+          })
+
+        // Then: Should receive success response
+        expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+
+        // And: Audit log should only contain the removed role that was actually present
+        const auditLogs = await prisma.auditLog.findMany({
+          where: {
+            entityId: targetUser.user.id,
+            auditType: "USER_ROLES_REMOVED"
+          }
+        })
+        expect(auditLogs).toHaveLength(1)
+        expect(auditLogs[0]!.payload).toMatchObject({
+          roles: [
+            {
+              roleName: "GroupReadOnly",
+              scope: {type: "group", groupId: group.id}
+            }
+          ]
+        })
       })
     })
 

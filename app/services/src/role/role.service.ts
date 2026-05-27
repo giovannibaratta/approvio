@@ -186,17 +186,26 @@ export class RoleService {
       TE.chainFirstW(({targetUser, request}) =>
         targetUser.occ === request.occVersion ? TE.right(undefined) : TE.left("concurrent_modification_error" as const)
       ),
+      TE.bindW("newRolesOnly", ({targetUser}) => {
+        const added = request.roles.filter(r =>
+          !targetUser.roles.some(existing =>
+            existing.name === r.roleName &&
+            RoleFactory.isSameScope(existing.scope, r.scope)
+          )
+        )
+        return TE.right(added)
+      }),
       TE.bindW("updatedUser", ({targetUser, boundRolesToAssign}) =>
         TE.fromEither(UserFactory.assignRoles(targetUser, boundRolesToAssign))
       ),
       TE.chainFirstW(({targetUser, updatedUser}) => checkQuota(targetUser, updatedUser)),
       TE.bindW("actor", () => TE.right(extractActorDetails(request.requestor))),
-      TE.chainW(({updatedUser, actor}) =>
+      TE.chainW(({updatedUser, actor, newRolesOnly}) =>
         this.txManager.execute(() =>
           pipe(
             this.userRoleRepo.updateUser(updatedUser),
             TE.chainFirstW(() =>
-              this.persistUserRolesAuditLog("USER_ROLES_ASSIGNED", request.userId, actor, request.roles)
+              this.persistUserRolesAuditLog("USER_ROLES_ASSIGNED", request.userId, actor, newRolesOnly)
             )
           )
         )
@@ -248,16 +257,25 @@ export class RoleService {
           ? TE.right(undefined)
           : TE.left("concurrent_modification_error" as const)
       ),
+      TE.bindW("newRolesOnly", ({currentAgent}) => {
+        const added = request.roles.filter(r =>
+          !currentAgent.roles.some(existing =>
+            existing.name === r.roleName &&
+            RoleFactory.isSameScope(existing.scope, r.scope)
+          )
+        )
+        return TE.right(added)
+      }),
       TE.bindW("updatedAgent", ({currentAgent, boundRolesToAssign}) =>
         TE.fromEither(AgentFactory.assignRoles<{occ: true}>(currentAgent, boundRolesToAssign))
       ),
       TE.bindW("actor", () => TE.right(extractActorDetails(request.requestor))),
-      TE.chainW(({updatedAgent, actor}) =>
+      TE.chainW(({updatedAgent, actor, newRolesOnly}) =>
         this.txManager.execute(() =>
           pipe(
             this.agentRoleRepo.updateAgent(updatedAgent),
             TE.chainFirstW(() =>
-              this.persistAgentRolesAuditLog("AGENT_ROLES_ASSIGNED", request.agentId, actor, request.roles)
+              this.persistAgentRolesAuditLog("AGENT_ROLES_ASSIGNED", request.agentId, actor, newRolesOnly)
             )
           )
         )
@@ -307,16 +325,25 @@ export class RoleService {
       TE.chainFirstW(({targetUser, request}) =>
         targetUser.occ === request.occVersion ? TE.right(undefined) : TE.left("concurrent_modification_error" as const)
       ),
+      TE.bindW("removedRolesOnly", ({targetUser}) => {
+        const removed = request.roles.filter(r =>
+          targetUser.roles.some(existing =>
+            existing.name === r.roleName &&
+            RoleFactory.isSameScope(existing.scope, r.scope)
+          )
+        )
+        return TE.right(removed)
+      }),
       TE.bindW("updatedUser", ({targetUser, boundRolesToRemove}) =>
         TE.fromEither(UserFactory.removeRoles(targetUser, boundRolesToRemove))
       ),
       TE.bindW("actor", () => TE.right(extractActorDetails(request.requestor))),
-      TE.chainW(({updatedUser, actor}) =>
+      TE.chainW(({updatedUser, actor, removedRolesOnly}) =>
         this.txManager.execute(() =>
           pipe(
             this.userRoleRepo.updateUser(updatedUser),
             TE.chainFirstW(() =>
-              this.persistUserRolesAuditLog("USER_ROLES_REMOVED", request.userId, actor, request.roles)
+              this.persistUserRolesAuditLog("USER_ROLES_REMOVED", request.userId, actor, removedRolesOnly)
             )
           )
         )
@@ -368,16 +395,25 @@ export class RoleService {
           ? TE.right(undefined)
           : TE.left("concurrent_modification_error" as const)
       ),
+      TE.bindW("removedRolesOnly", ({currentAgent}) => {
+        const removed = request.roles.filter(r =>
+          currentAgent.roles.some(existing =>
+            existing.name === r.roleName &&
+            RoleFactory.isSameScope(existing.scope, r.scope)
+          )
+        )
+        return TE.right(removed)
+      }),
       TE.bindW("updatedAgent", ({currentAgent, boundRolesToRemove}) =>
         TE.fromEither(AgentFactory.removeRoles<{occ: true}>(currentAgent, boundRolesToRemove))
       ),
       TE.bindW("actor", () => TE.right(extractActorDetails(request.requestor))),
-      TE.chainW(({updatedAgent, actor}) =>
+      TE.chainW(({updatedAgent, actor, removedRolesOnly}) =>
         this.txManager.execute(() =>
           pipe(
             this.agentRoleRepo.updateAgent(updatedAgent),
             TE.chainFirstW(() =>
-              this.persistAgentRolesAuditLog("AGENT_ROLES_REMOVED", request.agentId, actor, request.roles)
+              this.persistAgentRolesAuditLog("AGENT_ROLES_REMOVED", request.agentId, actor, removedRolesOnly)
             )
           )
         )
