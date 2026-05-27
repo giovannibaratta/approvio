@@ -107,8 +107,15 @@ export function generateErrorResponseForListAuditLogs(
 export function mapListAuditLogsResultToApi(result: ListAuditLogResponse) {
   return {
     auditLogs: result.items.map(log => ({
-      ...log,
-      createdAt: log.createdAt.toISOString()
+      id: log.id,
+      auditType: log.auditType,
+      target: {
+        type: log.entityType,
+        id: log.entityId
+      },
+      actor: log.actor,
+      createdAt: log.createdAt.toISOString(),
+      payload: log.payload
     })),
     pagination: result.hasMore
       ? {
