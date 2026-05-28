@@ -2,7 +2,7 @@ export const VOTE_REASON_MAX_LENGTH = 1024
 
 import {Either, isLeft, left, right} from "fp-ts/Either"
 import {DistributiveOmit, isUUIDv7, PrefixUnion} from "@utils"
-import {EntityReference, getNormalizedEntityId} from "./authenticated-entity"
+import {EntityReference} from "./authenticated-entity"
 import {v7 as uuidv7} from "uuid"
 
 export type Vote = Readonly<ApproveVote | VetoVote | WithdrawVote>
@@ -116,28 +116,4 @@ function validateGroupIds(groupIds: ReadonlyArray<string>): Either<VoteValidatio
 function validateReason(reason: string): Either<VoteValidationError, string> {
   if (reason.length > VOTE_REASON_MAX_LENGTH) return left("vote_reason_too_long")
   return right(reason)
-}
-
-/**
- * Consolidates votes by removing outdated votes and keeping the most meaningful vote for each entity (user or agent).
- * @param votes - The votes to consolidate.
- * @returns The consolidated votes.
- */
-export function consolidateVotes(votes: ReadonlyArray<Vote>): ReadonlyArray<Vote> {
-  const votesSortedDesc = [...votes].sort((a, b) => b.castedAt.getTime() - a.castedAt.getTime())
-  const processedEntities: Set<string> = new Set()
-  const votesToKeep = []
-
-  for (const vote of votesSortedDesc) {
-    // Create unique identifier for the voter
-    const voterKey = getNormalizedEntityId(vote.voter)
-
-    if (processedEntities.has(voterKey)) continue
-
-    processedEntities.add(voterKey)
-
-    if (vote.type === "APPROVE" || vote.type === "VETO") votesToKeep.push(vote)
-  }
-
-  return votesToKeep
 }

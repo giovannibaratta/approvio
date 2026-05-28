@@ -3,7 +3,6 @@ import * as E from "fp-ts/Either"
 import {Either, left, right} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 import * as A from "fp-ts/Array"
-import {ApproveVote, getNormalizedEntityId} from "@domain"
 
 export enum ApprovalRuleType {
   AND = "AND",
@@ -157,26 +156,23 @@ function isObject(val: unknown): val is Record<string, unknown> {
 }
 
 /**
- * Checks if the given votes cover the given approval rule.
+ * Checks if the given group voters cover the given approval rule.
+ *
  * @param rule The approval rule to check.
- * @param votes The votes to check.
- * @returns True if the votes cover the rule, false otherwise.
+ * @param groupVoters A map of group ID to set of voter IDs.
+ * @returns True if the rules are covered, false otherwise.
  */
-export function doesVotesCoverApprovalRules(rule: ApprovalRuleData, votes: ReadonlyArray<ApproveVote>): boolean {
+export function doesVotesCoverApprovalRules(rule: ApprovalRuleData, groupVoters: Map<string, Set<string>>): boolean {
   switch (rule.type) {
     case ApprovalRuleType.GROUP_REQUIREMENT:
-      return doesVotesCoverGroupRequirementRule(rule, votes)
+      // The groupVoters Map already handles voter uniqueness (via Set) and grouping (via Map key).
+      // This makes the check O(1) for GroupRequirementRules once the map is built/updated.
+      return (groupVoters.get(rule.groupId)?.size ?? 0) >= rule.minCount
     case ApprovalRuleType.AND:
-      return rule.rules.every(rule => doesVotesCoverApprovalRules(rule, votes))
+      return rule.rules.every(r => doesVotesCoverApprovalRules(r, groupVoters))
     case ApprovalRuleType.OR:
-      return rule.rules.some(rule => doesVotesCoverApprovalRules(rule, votes))
+      return rule.rules.some(r => doesVotesCoverApprovalRules(r, groupVoters))
   }
-}
-
-function doesVotesCoverGroupRequirementRule(rule: GroupRequirementRule, votes: ReadonlyArray<ApproveVote>): boolean {
-  const votesForGroup = votes.filter(vote => vote.votedForGroups.includes(rule.groupId))
-  const uniqueVotersWhoVotedForGroup = new Set(votesForGroup.map(vote => getNormalizedEntityId(vote.voter)))
-  return uniqueVotersWhoVotedForGroup.size >= rule.minCount
 }
 
 function getVotingGroupIds(rule: ApprovalRuleData): ReadonlyArray<string> {

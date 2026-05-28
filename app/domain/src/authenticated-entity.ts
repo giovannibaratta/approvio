@@ -75,8 +75,6 @@ export function createEntityReference(entity: AuthenticatedEntity): EntityRefere
  * This ensures uniqueness even if users and agents have the same UUID.
  */
 export function getNormalizedEntityId(entity: AuthenticatedEntity | EntityReference): string {
-  if ("entityId" in entity) {
-    return `${entity.entityType}:${entity.entityId}`
-  }
+  if ("entityId" in entity) return `${entity.entityType}:${entity.entityId}`
   return `${entity.entityType}:${getEntityId(entity)}`
 }
