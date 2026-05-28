@@ -4,10 +4,10 @@ import {DecorableEntity, getStringAsEnum, isDecoratedWith, isUUIDv7, PrefixUnion
 import {
   MembershipWithGroupRef,
   Vote,
-  consolidateVotes,
   doesVotesCoverApprovalRules,
   UnconstrainedBoundRole,
-  Versioned
+  Versioned,
+  getNormalizedEntityId
 } from "@domain"
 import {WorkflowTemplate, WorkflowTemplateCantVoteReason} from "./workflow-templates"
 import {v7 as uuidv7} from "uuid"
@@ -168,14 +168,12 @@ function generateCantVoteReasonForTerminalStatus(status: WorkflowStatus): CantVo
  * together), we play the votes chronologically:
  *
  * 1. Votes are sorted in ascending order of their `castedAt` timestamp.
- * 2. If two votes have identical millisecond timestamps, we prioritize VETO over APPROVE
- *    as a safety measure.
- * 3. We iterate over the votes sequentially, accumulating them and consolidating them
- *    up to that timestamp in the timeline.
- * 4. As soon as a terminal state (like APPROVED) is reached, we halt processing immediately.
+ * 2. If two votes have identical timestamps, we prioritize VETO over APPROVE for safety.
+ * 3. We iterate over the votes sequentially, accumulating them in an incremental state.
+ * 4. As soon as a terminal state (APPROVED) is reached, we halt processing immediately.
  *    Any subsequent votes in the timeline are ignored because the workflow is already closed.
- * 5. A REJECTED state (due to a veto) is non-terminal, as a subsequent vote in the timeline
- *    could be a WITHDRAW vote from the vetoer, returning the status back to progress.
+ * 5. A REJECTED state (due to a veto) is non-terminal, as a subsequent WITHDRAW vote
+ *    could return the status back to progress.
  *
  * @param workflow The workflow to evaluate, decorated with its template.
  * @param votes All votes cast for this workflow.
@@ -185,11 +183,11 @@ export function evaluateWorkflowStatus(
   workflow: DecoratedWorkflow<{workflowTemplate: true}>,
   votes: ReadonlyArray<Vote>
 ): Either<WorkflowValidationError, Workflow> {
-  const now = new Date(Date.now())
+  const now = new Date()
 
-  // After a workflow has reached a terminal status, it's not possible to change its status
   if (WORKFLOW_TERMINAL_STATUSES.includes(workflow.status))
     return changeStatusAndMarkAsRecalculated(workflow, workflow.status)
+
   if (workflow.expiresAt < now) return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.EXPIRED)
 
   // 1. Sort all votes in ascending order of their castedAt timestamp (chronological timeline)
@@ -204,27 +202,42 @@ export function evaluateWorkflowStatus(
   })
 
   // 2. Play the votes sequentially through time
+  const activeVoters = new Map<string, Vote>()
+  const groupVoters = new Map<string, Set<string>>()
+  const activeVetoers = new Set<string>()
+
   let currentStatus = WorkflowStatus.EVALUATION_IN_PROGRESS
-  const votesAccumulated: Vote[] = []
 
   for (const vote of votesSortedAsc) {
-    votesAccumulated.push(vote)
-    const votesConsolidated = consolidateVotes(votesAccumulated)
+    const voterKey = getNormalizedEntityId(vote.voter)
+    const previousVote = activeVoters.get(voterKey)
 
-    const votesAgainst = votesConsolidated.filter(v => v.type === "VETO")
-    const votesFor = votesConsolidated.filter(v => v.type === "APPROVE")
-
-    if (votesAgainst.length > 0) {
-      currentStatus = WorkflowStatus.REJECTED
-      // REJECTED is not in WORKFLOW_TERMINAL_STATUSES because it can be resurrected
-      // if the vetoer subsequently casts a WITHDRAW vote at a later timestamp in the loop.
-      // So we continue playing the timeline instead of breaking.
-    } else if (doesVotesCoverApprovalRules(workflow.workflowTemplate.approvalRule, votesFor)) {
-      currentStatus = WorkflowStatus.APPROVED
-      break // Terminal state APPROVED reached! Stop playing subsequent votes.
-    } else {
-      currentStatus = WorkflowStatus.EVALUATION_IN_PROGRESS
+    // 2.1 Remove effects of the previous vote if it existed.
+    // A user's new vote (of any type) completely overrides their previous state in the timeline.
+    if (previousVote) {
+      if (previousVote.type === "VETO") activeVetoers.delete(voterKey)
+      else if (previousVote.type === "APPROVE")
+        for (const groupId of previousVote.votedForGroups) {
+          groupVoters.get(groupId)?.delete(voterKey)
+        }
     }
+
+    // 2.2 Apply the new vote
+    activeVoters.set(voterKey, vote)
+    if (vote.type === "VETO") activeVetoers.add(voterKey)
+    else if (vote.type === "APPROVE")
+      for (const groupId of vote.votedForGroups) {
+        if (!groupVoters.has(groupId)) groupVoters.set(groupId, new Set())
+        groupVoters.get(groupId)!.add(voterKey)
+      }
+    else if (vote.type === "WITHDRAW") activeVoters.delete(voterKey)
+
+    // 2.3 Evaluate state for this point in time
+    if (activeVetoers.size > 0) currentStatus = WorkflowStatus.REJECTED
+    else if (doesVotesCoverApprovalRules(workflow.workflowTemplate.approvalRule, groupVoters))
+      // Terminal state APPROVED reached! Stop playing subsequent votes.
+      return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.APPROVED)
+    else currentStatus = WorkflowStatus.EVALUATION_IN_PROGRESS
   }
 
   // 3. Fallback check for expired status if no terminal status was reached
