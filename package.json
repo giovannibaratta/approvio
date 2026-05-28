@@ -37,7 +37,8 @@
     "ai:liquibase:update:dev": "yarn liquibase:update:dev --silent",
     "ai:test:setup": "yarn deps:start:test --silent && ./scripts/prisma.sh --silent generate && ./scripts/liquibase.sh --silent update test",
     "ai:test": "yarn ai:test:setup && AI_AGENT=true yarn test:jest",
-    "ai:test:all": "yarn ai:test:setup && AI_AGENT=true yarn test:jest app/**/*.test.ts"
+    "ai:test:all": "yarn ai:test:setup && AI_AGENT=true yarn test:jest app/**/*.test.ts",
+    "ai:get-union-literals": "ts-node scripts/ai/get-union-literals.ts"
   },
   "packageManager": "yarn@4.7.0",
   "dependencies": {
@@ -106,6 +107,7 @@
     "supertest": "7.2.2",
     "ts-jest": "29.4.11",
     "ts-loader": "9.5.7",
+    "ts-morph": "^28.0.0",
     "ts-node": "10.9.2",
     "typescript": "6.0.3",
     "typescript-eslint": "8.59.4",

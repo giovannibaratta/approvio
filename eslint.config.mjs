@@ -68,7 +68,8 @@ export default tseslint.config(
       "jest/prefer-expect-assertions": "off",
       "n/no-unpublished-require": "off",
       "n/no-unpublished-import": "off",
-      "n/no-extraneous-import": "off"
+      "n/no-extraneous-import": "off",
+      "n/no-process-exit": "off"
     }
   }
 )

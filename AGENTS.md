@@ -30,6 +30,8 @@ Always USE the following skills to assist with tasks:
 - **`test-runner`**: For running tests.
 - **`role-management`**: For defining new permissions or roles in the RBAC system.
   - _Example:_ "Define a new 'AuditorViewer' role with organization-wide read access."
+- **`union-literal-extraction`**: For extracting all literal values from a TypeScript union type or interface.
+  - _Example:_ "Extract the literal values for the 'WorkflowStatus' union type in 'app/domain/src/types.ts'."
 
 ## Agent Behavior Guidelines
 
