@@ -12,7 +12,27 @@ The application processes and stores sensitive data, such as API keys, authentic
 
 ### Option 1: Application-Level Encryption (Prisma Extension / Node Crypto)
 
-Encryption and decryption happen within the Node.js application layer before data is sent to or retrieved from the database. This can be implemented using Node's native `crypto` module (e.g., AES-256-GCM) or via Prisma Client Extensions (e.g., `@prisma/extension-encryption` or custom middleware).
+Encryption and decryption happen within the Node.js application layer before data is sent to or retrieved from the database. This can be implemented using Node's native `crypto` module (e.g., AES-256-GCM) or via Prisma Client Extensions (like the community package `prisma-extension-encryption` or a custom adhoc middleware built using Prisma's `client.$extends` API).
+
+**Example Configuration & Impact:**
+A custom Prisma extension intercepting `create`, `update`, and `find` operations:
+
+```typescript
+const prisma = new PrismaClient().$extends({
+  query: {
+    webhookAction: {
+      async create({ args, query }) {
+        if (args.data.secretPayload) {
+          args.data.secretPayload = encrypt(args.data.secretPayload);
+        }
+        return query(args);
+      },
+      // similar interceptors for update, findUnique, findMany...
+    }
+  }
+});
+```
+With this setup, the current Prisma calls in the application remain unaffected. Developers continue calling `prisma.webhookAction.create({ data: { secretPayload: 'my-secret' } })`, and the extension transparently handles encryption before insertion and decryption upon retrieval. Configuration is applied globally at the Prisma client initialization.
 
 - ✅ **Pros:**
   - **Granular Control:** We define exactly which fields are encrypted on a per-entity basis.
@@ -23,6 +43,7 @@ Encryption and decryption happen within the Node.js application layer before dat
   - **Query Limitations:** Encrypted fields cannot be easily searched, filtered, or sorted in database queries (unless implementing complex deterministic encryption or blind indexing).
   - **Performance:** Small overhead for encryption/decryption operations on the Node.js server.
   - **Implementation Effort:** Medium to High. Requires setting up the Prisma extension, migrating existing plaintext data, and securely managing the Data Encryption Key (DEK).
+  - **Transaction Complexity:** Introduces complexity in managing transactions and atomic operations, especially if decryption fails or if business logic relies heavily on database-level constraints on encrypted fields.
 
 ### Option 2: Database-Level Encryption (Transparent Data Encryption - TDE / Cloud Provider Disk Encryption)
 
@@ -58,6 +79,13 @@ Regardless of the chosen encryption method (specifically for Option 1), managing
 2. **Cloud KMS (AWS KMS, Google Cloud KMS, Azure Key Vault):**
    - *Pros:* Industry standard. Keys never leave the KMS HSM (Hardware Security Module). Supports automatic rotation and fine-grained access policies. Envelope encryption (encrypting a local Data Encryption Key with the KMS Master Key) minimizes KMS API calls.
    - *Cons:* Cloud vendor lock-in, slight latency on key fetching (mitigated by caching/envelope encryption).
+   - *On-Premise / Local Development:* For local development, this can be mocked using a static key or a "no-op" KMS provider implementation. For on-premise environments, solutions like HashiCorp Vault (running locally/on-prem), a local HSM (Hardware Security Module), or securely distributed file-based keys managed by operations can be used as the KMS provider.
+
+#### DEK Management Strategies
+When using envelope encryption, managing the Data Encryption Key (DEK) is crucial. Two main strategies exist:
+
+1. **Shared DEK (Recommended for simplicity/performance):** A single DEK is used to encrypt multiple rows/entities (e.g., scoped per tenant, or globally). The KMS decrypts the DEK on application startup (or periodically), and the plaintext DEK is cached in memory. This eliminates the need to query the KMS for every database row, dramatically improving performance, while the Master Key remains secure in the KMS.
+2. **Per-Row DEK (Highest Security):** A unique DEK is generated for every row. The encrypted DEK is stored alongside the encrypted data in the database. When retrieving the row, the application must query the KMS to decrypt the specific DEK. This maximizes security but incurs high latency and significant KMS API costs, making it unsuited for high-volume endpoints without complex caching.
 
 ## Comparison Matrix
 
