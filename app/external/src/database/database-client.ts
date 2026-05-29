@@ -7,6 +7,7 @@ import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import * as E from "fp-ts/Either"
 import {checkMigrationId} from "./migration-utils"
+import {retryWithBackoff} from "@utils"
 
 // This constant MUST be updated whenever the repositories need to access properties defined by a
 // a newer migration file. The timestamp provided here is used to check if the database is using
@@ -118,12 +119,44 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
     }
 
     // Start a new transaction and initialize context
-    return this.prisma.$transaction(
-      async tx => {
-        return transactionContext.run({tx, isolationLevel}, () => computation(tx))
-      },
-      {isolationLevel}
+    const doTx = TE.tryCatch(
+      () => this.prisma.$transaction(
+        async tx => {
+          return transactionContext.run({tx, isolationLevel}, () => computation(tx))
+        },
+        {isolationLevel}
+      ),
+      (error) => error
     )
+
+    return pipe(
+      retryWithBackoff(
+        () => doTx,
+        (error: any) => {
+          // Check if it's a Prisma Client Known Request Error
+          if (error && error.code) {
+            const transientCodes = [
+              'P1001', // Can't reach database server
+              'P1008', // Operations timed out
+              'P1017', // Server closed connection
+              'P2024', // Connection pool timeout
+              'P2028', // Transaction API error
+              'P2034'  // Transaction failed due to write conflict or deadlock
+            ]
+            return transientCodes.includes(error.code)
+          }
+          return false
+        },
+        {
+          maxAttempts: 3,
+          initialDelayMs: 1000,
+          backoffFactor: 2,
+          maxDelayMs: 10000
+        }
+      ),
+      // If TE.left, we exhausted retries or hit a non-transient error; throw it so Promise rejects
+      TE.getOrElse((error) => { throw error })
+    )()
   }
 
   private checkDbVersion(): TE.TaskEither<string, void> {

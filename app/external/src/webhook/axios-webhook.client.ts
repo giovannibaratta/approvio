@@ -1,8 +1,10 @@
 import {Injectable, Logger} from "@nestjs/common"
 import axios, {Method} from "axios"
 import * as TE from "fp-ts/TaskEither"
-import {HttpClient, HttpError} from "@services/webhook/interfaces"
+import {pipe} from "fp-ts/function"
+import {HttpClient, HttpClientOptions, HttpError} from "@services/webhook/interfaces"
 import {HttpResponse, ResponseBodyStatus} from "@domain"
+import {retryWithBackoff} from "@utils"
 
 /**
  * Bodies exceeding this limit will be truncated to prevent database bloat
@@ -51,25 +53,34 @@ export class AxiosWebhookClient implements HttpClient {
     url: string,
     method: string,
     headers?: Record<string, string>,
-    payload?: unknown
+    payload?: unknown,
+    options?: HttpClientOptions
   ): TE.TaskEither<HttpError, HttpResponse> {
-    return TE.tryCatch(
+    const idempotencyKey = options?.idempotencyKey
+    const requestHeaders = { ...headers }
+    if (idempotencyKey) {
+      requestHeaders['Idempotency-Key'] = idempotencyKey
+    }
+
+    const isSafeMethod = ['GET', 'PUT', 'DELETE', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())
+    const canRetryPayloadError = isSafeMethod || options?.isIdempotent || idempotencyKey !== undefined
+
+    const doRequest = TE.tryCatch(
       async () => {
         const response = await axios.request({
           url,
           method: method as Method,
-          headers,
+          headers: requestHeaders,
           data: payload,
           timeout: TIMEOUT,
           maxContentLength: MAX_CONTENT_LENGTH,
           maxBodyLength: MAX_CONTENT_LENGTH,
-          // Resolve the promise for every status code, even for error codes.
-          // This allows us to capture response bodies for 4xx/5xx errors for debugging.
-          validateStatus: () => true
+          // Reject on 429 and 5xx so tryCatch catches it and we can retry it.
+          // We will manually recover these errors if retries exhaust.
+          validateStatus: (status) => status < 400 || (status >= 400 && status < 500 && status !== 429)
         })
 
         const extractionResult = this.extractResponseBody(response.data)
-
         Logger.log(`Received status code ${response.status}, body status: ${extractionResult.bodyStatus}`)
 
         return {
@@ -80,18 +91,70 @@ export class AxiosWebhookClient implements HttpClient {
       },
       error => {
         if (axios.isAxiosError(error)) {
-          Logger.error(`Webhook request failed: ${error.message} - ${error.code}`)
-          if (error.code === "ECONNABORTED") return "http_timeout" as const
+          // If it has a response, it's an HTTP error (429 or 5xx) we rejected in validateStatus
+          if (error.response) {
+            const extractionResult = this.extractResponseBody(error.response.data)
+            return {
+              type: 'http_response_error' as const,
+              response: {
+                status: error.response.status,
+                body: extractionResult.body,
+                bodyStatus: extractionResult.bodyStatus
+              }
+            }
+          }
 
-          // Network/connection failures - not related to response body since all HTTP
-          // status codes are treated as valid responses via validateStatus above.
-          return "http_request_failed" as const
+          Logger.error(`Webhook request failed: ${error.message} - ${error.code}`)
+          if (error.code === "ECONNABORTED") return { type: "http_timeout" as const }
+          // Network/connection failures
+          return { type: "http_request_failed" as const, code: error.code }
         }
 
         Logger.error("Unknown webhook error")
         Logger.error(error)
-        return "unknown_error" as const
+        return { type: "unknown_error" as const }
       }
+    )
+
+    return pipe(
+      retryWithBackoff(
+        () => doRequest,
+        (error) => {
+          if (error.type === 'unknown_error') return false
+
+          if (error.type === 'http_response_error') {
+             return canRetryPayloadError && (error.response.status === 429 || error.response.status >= 500)
+          }
+
+          // Connection/network failures
+          // For non-idempotent without idempotency key, we only retry if we are sure it wasn't sent
+          // (e.g. ECONNREFUSED, ENOTFOUND, etc.)
+          if (!canRetryPayloadError) {
+            if (error.type === 'http_request_failed') {
+              const safeCodes = ['ECONNREFUSED', 'ENOTFOUND', 'EHOSTUNREACH', 'ENETUNREACH']
+              return safeCodes.includes(error.code as string)
+            }
+            // For http_timeout, we cannot be sure if it reached the server, so don't retry unsafe
+            return false
+          }
+
+          return true
+        },
+        {
+          maxAttempts: 3,
+          initialDelayMs: 1000,
+          backoffFactor: 2,
+          maxDelayMs: 10000
+        }
+      ),
+      // Recover HTTP response errors back to successful responses if retries exhaust
+      TE.orElse(error => {
+        if (error.type === 'http_response_error') {
+          return TE.right(error.response)
+        }
+        // Return the simple string error types expected by the interface
+        return TE.left(error.type as HttpError)
+      })
     )
   }
 

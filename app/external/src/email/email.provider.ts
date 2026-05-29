@@ -6,6 +6,7 @@ import {EmailProviderConfig} from "@external/config/interfaces"
 import {isNone, isSome, Option} from "fp-ts/Option"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
+import {retryWithBackoff} from "@utils"
 
 @Injectable()
 export class NodemailerEmailProvider implements EmailProviderExternal {
@@ -39,7 +40,7 @@ export class NodemailerEmailProvider implements EmailProviderExternal {
 
     if (!transporter || isNone(emailProviderConfig)) return TE.left("email_capability_not_configured")
 
-    return TE.tryCatch(
+    const doSend = TE.tryCatch(
       async () => {
         await transporter.sendMail({
           from: emailProviderConfig.value.senderEmail,
@@ -48,10 +49,35 @@ export class NodemailerEmailProvider implements EmailProviderExternal {
           html: email.htmlBody
         })
       },
-      error => {
+      (error: any) => {
         Logger.error("Failed to send email", error)
-        return "email_unknown_error" as const
+
+        // Nodemailer exposes an SMTP responseCode. 4xx is transient in SMTP.
+        // It also can throw standard system errors like ECONNRESET, ETIMEDOUT, etc.
+        const isTransient =
+          (error.responseCode >= 400 && error.responseCode < 500) ||
+          ['ECONNRESET', 'ETIMEDOUT', 'ECONNREFUSED', 'EHOSTUNREACH'].includes(error.code)
+
+        return {
+          type: "email_unknown_error" as const,
+          isTransient
+        }
       }
+    )
+
+    return TE.mapLeft<{ type: EmailExternalError; isTransient: boolean }, EmailExternalError>(
+      (err) => err.type
+    )(
+      retryWithBackoff(
+        () => doSend,
+        (error) => error.isTransient,
+        {
+          maxAttempts: 3,
+          initialDelayMs: 1000,
+          backoffFactor: 2,
+          maxDelayMs: 10000
+        }
+      )
     )
   }
 }
