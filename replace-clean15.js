@@ -1,0 +1,77 @@
+const { readFileSync, writeFileSync } = require('fs');
+
+function processFile(filePath) {
+  const content = readFileSync(filePath, 'utf8');
+  const lines = content.split('\n');
+  const outLines = [];
+
+  let importAdded = false;
+
+  let lastImportIdx = -1;
+  for(let j=0; j<lines.length; j++) {
+      if (lines[j].startsWith('import ')) {
+          lastImportIdx = j;
+      }
+  }
+
+  let i = 0;
+  while (i < lines.length) {
+    if (i === lastImportIdx + 1 && !importAdded) {
+      outLines.push('import { isInternalInconsistencyError, handleInternalInconsistency } from "../error"');
+      importAdded = true;
+    }
+
+    const line = lines[i];
+    if (line === undefined) {
+        i++;
+        continue;
+    }
+
+    const trimmed = line.trim();
+
+    // Look for the start of an internal consistency block
+    if (trimmed.startsWith('case "')) {
+      let j = i;
+      while (j < lines.length && lines[j] !== undefined && (lines[j].trim().startsWith('case "') || lines[j].trim() === '')) {
+        j++;
+      }
+
+      // Look for the end payload
+      let foundPayload = false;
+      for (let k = j; k < Math.min(lines.length, j + 5); k++) {
+          if (lines[k] && lines[k].includes('internal data inconsistency')) {
+              foundPayload = true;
+              break;
+          }
+      }
+
+      if (foundPayload) {
+        // Skip over the logger line and the return InternalServerErrorException
+        while (j < lines.length && lines[j] !== undefined && !lines[j].includes(')')) {
+           j++;
+        }
+        j++; // skip the closing paren line
+
+        i = j;
+        continue;
+      }
+    }
+
+    if (trimmed === 'switch (error) {') {
+        outLines.push(`  if (isInternalInconsistencyError(error)) {`);
+        outLines.push(`    return handleInternalInconsistency(errorCode, context)`);
+        outLines.push(`  }`);
+        outLines.push(line);
+        i++;
+        continue;
+    }
+
+    outLines.push(line);
+    i++;
+  }
+
+  writeFileSync(filePath, outLines.join('\n'));
+}
+
+processFile('app/controllers/src/auth/auth.mappers.ts');
+processFile('app/controllers/src/auth/cli-auth.mappers.ts');
