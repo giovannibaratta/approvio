@@ -5,13 +5,13 @@ import {DatabaseClient, WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"
 import {WorkflowRecalculationService} from "@services"
 import {cleanDatabase} from "@test/database"
 import {generateDeterministicId} from "@utils"
-import {PrismaClient, Prisma} from "@prisma/client"
 import {getQueueToken} from "@nestjs/bull"
 import {Queue} from "bull"
 
 describe("Workflow Expiration Sweep Integration", () => {
   let app: INestApplication
   let dbClient: DatabaseClient
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let prisma: any
   let recalcService: WorkflowRecalculationService
   let workflowQueue: Queue
@@ -32,6 +32,7 @@ describe("Workflow Expiration Sweep Integration", () => {
 
   beforeEach(async () => {
     // Note: cleanDatabase expects a PrismaClient instance, but for these tests dbClient.cx works fine as an unknown cast
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await cleanDatabase(prisma as unknown as any)
     // Clear the queue to ensure a clean state
     await workflowQueue.empty()
@@ -64,8 +65,15 @@ describe("Workflow Expiration Sweep Integration", () => {
     const commonDate = new Date()
     const occ = BigInt(0)
 
-    await (prisma as any).organizationAdmin.create({ data: { id: orgAdminId, role: "OWNER", createdAt: commonDate, updatedAt: commonDate, occ } })
-    await (prisma as any).space.create({ data: { id: spaceId, name: "Test Space", createdAt: commonDate, updatedAt: commonDate, occ } })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (prisma as any).organizationAdmin.create({
+      data: {id: orgAdminId, role: "OWNER", createdAt: commonDate, updatedAt: commonDate, occ}
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (prisma as any).space.create({
+      data: {id: spaceId, name: "Test Space", createdAt: commonDate, updatedAt: commonDate, occ}
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (prisma as any).workflowTemplate.create({
       data: {
         id: templateId,
@@ -82,6 +90,7 @@ describe("Workflow Expiration Sweep Integration", () => {
     })
 
     // Create Workflows
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await (prisma as any).workflow.createMany({
       data: [
         {
@@ -136,21 +145,21 @@ describe("Workflow Expiration Sweep Integration", () => {
     expect(result._tag).toBe("Right")
 
     // Verify Database state
-    const expiredWorkflow = await prisma.workflow.findUnique({ where: { id: expiredWorkflowId } })
+    const expiredWorkflow = await prisma.workflow.findUnique({where: {id: expiredWorkflowId}})
     expect(expiredWorkflow?.recalculationRequired).toBe(true)
 
-    const futureWorkflow = await prisma.workflow.findUnique({ where: { id: futureWorkflowId } })
+    const futureWorkflow = await prisma.workflow.findUnique({where: {id: futureWorkflowId}})
     expect(futureWorkflow?.recalculationRequired).toBe(false)
 
-    const alreadyEnqueuedWorkflow = await prisma.workflow.findUnique({ where: { id: alreadyEnqueuedWorkflowId } })
+    const alreadyEnqueuedWorkflow = await prisma.workflow.findUnique({where: {id: alreadyEnqueuedWorkflowId}})
     expect(alreadyEnqueuedWorkflow?.recalculationRequired).toBe(true) // still true
 
-    const terminalWorkflow = await prisma.workflow.findUnique({ where: { id: terminalWorkflowId } })
+    const terminalWorkflow = await prisma.workflow.findUnique({where: {id: terminalWorkflowId}})
     expect(terminalWorkflow?.recalculationRequired).toBe(false)
 
     // Verify Queue state
     const jobs = await workflowQueue.getJobs(["waiting", "active", "delayed"])
-    expect(jobs.length).toBe(1)
+    expect(jobs).toHaveLength(1)
     expect(jobs[0]?.data.workflowId).toBe(expiredWorkflowId)
   })
 })

@@ -79,7 +79,7 @@ export class BullQueueProvider implements QueueProvider, OnModuleDestroy, OnModu
         if (workflowIds.length === 0) return
         const jobs = workflowIds.map(id => ({
           name: "recalculate-workflow",
-          data: { workflowId: id },
+          data: {workflowId: id},
           opts: {
             jobId: id, // Retains automatic deduplication per workflow ID!
             ...SHARED_QUEUE_OPTIONS
@@ -174,9 +174,10 @@ export class BullQueueProvider implements QueueProvider, OnModuleDestroy, OnModu
       // 3. Add/update the repeatable job with the target frequency
       await this.queue.add(
         jobName,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         {} as any,
         {
-          repeat: { cron: targetCron },
+          repeat: {cron: targetCron},
           jobId: jobName // Deduplication key
         }
       )

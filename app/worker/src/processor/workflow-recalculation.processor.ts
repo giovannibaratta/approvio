@@ -13,7 +13,8 @@ export class WorkflowRecalculationProcessor {
   constructor(private readonly recalcService: WorkflowRecalculationService) {}
 
   @Process("sweep-expired-workflows")
-  async sweepExpired(job: Job): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  async sweepExpired(_job: Job): Promise<void> {
     Logger.log("Running periodic sweep of expired workflows...")
     return pipe(
       this.recalcService.sweepExpiredWorkflows(),
