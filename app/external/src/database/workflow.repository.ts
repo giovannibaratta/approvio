@@ -198,6 +198,62 @@ export class WorkflowDbRepository implements WorkflowRepository {
     )
   }
 
+  findExpiredWorkflows(now: Date, limit = 1000): TaskEither<UnknownError, string[]> {
+    return TE.tryCatch(
+      async () => {
+        // RISK ACCEPTANCE COMMENT:
+        // If any database validation/parsing failure occurs for this batch, the entire execution halts.
+        // Since we only select the basic string UUID 'id', the risk is minimal for this iteration.
+        // TODO (long-term): Implement a row-by-row parsing/validation wrapper to handle corrupt records gracefully.
+        const workflows = await this.dbClient.cx.workflow.findMany({
+          where: {
+            status: {
+              notIn: WORKFLOW_TERMINAL_STATUSES
+            },
+            expiresAt: {
+              lt: now
+            },
+            recalculationRequired: false
+          },
+          select: {
+            id: true
+          },
+          orderBy: {
+            expiresAt: "asc"
+          },
+          take: limit
+        })
+        return workflows.map(w => w.id)
+      },
+      error => {
+        Logger.error("Error finding expired workflows", error)
+        return "unknown_error" as const
+      }
+    )
+  }
+
+  markWorkflowsAsRecalculationRequired(workflowIds: string[]): TaskEither<UnknownError, void> {
+    return TE.tryCatch(
+      async () => {
+        if (workflowIds.length === 0) return
+        await this.dbClient.cx.workflow.updateMany({
+          where: {
+            id: {
+              in: workflowIds
+            }
+          },
+          data: {
+            recalculationRequired: true
+          }
+        })
+      },
+      error => {
+        Logger.error(`Error marking workflows as recalculation required: ${workflowIds}`, error)
+        return "unknown_error" as const
+      }
+    )
+  }
+
   private updateWorkflowTask<T extends PrismaWorkflowDecoratorSelector>(): (data: {
     workflowId: string
     data: Omit<Prisma.WorkflowUpdateInput, "id" | "occ">

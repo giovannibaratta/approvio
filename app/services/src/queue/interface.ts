@@ -18,6 +18,14 @@ export interface QueueProvider {
    * @returns A TaskEither with void or an enqueue error.
    */
   enqueueWorkflowStatusRecalculation(workflowId: string): TaskEither<EnqueueRecalculationError, void>
+
+  /**
+   * Bulk enqueues workflow recalculation jobs.
+   * @param workflowIds Array of workflow IDs to recalculate.
+   * @returns A TaskEither with void or an enqueue error.
+   */
+  enqueueWorkflowStatusRecalculationBulk(workflowIds: string[]): TaskEither<EnqueueRecalculationError, void>
+
   enqueueWorkflowStatusChanged(event: WorkflowStatusChangedEvent): TaskEither<EnqueueWorkflowStatusChangedError, void>
   enqueueEmailAction(event: WorkflowActionEmailEvent): TaskEither<EnqueueWorkflowActionEmailError, void>
   enqueueWebhookAction(event: WorkflowActionWebhookEvent): TaskEither<EnqueueWorkflowActionWebhookError, void>

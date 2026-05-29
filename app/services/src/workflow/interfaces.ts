@@ -78,6 +78,21 @@ export interface WorkflowRepository {
   countActiveWorkflowsByTemplateId(templateId: string): TaskEither<UnknownError, number>
   countActiveWorkflows(): TaskEither<UnknownError, number>
   getParentWorkflowTemplate(workflowId: string): TaskEither<WorkflowGetParentTemplateError, string>
+
+  /**
+   * Finds the IDs of expired workflows that are not in a terminal state and have not been enqueued.
+   * @param now Current date to compare against workflow expiresAt.
+   * @param limit Maximum number of records to return per batch.
+   * @returns A TaskEither with an array of workflow IDs or an error.
+   */
+  findExpiredWorkflows(now: Date, limit?: number): TaskEither<UnknownError, string[]>
+
+  /**
+   * Marks a list of workflows as pending recalculation.
+   * @param workflowIds The IDs of the workflows to mark.
+   * @returns A TaskEither indicating success or failure.
+   */
+  markWorkflowsAsRecalculationRequired(workflowIds: string[]): TaskEither<UnknownError, void>
 }
 
 export type WorkflowGetParentTemplateError = "workflow_not_found" | UnknownError

@@ -12,6 +12,24 @@ import {isUUIDv7} from "@utils"
 export class WorkflowRecalculationProcessor {
   constructor(private readonly recalcService: WorkflowRecalculationService) {}
 
+  @Process("sweep-expired-workflows")
+  async sweepExpired(job: Job): Promise<void> {
+    Logger.log("Running periodic sweep of expired workflows...")
+    return pipe(
+      this.recalcService.sweepExpiredWorkflows(),
+      TE.match(
+        error => {
+          Logger.error(`Failed to sweep expired workflows: ${error}`)
+          throw new Error(`Sweep failed: ${error}`)
+        },
+        () => {
+          Logger.log("Successfully completed expired workflows sweep")
+          return void 0
+        }
+      )
+    )()
+  }
+
   @Process("recalculate-workflow")
   async process(job: Job<RecalculationJobData>): Promise<void> {
     const {workflowId} = job.data

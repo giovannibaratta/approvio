@@ -20,6 +20,10 @@ export class QueueService {
     return this.queueProvider.enqueueWorkflowStatusRecalculation(workflowId)
   }
 
+  enqueueWorkflowStatusRecalculationBulk(workflowIds: string[]): TaskEither<EnqueueRecalculationError, void> {
+    return this.queueProvider.enqueueWorkflowStatusRecalculationBulk(workflowIds)
+  }
+
   enqueueWorkflowStatusChanged(event: WorkflowStatusChangedEvent): TaskEither<EnqueueWorkflowStatusChangedError, void> {
     return this.queueProvider.enqueueWorkflowStatusChanged(event)
   }
