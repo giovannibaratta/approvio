@@ -57,12 +57,12 @@ export class AxiosWebhookClient implements HttpClient {
     options?: HttpClientOptions
   ): TE.TaskEither<HttpError, HttpResponse> {
     const idempotencyKey = options?.idempotencyKey
-    const requestHeaders = { ...headers }
+    const requestHeaders = {...headers}
     if (idempotencyKey) {
-      requestHeaders['Idempotency-Key'] = idempotencyKey
+      requestHeaders["Idempotency-Key"] = idempotencyKey
     }
 
-    const isSafeMethod = ['GET', 'PUT', 'DELETE', 'HEAD', 'OPTIONS'].includes(method.toUpperCase())
+    const isSafeMethod = ["GET", "PUT", "DELETE", "HEAD", "OPTIONS"].includes(method.toUpperCase())
     const canRetryPayloadError = isSafeMethod || options?.isIdempotent || idempotencyKey !== undefined
 
     const doRequest = TE.tryCatch(
@@ -77,7 +77,7 @@ export class AxiosWebhookClient implements HttpClient {
           maxBodyLength: MAX_CONTENT_LENGTH,
           // Reject on 429 and 5xx so tryCatch catches it and we can retry it.
           // We will manually recover these errors if retries exhaust.
-          validateStatus: (status) => status < 400 || (status >= 400 && status < 500 && status !== 429)
+          validateStatus: status => status < 400 || (status >= 400 && status < 500 && status !== 429)
         })
 
         const extractionResult = this.extractResponseBody(response.data)
@@ -95,7 +95,7 @@ export class AxiosWebhookClient implements HttpClient {
           if (error.response) {
             const extractionResult = this.extractResponseBody(error.response.data)
             return {
-              type: 'http_response_error' as const,
+              type: "http_response_error" as const,
               response: {
                 status: error.response.status,
                 body: extractionResult.body,
@@ -105,33 +105,33 @@ export class AxiosWebhookClient implements HttpClient {
           }
 
           Logger.error(`Webhook request failed: ${error.message} - ${error.code}`)
-          if (error.code === "ECONNABORTED") return { type: "http_timeout" as const }
+          if (error.code === "ECONNABORTED") return {type: "http_timeout" as const}
           // Network/connection failures
-          return { type: "http_request_failed" as const, code: error.code }
+          return {type: "http_request_failed" as const, code: error.code}
         }
 
         Logger.error("Unknown webhook error")
         Logger.error(error)
-        return { type: "unknown_error" as const }
+        return {type: "unknown_error" as const}
       }
     )
 
     return pipe(
       retryWithBackoff(
         () => doRequest,
-        (error) => {
-          if (error.type === 'unknown_error') return false
+        error => {
+          if (error.type === "unknown_error") return false
 
-          if (error.type === 'http_response_error') {
-             return canRetryPayloadError && (error.response.status === 429 || error.response.status >= 500)
+          if (error.type === "http_response_error") {
+            return canRetryPayloadError && (error.response.status === 429 || error.response.status >= 500)
           }
 
           // Connection/network failures
           // For non-idempotent without idempotency key, we only retry if we are sure it wasn't sent
           // (e.g. ECONNREFUSED, ENOTFOUND, etc.)
           if (!canRetryPayloadError) {
-            if (error.type === 'http_request_failed') {
-              const safeCodes = ['ECONNREFUSED', 'ENOTFOUND', 'EHOSTUNREACH', 'ENETUNREACH']
+            if (error.type === "http_request_failed") {
+              const safeCodes = ["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH"]
               return safeCodes.includes(error.code as string)
             }
             // For http_timeout, we cannot be sure if it reached the server, so don't retry unsafe
@@ -149,7 +149,7 @@ export class AxiosWebhookClient implements HttpClient {
       ),
       // Recover HTTP response errors back to successful responses if retries exhaust
       TE.orElse(error => {
-        if (error.type === 'http_response_error') {
+        if (error.type === "http_response_error") {
           return TE.right(error.response)
         }
         // Return the simple string error types expected by the interface

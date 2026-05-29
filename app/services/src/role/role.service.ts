@@ -187,11 +187,11 @@ export class RoleService {
         targetUser.occ === request.occVersion ? TE.right(undefined) : TE.left("concurrent_modification_error" as const)
       ),
       TE.bindW("newRolesOnly", ({targetUser}) => {
-        const added = request.roles.filter(r =>
-          !targetUser.roles.some(existing =>
-            existing.name === r.roleName &&
-            RoleFactory.isSameScope(existing.scope, r.scope)
-          )
+        const added = request.roles.filter(
+          r =>
+            !targetUser.roles.some(
+              existing => existing.name === r.roleName && RoleFactory.isSameScope(existing.scope, r.scope)
+            )
         )
         return TE.right(added)
       }),
@@ -258,11 +258,11 @@ export class RoleService {
           : TE.left("concurrent_modification_error" as const)
       ),
       TE.bindW("newRolesOnly", ({currentAgent}) => {
-        const added = request.roles.filter(r =>
-          !currentAgent.roles.some(existing =>
-            existing.name === r.roleName &&
-            RoleFactory.isSameScope(existing.scope, r.scope)
-          )
+        const added = request.roles.filter(
+          r =>
+            !currentAgent.roles.some(
+              existing => existing.name === r.roleName && RoleFactory.isSameScope(existing.scope, r.scope)
+            )
         )
         return TE.right(added)
       }),
@@ -327,9 +327,8 @@ export class RoleService {
       ),
       TE.bindW("removedRolesOnly", ({targetUser}) => {
         const removed = request.roles.filter(r =>
-          targetUser.roles.some(existing =>
-            existing.name === r.roleName &&
-            RoleFactory.isSameScope(existing.scope, r.scope)
+          targetUser.roles.some(
+            existing => existing.name === r.roleName && RoleFactory.isSameScope(existing.scope, r.scope)
           )
         )
         return TE.right(removed)
@@ -397,9 +396,8 @@ export class RoleService {
       ),
       TE.bindW("removedRolesOnly", ({currentAgent}) => {
         const removed = request.roles.filter(r =>
-          currentAgent.roles.some(existing =>
-            existing.name === r.roleName &&
-            RoleFactory.isSameScope(existing.scope, r.scope)
+          currentAgent.roles.some(
+            existing => existing.name === r.roleName && RoleFactory.isSameScope(existing.scope, r.scope)
           )
         )
         return TE.right(removed)

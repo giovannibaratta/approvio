@@ -8,8 +8,11 @@ export interface RetryConfig {
   maxDelayMs: number
 }
 
-const delayTaskEither = <E, A>(millis: number) => (ma: TE.TaskEither<E, A>): TE.TaskEither<E, A> =>
-  () => new Promise(resolve => setTimeout(() => resolve(ma()), millis))
+const delayTaskEither =
+  <E, A>(millis: number) =>
+  (ma: TE.TaskEither<E, A>): TE.TaskEither<E, A> =>
+  () =>
+    new Promise(resolve => setTimeout(() => resolve(ma()), millis))
 
 /**
  * Retries a TaskEither action on transient failures with exponential back-off
@@ -27,10 +30,7 @@ export function retryWithBackoff<E, A>(
           return TE.left(error)
         }
 
-        const delay = Math.min(
-          config.initialDelayMs * Math.pow(config.backoffFactor, attempt - 1),
-          config.maxDelayMs
-        )
+        const delay = Math.min(config.initialDelayMs * Math.pow(config.backoffFactor, attempt - 1), config.maxDelayMs)
 
         return pipe(
           TE.right<E, null>(null),
