@@ -24,6 +24,7 @@ import {
   UnauthorizedException
 } from "@nestjs/common"
 import {GetEntityInfo200Response, TokenResponse, PrivilegedTokenExchangeRequest} from "@approvio/api"
+import {handleInternalInconsistency} from "../error/internal-inconsistency"
 import {generateErrorPayload} from "@controllers/error"
 import {Either, left, right} from "fp-ts/Either"
 import {AuthenticatedEntity, Group, isStepUpOperation} from "@domain"
@@ -186,10 +187,7 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_name_cannot_be_uuid":
-      Logger.error(`Internal data inconsistency: ${errorCode}`)
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
-      )
+      return handleInternalInconsistency(errorCode, context)
   }
 }
 
@@ -442,10 +440,7 @@ export function generateErrorResponseForRefreshAgentToken(
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_name_cannot_be_uuid":
-      Logger.error(`Internal data inconsistency: ${errorCode}`)
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
-      )
+      return handleInternalInconsistency(errorCode, context)
     case "requestor_not_authorized":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: ${errorCode}`))
   }
@@ -507,10 +502,7 @@ export function generateErrorResponseForGenerateToken(error: GenerateTokenError,
     case "organization_admin_email_too_long":
     case "organization_admin_email_invalid":
     case "refresh_token_missing_occ":
-      Logger.error(`Internal data inconsistency: ${errorCode}`)
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
-      )
+      return handleInternalInconsistency(errorCode, context)
     case "oidc_network_error":
     case "oidc_invalid_provider_response":
     case "oidc_invalid_token_response":

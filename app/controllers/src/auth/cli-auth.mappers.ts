@@ -12,9 +12,9 @@ import {
   InternalServerErrorException,
   UnauthorizedException,
   ForbiddenException,
-  ServiceUnavailableException,
-  Logger
+  ServiceUnavailableException
 } from "@nestjs/common"
+import {handleInternalInconsistency} from "../error/internal-inconsistency"
 import {generateErrorPayload} from "@controllers/error"
 
 export type CliAuthError =
@@ -113,10 +113,7 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":
     case "user_already_exists":
-      Logger.error(`Internal data inconsistency: ${errorCode}`)
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
-      )
+      return handleInternalInconsistency(errorCode, context)
     case "auth_high_privilege_flow_disabled":
       return new ServiceUnavailableException(
         generateErrorPayload(errorCode, `${context}: functionality is not enabled`)
@@ -199,10 +196,7 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
     case "agent_challenge_invalid_occ":
     case "agent_challenge_expire_before_creation":
     case "agent_challenge_used_at_before_creation":
-      Logger.error(`Internal data inconsistency: ${errorCode}`)
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
-      )
+      return handleInternalInconsistency(errorCode, context)
   }
 }
 
@@ -292,10 +286,7 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":
     case "user_already_exists":
-      Logger.error(`Internal data inconsistency: ${errorCode}`)
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
-      )
+      return handleInternalInconsistency(errorCode, context)
     case "auth_high_privilege_flow_disabled":
       return new ServiceUnavailableException(
         generateErrorPayload(errorCode, `${context}: functionality is not enabled`)
@@ -378,10 +369,7 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
     case "agent_challenge_invalid_occ":
     case "agent_challenge_expire_before_creation":
     case "agent_challenge_used_at_before_creation":
-      Logger.error(`Internal data inconsistency: ${errorCode}`)
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
-      )
+      return handleInternalInconsistency(errorCode, context)
   }
 }
 
@@ -471,10 +459,7 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":
     case "user_already_exists":
-      Logger.error(`Internal data inconsistency: ${errorCode}`)
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
-      )
+      return handleInternalInconsistency(errorCode, context)
     case "auth_high_privilege_flow_disabled":
       return new ServiceUnavailableException(
         generateErrorPayload(errorCode, `${context}: functionality is not enabled`)
@@ -557,10 +542,7 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
     case "agent_challenge_invalid_occ":
     case "agent_challenge_expire_before_creation":
     case "agent_challenge_used_at_before_creation":
-      Logger.error(`Internal data inconsistency: ${errorCode}`)
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
-      )
+      return handleInternalInconsistency(errorCode, context)
   }
 }
 
@@ -735,9 +717,6 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "agent_challenge_invalid_occ":
     case "agent_challenge_expire_before_creation":
     case "agent_challenge_used_at_before_creation":
-      Logger.error(`Internal data inconsistency: ${errorCode}`)
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
-      )
+      return handleInternalInconsistency(errorCode, context)
   }
 }
