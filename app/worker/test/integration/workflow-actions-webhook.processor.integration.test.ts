@@ -196,9 +196,10 @@ describe("Workflow Action Webhook Processor Integration", () => {
       expect(updatedTask?.retryCount).toBe(1)
       expect(updatedTask?.errorReason).toContain("Webhook returned error status: 500")
 
-      // And: The webhook was called
+      // And: The webhook was called with retries
       const wiremockRequests = await getWiremockRequestsFor("POST", uniqueWebhookPath)
-      expect(wiremockRequests).toHaveLength(1)
+      // We expect 3 requests total because of the retry mechanism (1 initial + 2 retries)
+      expect(wiremockRequests).toHaveLength(3)
     })
   })
 })

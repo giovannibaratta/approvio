@@ -135,7 +135,7 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
         () => doTx,
         (error: unknown) => {
           // Check if it's a Prisma Client Known Request Error
-          if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') {
+          if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
             const transientCodes = [
               "P1001", // Can't reach database server
               "P1008", // Operations timed out
