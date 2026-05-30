@@ -33,3 +33,5 @@ databaseChangeLog:
       file: v1/20260215114500-create-quotas-table.yaml
   - include:
       file: v1/20260509143200-create-audit-logs-table.yaml
+  - include:
+      file: v1/20260530120000-create-workflow-actions-slack-tasks-table.yaml

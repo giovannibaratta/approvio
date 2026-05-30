@@ -6,7 +6,7 @@ import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} 
 import {DatabaseClient} from "@external"
 import {PrismaClient} from "@prisma/client"
 import {setupWorkerTestModule} from "./test-helpers"
-import {WorkflowActionEmailTaskFactory, TaskStatus, WorkflowStatus} from "@domain"
+import {WorkflowActionEmailTaskFactory, TaskStatus, WorkflowStatus, WorkflowActionType} from "@domain"
 import {Job} from "bull"
 import {WorkflowActionEmailEvent} from "@domain/events"
 
@@ -147,7 +147,8 @@ describe("Workflow Action Email Processor Integration", () => {
       // Create the event to process
       const event: WorkflowActionEmailEvent = {
         taskId: taskId,
-        workflowId: workflowId
+        workflowId: workflowId,
+        type: WorkflowActionType.EMAIL
       }
 
       const job = {
@@ -192,7 +193,8 @@ describe("Workflow Action Email Processor Integration", () => {
       // Create the event to process
       const event: WorkflowActionEmailEvent = {
         taskId: taskId,
-        workflowId: workflowId
+        workflowId: workflowId,
+        type: WorkflowActionType.EMAIL
       }
 
       const job = {

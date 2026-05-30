@@ -12,7 +12,7 @@ import {checkMigrationId} from "./migration-utils"
 // a newer migration file. The timestamp provided here is used to check if the database is using
 // a migration that is older than the one required by the repositories. If this is the case, the
 // application will fail to start.
-export const REQUIRED_DB_MIGRATION_TIMESTAMP = "20260509143200"
+export const REQUIRED_DB_MIGRATION_TIMESTAMP = "20260530120000"
 
 export class ConflictingIsolationLevelError extends Error {
   constructor(requested: string, active: string) {

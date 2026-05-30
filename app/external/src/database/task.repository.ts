@@ -7,13 +7,16 @@ import {
   TaskUpdateChecks,
   TaskReference,
   TaskGetErrorWebhookTask,
-  TaskGetErrorEmailTask
+  TaskGetErrorEmailTask,
+  TaskGetErrorSlackTask
 } from "@services/task/interfaces"
 import {
   Occ,
   WorkflowActionTaskDecoratorSelector,
   WorkflowActionWebhookTaskFactory,
+  WorkflowActionSlackTaskFactory,
   DecoratedWorkflowActionWebhookPendingTask,
+  DecoratedWorkflowActionSlackPendingTask,
   TaskStatus,
   Lock
 } from "@domain"
@@ -22,16 +25,23 @@ import {
   DecoratedWorkflowActionEmailTask,
   WorkflowActionEmailTask,
   DecoratedWorkflowActionWebhookTask,
+  DecoratedWorkflowActionSlackTask,
   WorkflowActionEmailTaskFactory
 } from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
 import {DatabaseClient} from "../database/database-client"
-import {Prisma, WorkflowActionsWebhookTask as PrismaWorkflowActionsWebhookTask} from "@prisma/client"
+
+import {
+  Prisma,
+  WorkflowActionsWebhookTask as PrismaWorkflowActionsWebhookTask,
+  WorkflowActionsSlackTask as PrismaWorkflowActionsSlackTask
+} from "@prisma/client"
 import {ConcurrentUpdateError} from "./shared"
 import {TaskLockedByOtherError, TaskNotFoundError, TaskUnknownError} from "./task.exceptions"
 import {mapToNullableJsonValue} from "./shared/json-mappers"
 import {pipe} from "fp-ts/function"
+import {isPrismaUniqueConstraintError} from "./errors"
 
 @Injectable()
 export class PrismaTaskRepository implements TaskRepository {
@@ -63,6 +73,102 @@ export class PrismaTaskRepository implements TaskRepository {
         Logger.error(`Failed to create email task ${task.id}`, error)
         return "unknown_error" as const
       }
+    )
+  }
+
+  createSlackTask(task: DecoratedWorkflowActionSlackPendingTask<{occ: true}>): TaskEither<TaskCreateError, void> {
+    return TE.tryCatch(
+      async () => {
+        await this.dbClient.cx.workflowActionsSlackTask.create({
+          data: {
+            id: task.id,
+            workflowId: task.workflowId,
+            status: task.status,
+            webhookUrl: task.webhookUrl,
+            message: task.message,
+            responseStatus: undefined,
+            responseBody: undefined,
+            responseBodyStatus: undefined,
+            retryCount: task.retryCount,
+            errorReason: undefined,
+            createdAt: task.createdAt,
+            updatedAt: task.updatedAt,
+            occ: task.occ
+          }
+        })
+      },
+      error => {
+        if (isPrismaUniqueConstraintError(error, ["id"])) return "task_already_exists" as const
+        Logger.error(`Failed to create slack task ${task.id}`, error)
+        return "unknown_error" as const
+      }
+    )
+  }
+
+  updateSlackTask<T extends WorkflowActionTaskDecoratorSelector>(
+    task: DecoratedWorkflowActionSlackTask<T>,
+    checks: TaskUpdateChecks
+  ): TaskEither<TaskUpdateError, Occ> {
+    return TE.tryCatch(
+      async () => {
+        const {responseStatus, responseBody, responseBodyStatus} = extractResponseAttributes(task)
+
+        const updatedTasks = await this.dbClient.cx.workflowActionsSlackTask.updateManyAndReturn({
+          where: {
+            id: task.id,
+            occ: checks.occ,
+            lockedBy: checks.lockOwner
+          },
+          data: {
+            status: task.status,
+            retryCount: task.retryCount,
+            errorReason: task.status === TaskStatus.ERROR ? task.errorReason : undefined,
+            responseStatus,
+            responseBody,
+            responseBodyStatus,
+            updatedAt: task.updatedAt,
+            occ: {increment: 1}
+          }
+        })
+
+        if (updatedTasks.length === 0 || updatedTasks[0] === undefined)
+          return await this.categorizeErrorTypeAndRaise("WorkflowActionsSlackTask", task.id, checks)
+
+        return {occ: updatedTasks[0].occ}
+      },
+      error => {
+        if (error instanceof ConcurrentUpdateError) return "task_concurrent_update" as const
+        if (error instanceof TaskNotFoundError) return "task_concurrent_update" as const
+        if (error instanceof TaskLockedByOtherError) return "task_locked_by_other" as const
+        Logger.error(`Failed to update slack task ${task.id}`, error)
+        return "unknown_error" as const
+      }
+    )
+  }
+
+  getSlackTask(taskId: string): TaskEither<TaskGetErrorSlackTask, DecoratedWorkflowActionSlackTask<{occ: true}>> {
+    return pipe(
+      this.getSlackTaskTE(taskId),
+      TE.chainW(rawData => {
+        const {lockedBy, lockedAt, ...rest} = rawData
+
+        if (lockedBy !== null && lockedAt === null) return TE.left("task_lock_inconsistent" as const)
+        if (lockedBy === null && lockedAt !== null) return TE.left("task_lock_inconsistent" as const)
+
+        let lock: Lock | undefined = undefined
+
+        if (lockedBy !== null && lockedAt !== null)
+          lock = {
+            lockedBy,
+            lockedAt
+          }
+
+        return TE.right({
+          ...rest,
+          lock
+        })
+      }),
+      TE.chainW(mappedTask => TE.fromEither(WorkflowActionSlackTaskFactory.validate<{occ: true}>(mappedTask)))
     )
   }
 
@@ -270,6 +376,27 @@ export class PrismaTaskRepository implements TaskRepository {
     )
   }
 
+  private getSlackTaskTE(taskId: string): TaskEither<TaskGetErrorSlackTask, PrismaWorkflowActionsSlackTask> {
+    return TE.tryCatch(
+      async () => {
+        const task = await this.dbClient.cx.workflowActionsSlackTask.findUnique({
+          where: {id: taskId}
+        })
+        if (!task) throw new TaskNotFoundError()
+        return task
+      },
+      error => {
+        if (error instanceof TaskNotFoundError) {
+          Logger.warn(`Task ${taskId} not found`)
+          return "task_not_found" as const
+        }
+
+        Logger.error(`Failed to get slack task ${taskId}`, error)
+        return "unknown_error" as const
+      }
+    )
+  }
+
   lockTask(taskReference: TaskReference, lockOwner: string): TaskEither<TaskLockError, Occ> {
     // This method is a generic method to lock any task type.
     // Since the tasks are stored in different tables, we need to handle each type separately.
@@ -292,7 +419,7 @@ export class PrismaTaskRepository implements TaskRepository {
           }
 
           return {occ: updatedTasks[0].occ}
-        } else {
+        } else if (type === WorkflowActionType.WEBHOOK) {
           const updatedTasks = await this.dbClient.cx.workflowActionsWebhookTask.updateManyAndReturn({
             where: {id: taskId, lockedBy: null},
             data: {lockedBy: lockOwner, lockedAt: new Date(), occ: {increment: 1}}
@@ -300,6 +427,20 @@ export class PrismaTaskRepository implements TaskRepository {
 
           if (updatedTasks.length === 0 || updatedTasks[0] === undefined) {
             const task = await this.dbClient.cx.workflowActionsWebhookTask.findUnique({where: {id: taskId}})
+            if (!task) throw new TaskNotFoundError()
+            if (task.lockedBy === lockOwner) return {occ: task.occ}
+            throw new TaskLockedByOtherError()
+          }
+
+          return {occ: updatedTasks[0].occ}
+        } else {
+          const updatedTasks = await this.dbClient.cx.workflowActionsSlackTask.updateManyAndReturn({
+            where: {id: taskId, lockedBy: null},
+            data: {lockedBy: lockOwner, lockedAt: new Date(), occ: {increment: 1}}
+          })
+
+          if (updatedTasks.length === 0 || updatedTasks[0] === undefined) {
+            const task = await this.dbClient.cx.workflowActionsSlackTask.findUnique({where: {id: taskId}})
             if (!task) throw new TaskNotFoundError()
             if (task.lockedBy === lockOwner) return {occ: task.occ}
             throw new TaskLockedByOtherError()
@@ -340,13 +481,18 @@ export class PrismaTaskRepository implements TaskRepository {
             data: baseData
           })
           if (result.count === 0) await this.categorizeErrorTypeAndRaise("WorkflowActionsEmailTask", taskId, checks)
-        } else {
-          // WorkflowActionType.WEBHOOK
+        } else if (type === WorkflowActionType.WEBHOOK) {
           const result = await this.dbClient.cx.workflowActionsWebhookTask.updateMany({
             where: {id: taskId, occ: checks.occ, lockedBy: checks.lockOwner},
             data: baseData
           })
           if (result.count === 0) await this.categorizeErrorTypeAndRaise("WorkflowActionsWebhookTask", taskId, checks)
+        } else {
+          const result = await this.dbClient.cx.workflowActionsSlackTask.updateMany({
+            where: {id: taskId, occ: checks.occ, lockedBy: checks.lockOwner},
+            data: baseData
+          })
+          if (result.count === 0) await this.categorizeErrorTypeAndRaise("WorkflowActionsSlackTask", taskId, checks)
         }
       },
       error => {
@@ -360,7 +506,10 @@ export class PrismaTaskRepository implements TaskRepository {
   }
 
   private async categorizeErrorTypeAndRaise(
-    table: Extract<Prisma.ModelName, "WorkflowActionsEmailTask" | "WorkflowActionsWebhookTask">,
+    table: Extract<
+      Prisma.ModelName | "WorkflowActionsSlackTask",
+      "WorkflowActionsEmailTask" | "WorkflowActionsWebhookTask" | "WorkflowActionsSlackTask"
+    >,
     id: string,
     checks: TaskUpdateChecks
   ): Promise<never> {
@@ -368,7 +517,8 @@ export class PrismaTaskRepository implements TaskRepository {
 
     const retrievers = {
       WorkflowActionsEmailTask: () => this.dbClient.cx.workflowActionsEmailTask.findUnique({where: {id}}),
-      WorkflowActionsWebhookTask: () => this.dbClient.cx.workflowActionsWebhookTask.findUnique({where: {id}})
+      WorkflowActionsWebhookTask: () => this.dbClient.cx.workflowActionsWebhookTask.findUnique({where: {id}}),
+      WorkflowActionsSlackTask: () => this.dbClient.cx.workflowActionsSlackTask.findUnique({where: {id}})
     }
 
     let actualTask
@@ -409,7 +559,9 @@ function mapHeadersToRecord(headers: Prisma.JsonValue): Record<string, string> {
   return result
 }
 
-function extractResponseAttributes(task: DecoratedWorkflowActionWebhookTask<object>) {
+function extractResponseAttributes(
+  task: DecoratedWorkflowActionWebhookTask<object> | DecoratedWorkflowActionSlackTask<object>
+) {
   if (task.status === TaskStatus.ERROR) {
     return {
       responseStatus: task.response?.status,

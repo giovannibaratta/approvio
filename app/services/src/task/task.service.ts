@@ -4,14 +4,25 @@ import {
   TaskCreateError,
   TaskGetErrorWebhookTask,
   TaskGetErrorEmailTask,
+  TaskGetErrorSlackTask,
   TaskLockError,
   TaskReference,
   TaskRepository,
   TaskUpdateChecks,
   TaskUpdateError
 } from "./interfaces"
-import {DecoratedWorkflowActionWebhookPendingTask, Occ, WorkflowActionTaskDecoratorSelector} from "@domain"
-import {DecoratedWorkflowActionEmailTask, WorkflowActionEmailTask, DecoratedWorkflowActionWebhookTask} from "@domain"
+import {
+  DecoratedWorkflowActionWebhookPendingTask,
+  DecoratedWorkflowActionSlackPendingTask,
+  Occ,
+  WorkflowActionTaskDecoratorSelector
+} from "@domain"
+import {
+  DecoratedWorkflowActionEmailTask,
+  WorkflowActionEmailTask,
+  DecoratedWorkflowActionWebhookTask,
+  DecoratedWorkflowActionSlackTask
+} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 
 @Injectable()
@@ -40,6 +51,17 @@ export class TaskService {
     return this.taskRepo.updateWebhookTask(task, checks)
   }
 
+  createSlackTask(task: DecoratedWorkflowActionSlackPendingTask<{occ: true}>): TaskEither<TaskCreateError, void> {
+    return this.taskRepo.createSlackTask(task)
+  }
+
+  updateSlackTask<T extends WorkflowActionTaskDecoratorSelector>(
+    task: DecoratedWorkflowActionSlackTask<T>,
+    checks: TaskUpdateChecks
+  ): TaskEither<TaskUpdateError, Occ> {
+    return this.taskRepo.updateSlackTask(task, checks)
+  }
+
   lockTask(taskReference: TaskReference, lockOwner: string): TaskEither<TaskLockError, {occ: bigint}> {
     return this.taskRepo.lockTask(taskReference, lockOwner)
   }
@@ -50,6 +72,10 @@ export class TaskService {
 
   getEmailTask(taskId: string): TaskEither<TaskGetErrorEmailTask, DecoratedWorkflowActionEmailTask<{occ: true}>> {
     return this.taskRepo.getEmailTask(taskId)
+  }
+
+  getSlackTask(taskId: string): TaskEither<TaskGetErrorSlackTask, DecoratedWorkflowActionSlackTask<{occ: true}>> {
+    return this.taskRepo.getSlackTask(taskId)
   }
 
   releaseLock(taskReference: TaskReference, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, void> {

@@ -507,6 +507,11 @@ function mapActionToJsonb(action: WorkflowAction): Prisma.InputJsonValue {
         method: action.method,
         headers: action.headers ? {...action.headers} : undefined
       }
+    case WorkflowActionType.SLACK:
+      return {
+        type: action.type,
+        webhookUrl: action.webhookUrl
+      }
   }
 }
 

@@ -1,14 +1,18 @@
 import {Inject} from "@nestjs/common"
 import {
   EnqueueRecalculationError,
-  EnqueueWorkflowActionEmailError,
-  EnqueueWorkflowActionWebhookError,
+  EnqueueWorkflowActionError,
   EnqueueWorkflowStatusChangedError,
   QUEUE_PROVIDER_TOKEN,
   QueueProvider
 } from "./interface"
 import {TaskEither} from "fp-ts/TaskEither"
-import {WorkflowActionEmailEvent, WorkflowActionWebhookEvent, WorkflowStatusChangedEvent} from "@domain"
+import {
+  WorkflowActionEmailEvent,
+  WorkflowActionWebhookEvent,
+  WorkflowActionSlackEvent,
+  WorkflowStatusChangedEvent
+} from "@domain"
 
 export class QueueService {
   constructor(
@@ -24,11 +28,9 @@ export class QueueService {
     return this.queueProvider.enqueueWorkflowStatusChanged(event)
   }
 
-  enqueueEmailAction(event: WorkflowActionEmailEvent): TaskEither<EnqueueWorkflowActionEmailError, void> {
-    return this.queueProvider.enqueueEmailAction(event)
-  }
-
-  enqueueWebhookAction(event: WorkflowActionWebhookEvent): TaskEither<EnqueueWorkflowActionWebhookError, void> {
-    return this.queueProvider.enqueueWebhookAction(event)
+  enqueueWorkflowAction(
+    event: WorkflowActionEmailEvent | WorkflowActionWebhookEvent | WorkflowActionSlackEvent
+  ): TaskEither<EnqueueWorkflowActionError, void> {
+    return this.queueProvider.enqueueWorkflowAction(event)
   }
 }
