@@ -55,34 +55,7 @@ To participate in a workflow, an agent must have the voter role for the specific
 
 ## Authentication Flow
 
-Agents authenticate using a secure two-step challenge-response protocol:
-
-```text
-┌─────────┐                                            ┌─────────┐
-│  Agent  │                                            │ Server  │
-└────┬────┘                                            └────┬────┘
-     │                                                      │
-     │  1. Request Challenge                                │
-     │  POST /auth/agents/challenge                         │
-     │─────────────────────────────────────────────────────>│
-     │                                                      │
-     │  2. Encrypted Challenge (with nonce)                 │
-     │  RSA-encrypted with agent's public key               │
-     │<─────────────────────────────────────────────────────│
-     │                                                      │
-     │  [Agent decrypts challenge with private key]         │
-     │                                                      │
-     │  3. Signed JWT Assertion                             │
-     │  POST /auth/agents/token (with decrypted nonce)      │
-     │─────────────────────────────────────────────────────>│
-     │                                                      │
-     │  4. Access Token                                     │
-     │  JWT token for API access                            │
-     │<─────────────────────────────────────────────────────│
-     │                                                      │
-```
-
-### Authentication Steps
+Agents authenticate using a secure two-step challenge-response protocol.
 
 The authentication process begins when an agent requests a challenge from the server using its unique name. The server responds by generating a unique one-time code (nonce) and encrypting it with the agent's registered public key.
 
