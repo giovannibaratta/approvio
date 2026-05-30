@@ -9,13 +9,16 @@ import {
   WorkflowActionType,
   WorkflowActionEmailTaskFactory,
   WorkflowActionWebhookTaskFactory,
+  WorkflowActionSlackTaskFactory,
   WorkflowStatus,
   WorkflowAction,
   Workflow,
   EmailAction,
   WebhookAction,
+  SlackAction,
   WorkflowActionWebhookTaskValidationError,
-  WorkflowActionEmailTaskValidationError
+  WorkflowActionEmailTaskValidationError,
+  WorkflowActionSlackTaskValidationError
 } from "@domain"
 import {TaskCreateError, TaskService} from "@services"
 import {pipe} from "fp-ts/function"
@@ -61,7 +64,10 @@ export class WorkflowEventsProcessor {
     event: WorkflowStatusChangedEvent,
     index: number
   ): TE.TaskEither<
-    TaskCreateError | WorkflowActionWebhookTaskValidationError | WorkflowActionEmailTaskValidationError,
+    | TaskCreateError
+    | WorkflowActionWebhookTaskValidationError
+    | WorkflowActionEmailTaskValidationError
+    | WorkflowActionSlackTaskValidationError,
     void
   > {
     // We generate a deterministic task ID based on event ID, action type, and index.
@@ -78,6 +84,8 @@ export class WorkflowEventsProcessor {
         return this.handleEmailAction(action, workflow, event, taskId)
       case WorkflowActionType.WEBHOOK:
         return this.handleWebhookAction(action, workflow, event, taskId)
+      case WorkflowActionType.SLACK:
+        return this.handleSlackAction(action, workflow, event, taskId)
     }
   }
 
@@ -115,9 +123,10 @@ export class WorkflowEventsProcessor {
       }),
       TE.chainW(({task}) =>
         pipe(
-          this.queueService.enqueueEmailAction({
+          this.queueService.enqueueWorkflowAction({
             taskId: task.id,
-            workflowId: workflow.id
+            workflowId: workflow.id,
+            type: WorkflowActionType.EMAIL
           }),
           TE.mapLeft(error => {
             Logger.error(`Failed to add email task ${task.id} to queue`, error)
@@ -168,17 +177,64 @@ export class WorkflowEventsProcessor {
       }),
       TE.chainW(({task}) =>
         pipe(
-          this.queueService.enqueueWebhookAction({
+          this.queueService.enqueueWorkflowAction({
             taskId: task.id,
-            workflowId: workflow.id
+            workflowId: workflow.id,
+            type: WorkflowActionType.WEBHOOK
           }),
           TE.mapLeft(error => {
             Logger.error(`Failed to add webhook task ${task.id} to queue`, error)
             return "unknown_error" as const
           })
         )
+      )
+    )
+  }
+
+  private handleSlackAction(
+    action: SlackAction,
+    workflow: Workflow,
+    event: WorkflowStatusChangedEvent,
+    taskId: string
+  ): TE.TaskEither<TaskCreateError | WorkflowActionSlackTaskValidationError, void> {
+    return pipe(
+      TE.Do,
+      TE.bindW("task", () =>
+        TE.fromEither(
+          WorkflowActionSlackTaskFactory.newWorkflowActionSlackTask({
+            id: taskId,
+            workflowId: workflow.id,
+            webhookUrl: action.webhookUrl,
+            message: `The workflow ${workflow.name} has transitioned from ${event.oldStatus} to ${event.newStatus} at ${event.timestamp.toISOString()}.`
+          })
+        )
       ),
-      TE.map(() => undefined)
+      TE.chainFirstW(({task}) => {
+        return pipe(
+          this.taskService.createSlackTask(task),
+          TE.orElse(error => {
+            Logger.error(`Failed to create slack task ${taskId}`, error)
+            if (error === "task_already_exists") {
+              Logger.warn(`Slack task ${taskId} already exists, skipping creation.`)
+              return TE.right(undefined)
+            }
+            return TE.left(error)
+          })
+        )
+      }),
+      TE.chainW(({task}) =>
+        pipe(
+          this.queueService.enqueueWorkflowAction({
+            taskId: task.id,
+            workflowId: workflow.id,
+            type: WorkflowActionType.SLACK
+          }),
+          TE.mapLeft(error => {
+            Logger.error(`Failed to add slack task ${task.id} to queue`, error)
+            return "unknown_error" as const
+          })
+        )
+      )
     )
   }
 }

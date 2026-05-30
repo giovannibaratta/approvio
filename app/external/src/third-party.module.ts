@@ -1,10 +1,11 @@
 import {Module} from "@nestjs/common"
-import {EMAIL_EXTERNAL_TOKEN, OIDC_PROVIDER_TOKEN, HTTP_CLIENT_TOKEN} from "@services"
+import {EMAIL_EXTERNAL_TOKEN, OIDC_PROVIDER_TOKEN, HTTP_CLIENT_TOKEN, SLACK_PROVIDER_TOKEN} from "@services"
 import {NodemailerEmailProvider} from "./email/email.provider"
 import {OidcClient} from "./oidc/oidc.client"
 import {OidcBootstrapService} from "./oidc/oidc-bootstrap.service"
 import {ConfigModule} from "./config.module"
 import {AxiosWebhookClient} from "./webhook/axios-webhook.client"
+import {SlackProvider} from "./slack/slack.provider"
 
 const emailProvider = {
   provide: EMAIL_EXTERNAL_TOKEN,
@@ -21,7 +22,12 @@ const httpClientProvider = {
   useClass: AxiosWebhookClient
 }
 
-const providers = [emailProvider, oidcProvider, httpClientProvider]
+const slackProvider = {
+  provide: SLACK_PROVIDER_TOKEN,
+  useClass: SlackProvider
+}
+
+const providers = [emailProvider, oidcProvider, httpClientProvider, slackProvider]
 
 @Module({
   imports: [ConfigModule],

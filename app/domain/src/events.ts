@@ -1,4 +1,4 @@
-import {WorkflowAction} from "./workflow-actions"
+import {WorkflowAction, WorkflowActionType} from "./workflow-actions"
 import {WorkflowStatus} from "./workflows"
 
 export interface WorkflowStatusChangedEvent {
@@ -13,12 +13,13 @@ export interface WorkflowStatusChangedEvent {
   timestamp: Date
 }
 
-export interface WorkflowActionEmailEvent {
+// A single interface with a type selector that unifies workflow action events.
+interface WorkflowActionEvent<T extends WorkflowActionType = WorkflowActionType> {
+  type: T
   taskId: string
   workflowId: string
 }
 
-export interface WorkflowActionWebhookEvent {
-  taskId: string
-  workflowId: string
-}
+export type WorkflowActionEmailEvent = WorkflowActionEvent<WorkflowActionType.EMAIL>
+export type WorkflowActionSlackEvent = WorkflowActionEvent<WorkflowActionType.SLACK>
+export type WorkflowActionWebhookEvent = WorkflowActionEvent<WorkflowActionType.WEBHOOK>

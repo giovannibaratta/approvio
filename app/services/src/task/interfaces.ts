@@ -4,9 +4,12 @@ import {
   DecoratedWorkflowActionWebhookTask,
   WorkflowActionType,
   DecoratedWorkflowActionEmailTask,
+  DecoratedWorkflowActionSlackTask,
+  DecoratedWorkflowActionSlackPendingTask,
   Occ,
   WorkflowActionWebhookTaskValidationError,
   WorkflowActionEmailTaskValidationError,
+  WorkflowActionSlackTaskValidationError,
   WorkflowActionTaskDecoratorSelector,
   DecoratedWorkflowActionWebhookPendingTask
 } from "@domain"
@@ -27,6 +30,12 @@ export type TaskGetErrorWebhookTask =
 export type TaskGetErrorEmailTask =
   | UnknownError
   | WorkflowActionEmailTaskValidationError
+  | TaskNotFoundError
+  | TaskLockInconsistentError
+
+export type TaskGetErrorSlackTask =
+  | UnknownError
+  | WorkflowActionSlackTaskValidationError
   | TaskNotFoundError
   | TaskLockInconsistentError
 
@@ -123,4 +132,29 @@ export interface TaskRepository {
    * @returns A TaskEither containing the decorated email task or a TaskGetErrorEmailTask.
    */
   getEmailTask(taskId: string): TaskEither<TaskGetErrorEmailTask, DecoratedWorkflowActionEmailTask<{occ: true}>>
+
+  /**
+   * Creates a new slack task in pending state.
+   * @param task The decorated pending slack task data to create.
+   * @returns A TaskEither indicating success or a TaskCreateError.
+   */
+  createSlackTask(task: DecoratedWorkflowActionSlackPendingTask<{occ: true}>): TaskEither<TaskCreateError, void>
+
+  /**
+   * Updates a slack task.
+   * @param task The decorated slack task data (pending or completed).
+   * @param checks Concurrency and lock ownership checks.
+   * @returns A TaskEither containing the updated OCC version or a TaskUpdateError.
+   */
+  updateSlackTask<T extends WorkflowActionTaskDecoratorSelector>(
+    task: DecoratedWorkflowActionSlackTask<T>,
+    checks: TaskUpdateChecks
+  ): TaskEither<TaskUpdateError, Occ>
+
+  /**
+   * Retrieves a slack task by its ID.
+   * @param taskId The unique identifier of the slack task.
+   * @returns A TaskEither containing the decorated slack task or a TaskGetErrorSlackTask.
+   */
+  getSlackTask(taskId: string): TaskEither<TaskGetErrorSlackTask, DecoratedWorkflowActionSlackTask<{occ: true}>>
 }

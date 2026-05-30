@@ -245,6 +245,11 @@ function mapWorkflowActionToApi(action: WorkflowAction): WorkflowActionApi {
         method: action.method,
         headers: action.headers ? {...action.headers} : undefined
       }
+    case WorkflowActionType.SLACK:
+      return {
+        type: action.type,
+        webhookUrl: action.webhookUrl
+      }
   }
 }
 
@@ -292,6 +297,7 @@ export function generateErrorResponseForCreateWorkflowTemplate(
     case "workflow_template_version_too_long":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
+    case "workflow_action_webhook_url_invalid":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
     case "workflow_template_already_exists":
       return new ConflictException(
@@ -347,6 +353,7 @@ export function generateErrorResponseForGetWorkflowTemplate(
     case "workflow_template_space_id_invalid_uuid":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
+    case "workflow_action_webhook_url_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -399,6 +406,7 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
     case "workflow_template_version_too_long":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
+    case "workflow_action_webhook_url_invalid":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
     case "workflow_template_update_before_create":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
@@ -482,6 +490,7 @@ export function generateErrorResponseForDeprecateWorkflowTemplate(
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
+    case "workflow_action_webhook_url_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
@@ -548,6 +557,7 @@ export function generateErrorResponseForListWorkflowTemplates(
     case "workflow_template_version_too_long":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
+    case "workflow_action_webhook_url_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
