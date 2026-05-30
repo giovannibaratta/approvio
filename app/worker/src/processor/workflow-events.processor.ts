@@ -18,13 +18,15 @@ import {
   SlackAction,
   WorkflowActionWebhookTaskValidationError,
   WorkflowActionEmailTaskValidationError,
-  WorkflowActionSlackTaskValidationError
+  WorkflowActionSlackTaskValidationError,
+  validateWorkflowActions
 } from "@domain"
 import {TaskCreateError, TaskService} from "@services"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {isLeft} from "fp-ts/Either"
 import {WorkflowService} from "@services"
+import {logSuccess, getStringAsEnum} from "@utils"
 
 @Processor(WORKFLOW_STATUS_CHANGED_QUEUE)
 export class WorkflowEventsProcessor {
@@ -35,8 +37,8 @@ export class WorkflowEventsProcessor {
   ) {}
 
   @Process("workflow-status-changed")
-  async handleWorkflowStatusChanged(job: Job<WorkflowStatusChangedEvent>) {
-    const event = job.data
+  async handleWorkflowStatusChanged(job: Job<unknown>) {
+    const event = this.deserializeAndValidateEvent(job.data)
     Logger.log(`Processing status change for workflow ${event.workflowId}: ${event.oldStatus} -> ${event.newStatus}`)
 
     if (event.newStatus === WorkflowStatus.EVALUATION_IN_PROGRESS) return
@@ -51,11 +53,14 @@ export class WorkflowEventsProcessor {
           this.processAction(action, workflowWithTemplate, event, index)
         )
         return TE.sequenceArray(tasks)
-      })
+      }),
+      logSuccess(`Event ${event.eventId} processed successfully`, "WorkflowEventProcessor")
     )()
 
-    if (isLeft(processResult))
+    if (isLeft(processResult)) {
+      Logger.error(`Failed to process workflow status change: ${JSON.stringify(processResult.left)}`)
       throw new Error(`Failed to process workflow status change: ${JSON.stringify(processResult.left)}`)
+    }
   }
 
   private processAction(
@@ -236,5 +241,39 @@ export class WorkflowEventsProcessor {
         )
       )
     )
+  }
+
+  private deserializeAndValidateEvent(data: unknown): WorkflowStatusChangedEvent {
+    if (typeof data !== "object" || data === null) throw new Error("Job data is not an object")
+    const raw = data as Record<string, unknown>
+    if (typeof raw.eventId !== "string") throw new Error("Missing or invalid eventId")
+    if (typeof raw.workflowId !== "string") throw new Error("Missing or invalid workflowId")
+    if (typeof raw.oldStatus !== "string") throw new Error("Missing or invalid oldStatus")
+    const oldStatus = getStringAsEnum(raw.oldStatus, WorkflowStatus)
+    if (oldStatus === undefined) throw new Error("Invalid oldStatus value")
+    if (typeof raw.newStatus !== "string") throw new Error("Missing or invalid newStatus")
+    const newStatus = getStringAsEnum(raw.newStatus, WorkflowStatus)
+    if (newStatus === undefined) throw new Error("Invalid newStatus value")
+
+    const actionsValidation = validateWorkflowActions(raw.workflowTemplateActions)
+    if (isLeft(actionsValidation))
+      throw new Error(`Invalid workflowTemplateActions: ${JSON.stringify(actionsValidation.left)}`)
+
+    const workflowTemplateActions = actionsValidation.right
+
+    if (!raw.timestamp || (typeof raw.timestamp !== "string" && !(raw.timestamp instanceof Date)))
+      throw new Error("Missing or invalid timestamp")
+
+    const timestamp = new Date(raw.timestamp)
+    if (isNaN(timestamp.getTime())) throw new Error("Invalid timestamp date format")
+
+    return {
+      eventId: raw.eventId,
+      workflowId: raw.workflowId,
+      oldStatus,
+      newStatus,
+      workflowTemplateActions,
+      timestamp
+    }
   }
 }

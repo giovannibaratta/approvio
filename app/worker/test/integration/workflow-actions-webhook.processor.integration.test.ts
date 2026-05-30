@@ -6,7 +6,13 @@ import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} 
 import {DatabaseClient} from "@external"
 import {PrismaClient, Prisma} from "@prisma/client"
 import {setupWorkerTestModule} from "./test-helpers"
-import {WorkflowActionWebhookTaskFactory, TaskStatus, WebhookActionHttpMethod, WorkflowStatus, WorkflowActionType} from "@domain"
+import {
+  WorkflowActionWebhookTaskFactory,
+  TaskStatus,
+  WebhookActionHttpMethod,
+  WorkflowStatus,
+  WorkflowActionType
+} from "@domain"
 import {Job} from "bull"
 import {WorkflowActionWebhookEvent} from "@domain/events"
 
