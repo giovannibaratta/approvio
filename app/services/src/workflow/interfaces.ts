@@ -89,6 +89,10 @@ export interface WorkflowRepository {
 
   /**
    * Marks a list of workflows as pending recalculation.
+   * Note: This method intentionally skips the OCC check and does not increment the OCC counter.
+   * This is because setting the `recalculationRequired` flag is a safe, idempotent operation
+   * that merely signals a background job needs to re-evaluate the workflow. Skipping OCC
+   * prevents the sweep job from failing due to race conditions with concurrent active votes.
    * @param workflowIds The IDs of the workflows to mark.
    * @returns A TaskEither indicating success or failure.
    */
