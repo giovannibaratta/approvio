@@ -34,6 +34,25 @@ export class NodemailerEmailProvider implements EmailProviderExternal {
     }
   }
 
+  private isTransientError(error: unknown): boolean {
+    if (error && typeof error === "object") {
+      // Nodemailer exposes an SMTP responseCode. 4xx is transient in SMTP.
+      const responseCode = "responseCode" in error ? error.responseCode : undefined
+      if (typeof responseCode === "number" && responseCode >= 400 && responseCode < 500) {
+        return true
+      }
+      // It also can throw standard system errors like ECONNRESET, ETIMEDOUT, etc.
+      const errorCode = "code" in error ? error.code : undefined
+      if (
+        typeof errorCode === "string" &&
+        ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "EHOSTUNREACH"].includes(errorCode)
+      ) {
+        return true
+      }
+    }
+    return false
+  }
+
   sendEmail(email: Email): TaskEither<EmailExternalError, void> {
     const transporter = this.transporter
     const emailProviderConfig = this.emailProviderConfig
@@ -52,26 +71,9 @@ export class NodemailerEmailProvider implements EmailProviderExternal {
       (error: unknown) => {
         Logger.error("Failed to send email", error)
 
-        let isTransient = false
-        if (error && typeof error === "object") {
-          // Nodemailer exposes an SMTP responseCode. 4xx is transient in SMTP.
-          const responseCode = "responseCode" in error ? error.responseCode : undefined
-          if (typeof responseCode === "number" && responseCode >= 400 && responseCode < 500) {
-            isTransient = true
-          }
-          // It also can throw standard system errors like ECONNRESET, ETIMEDOUT, etc.
-          const errorCode = "code" in error ? error.code : undefined
-          if (
-            typeof errorCode === "string" &&
-            ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "EHOSTUNREACH"].includes(errorCode)
-          ) {
-            isTransient = true
-          }
-        }
-
         return {
           type: "email_unknown_error" as const,
-          isTransient
+          isTransient: this.isTransientError(error)
         }
       }
     )

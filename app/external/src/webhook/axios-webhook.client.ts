@@ -49,6 +49,28 @@ export class AxiosWebhookClient implements HttpClient {
    * )
    * ```
    */
+  private isTransientError(error: any, canRetryPayloadError: boolean): boolean {
+    if (error.type === "unknown_error") return false
+
+    if (error.type === "http_response_error") {
+      return canRetryPayloadError && (error.response.status === 429 || error.response.status >= 500)
+    }
+
+    // Connection/network failures
+    // For non-idempotent without idempotency key, we only retry if we are sure it wasn't sent
+    // (e.g. ECONNREFUSED, ENOTFOUND, etc.)
+    if (!canRetryPayloadError) {
+      if (error.type === "http_request_failed") {
+        const safeCodes = ["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH"]
+        return safeCodes.includes(error.code as string)
+      }
+      // For http_timeout, we cannot be sure if it reached the server, so don't retry unsafe
+      return false
+    }
+
+    return true
+  }
+
   execute(
     url: string,
     method: string,
@@ -119,27 +141,7 @@ export class AxiosWebhookClient implements HttpClient {
     return pipe(
       retryWithBackoff(
         () => doRequest,
-        error => {
-          if (error.type === "unknown_error") return false
-
-          if (error.type === "http_response_error") {
-            return canRetryPayloadError && (error.response.status === 429 || error.response.status >= 500)
-          }
-
-          // Connection/network failures
-          // For non-idempotent without idempotency key, we only retry if we are sure it wasn't sent
-          // (e.g. ECONNREFUSED, ENOTFOUND, etc.)
-          if (!canRetryPayloadError) {
-            if (error.type === "http_request_failed") {
-              const safeCodes = ["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH"]
-              return safeCodes.includes(error.code as string)
-            }
-            // For http_timeout, we cannot be sure if it reached the server, so don't retry unsafe
-            return false
-          }
-
-          return true
-        },
+        error => this.isTransientError(error, canRetryPayloadError),
         {
           maxAttempts: 3,
           initialDelayMs: 1000,
