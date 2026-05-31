@@ -49,7 +49,14 @@ export class AxiosWebhookClient implements HttpClient {
    * )
    * ```
    */
-  private isTransientError(error: any, canRetryPayloadError: boolean): boolean {
+  private isTransientError(
+    error:
+      | {type: "unknown_error"}
+      | {type: "http_timeout"}
+      | {type: "http_request_failed"; code?: string}
+      | {type: "http_response_error"; response: {status: number}},
+    canRetryPayloadError: boolean
+  ): boolean {
     if (error.type === "unknown_error") return false
 
     if (error.type === "http_response_error") {
