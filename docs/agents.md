@@ -22,17 +22,11 @@ The primary purpose of an agent is to enable automated systems—such as CI/CD p
 
 ### Use Cases
 
-#### Automated CI/CD Approvals
-
-A CI/CD pipeline agent can automatically approve deployments that pass all tests. To achieve this, the agent is added to the relevant approval group and assigned a voter role for the corresponding workflow template. Once the pipeline successfully completes its tests, the agent casts an approval vote, allowing the deployment to proceed without manual intervention.
-
-#### Monitoring System Integration
-
-A monitoring agent can act as a safeguard by vetoing deployments during system incidents. By continuously monitoring system health metrics, an agent with voting permissions can immediately cast a VETO vote if critical alerts become active, preventing potentially destabilizing changes.
-
-#### Compliance Automation
-
-Agents can be integrated into compliance checking systems to ensure regulatory requirements are met. The agent can validate necessary conditions and automatically vote to approve compliant changes, simultaneously providing an automated audit trail of the checks performed.
+| Use Case | Description |
+| :------- | :---------- |
+| **Automated CI/CD Approvals** | A CI/CD pipeline agent can automatically approve deployments that pass all tests by casting an approval vote when tests succeed. |
+| **Monitoring System Integration** | A monitoring agent can act as a safeguard by vetoing deployments during system incidents by casting a VETO vote if critical alerts become active. |
+| **Compliance Automation** | Agents can be integrated into compliance checking systems to validate necessary conditions and automatically vote to approve compliant changes, providing an automated audit trail. |
 
 ## Agent Capabilities
 
@@ -55,35 +49,11 @@ To participate in a workflow, an agent must have the voter role for the specific
 
 ## Authentication Flow
 
-Agents authenticate using a secure two-step challenge-response protocol:
+Agents authenticate using a secure two-step challenge-response protocol. The process involves the following steps:
 
-```text
-┌─────────┐                                            ┌─────────┐
-│  Agent  │                                            │ Server  │
-└────┬────┘                                            └────┬────┘
-     │                                                      │
-     │  1. Request Challenge                                │
-     │  POST /auth/agents/challenge                         │
-     │─────────────────────────────────────────────────────>│
-     │                                                      │
-     │  2. Encrypted Challenge (with nonce)                 │
-     │  RSA-encrypted with agent's public key               │
-     │<─────────────────────────────────────────────────────│
-     │                                                      │
-     │  [Agent decrypts challenge with private key]         │
-     │                                                      │
-     │  3. Signed JWT Assertion                             │
-     │  POST /auth/agents/token (with decrypted nonce)      │
-     │─────────────────────────────────────────────────────>│
-     │                                                      │
-     │  4. Access Token                                     │
-     │  JWT token for API access                            │
-     │<─────────────────────────────────────────────────────│
-     │                                                      │
-```
-
-### Authentication Steps
-
-The authentication process begins when an agent requests a challenge from the server using its unique name. The server responds by generating a unique one-time code (nonce) and encrypting it with the agent's registered public key.
-
-Upon receiving the encrypted challenge, the agent decrypts it using its private key. It then creates a signed assertion that includes this decrypted nonce. Finally, the agent submits this assertion back to the server. The server validates the signature, ensures the nonce has not been reused, and issues an access token granting the agent API access.
+| Step | Action |
+| :--- | :----- |
+| **1. Request Challenge** | The agent requests a challenge from the server using its unique name. |
+| **2. Encrypted Challenge** | The server responds by generating a unique one-time code (nonce) and encrypting it with the agent's registered public key. |
+| **3. Signed Assertion** | The agent decrypts the challenge using its private key, creates a signed assertion including this nonce, and submits it back to the server. |
+| **4. Access Token** | The server validates the signature, ensures the nonce is unique, and issues an access token for API access. |

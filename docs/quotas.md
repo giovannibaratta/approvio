@@ -16,7 +16,7 @@ When the system checks a quota, it traverses the hierarchy upwards starting from
 
 If no explicit quota is defined for a specific metric at any level of the hierarchy, the system will consider the usage as unlimited by default.
 
-When enforcing these limits, the system performs a best-effort check. It evaluates the current usage count at the time of the request. Because this is a non-locking approach, the primary goal is to gracefully enforce limits generally, rather than enforcing absolute strictness in highly concurrent scenarios.
+When enforcing these limits, the system performs a best-effort check. It evaluates the current usage count at the time of the request. This ensures limits are gracefully enforced to restrict resource usage within Approvio, protecting the system from resource exhaustion.
 
 ## Metrics and Evaluation Levels
 
