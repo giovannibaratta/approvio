@@ -44,3 +44,13 @@ Always USE the following skills to assist with tasks:
 ### Git Constraints
 
 - **No Main Commits:** Never perform a commit directly to the main branch. Use pull requests or feature branches.
+
+### Retry & Exactly-Once Semantics Guidelines
+
+- **External Integrations**: Always design external calls (webhooks, email dispatches, API calls) with transient failure retries.
+- **Transient vs. Permanent Failures**: Only retry errors that are transient (e.g., connection timed out, 502/503/504 status codes, 429 rate limits). Never retry logical errors (e.g., 400 Bad Request, 401/403 credentials failed, 404 Not Found).
+- **Exactly-Once Semantics (Webhook Retries)**:
+  - Ensure all webhook requests inject `Idempotency-Key` (using the immutable `taskId`) to allow upstream deduplication.
+  - Safe methods (GET, PUT, DELETE) can be safely retried.
+  - Non-idempotent methods (POST, PATCH) must never be retried blindly on network timeouts unless idempotency headers are passed, or we are sure the connection was never established (e.g., host resolution failure).
+- **Database Concurrency & OCC**: Always handle concurrency collisions (OCC conflicts) gracefully by retrying the database transaction instead of crashing or failing the worker job.
