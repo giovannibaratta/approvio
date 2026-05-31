@@ -26,70 +26,45 @@ import {
 } from "@services"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
+import {pipe} from "fp-ts/function"
+import * as TE from "fp-ts/TaskEither"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "./errors"
-import * as TE from "fp-ts/TaskEither"
-import {pipe} from "fp-ts/function"
-import {DecorableEntity, isDecoratedWith} from "@utils/types"
-
-interface Identifier {
-  type: "id" | "name"
-  identifier: string
-}
+import {DecorableEntity, isDecoratedWith} from "@utils"
 
 @Injectable()
 export class WorkflowDbRepository implements WorkflowRepository {
   constructor(private readonly dbClient: DatabaseClient) {}
 
-  /**
-   * Creates a new workflow in the database.
-   * @param data The workflow data to persist.
-   * @returns A TaskEither with the created workflow or an error.
-   */
   createWorkflow(
     data: CreateWorkflowRepo
   ): TaskEither<CreateWorkflowRepoError | WorkflowValidationError | WorkflowTemplateValidationError, Workflow> {
     return pipe(
       data,
-      TE.right,
-      TE.chainW(this.persistWorkflow()),
-      TE.chainEitherKW(result => mapWorkflowToDomain(result))
+      this.persistWorkflow(),
+      TE.chainEitherKW(result =>
+        mapWorkflowToDomain(
+          result as PrismaDecoratedWorkflow<{workflowTemplates: true}>, // we don't fetch template locally here. See mapWorkflowToDomain logic
+          {workflowTemplates: true}
+        )
+      )
     )
   }
 
-  /**
-   * Gets a workflow by its UUID.
-   * @param workflowId The ID of the workflow.
-   * @param includeRef Include options for related data.
-   * @returns A TaskEither with the workflow result or an error if not found.
-   */
   getWorkflowById<T extends WorkflowDecoratorSelector>(
     workflowId: string,
     includeRef?: T
   ): TaskEither<WorkflowGetError, DecoratedWorkflow<T>> {
-    const identifier: Identifier = {type: "id", identifier: workflowId}
-    return this.getWorkflow(identifier, includeRef)
+    return this.getWorkflow({type: "id", identifier: workflowId}, includeRef)
   }
 
-  /**
-   * Gets a workflow by its unique name.
-   * @param name The name of the workflow.
-   * @param includeRef Include options for related data.
-   * @returns A TaskEither with the workflow result or an error if not found.
-   */
   getWorkflowByName<T extends WorkflowDecoratorSelector>(
     workflowName: string,
     includeRef?: T
   ): TaskEither<WorkflowGetError, DecoratedWorkflow<T>> {
-    const identifier: Identifier = {type: "name", identifier: workflowName}
-    return this.getWorkflow(identifier, includeRef)
+    return this.getWorkflow({type: "name", identifier: workflowName}, includeRef)
   }
 
-  /**
-   * Lists workflows with pagination.
-   * @param request The request containing pagination and include options.
-   * @returns A TaskEither with the list of workflows or an error.
-   */
   listWorkflows<TInclude extends WorkflowDecoratorSelector>(
     request: ListWorkflowsRequestRepo<TInclude>
   ): TaskEither<WorkflowGetError, ListWorkflowsResponse<TInclude>> {
@@ -97,19 +72,18 @@ export class WorkflowDbRepository implements WorkflowRepository {
 
     return pipe(
       request,
-      TE.right,
-      TE.chainW(this.listWorkflowsTask<TInclude, PrismaWorkflowDecoratorSelector>()),
-      TE.chainEitherKW(result => {
-        const workflowsEither = E.traverseArray((workflow: PrismaDecoratedWorkflow<PrismaWorkflowDecoratorSelector>) =>
-          mapWorkflowToDomain(workflow, prismaInclude)
-        )(result.workflows)
+      this.listWorkflowsTask<TInclude, PrismaWorkflowDecoratorSelector>(),
+      TE.chainEitherK(result => {
+        const workflowsOrErrors = result.workflows.map(w => mapWorkflowToDomain(w, prismaInclude))
 
-        if (E.isLeft(workflowsEither)) return workflowsEither
+        const errors = workflowsOrErrors.filter(E.isLeft).map(e => e.left)
+        const workflows = workflowsOrErrors.filter(E.isRight).map(e => e.right) as unknown as DecoratedWorkflow<TInclude>[]
 
-        return E.right({
-          workflows: workflowsEither.right as DecoratedWorkflow<TInclude>[],
-          pagination: result.pagination
-        })
+        if (errors.length > 0) {
+          Logger.error(`Error mapping workflows to domain: ${errors.join(", ")}`)
+        }
+
+        return E.right({workflows, pagination: result.pagination})
       })
     )
   }
@@ -120,7 +94,6 @@ export class WorkflowDbRepository implements WorkflowRepository {
     includeRef?: T
   ): TaskEither<WorkflowUpdateError, DecoratedWorkflow<T>> {
     const prismaInclude = mapDomainSelectorToPrismaSelector(includeRef)
-
     return pipe(
       {workflowId, data, includeRef: prismaInclude},
       TE.right,
@@ -136,7 +109,6 @@ export class WorkflowDbRepository implements WorkflowRepository {
     includeRef?: T
   ): TaskEither<WorkflowUpdateError, DecoratedWorkflow<T>> {
     const prismaInclude = mapDomainSelectorToPrismaSelector(includeRef)
-
     return pipe(
       {workflowId, data, occCheck, includeRef: prismaInclude},
       TE.right,
@@ -195,6 +167,59 @@ export class WorkflowDbRepository implements WorkflowRepository {
       ),
       chainNullableToLeft("workflow_not_found" as const),
       TE.map(workflow => workflow.workflowTemplateId)
+    )
+  }
+
+  findExpiredWorkflows(now: Date, limit = 1000): TaskEither<UnknownError, string[]> {
+    return TE.tryCatch(
+      async () => {
+        // RISK ACCEPTANCE COMMENT:
+        // If any database validation/parsing failure occurs for this batch, the entire execution halts.
+        // Since we only select the basic string UUID 'id', the risk is minimal for this iteration.
+        // TODO (long-term): Implement a row-by-row parsing/validation wrapper to handle corrupt records gracefully.
+        const workflows = await this.dbClient.cx.workflow.findMany({
+          where: {
+            status: {
+              notIn: WORKFLOW_TERMINAL_STATUSES
+            },
+            expiresAt: {
+              lt: now
+            },
+            recalculationRequired: false
+          },
+          select: {
+            id: true
+          },
+          take: limit
+        })
+        return workflows.map(w => w.id)
+      },
+      error => {
+        Logger.error("Error finding expired workflows", error)
+        return "unknown_error" as const
+      }
+    )
+  }
+
+  markWorkflowsAsRecalculationRequired(workflowIds: string[]): TaskEither<UnknownError, void> {
+    return TE.tryCatch(
+      async () => {
+        if (workflowIds.length === 0) return
+        await this.dbClient.cx.workflow.updateMany({
+          where: {
+            id: {
+              in: workflowIds
+            }
+          },
+          data: {
+            recalculationRequired: true
+          }
+        })
+      },
+      error => {
+        Logger.error(`Error marking workflows as recalculation required: ${workflowIds}`, error)
+        return "unknown_error" as const
+      }
     )
   }
 
@@ -390,7 +415,7 @@ export interface PrismaWorkflowDecorators {
 
 export type PrismaWorkflowDecoratorSelector = Partial<Record<keyof PrismaWorkflowDecorators, boolean>>
 
-export type PrismaDecoratedWorkflow<T extends PrismaWorkflowDecoratorSelector> = DecorableEntity<
+export type PrismaDecoratedWorkflow<T extends PrismaWorkflowDecoratorSelector> = import("@utils").DecorableEntity<
   PrismaWorkflow,
   PrismaWorkflowDecorators,
   T
@@ -418,3 +443,5 @@ export function mapDomainSelectorToPrismaSelector<T extends WorkflowDecoratorSel
     workflowTemplates: domainSelector.workflowTemplate
   }
 }
+
+type Identifier = {type: "name" | "id"; identifier: string}
