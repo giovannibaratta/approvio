@@ -36,7 +36,10 @@ import {
   JwtConfig,
   OidcProviderConfig,
   RedisConfig,
-  RateLimitConfig
+  RateLimitConfig,
+  WebhookRetryConfig,
+  EmailRetryConfig,
+  DatabaseRetryConfig
 } from "@external/config"
 import {Option} from "fp-ts/Option"
 import * as O from "fp-ts/Option"
@@ -262,6 +265,9 @@ export class MockConfigProvider implements ConfigProviderInterface {
   jwtConfig: JwtConfig
   redisConfig: RedisConfig
   rateLimitConfig: RateLimitConfig
+  webhookRetryConfig: WebhookRetryConfig
+  emailRetryConfig: EmailRetryConfig
+  databaseRetryConfig: DatabaseRetryConfig
   frontendUrl: string
   cookieSecure: boolean
 
@@ -272,6 +278,9 @@ export class MockConfigProvider implements ConfigProviderInterface {
       emailProviderConfig?: EmailProviderConfig
       redisPrefix?: string
       rateLimitConfig?: RateLimitConfig
+      webhookRetryConfig?: WebhookRetryConfig
+      emailRetryConfig?: EmailRetryConfig
+      databaseRetryConfig?: DatabaseRetryConfig
     } = {}
   ) {
     const provider: ConfigProviderInterface = originalProvider ?? {
@@ -313,6 +322,24 @@ export class MockConfigProvider implements ConfigProviderInterface {
           db: 5
         }
       },
+      webhookRetryConfig: {
+        maxAttempts: 3,
+        initialDelayMs: 0,
+        backoffFactor: 1,
+        maxDelayMs: 0
+      },
+      emailRetryConfig: {
+        maxAttempts: 3,
+        initialDelayMs: 0,
+        backoffFactor: 1,
+        maxDelayMs: 0
+      },
+      databaseRetryConfig: {
+        maxAttempts: 3,
+        initialDelayMs: 0,
+        backoffFactor: 1,
+        maxDelayMs: 0
+      },
       frontendUrl: "http://localhost:5173",
       cookieSecure: false
     }
@@ -326,13 +353,37 @@ export class MockConfigProvider implements ConfigProviderInterface {
     this.redisConfig =
       mocks.redisPrefix !== undefined ? {...provider.redisConfig, prefix: mocks.redisPrefix} : provider.redisConfig
     this.rateLimitConfig = mocks.rateLimitConfig || provider.rateLimitConfig
+    this.webhookRetryConfig = mocks.webhookRetryConfig || provider.webhookRetryConfig
+    this.emailRetryConfig = mocks.emailRetryConfig || provider.emailRetryConfig
+    this.databaseRetryConfig = mocks.databaseRetryConfig || provider.databaseRetryConfig
     this.frontendUrl = provider.frontendUrl
     this.cookieSecure = provider.cookieSecure
   }
 
   static fromDbConnectionUrl(dbConnectionUrl: string, redisPrefix?: string): MockConfigProvider {
     const realProvider = new ConfigProvider()
-    return new MockConfigProvider(realProvider, {dbConnectionUrl, redisPrefix})
+    return new MockConfigProvider(realProvider, {
+      dbConnectionUrl,
+      redisPrefix,
+      webhookRetryConfig: {
+        maxAttempts: 3,
+        initialDelayMs: 0,
+        backoffFactor: 1,
+        maxDelayMs: 0
+      },
+      emailRetryConfig: {
+        maxAttempts: 3,
+        initialDelayMs: 0,
+        backoffFactor: 1,
+        maxDelayMs: 0
+      },
+      databaseRetryConfig: {
+        maxAttempts: 3,
+        initialDelayMs: 0,
+        backoffFactor: 1,
+        maxDelayMs: 0
+      }
+    })
   }
 
   static fromOriginalProvider(
@@ -341,6 +392,9 @@ export class MockConfigProvider implements ConfigProviderInterface {
       emailProviderConfig?: EmailProviderConfig
       redisPrefix?: string
       rateLimitConfig?: RateLimitConfig
+      webhookRetryConfig?: WebhookRetryConfig
+      emailRetryConfig?: EmailRetryConfig
+      databaseRetryConfig?: DatabaseRetryConfig
     } = {}
   ): MockConfigProvider {
     const provider = new ConfigProvider()

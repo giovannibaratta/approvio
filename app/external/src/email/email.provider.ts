@@ -6,6 +6,7 @@ import {EmailProviderConfig} from "@external/config/interfaces"
 import {isNone, isSome, Option} from "fp-ts/Option"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
+import {retryWithBackoff} from "@utils"
 
 @Injectable()
 export class NodemailerEmailProvider implements EmailProviderExternal {
@@ -33,13 +34,31 @@ export class NodemailerEmailProvider implements EmailProviderExternal {
     }
   }
 
+  private isTransientError(error: unknown): boolean {
+    if (error && typeof error === "object") {
+      // Nodemailer exposes an SMTP responseCode. 4xx is transient in SMTP.
+      const responseCode = "responseCode" in error ? error.responseCode : undefined
+      if (typeof responseCode === "number" && responseCode >= 400 && responseCode < 500) return true
+
+      // It also can throw standard system errors like ECONNRESET, ETIMEDOUT, etc.
+      const errorCode = "code" in error ? error.code : undefined
+      if (
+        typeof errorCode === "string" &&
+        ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "EHOSTUNREACH"].includes(errorCode)
+      )
+        return true
+    }
+
+    return false
+  }
+
   sendEmail(email: Email): TaskEither<EmailExternalError, void> {
     const transporter = this.transporter
     const emailProviderConfig = this.emailProviderConfig
 
     if (!transporter || isNone(emailProviderConfig)) return TE.left("email_capability_not_configured")
 
-    return TE.tryCatch(
+    const doSend = TE.tryCatch(
       async () => {
         await transporter.sendMail({
           from: emailProviderConfig.value.senderEmail,
@@ -48,10 +67,22 @@ export class NodemailerEmailProvider implements EmailProviderExternal {
           html: email.htmlBody
         })
       },
-      error => {
+      (error: unknown) => {
         Logger.error("Failed to send email", error)
-        return "email_unknown_error" as const
+
+        return {
+          type: "email_unknown_error" as const,
+          isTransient: this.isTransientError(error)
+        }
       }
+    )
+
+    return TE.mapLeft<{type: EmailExternalError; isTransient: boolean}, EmailExternalError>(err => err.type)(
+      retryWithBackoff(
+        () => doSend,
+        error => error.isTransient,
+        this.configService.emailRetryConfig
+      )
     )
   }
 }

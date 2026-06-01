@@ -68,6 +68,27 @@ export interface RateLimitConfig {
   redis: RedisConfig
 }
 
+export interface WebhookRetryConfig {
+  maxAttempts: number
+  initialDelayMs: number
+  backoffFactor: number
+  maxDelayMs: number
+}
+
+export interface EmailRetryConfig {
+  maxAttempts: number
+  initialDelayMs: number
+  backoffFactor: number
+  maxDelayMs: number
+}
+
+export interface DatabaseRetryConfig {
+  maxAttempts: number
+  initialDelayMs: number
+  backoffFactor: number
+  maxDelayMs: number
+}
+
 export interface ConfigProviderInterface {
   /**
    * Indicates if the privilege mode (step-up authentication) is enabled.
@@ -81,6 +102,9 @@ export interface ConfigProviderInterface {
   jwtConfig: JwtConfig
   redisConfig: RedisConfig
   rateLimitConfig: RateLimitConfig
+  webhookRetryConfig: WebhookRetryConfig
+  emailRetryConfig: EmailRetryConfig
+  databaseRetryConfig: DatabaseRetryConfig
   /** URL of the frontend application. Used by the auth callback to redirect after login. */
   frontendUrl: string
   /** Whether to set the Secure flag on auth cookies. Set to false for local HTTP development. */

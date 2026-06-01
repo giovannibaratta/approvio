@@ -1,5 +1,5 @@
 import {Inject, Injectable} from "@nestjs/common"
-import {HttpClient, HTTP_CLIENT_TOKEN, HttpError} from "./interfaces"
+import {HttpClient, HttpClientOptions, HTTP_CLIENT_TOKEN, HttpError} from "./interfaces"
 import {TaskEither} from "fp-ts/TaskEither"
 import {HttpResponse} from "@domain"
 
@@ -14,8 +14,9 @@ export class WebhookService {
     url: string,
     method: string,
     headers?: Record<string, string>,
-    payload?: unknown
+    payload?: unknown,
+    options?: HttpClientOptions
   ): TaskEither<HttpError, HttpResponse> {
-    return this.client.execute(url, method, headers, payload)
+    return this.client.execute(url, method, headers, payload, options)
   }
 }

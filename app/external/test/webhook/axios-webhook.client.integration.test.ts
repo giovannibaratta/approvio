@@ -5,6 +5,8 @@ import {AxiosWebhookClient} from "@external/webhook/axios-webhook.client"
 import {createWiremockUrl, getWiremockRequestsFor, setupWiremockStub} from "@test/wiremock"
 import {unwrapRight} from "@utils/either"
 import {ResponseBodyStatus} from "@domain"
+import {ConfigProvider} from "@external/config"
+import {MockConfigProvider} from "@test/mock-data"
 import {SilentLogger} from "@test/logger-helpers"
 
 describe("AxiosWebhookClient (Integration)", () => {
@@ -14,7 +16,20 @@ describe("AxiosWebhookClient (Integration)", () => {
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
-      providers: [AxiosWebhookClient]
+      providers: [
+        AxiosWebhookClient,
+        {
+          provide: ConfigProvider,
+          useValue: MockConfigProvider.fromOriginalProvider({
+            webhookRetryConfig: {
+              maxAttempts: 3,
+              initialDelayMs: 0,
+              backoffFactor: 1,
+              maxDelayMs: 0
+            }
+          })
+        }
+      ]
     })
       .setLogger(new SilentLogger())
       .compile()
@@ -128,6 +143,76 @@ describe("AxiosWebhookClient (Integration)", () => {
 
       // Then
       expect(result).toBeRightOf({status: 204, bodyStatus: ResponseBodyStatus.MISSING, body: undefined})
+    })
+
+    describe("retries", () => {
+      it("should automatically retry safe methods (like GET) on transient errors", async () => {
+        // Given
+        await setupWiremockStub("GET", endpoint, 500, {error: "Transient Error"})
+
+        // When
+        const eitherResult = await client.execute(wiremockUrl, "GET")()
+
+        // Then
+        expect(eitherResult).toBeRight()
+
+        // Assert exactly 3 calls (1 initial + 2 retries)
+        const requests = await getWiremockRequestsFor("GET", endpoint)
+        expect(requests).toHaveLength(3)
+      })
+
+      it("should NOT retry non-transient errors (like 404)", async () => {
+        // Given
+        await setupWiremockStub("GET", endpoint, 404, {error: "Not Found"})
+
+        // When
+        const eitherResult = await client.execute(wiremockUrl, "GET")()
+
+        // Then
+        expect(eitherResult).toBeRight()
+
+        // Assert exactly 1 call (no retries)
+        const requests = await getWiremockRequestsFor("GET", endpoint)
+        expect(requests).toHaveLength(1)
+      })
+
+      it("should NOT retry non-safe methods (like POST) without idempotency key or isIdempotent flag", async () => {
+        // Given
+        await setupWiremockStub("POST", endpoint, 500, {error: "Transient Error"})
+
+        // When
+        const eitherResult = await client.execute(wiremockUrl, "POST", undefined, {data: "test"})()
+
+        // Then
+        expect(eitherResult).toBeRight()
+
+        // Assert exactly 1 call (no retries because it's not safe and not idempotent)
+        const requests = await getWiremockRequestsFor("POST", endpoint)
+        expect(requests).toHaveLength(1)
+      })
+
+      it("should retry non-safe methods (like POST) when idempotencyKey is provided", async () => {
+        // Given
+        await setupWiremockStub("POST", endpoint, 500, {error: "Transient Error"})
+
+        // When
+        const eitherResult = await client.execute(
+          wiremockUrl,
+          "POST",
+          undefined,
+          {data: "test"},
+          {
+            idempotencyKey: "test-idempotency-key"
+          }
+        )()
+
+        // Then
+        expect(eitherResult).toBeRight()
+
+        // Assert exactly 3 calls (1 initial + 2 retries)
+        const requests = await getWiremockRequestsFor("POST", endpoint)
+        expect(requests).toHaveLength(3)
+      })
     })
   })
 })
