@@ -9,24 +9,19 @@ import {
   WorkflowActionType,
   WorkflowActionEmailTaskFactory,
   WorkflowActionWebhookTaskFactory,
-  WorkflowActionSlackTaskFactory,
   WorkflowStatus,
   WorkflowAction,
   Workflow,
   EmailAction,
   WebhookAction,
-  SlackAction,
   WorkflowActionWebhookTaskValidationError,
-  WorkflowActionEmailTaskValidationError,
-  WorkflowActionSlackTaskValidationError,
-  validateWorkflowActions
+  WorkflowActionEmailTaskValidationError
 } from "@domain"
 import {TaskCreateError, TaskService} from "@services"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {isLeft} from "fp-ts/Either"
 import {WorkflowService} from "@services"
-import {logSuccess, getStringAsEnum} from "@utils"
 
 @Processor(WORKFLOW_STATUS_CHANGED_QUEUE)
 export class WorkflowEventsProcessor {
@@ -37,8 +32,8 @@ export class WorkflowEventsProcessor {
   ) {}
 
   @Process("workflow-status-changed")
-  async handleWorkflowStatusChanged(job: Job<unknown>) {
-    const event = this.deserializeAndValidateEvent(job.data)
+  async handleWorkflowStatusChanged(job: Job<WorkflowStatusChangedEvent>) {
+    const event = job.data
     Logger.log(`Processing status change for workflow ${event.workflowId}: ${event.oldStatus} -> ${event.newStatus}`)
 
     if (event.newStatus === WorkflowStatus.EVALUATION_IN_PROGRESS) return
@@ -53,14 +48,11 @@ export class WorkflowEventsProcessor {
           this.processAction(action, workflowWithTemplate, event, index)
         )
         return TE.sequenceArray(tasks)
-      }),
-      logSuccess(`Event ${event.eventId} processed successfully`, "WorkflowEventProcessor")
+      })
     )()
 
-    if (isLeft(processResult)) {
-      Logger.error(`Failed to process workflow status change: ${JSON.stringify(processResult.left)}`)
+    if (isLeft(processResult))
       throw new Error(`Failed to process workflow status change: ${JSON.stringify(processResult.left)}`)
-    }
   }
 
   private processAction(
@@ -69,10 +61,7 @@ export class WorkflowEventsProcessor {
     event: WorkflowStatusChangedEvent,
     index: number
   ): TE.TaskEither<
-    | TaskCreateError
-    | WorkflowActionWebhookTaskValidationError
-    | WorkflowActionEmailTaskValidationError
-    | WorkflowActionSlackTaskValidationError,
+    TaskCreateError | WorkflowActionWebhookTaskValidationError | WorkflowActionEmailTaskValidationError,
     void
   > {
     // We generate a deterministic task ID based on event ID, action type, and index.
@@ -89,8 +78,6 @@ export class WorkflowEventsProcessor {
         return this.handleEmailAction(action, workflow, event, taskId)
       case WorkflowActionType.WEBHOOK:
         return this.handleWebhookAction(action, workflow, event, taskId)
-      case WorkflowActionType.SLACK:
-        return this.handleSlackAction(action, workflow, event, taskId)
     }
   }
 
@@ -128,10 +115,9 @@ export class WorkflowEventsProcessor {
       }),
       TE.chainW(({task}) =>
         pipe(
-          this.queueService.enqueueWorkflowAction({
+          this.queueService.enqueueEmailAction({
             taskId: task.id,
-            workflowId: workflow.id,
-            type: WorkflowActionType.EMAIL
+            workflowId: workflow.id
           }),
           TE.mapLeft(error => {
             Logger.error(`Failed to add email task ${task.id} to queue`, error)
@@ -182,98 +168,17 @@ export class WorkflowEventsProcessor {
       }),
       TE.chainW(({task}) =>
         pipe(
-          this.queueService.enqueueWorkflowAction({
+          this.queueService.enqueueWebhookAction({
             taskId: task.id,
-            workflowId: workflow.id,
-            type: WorkflowActionType.WEBHOOK
+            workflowId: workflow.id
           }),
           TE.mapLeft(error => {
             Logger.error(`Failed to add webhook task ${task.id} to queue`, error)
             return "unknown_error" as const
           })
         )
-      )
-    )
-  }
-
-  private handleSlackAction(
-    action: SlackAction,
-    workflow: Workflow,
-    event: WorkflowStatusChangedEvent,
-    taskId: string
-  ): TE.TaskEither<TaskCreateError | WorkflowActionSlackTaskValidationError, void> {
-    return pipe(
-      TE.Do,
-      TE.bindW("task", () =>
-        TE.fromEither(
-          WorkflowActionSlackTaskFactory.newWorkflowActionSlackTask({
-            id: taskId,
-            workflowId: workflow.id,
-            webhookUrl: action.webhookUrl,
-            message: `The workflow ${workflow.name} has transitioned from ${event.oldStatus} to ${event.newStatus} at ${event.timestamp.toISOString()}.`
-          })
-        )
       ),
-      TE.chainFirstW(({task}) => {
-        return pipe(
-          this.taskService.createSlackTask(task),
-          TE.orElse(error => {
-            Logger.error(`Failed to create slack task ${taskId}`, error)
-            if (error === "task_already_exists") {
-              Logger.warn(`Slack task ${taskId} already exists, skipping creation.`)
-              return TE.right(undefined)
-            }
-            return TE.left(error)
-          })
-        )
-      }),
-      TE.chainW(({task}) =>
-        pipe(
-          this.queueService.enqueueWorkflowAction({
-            taskId: task.id,
-            workflowId: workflow.id,
-            type: WorkflowActionType.SLACK
-          }),
-          TE.mapLeft(error => {
-            Logger.error(`Failed to add slack task ${task.id} to queue`, error)
-            return "unknown_error" as const
-          })
-        )
-      )
+      TE.map(() => undefined)
     )
-  }
-
-  private deserializeAndValidateEvent(data: unknown): WorkflowStatusChangedEvent {
-    if (typeof data !== "object" || data === null) throw new Error("Job data is not an object")
-    const raw = data as Record<string, unknown>
-    if (typeof raw.eventId !== "string") throw new Error("Missing or invalid eventId")
-    if (typeof raw.workflowId !== "string") throw new Error("Missing or invalid workflowId")
-    if (typeof raw.oldStatus !== "string") throw new Error("Missing or invalid oldStatus")
-    const oldStatus = getStringAsEnum(raw.oldStatus, WorkflowStatus)
-    if (oldStatus === undefined) throw new Error("Invalid oldStatus value")
-    if (typeof raw.newStatus !== "string") throw new Error("Missing or invalid newStatus")
-    const newStatus = getStringAsEnum(raw.newStatus, WorkflowStatus)
-    if (newStatus === undefined) throw new Error("Invalid newStatus value")
-
-    const actionsValidation = validateWorkflowActions(raw.workflowTemplateActions)
-    if (isLeft(actionsValidation))
-      throw new Error(`Invalid workflowTemplateActions: ${JSON.stringify(actionsValidation.left)}`)
-
-    const workflowTemplateActions = actionsValidation.right
-
-    if (!raw.timestamp || (typeof raw.timestamp !== "string" && !(raw.timestamp instanceof Date)))
-      throw new Error("Missing or invalid timestamp")
-
-    const timestamp = new Date(raw.timestamp)
-    if (isNaN(timestamp.getTime())) throw new Error("Invalid timestamp date format")
-
-    return {
-      eventId: raw.eventId,
-      workflowId: raw.workflowId,
-      oldStatus,
-      newStatus,
-      workflowTemplateActions,
-      timestamp
-    }
   }
 }

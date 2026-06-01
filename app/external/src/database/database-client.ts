@@ -13,16 +13,7 @@ import {retryWithBackoff} from "@utils"
 // a newer migration file. The timestamp provided here is used to check if the database is using
 // a migration that is older than the one required by the repositories. If this is the case, the
 // application will fail to start.
-export const REQUIRED_DB_MIGRATION_TIMESTAMP = "20260530120000"
-
-const TRANSIENT_CODES = [
-  "P1001", // Can't reach database server
-  "P1008", // Operations timed out
-  "P1017", // Server closed connection
-  "P2024", // Connection pool timeout
-  "P2028", // Transaction API error
-  "P2034" // Transaction failed due to write conflict or deadlock
-]
+export const REQUIRED_DB_MIGRATION_TIMESTAMP = "20260509143200"
 
 export class ConflictingIsolationLevelError extends Error {
   constructor(requested: string, active: string) {
@@ -48,11 +39,6 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
   private static readonly DEFAULT_ISOLATION_LEVEL: Prisma.TransactionIsolationLevel =
     Prisma.TransactionIsolationLevel.ReadCommitted
 
-  private static isTransientPrismaError(error: unknown): boolean {
-    if (error instanceof Prisma.PrismaClientKnownRequestError) return TRANSIENT_CODES.includes(error.code)
-    return false
-  }
-
   constructor(readonly config: ConfigProvider) {
     const basePrisma = new PrismaClient({
       adapter: new PrismaPg({
@@ -63,31 +49,8 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
     // Modify the Prisma client to prevent update/delete operations on audit logs.
     // This is not expected to be the ultimate solution for protection records, but only a
     // safe mechanism for accidental data loss due to silly mistakes.
-    // Also inject automated query retries on transient errors when running outside of transaction context.
     this.prisma = basePrisma.$extends({
       query: {
-        $allOperations: async ({args, query}) => {
-          // If we are already running inside transactional() context, do not retry individual query.
-          // Let the outer transactional() retry block handle it!
-          if (transactionContext.getStore() !== undefined) return query(args)
-
-          // Otherwise, we are outside of a transaction. Let's retry on transient errors!
-          const executeWithRetry = TE.tryCatch(
-            () => query(args),
-            error => error
-          )
-
-          return pipe(
-            retryWithBackoff(
-              () => executeWithRetry,
-              DatabaseClient.isTransientPrismaError,
-              this.config.databaseRetryConfig
-            ),
-            TE.getOrElse(error => {
-              throw error
-            })
-          )()
-        },
         auditLog: {
           async update() {
             throw new Error("Audit logs are immutable. Action update is not allowed.")
@@ -168,7 +131,30 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
     )
 
     return pipe(
-      retryWithBackoff(() => doTx, DatabaseClient.isTransientPrismaError, this.config.databaseRetryConfig),
+      retryWithBackoff(
+        () => doTx,
+        (error: unknown) => {
+          // Check if it's a Prisma Client Known Request Error
+          if (error && typeof error === "object" && "code" in error && typeof error.code === "string") {
+            const transientCodes = [
+              "P1001", // Can't reach database server
+              "P1008", // Operations timed out
+              "P1017", // Server closed connection
+              "P2024", // Connection pool timeout
+              "P2028", // Transaction API error
+              "P2034" // Transaction failed due to write conflict or deadlock
+            ]
+            return transientCodes.includes(error.code)
+          }
+          return false
+        },
+        {
+          maxAttempts: 3,
+          initialDelayMs: 1000,
+          backoffFactor: 2,
+          maxDelayMs: 10000
+        }
+      ),
       // If TE.left, we exhausted retries or hit a non-transient error; throw it so Promise rejects
       TE.getOrElse(error => {
         throw error

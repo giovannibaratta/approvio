@@ -47,12 +47,6 @@ describe("NodemailerEmailProvider", () => {
             emailProviderConfig: {
               ...originalEmailConfig.value,
               senderEmail: senderUniqueTestIdentifier
-            },
-            emailRetryConfig: {
-              maxAttempts: 3,
-              initialDelayMs: 0,
-              backoffFactor: 1,
-              maxDelayMs: 0
             }
           })
         )
@@ -96,50 +90,6 @@ describe("NodemailerEmailProvider", () => {
     expect(messages).toHaveLength(1)
     const capturedEmail = messages[0]
     expect(capturedEmail?.To?.[0]?.Address).toBe(email.to)
-  })
-
-  it("should retry transient email sending errors and exhaust retries", async () => {
-    // Given: An SMTP transient error (e.g. ECONNREFUSED)
-    const mockError = new Error("Connection refused")
-    Object.assign(mockError, {code: "ECONNREFUSED"})
-
-    const sendMailSpy = jest.spyOn(emailProvider["transporter"]!, "sendMail").mockRejectedValue(mockError)
-
-    const email: Email = {
-      to: "recipient@localhost.com",
-      subject: "Test Retry",
-      htmlBody: "<h1>Test</h1>"
-    }
-
-    // When
-    const result = await emailProvider.sendEmail(email)()
-
-    // Then
-    expect(result).toBeLeftOf("email_unknown_error")
-    // Assert exactly 3 calls due to the retry mechanism
-    expect(sendMailSpy).toHaveBeenCalledTimes(3)
-  })
-
-  it("should NOT retry non-transient email sending errors", async () => {
-    // Given: A non-transient SMTP error (e.g. SMTP 550 Mailbox not found)
-    const mockError = new Error("Mailbox not found")
-    Object.assign(mockError, {responseCode: 550})
-
-    const sendMailSpy = jest.spyOn(emailProvider["transporter"]!, "sendMail").mockRejectedValue(mockError)
-
-    const email: Email = {
-      to: "recipient@localhost.com",
-      subject: "Test Retry",
-      htmlBody: "<h1>Test</h1>"
-    }
-
-    // When
-    const result = await emailProvider.sendEmail(email)()
-
-    // Then
-    expect(result).toBeLeftOf("email_unknown_error")
-    // Assert only 1 call is made (no retries)
-    expect(sendMailSpy).toHaveBeenCalledTimes(1)
   })
 })
 

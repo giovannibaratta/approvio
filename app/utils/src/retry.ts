@@ -26,7 +26,9 @@ export function retryWithBackoff<E, A>(
     return pipe(
       action(attempt),
       TE.orElse(error => {
-        if (!isTransient(error) || attempt >= config.maxAttempts) return TE.left(error)
+        if (!isTransient(error) || attempt >= config.maxAttempts) {
+          return TE.left(error)
+        }
 
         const delay = Math.min(config.initialDelayMs * Math.pow(config.backoffFactor, attempt - 1), config.maxDelayMs)
 

@@ -7,23 +7,17 @@ import {
   WORKFLOW_STATUS_CHANGED_QUEUE,
   WORKFLOW_STATUS_RECALCULATION_QUEUE,
   WORKFLOW_ACTION_EMAIL_QUEUE,
-  WORKFLOW_ACTION_WEBHOOK_QUEUE,
-  WORKFLOW_ACTION_SLACK_QUEUE
+  WORKFLOW_ACTION_WEBHOOK_QUEUE
 } from "./queue.module"
 import {
   EnqueueRecalculationError,
-  EnqueueWorkflowActionError,
+  EnqueueWorkflowActionEmailError,
+  EnqueueWorkflowActionWebhookError,
   EnqueueWorkflowStatusChangedError,
   QueueHealthCheckFailed,
   QueueProvider
 } from "@services"
-import {
-  WorkflowStatusChangedEvent,
-  WorkflowActionEmailEvent,
-  WorkflowActionWebhookEvent,
-  WorkflowActionSlackEvent,
-  WorkflowActionType
-} from "@domain"
+import {WorkflowStatusChangedEvent, WorkflowActionEmailEvent, WorkflowActionWebhookEvent} from "@domain"
 
 export interface RecalculationJobData {
   workflowId: string
@@ -53,9 +47,7 @@ export class BullQueueProvider implements QueueProvider, OnModuleDestroy {
     @InjectQueue(WORKFLOW_ACTION_EMAIL_QUEUE)
     private readonly emailActionQueue: Queue<WorkflowActionEmailEvent>,
     @InjectQueue(WORKFLOW_ACTION_WEBHOOK_QUEUE)
-    private readonly webhookActionQueue: Queue<WorkflowActionWebhookEvent>,
-    @InjectQueue(WORKFLOW_ACTION_SLACK_QUEUE)
-    private readonly slackActionQueue: Queue<WorkflowActionSlackEvent>
+    private readonly webhookActionQueue: Queue<WorkflowActionWebhookEvent>
   ) {}
 
   /**
@@ -96,30 +88,31 @@ export class BullQueueProvider implements QueueProvider, OnModuleDestroy {
     )
   }
 
-  enqueueWorkflowAction(
-    event: WorkflowActionEmailEvent | WorkflowActionWebhookEvent | WorkflowActionSlackEvent
-  ): TaskEither<EnqueueWorkflowActionError, void> {
+  enqueueEmailAction(event: WorkflowActionEmailEvent): TaskEither<EnqueueWorkflowActionEmailError, void> {
     return TE.tryCatch(
       async () => {
-        const payload = {
+        await this.emailActionQueue.add("workflow-action-email", event, {
           ...SHARED_QUEUE_OPTIONS,
           jobId: event.taskId
-        }
-
-        switch (event.type) {
-          case WorkflowActionType.EMAIL:
-            await this.emailActionQueue.add("workflow-action-email", event, payload)
-            break
-          case WorkflowActionType.WEBHOOK:
-            await this.webhookActionQueue.add("workflow-action-webhook", event, payload)
-            break
-          case WorkflowActionType.SLACK:
-            await this.slackActionQueue.add("workflow-action-slack", event, payload)
-            break
-        }
+        })
       },
       error => {
-        Logger.error(`Failed to enqueue action ${event.type} for task ${event.taskId}`, error)
+        Logger.error(`Failed to enqueue email action for task ${event.taskId}`, error)
+        return "unknown_error" as const
+      }
+    )
+  }
+
+  enqueueWebhookAction(event: WorkflowActionWebhookEvent): TaskEither<EnqueueWorkflowActionWebhookError, void> {
+    return TE.tryCatch(
+      async () => {
+        await this.webhookActionQueue.add("workflow-action-webhook", event, {
+          ...SHARED_QUEUE_OPTIONS,
+          jobId: event.taskId
+        })
+      },
+      error => {
+        Logger.error(`Failed to enqueue webhook action for task ${event.taskId}`, error)
         return "unknown_error" as const
       }
     )
@@ -145,8 +138,7 @@ export class BullQueueProvider implements QueueProvider, OnModuleDestroy {
       this.queue.close(),
       this.statusChangedQueue.close(),
       this.emailActionQueue.close(),
-      this.webhookActionQueue.close(),
-      this.slackActionQueue.close()
+      this.webhookActionQueue.close()
     ])
   }
 }

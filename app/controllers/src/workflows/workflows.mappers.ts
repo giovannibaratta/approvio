@@ -112,7 +112,7 @@ export function generateErrorResponseForCreateWorkflow(
 
   switch (error) {
     case "quota_exceeded":
-      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded for creating workflow`))
+      throw new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded for creating workflow`))
     case "workflow_name_empty":
     case "workflow_name_too_long":
     case "workflow_name_invalid_characters":
@@ -163,7 +163,6 @@ export function generateErrorResponseForCreateWorkflow(
     case "workflow_template_space_id_invalid_uuid":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
-    case "workflow_action_webhook_url_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -220,7 +219,6 @@ export function generateErrorResponseForGetWorkflow(
     case "workflow_workflow_template_id_invalid_uuid":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
-    case "workflow_action_webhook_url_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -314,7 +312,6 @@ export function generateErrorResponseForListWorkflows(
     case "workflow_workflow_template_id_invalid_uuid":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
-    case "workflow_action_webhook_url_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -604,7 +601,6 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "agent_role_entity_type_role_restriction":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
-    case "workflow_action_webhook_url_invalid":
     case "agent_name_cannot_be_uuid":
     case "inconsistent_memberships":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
@@ -612,7 +608,7 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
     case "requestor_not_authorized":
-      return new ForbiddenException(
+      throw new ForbiddenException(
         generateErrorPayload(
           errorCode,
           `${context}: entity does not have sufficient permissions to perform this operation`
@@ -628,9 +624,9 @@ export function generateErrorResponseForCastVote(
   const errorCode = error.toUpperCase()
   switch (error) {
     case "quota_exceeded":
-      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded for casting vote`))
+      throw new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded for casting vote`))
     case "requestor_not_authorized":
-      return new ForbiddenException(
+      throw new ForbiddenException(
         generateErrorPayload(
           errorCode,
           `${context}: entity does not have sufficient permissions to perform this operation`
@@ -763,7 +759,6 @@ export function generateErrorResponseForCastVote(
     case "agent_role_entity_type_role_restriction":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
-    case "workflow_action_webhook_url_invalid":
     case "agent_name_cannot_be_uuid":
     case "inconsistent_memberships":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
@@ -846,7 +841,6 @@ export function generateErrorResponseForListVotes(error: FindVotesError, context
     case "workflow_workflow_template_id_invalid_uuid":
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
-    case "workflow_action_webhook_url_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)

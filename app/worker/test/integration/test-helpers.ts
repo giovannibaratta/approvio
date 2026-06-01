@@ -3,7 +3,6 @@ import {WorkerModule} from "../../src/worker.module"
 import {WorkflowEventsProcessor} from "../../src/processor/workflow-events.processor"
 import {WorkflowActionWebhookProcessor} from "../../src/processor/workflow-action-webhook.processor"
 import {WorkflowActionEmailProcessor} from "../../src/processor/workflow-action-email.processor"
-import {WorkflowActionSlackProcessor} from "../../src/processor/workflow-action-slack.processor"
 import {WorkflowRecalculationProcessor} from "../../src/processor/workflow-recalculation.processor"
 import {Process} from "@nestjs/bull"
 import {Injectable} from "@nestjs/common/interfaces"
@@ -17,7 +16,6 @@ const ALL_WORKER_PROCESSORS = [
   WorkflowEventsProcessor,
   WorkflowActionWebhookProcessor,
   WorkflowActionEmailProcessor,
-  WorkflowActionSlackProcessor,
   WorkflowRecalculationProcessor
 ]
 

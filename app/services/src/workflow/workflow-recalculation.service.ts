@@ -2,7 +2,7 @@ import {Inject, Injectable, Logger} from "@nestjs/common"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
-import {evaluateWorkflowStatus, WorkflowStatus} from "@domain"
+import {evaluateWorkflowStatus} from "@domain"
 import {generateDeterministicId} from "@utils"
 import {VOTE_REPOSITORY_TOKEN, VoteRepository, FindVotesError} from "../vote/interfaces"
 import {WORKFLOW_REPOSITORY_TOKEN, WorkflowRepository, WorkflowGetError, WorkflowUpdateError} from "./interfaces"
@@ -56,14 +56,11 @@ export class WorkflowRecalculationService {
       ),
       TE.chainFirstIOK(({workflow}) => TE.fromIO(() => Logger.log(`Persisted status for Workflow ${workflow.id}`))),
       TE.chainFirstW(({workflow, workflowWithUpdatedStatus}) => {
-        if (
-          workflow.status !== workflowWithUpdatedStatus.status &&
-          workflowWithUpdatedStatus.status !== WorkflowStatus.EVALUATION_IN_PROGRESS
-        ) {
+        if (workflow.status !== "EVALUATION_IN_PROGRESS") {
           const eventId = generateDeterministicId(
             `${workflow.id}-${workflowWithUpdatedStatus.status}-${workflowWithUpdatedStatus.updatedAt.toISOString()}`
           )
-          return pipe(
+          pipe(
             this.queueProvider.enqueueWorkflowStatusChanged({
               eventId,
               workflowId: workflow.id,

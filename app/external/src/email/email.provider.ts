@@ -38,17 +38,18 @@ export class NodemailerEmailProvider implements EmailProviderExternal {
     if (error && typeof error === "object") {
       // Nodemailer exposes an SMTP responseCode. 4xx is transient in SMTP.
       const responseCode = "responseCode" in error ? error.responseCode : undefined
-      if (typeof responseCode === "number" && responseCode >= 400 && responseCode < 500) return true
-
+      if (typeof responseCode === "number" && responseCode >= 400 && responseCode < 500) {
+        return true
+      }
       // It also can throw standard system errors like ECONNRESET, ETIMEDOUT, etc.
       const errorCode = "code" in error ? error.code : undefined
       if (
         typeof errorCode === "string" &&
         ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "EHOSTUNREACH"].includes(errorCode)
-      )
+      ) {
         return true
+      }
     }
-
     return false
   }
 
@@ -81,7 +82,12 @@ export class NodemailerEmailProvider implements EmailProviderExternal {
       retryWithBackoff(
         () => doSend,
         error => error.isTransient,
-        this.configService.emailRetryConfig
+        {
+          maxAttempts: 3,
+          initialDelayMs: 1000,
+          backoffFactor: 2,
+          maxDelayMs: 10000
+        }
       )
     )
   }

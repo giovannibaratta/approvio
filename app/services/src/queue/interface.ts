@@ -1,15 +1,11 @@
 import {UnknownError} from "@services/error"
-import {
-  WorkflowStatusChangedEvent,
-  WorkflowActionEmailEvent,
-  WorkflowActionWebhookEvent,
-  WorkflowActionSlackEvent
-} from "@domain"
+import {WorkflowStatusChangedEvent, WorkflowActionEmailEvent, WorkflowActionWebhookEvent} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 
 export type EnqueueRecalculationError = UnknownError
 export type EnqueueWorkflowStatusChangedError = UnknownError
-export type EnqueueWorkflowActionError = UnknownError
+export type EnqueueWorkflowActionEmailError = UnknownError
+export type EnqueueWorkflowActionWebhookError = UnknownError
 export type QueueHealthCheckFailed = "queue_health_check_failed"
 
 export const QUEUE_PROVIDER_TOKEN = Symbol("QUEUE_PROVIDER_TOKEN")
@@ -23,9 +19,8 @@ export interface QueueProvider {
    */
   enqueueWorkflowStatusRecalculation(workflowId: string): TaskEither<EnqueueRecalculationError, void>
   enqueueWorkflowStatusChanged(event: WorkflowStatusChangedEvent): TaskEither<EnqueueWorkflowStatusChangedError, void>
-  enqueueWorkflowAction(
-    event: WorkflowActionEmailEvent | WorkflowActionWebhookEvent | WorkflowActionSlackEvent
-  ): TaskEither<EnqueueWorkflowActionError, void>
+  enqueueEmailAction(event: WorkflowActionEmailEvent): TaskEither<EnqueueWorkflowActionEmailError, void>
+  enqueueWebhookAction(event: WorkflowActionWebhookEvent): TaskEither<EnqueueWorkflowActionWebhookError, void>
   /**
    * Checks the health of the queue provider.
    * @returns A TaskEither with void (healthy) or an UnknownError (unhealthy).

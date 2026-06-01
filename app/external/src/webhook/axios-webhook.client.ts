@@ -1,6 +1,5 @@
 import {Injectable, Logger} from "@nestjs/common"
 import axios, {Method} from "axios"
-import {ConfigProvider} from "@external/config"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {HttpClient, HttpClientOptions, HttpError} from "@services/webhook/interfaces"
@@ -25,8 +24,6 @@ const TIMEOUT = 10000
 
 @Injectable()
 export class AxiosWebhookClient implements HttpClient {
-  constructor(private readonly config: ConfigProvider) {}
-
   /**
    * Executes an HTTP request
    *
@@ -62,16 +59,17 @@ export class AxiosWebhookClient implements HttpClient {
   ): boolean {
     if (error.type === "unknown_error") return false
 
-    if (error.type === "http_response_error")
+    if (error.type === "http_response_error") {
       return canRetryPayloadError && (error.response.status === 429 || error.response.status >= 500)
+    }
 
     // Connection/network failures
     // For non-idempotent without idempotency key, we only retry if we are sure it wasn't sent
     // (e.g. ECONNREFUSED, ENOTFOUND, etc.)
     if (!canRetryPayloadError) {
-      if (error.type === "http_request_failed" && error.code !== undefined) {
+      if (error.type === "http_request_failed") {
         const safeCodes = ["ECONNREFUSED", "ENOTFOUND", "EHOSTUNREACH", "ENETUNREACH"]
-        return safeCodes.includes(error.code)
+        return safeCodes.includes(error.code as string)
       }
       // For http_timeout, we cannot be sure if it reached the server, so don't retry unsafe
       return false
@@ -151,12 +149,18 @@ export class AxiosWebhookClient implements HttpClient {
       retryWithBackoff(
         () => doRequest,
         error => this.isTransientError(error, canRetryPayloadError),
-        this.config.webhookRetryConfig
+        {
+          maxAttempts: 3,
+          initialDelayMs: 1000,
+          backoffFactor: 2,
+          maxDelayMs: 10000
+        }
       ),
       // Recover HTTP response errors back to successful responses if retries exhaust
       TE.orElse(error => {
-        if (error.type === "http_response_error") return TE.right(error.response)
-
+        if (error.type === "http_response_error") {
+          return TE.right(error.response)
+        }
         // Return the simple string error types expected by the interface
         return TE.left(error.type as HttpError)
       })

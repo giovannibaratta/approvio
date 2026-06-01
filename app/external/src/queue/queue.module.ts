@@ -8,7 +8,6 @@ export const WORKFLOW_STATUS_RECALCULATION_QUEUE = "workflow-status-recalculatio
 export const WORKFLOW_STATUS_CHANGED_QUEUE = "workflow-status-changed"
 export const WORKFLOW_ACTION_EMAIL_QUEUE = "workflow-action-email"
 export const WORKFLOW_ACTION_WEBHOOK_QUEUE = "workflow-action-webhook"
-export const WORKFLOW_ACTION_SLACK_QUEUE = "workflow-action-slack"
 
 @Module({
   imports: [
@@ -48,9 +47,6 @@ export const WORKFLOW_ACTION_SLACK_QUEUE = "workflow-action-slack"
     }),
     BullModule.registerQueue({
       name: WORKFLOW_ACTION_WEBHOOK_QUEUE
-    }),
-    BullModule.registerQueue({
-      name: WORKFLOW_ACTION_SLACK_QUEUE
     })
   ],
   exports: [BullModule]

@@ -1,6 +1,5 @@
 import {getStringAsEnum, isEmail, isObject, isValidUrl, PrefixUnion} from "@utils"
 import {Either, left, right, traverseArray} from "fp-ts/Either"
-import {WorkflowActionSlackTaskFactory} from "./workflow-tasks/slack-task"
 
 export enum WebhookActionHttpMethod {
   GET = "GET",
@@ -10,11 +9,10 @@ export enum WebhookActionHttpMethod {
 
 export enum WorkflowActionType {
   EMAIL = "EMAIL",
-  WEBHOOK = "WEBHOOK",
-  SLACK = "SLACK"
+  WEBHOOK = "WEBHOOK"
 }
 
-export type WorkflowAction = EmailAction | WebhookAction | SlackAction
+export type WorkflowAction = EmailAction | WebhookAction
 
 export type EmailAction = Readonly<{
   type: WorkflowActionType.EMAIL
@@ -28,11 +26,6 @@ export type WebhookAction = Readonly<{
   headers?: Record<string, string>
 }>
 
-export type SlackAction = Readonly<{
-  type: WorkflowActionType.SLACK
-  webhookUrl: string
-}>
-
 export type WorkflowActionValidationError = PrefixUnion<"workflow_action", UnprefixedWorkflowActionValidationError>
 
 type UnprefixedWorkflowActionValidationError =
@@ -43,7 +36,6 @@ type UnprefixedWorkflowActionValidationError =
   | "method_invalid"
   | "missing_http_method"
   | "headers_invalid"
-  | "webhook_url_invalid"
 
 export function validateWorkflowActions(
   actions: unknown
@@ -64,8 +56,6 @@ function validateWorkflowAction(action: unknown): Either<WorkflowActionValidatio
       return validateEmailAction(action)
     case WorkflowActionType.WEBHOOK:
       return validateWebhookAction(action)
-    case WorkflowActionType.SLACK:
-      return validateSlackAction(action)
   }
 }
 
@@ -80,10 +70,11 @@ function validateWebhookAction(data: Record<string, unknown>): Either<WorkflowAc
   if (data.headers !== undefined && !isObject(data.headers)) return left("workflow_action_headers_invalid")
 
   // Validate that all header values are strings
-  if (data.headers !== undefined)
+  if (data.headers !== undefined) {
     for (const key in data.headers) {
       if (typeof data.headers[key] !== "string") return left("workflow_action_headers_invalid")
     }
+  }
 
   return right({
     type: WorkflowActionType.WEBHOOK,
@@ -94,10 +85,14 @@ function validateWebhookAction(data: Record<string, unknown>): Either<WorkflowAc
 }
 
 function validateEmailAction(data: Record<string, unknown>): Either<WorkflowActionValidationError, EmailAction> {
-  if (!Array.isArray(data.recipients) || data.recipients.length === 0) return left("workflow_action_recipients_empty")
+  if (!Array.isArray(data.recipients) || data.recipients.length === 0) {
+    return left("workflow_action_recipients_empty")
+  }
 
   for (const recipient of data.recipients) {
-    if (typeof recipient !== "string" || !isEmail(recipient)) return left("workflow_action_recipients_invalid_email")
+    if (typeof recipient !== "string" || !isEmail(recipient)) {
+      return left("workflow_action_recipients_invalid_email")
+    }
   }
 
   return right({
@@ -105,19 +100,5 @@ function validateEmailAction(data: Record<string, unknown>): Either<WorkflowActi
     recipients: data.recipients,
     subject: data.subject,
     body: data.body
-  })
-}
-
-function validateSlackAction(data: Record<string, unknown>): Either<WorkflowActionValidationError, SlackAction> {
-  if (
-    typeof data.webhookUrl !== "string" ||
-    !isValidUrl(data.webhookUrl) ||
-    !WorkflowActionSlackTaskFactory.isValidSlackWebhookUrl(data.webhookUrl)
-  )
-    return left("workflow_action_webhook_url_invalid")
-
-  return right({
-    type: WorkflowActionType.SLACK,
-    webhookUrl: data.webhookUrl
   })
 }

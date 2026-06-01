@@ -6,13 +6,7 @@ import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} 
 import {DatabaseClient} from "@external"
 import {PrismaClient, Prisma} from "@prisma/client"
 import {setupWorkerTestModule} from "./test-helpers"
-import {
-  WorkflowActionWebhookTaskFactory,
-  TaskStatus,
-  WebhookActionHttpMethod,
-  WorkflowStatus,
-  WorkflowActionType
-} from "@domain"
+import {WorkflowActionWebhookTaskFactory, TaskStatus, WebhookActionHttpMethod, WorkflowStatus} from "@domain"
 import {Job} from "bull"
 import {WorkflowActionWebhookEvent} from "@domain/events"
 
@@ -137,8 +131,7 @@ describe("Workflow Action Webhook Processor Integration", () => {
       // Create the event to process
       const event: WorkflowActionWebhookEvent = {
         taskId: taskId,
-        workflowId: workflowId,
-        type: WorkflowActionType.WEBHOOK
+        workflowId: workflowId
       }
 
       const job = {
@@ -179,8 +172,7 @@ describe("Workflow Action Webhook Processor Integration", () => {
       // Create the event to process
       const event: WorkflowActionWebhookEvent = {
         taskId: taskId,
-        workflowId: workflowId,
-        type: WorkflowActionType.WEBHOOK
+        workflowId: workflowId
       }
 
       const job = {
