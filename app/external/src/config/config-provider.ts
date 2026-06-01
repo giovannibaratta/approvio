@@ -9,7 +9,10 @@ import {
   JwtConfig,
   OidcProviderConfig,
   RateLimitConfig,
-  RedisConfig
+  RedisConfig,
+  WebhookRetryConfig,
+  EmailRetryConfig,
+  DatabaseRetryConfig
 } from "./interfaces"
 import {isOidcProvider} from "./types"
 import {isEmail, isNonEmptyArray} from "@utils"
@@ -25,6 +28,9 @@ export class ConfigProvider implements ConfigProviderInterface {
   readonly jwtConfig: JwtConfig
   readonly redisConfig: RedisConfig
   readonly rateLimitConfig: RateLimitConfig
+  readonly webhookRetryConfig: WebhookRetryConfig
+  readonly emailRetryConfig: EmailRetryConfig
+  readonly databaseRetryConfig: DatabaseRetryConfig
   readonly frontendUrl: string
   readonly cookieSecure: boolean
 
@@ -38,6 +44,9 @@ export class ConfigProvider implements ConfigProviderInterface {
     // falls back to the main redisConfig if no specific rate limit connection is provided.
     this.redisConfig = this.validateRedisConfig()
     this.rateLimitConfig = this.validateRateLimitConfig()
+    this.webhookRetryConfig = this.validateWebhookRetryConfig()
+    this.emailRetryConfig = this.validateEmailRetryConfig()
+    this.databaseRetryConfig = this.validateDatabaseRetryConfig()
     this.frontendUrl = this.validateFrontendUrl()
     this.cookieSecure = this.validateCookieSecure()
   }
@@ -377,5 +386,47 @@ export class ConfigProvider implements ConfigProviderInterface {
       if (isNaN(port) || port <= 0 || port > 65535) throw new Error(`Invalid sentinel port in ${prefix}SENTINELS`)
       return {host: shost, port}
     })
+  }
+
+  private validateWebhookRetryConfig(): WebhookRetryConfig {
+    const maxAttemptsRaw = process.env.WEBHOOK_RETRY_MAX_ATTEMPTS
+    const initialDelayMsRaw = process.env.WEBHOOK_RETRY_INITIAL_DELAY_MS
+    const backoffFactorRaw = process.env.WEBHOOK_RETRY_BACKOFF_FACTOR
+    const maxDelayMsRaw = process.env.WEBHOOK_RETRY_MAX_DELAY_MS
+
+    return {
+      maxAttempts: maxAttemptsRaw ? parseInt(maxAttemptsRaw, 10) : 3,
+      initialDelayMs: initialDelayMsRaw ? parseInt(initialDelayMsRaw, 10) : 1000,
+      backoffFactor: backoffFactorRaw ? parseFloat(backoffFactorRaw) : 2,
+      maxDelayMs: maxDelayMsRaw ? parseInt(maxDelayMsRaw, 10) : 10000
+    }
+  }
+
+  private validateEmailRetryConfig(): EmailRetryConfig {
+    const maxAttemptsRaw = process.env.EMAIL_RETRY_MAX_ATTEMPTS
+    const initialDelayMsRaw = process.env.EMAIL_RETRY_INITIAL_DELAY_MS
+    const backoffFactorRaw = process.env.EMAIL_RETRY_BACKOFF_FACTOR
+    const maxDelayMsRaw = process.env.EMAIL_RETRY_MAX_DELAY_MS
+
+    return {
+      maxAttempts: maxAttemptsRaw ? parseInt(maxAttemptsRaw, 10) : 3,
+      initialDelayMs: initialDelayMsRaw ? parseInt(initialDelayMsRaw, 10) : 1000,
+      backoffFactor: backoffFactorRaw ? parseFloat(backoffFactorRaw) : 2,
+      maxDelayMs: maxDelayMsRaw ? parseInt(maxDelayMsRaw, 10) : 10000
+    }
+  }
+
+  private validateDatabaseRetryConfig(): DatabaseRetryConfig {
+    const maxAttemptsRaw = process.env.DATABASE_RETRY_MAX_ATTEMPTS
+    const initialDelayMsRaw = process.env.DATABASE_RETRY_INITIAL_DELAY_MS
+    const backoffFactorRaw = process.env.DATABASE_RETRY_BACKOFF_FACTOR
+    const maxDelayMsRaw = process.env.DATABASE_RETRY_MAX_DELAY_MS
+
+    return {
+      maxAttempts: maxAttemptsRaw ? parseInt(maxAttemptsRaw, 10) : 3,
+      initialDelayMs: initialDelayMsRaw ? parseInt(initialDelayMsRaw, 10) : 1000,
+      backoffFactor: backoffFactorRaw ? parseFloat(backoffFactorRaw) : 2,
+      maxDelayMs: maxDelayMsRaw ? parseInt(maxDelayMsRaw, 10) : 10000
+    }
   }
 }

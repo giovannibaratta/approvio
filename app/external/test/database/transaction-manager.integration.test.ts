@@ -193,4 +193,58 @@ describe("PrismaTransactionManager Integration", () => {
 
     expect(result).toBeLeftOf("conflicting_isolation_level")
   })
+
+  describe("DatabaseClient Transaction Retries", () => {
+    it("should retry transactional database operations on transient errors and eventually succeed", async () => {
+      // Given: A transient write conflict error (P2034)
+      const transientError = new Prisma.PrismaClientKnownRequestError("Transaction failed", {
+        code: "P2034",
+        clientVersion: "7.8.0"
+      })
+
+      // Spy on Prisma $transaction. First two times it throws transientError, third time it succeeds.
+      let attempts = 0
+      const transactionSpy = jest
+        .spyOn(prisma, "$transaction")
+        .mockImplementation(async (computation: (tx: Prisma.TransactionClient) => Promise<unknown>) => {
+          attempts++
+          if (attempts < 3) throw transientError
+          // On 3rd attempt, run the actual computation
+          return computation(prisma)
+        })
+
+      // When
+      const result = await dbClient.transactional(async () => {
+        return "success"
+      })
+
+      // Then
+      expect(result).toBe("success")
+      expect(attempts).toBe(3)
+
+      transactionSpy.mockRestore()
+    })
+
+    it("should NOT retry transactional database operations on non-transient errors", async () => {
+      // Given: A non-transient unique constraint error (P2002)
+      const nonTransientError = new Prisma.PrismaClientKnownRequestError("Unique constraint violation", {
+        code: "P2002",
+        clientVersion: "7.8.0"
+      })
+
+      const transactionSpy = jest.spyOn(prisma, "$transaction").mockRejectedValue(nonTransientError)
+
+      // When & Then
+      await expect(
+        dbClient.transactional(async () => {
+          return "success"
+        })
+      ).rejects.toThrow(nonTransientError)
+
+      // Assert only 1 call is made (no retries)
+      expect(transactionSpy).toHaveBeenCalledTimes(1)
+
+      transactionSpy.mockRestore()
+    })
+  })
 })

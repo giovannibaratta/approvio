@@ -33,7 +33,9 @@ export class WorkflowActionWebhookProcessor {
       ),
       TE.bindW("webhookResult", ({task}) =>
         pipe(
-          this.webhookService.executeWebhook(task.url, task.method, task.headers, task.payload),
+          this.webhookService.executeWebhook(task.url, task.method, task.headers, task.payload, {
+            idempotencyKey: task.id
+          }),
           // Map all the left errors to right string with the magic meaning that the call failed,
           // and no response was received. This is needed to keep proceeding on the right path.
           // It might still possible to it on the left side with a more idiomatic fp-ts way,
