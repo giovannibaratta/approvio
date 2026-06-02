@@ -26,11 +26,11 @@ import {
 } from "@services"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
+import {pipe} from "fp-ts/function"
+import * as TE from "fp-ts/TaskEither"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "./errors"
-import * as TE from "fp-ts/TaskEither"
-import {pipe} from "fp-ts/function"
-import {DecorableEntity, isDecoratedWith} from "@utils/types"
+import {DecorableEntity, isDecoratedWith} from "@utils"
 
 interface Identifier {
   type: "id" | "name"
@@ -195,6 +195,59 @@ export class WorkflowDbRepository implements WorkflowRepository {
       ),
       chainNullableToLeft("workflow_not_found" as const),
       TE.map(workflow => workflow.workflowTemplateId)
+    )
+  }
+
+  findExpiredWorkflows(now: Date, limit = 1000): TaskEither<UnknownError, string[]> {
+    return TE.tryCatch(
+      async () => {
+        // RISK ACCEPTANCE COMMENT:
+        // If any database validation/parsing failure occurs for this batch, the entire execution halts.
+        // Since we only select the basic string UUID 'id', the risk is minimal for this iteration.
+        // TODO (long-term): Implement a row-by-row parsing/validation wrapper to handle corrupt records gracefully.
+        const workflows = await this.dbClient.cx.workflow.findMany({
+          where: {
+            status: {
+              notIn: WORKFLOW_TERMINAL_STATUSES
+            },
+            expiresAt: {
+              lt: now
+            },
+            recalculationRequired: false
+          },
+          select: {
+            id: true
+          },
+          take: limit
+        })
+        return workflows.map(w => w.id)
+      },
+      error => {
+        Logger.error("Error finding expired workflows", error)
+        return "unknown_error" as const
+      }
+    )
+  }
+
+  markWorkflowsAsRecalculationRequired(workflowIds: string[]): TaskEither<UnknownError, void> {
+    return TE.tryCatch(
+      async () => {
+        if (workflowIds.length === 0) return
+        await this.dbClient.cx.workflow.updateMany({
+          where: {
+            id: {
+              in: workflowIds
+            }
+          },
+          data: {
+            recalculationRequired: true
+          }
+        })
+      },
+      error => {
+        Logger.error(`Error marking workflows as recalculation required: ${workflowIds}`, error)
+        return "unknown_error" as const
+      }
     )
   }
 

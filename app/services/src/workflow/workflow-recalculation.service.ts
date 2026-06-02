@@ -7,6 +7,7 @@ import {generateDeterministicId} from "@utils"
 import {VOTE_REPOSITORY_TOKEN, VoteRepository, FindVotesError} from "../vote/interfaces"
 import {WORKFLOW_REPOSITORY_TOKEN, WorkflowRepository, WorkflowGetError, WorkflowUpdateError} from "./interfaces"
 import {EnqueueRecalculationError, QUEUE_PROVIDER_TOKEN, QueueProvider} from "../queue/interface"
+import {UnknownError} from "../error"
 
 export type WorkflowRecalculationError =
   | WorkflowGetError
@@ -82,6 +83,26 @@ export class WorkflowRecalculationService {
         return TE.right(undefined)
       }),
       TE.map(() => undefined)
+    )
+  }
+
+  /**
+   * Sweeps the database for expired workflows, enqueues them for recalculation,
+   * and marks them as recalculation required in a bulk operation.
+   * @returns A TaskEither indicating success or an UnknownError.
+   */
+  sweepExpiredWorkflows(): TaskEither<UnknownError, void> {
+    const now = new Date()
+    return pipe(
+      this.workflowRepo.findExpiredWorkflows(now),
+      TE.chain(workflowIds => {
+        if (workflowIds.length === 0) return TE.right(undefined)
+
+        return pipe(
+          this.queueProvider.enqueueWorkflowStatusRecalculationBulk(workflowIds),
+          TE.chain(() => this.workflowRepo.markWorkflowsAsRecalculationRequired(workflowIds))
+        )
+      })
     )
   }
 }

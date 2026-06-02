@@ -7,6 +7,7 @@ import {WorkflowEventsProcessor} from "./processor/workflow-events.processor"
 import {WorkflowActionWebhookProcessor} from "./processor/workflow-action-webhook.processor"
 import {WorkflowActionEmailProcessor} from "./processor/workflow-action-email.processor"
 import {WorkflowActionSlackProcessor} from "./processor/workflow-action-slack.processor"
+import {WorkflowExpirationSweepProcessor} from "./processor/workflow-expiration-sweep.processor"
 import {WORKER_ID} from "./worker.constants"
 
 @Module({
@@ -17,6 +18,7 @@ import {WORKER_ID} from "./worker.constants"
     WorkflowActionWebhookProcessor,
     WorkflowActionEmailProcessor,
     WorkflowActionSlackProcessor,
+    WorkflowExpirationSweepProcessor,
     {
       // Initializing the worker ID here will not actually make the lock on the task safe
       // since the worker could potentially work on multiple requests in parallel. If for some
