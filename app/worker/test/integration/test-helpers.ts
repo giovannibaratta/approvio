@@ -5,9 +5,9 @@ import {WorkflowActionWebhookProcessor} from "../../src/processor/workflow-actio
 import {WorkflowActionEmailProcessor} from "../../src/processor/workflow-action-email.processor"
 import {WorkflowActionSlackProcessor} from "../../src/processor/workflow-action-slack.processor"
 import {WorkflowRecalculationProcessor} from "../../src/processor/workflow-recalculation.processor"
+import {WorkflowExpirationSweepProcessor} from "../../src/processor/workflow-expiration-sweep.processor"
 import {Process} from "@nestjs/bull"
 import {Injectable} from "@nestjs/common/interfaces"
-
 import {SilentLogger} from "@test/logger-helpers"
 
 /**
@@ -18,7 +18,8 @@ const ALL_WORKER_PROCESSORS = [
   WorkflowActionWebhookProcessor,
   WorkflowActionEmailProcessor,
   WorkflowActionSlackProcessor,
-  WorkflowRecalculationProcessor
+  WorkflowRecalculationProcessor,
+  WorkflowExpirationSweepProcessor
 ]
 
 class MockProcessor {
