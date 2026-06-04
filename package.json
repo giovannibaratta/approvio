@@ -96,7 +96,7 @@
     "globals": "17.6.0",
     "ioredis": "5.11.0",
     "jest": "30.4.2",
-    "license-checker-rseidelsohn": "4.4.2",
+    "license-checker-rseidelsohn": "5.0.1",
     "mailpit-api": "^2.0.0",
     "node-loader": "2.1.0",
     "prettier": "3.8.3",
