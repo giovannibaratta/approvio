@@ -164,6 +164,7 @@ export function generateErrorResponseForCreateWorkflow(
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
     case "workflow_action_webhook_url_invalid":
+    case "workflow_action_redact_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -221,6 +222,7 @@ export function generateErrorResponseForGetWorkflow(
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
     case "workflow_action_webhook_url_invalid":
+    case "workflow_action_redact_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -315,6 +317,7 @@ export function generateErrorResponseForListWorkflows(
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
     case "workflow_action_webhook_url_invalid":
+    case "workflow_action_redact_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -605,6 +608,7 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
     case "workflow_action_webhook_url_invalid":
+    case "workflow_action_redact_invalid":
     case "agent_name_cannot_be_uuid":
     case "inconsistent_memberships":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
@@ -766,6 +770,7 @@ export function generateErrorResponseForCastVote(
     case "workflow_action_webhook_url_invalid":
     case "agent_name_cannot_be_uuid":
     case "inconsistent_memberships":
+    case "workflow_action_redact_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
@@ -847,6 +852,7 @@ export function generateErrorResponseForListVotes(error: FindVotesError, context
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
     case "workflow_action_webhook_url_invalid":
+    case "workflow_action_redact_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)

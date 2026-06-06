@@ -60,6 +60,7 @@ export function generateErrorResponseForCancelWorkflowsForTemplate(
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
     case "workflow_action_webhook_url_invalid":
+    case "workflow_action_redact_invalid":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `Internal data inconsistency. Context: ${context}`)
       )

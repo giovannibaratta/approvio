@@ -4,7 +4,7 @@ import {NestApplication} from "@nestjs/core"
 import {AppModule} from "@app/app.module"
 import {DatabaseClient} from "@external"
 import {WORKFLOW_TEMPLATES_ENDPOINT_ROOT} from "@controllers"
-import {PrismaClient, WorkflowTemplate as PrismaWorkflowTemplate, Space as PrismaSpace} from "@prisma/client"
+import {PrismaClient, WorkflowTemplate as PrismaWorkflowTemplate, Space as PrismaSpace, Prisma} from "@prisma/client"
 import {
   WorkflowTemplateCreate,
   WorkflowTemplateUpdate,
@@ -50,6 +50,19 @@ function assertFirstActionIsDefined(
   actions: Record<string, unknown>[]
 ): asserts actions is [Record<string, unknown>, ...Record<string, unknown>[]] {
   expect(actions[0]).toBeDefined()
+}
+
+interface TestWebhookActionApi {
+  type: string
+  url: string
+  method: string
+  headers?: Record<string, string>
+  redact?: string
+}
+
+interface TestSlackActionApi {
+  type: string
+  webhookUrl: string
 }
 
 describe("Workflow Templates API", () => {
@@ -979,6 +992,134 @@ describe("Workflow Templates API", () => {
         expect(body.description).toEqual(createdTemplate.description)
         expect(body.createdAt).toBeDefined()
         expect(body.updatedAt).toBeDefined()
+      })
+
+      it("should return workflow template details with correctly redacted webhook actions based on redact scope", async () => {
+        // Given: Create a template in DB with Webhook actions using different redact scopes
+        const templateWithWebhooks = await createMockWorkflowTemplateInDb(prisma, {
+          name: "webhook-redact-integration",
+          spaceId: testSpace.id,
+          actions: [
+            {
+              type: "WEBHOOK",
+              url: "https://api.example.com/v1?normalParam=val&secretParam=key_is_sensitive",
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Custom-Header": "value",
+                Authorization: "Bearer sensitive-token"
+              },
+              redact: "HEADERS"
+            },
+            {
+              type: "WEBHOOK",
+              url: "https://api.example.com/v2?normalParam=val&secretParam=key_is_sensitive",
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer sensitive-token"
+              },
+              redact: "URL"
+            },
+            {
+              type: "WEBHOOK",
+              url: "https://api.example.com/v3?normalParam=val&secretParam=key_is_sensitive",
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer sensitive-token"
+              },
+              redact: "ALL"
+            },
+            {
+              type: "WEBHOOK",
+              url: "https://api.example.com/v4?normalParam=val&secretParam=key_is_sensitive",
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer sensitive-token"
+              }
+            }
+          ] as Prisma.InputJsonValue
+        })
+
+        // When: We fetch the template details
+        const response = await get(app, `${endpoint}/${templateWithWebhooks.id}`).withToken(orgAdminUser.token).build()
+
+        // Expect: Webhook actions are correctly redacted in the response
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: WorkflowTemplateApi = response.body
+        expect(body.actions).toHaveLength(4)
+
+        const action1 = body.actions?.[0] as unknown as TestWebhookActionApi
+        expect(action1.type).toBe("WEBHOOK")
+        expect(action1.redact).toBe("HEADERS")
+        expect(action1.headers).toEqual({
+          "Content-Type": "***",
+          "X-Custom-Header": "***",
+          Authorization: "***"
+        })
+        const urlObj1 = new URL(action1.url)
+        expect(urlObj1.searchParams.get("normalParam")).toBe("val")
+        expect(urlObj1.searchParams.get("secretParam")).toBe("***")
+
+        const action2 = body.actions?.[1] as unknown as TestWebhookActionApi
+        expect(action2.type).toBe("WEBHOOK")
+        expect(action2.redact).toBe("URL")
+        expect(action2.headers).toEqual({
+          "Content-Type": "application/json",
+          Authorization: "***"
+        })
+        const urlObj2 = new URL(action2.url)
+        expect(urlObj2.searchParams.get("normalParam")).toBe("***")
+        expect(urlObj2.searchParams.get("secretParam")).toBe("***")
+
+        const action3 = body.actions?.[2] as unknown as TestWebhookActionApi
+        expect(action3.type).toBe("WEBHOOK")
+        expect(action3.redact).toBe("ALL")
+        expect(action3.headers).toEqual({
+          "Content-Type": "***",
+          Authorization: "***"
+        })
+        const urlObj3 = new URL(action3.url)
+        expect(urlObj3.searchParams.get("normalParam")).toBe("***")
+
+        const action4 = body.actions?.[3] as unknown as TestWebhookActionApi
+        expect(action4.type).toBe("WEBHOOK")
+        expect(action4.redact).toBeUndefined()
+        expect(action4.headers).toEqual({
+          "Content-Type": "application/json",
+          Authorization: "***"
+        })
+        const urlObj4 = new URL(action4.url)
+        expect(urlObj4.searchParams.get("normalParam")).toBe("val")
+        expect(urlObj4.searchParams.get("secretParam")).toBe("***")
+      })
+
+      it("should return workflow template details with correctly redacted Slack webhook action preserving its origin and path prefix", async () => {
+        // Given: Create a template in DB with a Slack action
+        const templateWithSlack = await createMockWorkflowTemplateInDb(prisma, {
+          name: "slack-redact-integration",
+          spaceId: testSpace.id,
+          actions: [
+            {
+              type: "SLACK",
+              webhookUrl: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
+            }
+          ] as Prisma.InputJsonValue
+        })
+
+        // When: We fetch the template details
+        const response = await get(app, `${endpoint}/${templateWithSlack.id}`).withToken(orgAdminUser.token).build()
+
+        // Expect: Slack webhook url is correctly redacted with domain prefix preserved
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        const body: WorkflowTemplateApi = response.body
+        expect(body.actions).toHaveLength(1)
+
+        const action = body.actions?.[0] as unknown as TestSlackActionApi
+        expect(action.type).toBe("SLACK")
+        expect(action.webhookUrl).toBe("https://hooks.slack.com/services/***")
       })
 
       it("should return workflow template details (as OrgMember)", async () => {
