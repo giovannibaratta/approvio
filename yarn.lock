@@ -117,7 +117,7 @@ __metadata:
     "@eslint/js": "npm:10.0.1"
     "@nestjs/bull": "npm:11.0.4"
     "@nestjs/cli": "npm:11.0.21"
-    "@nestjs/common": "npm:11.1.23"
+    "@nestjs/common": "npm:11.1.24"
     "@nestjs/core": "npm:11.1.24"
     "@nestjs/jwt": "npm:11.0.2"
     "@nestjs/passport": "npm:11.0.5"
@@ -2016,9 +2016,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@nestjs/common@npm:11.1.23":
-  version: 11.1.23
-  resolution: "@nestjs/common@npm:11.1.23"
+"@nestjs/common@npm:11.1.24":
+  version: 11.1.24
+  resolution: "@nestjs/common@npm:11.1.24"
   dependencies:
     file-type: "npm:21.3.4"
     iterare: "npm:1.2.1"
@@ -2035,7 +2035,7 @@ __metadata:
       optional: true
     class-validator:
       optional: true
-  checksum: 10/9ef8d6b314a85062f3a99bec212cf5f3cdd81d745b54aef8c7130b41ffd177becddb2d50993b9fc17830a006b974cb487ee3ab92c5528e493d9d5a2d41dc7bcc
+  checksum: 10/cf9797ddecdf332266f6ffe8b44b280f5ac1cfa83f1f4a19b67b5f77a6e2e9b294a19d03b7003237ab1ab043f7e48f94046fa7fedd84681768cf3a14f0fb2881
   languageName: node
   linkType: hard
 
