@@ -12,9 +12,10 @@ import {
   RedisConfig,
   WebhookRetryConfig,
   EmailRetryConfig,
-  DatabaseRetryConfig
+  DatabaseRetryConfig,
+  KmsConfig
 } from "./interfaces"
-import {isOidcProvider} from "./types"
+import {isOidcProvider, isKmsProviderType} from "./types"
 import {isEmail, isNonEmptyArray} from "@utils"
 
 const IS_PRIVILEGE_MODE_DEFAULT = true
@@ -33,6 +34,7 @@ export class ConfigProvider implements ConfigProviderInterface {
   readonly databaseRetryConfig: DatabaseRetryConfig
   readonly frontendUrl: string
   readonly cookieSecure: boolean
+  readonly kmsConfig: KmsConfig
 
   constructor() {
     this.isPrivilegeMode = this.validatePrivilegeMode()
@@ -49,6 +51,7 @@ export class ConfigProvider implements ConfigProviderInterface {
     this.databaseRetryConfig = this.validateDatabaseRetryConfig()
     this.frontendUrl = this.validateFrontendUrl()
     this.cookieSecure = this.validateCookieSecure()
+    this.kmsConfig = this.validateKmsConfig()
   }
 
   private validatePrivilegeMode(): boolean {
@@ -414,6 +417,79 @@ export class ConfigProvider implements ConfigProviderInterface {
       backoffFactor: backoffFactorRaw ? parseFloat(backoffFactorRaw) : 2,
       maxDelayMs: maxDelayMsRaw ? parseInt(maxDelayMsRaw, 10) : 10000
     }
+  }
+
+  private validateKmsConfig(): KmsConfig {
+    const typeRaw = process.env.KMS_PROVIDER_TYPE ?? "env_var"
+    if (!isKmsProviderType(typeRaw)) throw new Error("Invalid KMS_PROVIDER_TYPE. Allowed values: env_var")
+
+    if (typeRaw === "env_var") {
+      const currentVersionRaw = process.env.KMS_MASTER_KEY_ACTIVE_VERSION
+      let currentVersion: number
+
+      if (currentVersionRaw !== undefined) {
+        const cleanVersion = currentVersionRaw.replace(/^v/i, "")
+        currentVersion = parseInt(cleanVersion, 10)
+
+        if (isNaN(currentVersion) || currentVersion <= 0) {
+          throw new Error("KMS_MASTER_KEY_ACTIVE_VERSION must be a valid number greater than 0")
+        }
+      } else {
+        currentVersion = 1
+      }
+
+      const keys = new Map<number, Buffer>()
+
+      // Read and decode all key versions from environment (e.g., KMS_MASTER_KEY_V1, KMS_MASTER_KEY_V2)
+      for (const [key, value] of Object.entries(process.env)) {
+        const match = /^KMS_MASTER_KEY_V([0-9]+)$/.exec(key)
+        if (match) {
+          const rawVersion = match[1] ?? ""
+          let version: number
+
+          try {
+            version = parseInt(rawVersion)
+          } catch (error) {
+            throw new Error("KMS_MASTER_KEY_VERSION must be a valid number", {cause: error})
+          }
+
+          if (value) {
+            const keyBuffer = Buffer.from(value, "base64")
+            if (keyBuffer.length !== 32)
+              throw new Error(`KMS_MASTER_KEY for version ${version} must be a 32-byte (256-bit) key`)
+
+            keys.set(version, keyBuffer)
+            // Wipe from process.env immediately to reduce environment exposure
+            delete process.env[key]
+          }
+        }
+      }
+
+      if (keys.size === 0)
+        throw new Error(
+          "No master keys provided. At least one KMS_MASTER_KEY_<VERSION> must be provided when KMS_PROVIDER_TYPE is env_var"
+        )
+
+      if (!keys.has(currentVersion))
+        throw new Error(
+          `KMS_MASTER_KEY_${currentVersion} (current version) must be provided when KMS_PROVIDER_TYPE is env_var`
+        )
+
+      let keysAccessed = false
+
+      return {
+        type: typeRaw,
+        currentVersion,
+        getKeys() {
+          if (keysAccessed) throw new Error("KMS keys have already been read. Double consumption is not allowed.")
+
+          keysAccessed = true
+          return keys
+        }
+      }
+    }
+
+    throw new Error(`Unsupported KMS provider type: ${typeRaw}`)
   }
 
   private validateDatabaseRetryConfig(): DatabaseRetryConfig {

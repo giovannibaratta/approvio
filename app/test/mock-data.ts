@@ -39,7 +39,8 @@ import {
   RateLimitConfig,
   WebhookRetryConfig,
   EmailRetryConfig,
-  DatabaseRetryConfig
+  DatabaseRetryConfig,
+  KmsConfig
 } from "@external/config"
 import {Option} from "fp-ts/Option"
 import * as O from "fp-ts/Option"
@@ -270,6 +271,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
   databaseRetryConfig: DatabaseRetryConfig
   frontendUrl: string
   cookieSecure: boolean
+  kmsConfig: KmsConfig
 
   private constructor(
     originalProvider?: ConfigProvider,
@@ -341,7 +343,12 @@ export class MockConfigProvider implements ConfigProviderInterface {
         maxDelayMs: 0
       },
       frontendUrl: "http://localhost:5173",
-      cookieSecure: false
+      cookieSecure: false,
+      kmsConfig: {
+        type: "env_var",
+        currentVersion: 1,
+        getKeys: () => new Map([[1, Buffer.from("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=", "base64")]])
+      }
     }
 
     this.isPrivilegeMode = provider.isPrivilegeMode
@@ -358,10 +365,33 @@ export class MockConfigProvider implements ConfigProviderInterface {
     this.databaseRetryConfig = mocks.databaseRetryConfig || provider.databaseRetryConfig
     this.frontendUrl = provider.frontendUrl
     this.cookieSecure = provider.cookieSecure
+    this.kmsConfig = {
+      type: "env_var",
+      currentVersion: 1,
+      getKeys: () => new Map([[1, Buffer.from("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=", "base64")]])
+    }
+  }
+
+  private static cachedRealProvider?: ConfigProvider
+
+  /**
+   * Gets or instantiates a cached singleton ConfigProvider instance for the test suite.
+   *
+   * SECURITY CONTEXT: ConfigProvider deletes KMS key variables from process.env upon
+   * instantiation to reduce environmental exposure. Since process.env is global, subsequent
+   * instantiations in tests would fail to read keys and throw errors. Caching the instance
+   * ensures ConfigProvider is created once per test process, allowing subsequent mock helper
+   * setups to reuse it.
+   */
+  private static getCachedRealProvider(): ConfigProvider {
+    if (!this.cachedRealProvider) {
+      this.cachedRealProvider = new ConfigProvider()
+    }
+    return this.cachedRealProvider
   }
 
   static fromDbConnectionUrl(dbConnectionUrl: string, redisPrefix?: string): MockConfigProvider {
-    const realProvider = new ConfigProvider()
+    const realProvider = this.getCachedRealProvider()
     return new MockConfigProvider(realProvider, {
       dbConnectionUrl,
       redisPrefix,
@@ -397,7 +427,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
       databaseRetryConfig?: DatabaseRetryConfig
     } = {}
   ): MockConfigProvider {
-    const provider = new ConfigProvider()
+    const provider = this.getCachedRealProvider()
     return new MockConfigProvider(provider, mocks)
   }
 }

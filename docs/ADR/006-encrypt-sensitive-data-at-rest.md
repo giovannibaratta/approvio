@@ -1,9 +1,5 @@
 # ADR-005: Generic Framework for Encrypting Sensitive Data at Rest
 
-**Status:** Accepted
-**Date:** 2026-06-03
-**Context:** Need for a generic, reusable framework to encrypt sensitive data at rest (e.g., webhook actions, third-party API keys, authentication tokens) across the application. The solution must be cloud-agnostic, support self-hosted and on-premise deployments, and provide a clear path toward compliance standards (e.g., ISO 27001, SOC 2, GDPR).
-
 ## Problem
 
 The application processes and stores sensitive data, such as API keys, authentication tokens, and webhook action configurations that contain secrets. Storing this information in plain text in the database exposes it to severe risks in the event of a database compromise, unauthorized access, or backup theft. We need a reusable, generic framework to ensure all sensitive fields across various domain entities are securely encrypted at rest.
@@ -23,17 +19,18 @@ A custom Prisma extension intercepting `create`, `update`, and `find` operations
 const prisma = new PrismaClient().$extends({
   query: {
     webhookAction: {
-      async create({ args, query }) {
+      async create({args, query}) {
         if (args.data.secretPayload) {
-          args.data.secretPayload = encrypt(args.data.secretPayload);
+          args.data.secretPayload = encrypt(args.data.secretPayload)
         }
-        return query(args);
-      },
+        return query(args)
+      }
       // similar interceptors for update, findUnique, findMany...
     }
   }
-});
+})
 ```
+
 With this setup, the current Prisma calls in the application remain unaffected. Developers continue calling `prisma.webhookAction.create({ data: { secretPayload: 'my-secret' } })`, and the extension transparently handles encryption before insertion and decryption upon retrieval. Configuration is applied globally at the Prisma client initialization.
 
 - ✅ **Pros:**
@@ -77,11 +74,11 @@ Instead of storing sensitive data in the application database, we store it in a 
 
 ## Comparison Matrix
 
-| Option | Implementation Effort | Queryability | Security Level | Cloud Agnostic | Meets Strict Compliance |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Option 1 (App-Level)** | Medium | Poor | High | Yes | Yes |
-| **Option 2 (DB/Disk-Level)** | Low | Full | Low (Disk only) | No | Partial |
-| **Option 3 (External Vault)** | High | None | Highest | Partial | Yes |
+| Option                        | Implementation Effort | Queryability | Security Level  | Cloud Agnostic | Meets Strict Compliance |
+| :---------------------------- | :-------------------- | :----------- | :-------------- | :------------- | :---------------------- |
+| **Option 1 (App-Level)**      | Medium                | Poor         | High            | Yes            | Yes                     |
+| **Option 2 (DB/Disk-Level)**  | Low                   | Full         | Low (Disk only) | No             | Partial                 |
+| **Option 3 (External Vault)** | High                  | None         | Highest         | Partial        | Yes                     |
 
 ## Decision
 
@@ -113,10 +110,10 @@ The encryption framework will use the **AWS Encryption SDK** (`@aws-crypto/clien
 
 **Alternatives considered and rejected:**
 
-| Library | Reason for Rejection |
-| :--- | :--- |
-| Google Tink (JS) | JavaScript implementation was deprecated and removed in 2023. Not viable. |
-| Raw `node:crypto` | Zero dependencies but requires manual IV generation, ciphertext format design, auth tag handling, and versioning. High risk of subtle implementation bugs. |
+| Library                     | Reason for Rejection                                                                                                                                                |
+| :-------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Google Tink (JS)            | JavaScript implementation was deprecated and removed in 2023. Not viable.                                                                                           |
+| Raw `node:crypto`           | Zero dependencies but requires manual IV generation, ciphertext format design, auth tag handling, and versioning. High risk of subtle implementation bugs.          |
 | `sodium-native` (libsodium) | Excellent misuse-resistant library, but uses XChaCha20-Poly1305 instead of AES — may require extra justification in compliance contexts that specifically name AES. |
 
 ## Encryption Granularity
@@ -126,6 +123,7 @@ The encryption framework will use the **AWS Encryption SDK** (`@aws-crypto/clien
 Encrypted JSON fields (e.g., `headers`, `actions`) will be encrypted as a **single blob**, not selectively by key or entry.
 
 **Rationale:**
+
 - Selectively encrypting individual header values would require maintaining a list of "sensitive" header names (e.g., `Authorization`, `X-API-Key`) and constantly updating it. This is error-prone and adds complexity for marginal debugging benefit.
 - Selectively encrypting only webhook action entries within a mixed JSON array (containing both email and webhook actions) requires parsing, identifying, encrypting, and reassembling — significant complexity for near-zero benefit.
 - The marginal overhead of encrypting non-sensitive data alongside sensitive data is negligible for the volumes involved.
@@ -140,6 +138,7 @@ As a complementary measure to encryption at rest, the response APIs should **red
 This follows a **write-once, use-internally** pattern: secrets are accepted at creation time, stored encrypted, and used internally for execution (e.g., outbound webhook calls), but are never exposed back to the caller via read APIs. This is analogous to how API key generation flows work — the key is shown once at creation and cannot be retrieved afterward.
 
 **Scope:**
+
 - Webhook action `headers` in workflow template responses: redact header values (e.g., replace with `"***"`).
 - Webhook task `headers` and `url` query parameters: redact sensitive portions in task status responses.
 - This is a best-effort defense-in-depth measure. The primary protection remains encryption at rest.
@@ -148,12 +147,12 @@ This follows a **write-once, use-internally** pattern: secrets are accepted at c
 
 The following fields are identified as requiring encryption:
 
-| Table | Field(s) | Type | Sensitivity | Priority |
-| :--- | :--- | :--- | :--- | :--- |
-| `workflow_actions_webhook_tasks` | `headers` | JSON | **High** — may contain `Authorization: Bearer <token>`, API keys | P0 |
-| `workflow_templates` | `actions` | JSON | **High** — contains webhook URLs and headers for configured actions | P0 |
-| `workflow_actions_webhook_tasks` | `url` | String | **Medium** — URLs may contain tokens in query parameters | P1 |
-| `pkce_sessions` | `code_verifier` | String | **Medium** — short-lived PKCE code verifiers | P2 |
+| Table                            | Field(s)        | Type   | Sensitivity                                                         | Priority |
+| :------------------------------- | :-------------- | :----- | :------------------------------------------------------------------ | :------- |
+| `workflow_actions_webhook_tasks` | `headers`       | JSON   | **High** — may contain `Authorization: Bearer <token>`, API keys    | P0       |
+| `workflow_templates`             | `actions`       | JSON   | **High** — contains webhook URLs and headers for configured actions | P0       |
+| `workflow_actions_webhook_tasks` | `url`           | String | **Medium** — URLs may contain tokens in query parameters            | P1       |
+| `pkce_sessions`                  | `code_verifier` | String | **Medium** — short-lived PKCE code verifiers                        | P2       |
 
 ## Key Management Strategy
 
@@ -174,12 +173,12 @@ interface KmsProvider {
 
 ### Provider Implementations
 
-| Provider | Use Case | How It Works | Status |
-| :--- | :--- | :--- | :--- |
-| **`EnvVarKmsProvider`** | Local dev, simple self-hosted | Reads a 256-bit master key from an environment variable. DEK encrypted with AES-256-GCM using this key. | **Initial implementation** |
-| **`FileKmsProvider`** | Self-hosted production | Reads master key from a file with restricted permissions (`chmod 400`). Supports key rotation by reading versioned key files. | Planned |
-| **`VaultKmsProvider`** | Self-hosted high-security | Delegates to HashiCorp Vault's Transit Secrets Engine. | Future (example provider) |
-| **Cloud KMS Providers** | AWS / GCP / Azure | One provider per cloud platform, delegating to the respective KMS API. | Future (per-provider) |
+| Provider                | Use Case                      | How It Works                                                                                                                  | Status                     |
+| :---------------------- | :---------------------------- | :---------------------------------------------------------------------------------------------------------------------------- | :------------------------- |
+| **`EnvVarKmsProvider`** | Local dev, simple self-hosted | Reads a 256-bit master key from an environment variable. DEK encrypted with AES-256-GCM using this key.                       | **Initial implementation** |
+| **`FileKmsProvider`**   | Self-hosted production        | Reads master key from a file with restricted permissions (`chmod 400`). Supports key rotation by reading versioned key files. | Planned                    |
+| **`VaultKmsProvider`**  | Self-hosted high-security     | Delegates to HashiCorp Vault's Transit Secrets Engine.                                                                        | Future (example provider)  |
+| **Cloud KMS Providers** | AWS / GCP / Azure             | One provider per cloud platform, delegating to the respective KMS API.                                                        | Future (per-provider)      |
 
 ### Provider Selection
 
@@ -188,7 +187,9 @@ Provider selection is configuration-driven:
 ```typescript
 const kmsProvider = KmsProviderFactory.create({
   type: process.env.KMS_PROVIDER_TYPE ?? "env_var",
-  config: { /* Provider-specific config from env vars */ }
+  config: {
+    /* Provider-specific config from env vars */
+  }
 })
 ```
 
@@ -203,6 +204,7 @@ KMS_MASTER_KEY=<base64-encoded-32-byte-key>
 ```
 
 A development key can be generated with:
+
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
@@ -231,6 +233,7 @@ Key rotation should be supported from day one as a low-cost compliance preparedn
 Sensitive data also flows through Redis-backed BullMQ queues (e.g., `WorkflowActionWebhookEvent`). The encryption framework addresses database storage but does not directly cover queue payloads.
 
 **Mitigations:**
+
 - Queue events must contain **only task IDs** (references), not actual secret data. The worker retrieves and decrypts secrets from the database at execution time.
 - If secrets must transit through queues in future use cases, they must be encrypted before enqueuing.
 - Redis TLS and authentication should be enabled regardless.
@@ -250,17 +253,17 @@ Decrypted field values and the cached plaintext DEK reside in Node.js process me
 
 ### Threat Model
 
-| Threat | Addressed? | Notes |
-| :--- | :--- | :--- |
-| DB compromise via SQL injection | ✅ Yes | Encrypted fields remain protected |
-| Unauthorized DB admin access | ✅ Yes | Admin sees only ciphertext |
-| Backup theft | ✅ Yes | Backups contain only ciphertext |
-| Insider threat (DB level) | ✅ Yes | DEK not stored in DB |
-| Application server compromise | ⚠️ Accepted | Inherent to app-level encryption architecture. Mitigated by securing the compute runtime (container hardening, network policies, principle of least privilege, runtime security monitoring). |
-| Redis/queue data exposure | ⚠️ Mitigated | Queue events must use references, not secrets |
-| Log file exposure | ⚠️ Mitigated | Error handling must sanitize crypto material |
-| Memory dump attacks | ⚠️ Accepted | Inherent to app-level encryption. Mitigated by disabling core dumps in production, restricting process introspection, and securing the compute runtime. |
-| Key compromise via poor storage | ⚠️ Mitigated | KMS provider abstraction enables secure key storage upgrades |
+| Threat                          | Addressed?   | Notes                                                                                                                                                                                        |
+| :------------------------------ | :----------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DB compromise via SQL injection | ✅ Yes       | Encrypted fields remain protected                                                                                                                                                            |
+| Unauthorized DB admin access    | ✅ Yes       | Admin sees only ciphertext                                                                                                                                                                   |
+| Backup theft                    | ✅ Yes       | Backups contain only ciphertext                                                                                                                                                              |
+| Insider threat (DB level)       | ✅ Yes       | DEK not stored in DB                                                                                                                                                                         |
+| Application server compromise   | ⚠️ Accepted  | Inherent to app-level encryption architecture. Mitigated by securing the compute runtime (container hardening, network policies, principle of least privilege, runtime security monitoring). |
+| Redis/queue data exposure       | ⚠️ Mitigated | Queue events must use references, not secrets                                                                                                                                                |
+| Log file exposure               | ⚠️ Mitigated | Error handling must sanitize crypto material                                                                                                                                                 |
+| Memory dump attacks             | ⚠️ Accepted  | Inherent to app-level encryption. Mitigated by disabling core dumps in production, restricting process introspection, and securing the compute runtime.                                      |
+| Key compromise via poor storage | ⚠️ Mitigated | KMS provider abstraction enables secure key storage upgrades                                                                                                                                 |
 
 ## Pending Action Items
 

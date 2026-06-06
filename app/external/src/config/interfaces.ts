@@ -1,3 +1,4 @@
+import {KmsProviderType} from "./types"
 import {Option} from "fp-ts/Option"
 import {OidcProvider} from "./types"
 
@@ -109,4 +110,21 @@ export interface ConfigProviderInterface {
   frontendUrl: string
   /** Whether to set the Secure flag on auth cookies. Set to false for local HTTP development. */
   cookieSecure: boolean
+  kmsConfig: KmsConfig
+}
+
+export interface KmsConfig {
+  type: KmsProviderType
+  // Retrieves the Map of version-to-Buffer master keys.
+  // Supports exactly-once consumption: the first call returns the keys,
+  // and subsequent calls throw an error to prevent reuse of zeroed buffers.
+  getKeys(): Map<number, Buffer>
+  // The active key version used for encrypting new data.
+  // Note: Keeping this version explicit (rather than defaulting to the latest version)
+  // allows for safe key rotation during rolling deployments:
+  // 1. Distribute Phase: Add the new key material to env (e.g., KMS_MASTER_KEY_V2) so all
+  //    instances can decrypt data encrypted with it, while still keeping currentVersion at 'v1'.
+  // 2. Activate Phase: Once all nodes are updated, change KMS_MASTER_KEY_VERSION to 'v2'
+  //    to toggle the write-path encryption key safely.
+  currentVersion: number
 }
