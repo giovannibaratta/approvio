@@ -1,0 +1,39 @@
+name: Check Licenses
+
+on:
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  check-licenses:
+    name: Verify Dependency Licenses
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "yarn"
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Check allowed licenses
+        run: yarn check:licenses
+
+      - name: Generate license file
+        run: yarn generate:license
+
+      - name: Ensure no uncommitted license changes
+        run: |
+          if ! git diff --exit-code THIRD-PARTY-LICENSES.txt; then
+            echo "::error title=Uncommitted changes to THIRD-PARTY-LICENSES.txt::Please run 'yarn generate:license' and commit the result."
+            exit 1
+          fi
