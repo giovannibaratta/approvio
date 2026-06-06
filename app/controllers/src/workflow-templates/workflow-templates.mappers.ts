@@ -231,25 +231,94 @@ function mapWorkflowTemplateSummaryToApi(workflowTemplateSummary: WorkflowTempla
   }
 }
 
-function mapWorkflowActionToApi(action: WorkflowAction): WorkflowActionApi {
+export function mapWorkflowActionToApi(action: WorkflowAction): WorkflowActionApi {
   switch (action.type) {
     case WorkflowActionType.EMAIL:
       return {
         type: action.type,
         recipients: action.recipients.slice()
       }
-    case WorkflowActionType.WEBHOOK:
+    case WorkflowActionType.WEBHOOK: {
+      const redactScope = action.redact
+      const redactHeadersMode = redactScope === "HEADERS" || redactScope === "ALL" ? "all" : "smart"
+      const redactUrlMode = redactScope === "URL" || redactScope === "ALL" ? "all" : "smart"
+
+      let redactedUrl = action.url
+      const isSensitiveKey = (key: string): boolean => {
+        const lowerKey = key.toLowerCase()
+        return (
+          lowerKey.includes("auth") ||
+          lowerKey.includes("token") ||
+          lowerKey.includes("secret") ||
+          lowerKey.includes("key") ||
+          lowerKey.includes("password") ||
+          lowerKey.includes("credential")
+        )
+      }
+
+      try {
+        const urlObj = new URL(action.url)
+        let modified = false
+
+        if (urlObj.username) {
+          urlObj.username = "***"
+          modified = true
+        }
+
+        if (urlObj.password) {
+          urlObj.password = "***"
+          modified = true
+        }
+
+        const params = new URLSearchParams(urlObj.search)
+        for (const [key] of params.entries()) {
+          if (redactUrlMode === "all" || isSensitiveKey(key)) {
+            params.set(key, "***")
+            modified = true
+          }
+        }
+        if (modified) {
+          urlObj.search = params.toString()
+          redactedUrl = urlObj.toString()
+        }
+      } catch {
+        // Fallback if URL parsing fails
+      }
+
+      let redactedHeaders: Record<string, string> | undefined = undefined
+
+      if (action.headers) {
+        redactedHeaders = {}
+        for (const [key, value] of Object.entries(action.headers)) {
+          redactedHeaders[key] = redactHeadersMode === "all" || isSensitiveKey(key) ? "***" : value
+        }
+      }
+
       return {
         type: action.type,
-        url: action.url,
+        url: redactedUrl,
         method: action.method,
-        headers: action.headers ? {...action.headers} : undefined
+        headers: redactedHeaders,
+        redact: action.redact
       }
-    case WorkflowActionType.SLACK:
+    }
+    case WorkflowActionType.SLACK: {
+      const getRedactedSlackUrl = (): string => {
+        try {
+          const urlObj = new URL(action.webhookUrl)
+          const parts = urlObj.pathname.split("/")
+          if (parts[1] === "services") return `${urlObj.origin}/services/***`
+
+          return `${urlObj.origin}/***`
+        } catch {
+          return "***"
+        }
+      }
       return {
         type: action.type,
-        webhookUrl: action.webhookUrl
+        webhookUrl: getRedactedSlackUrl()
       }
+    }
   }
 }
 
@@ -298,6 +367,7 @@ export function generateErrorResponseForCreateWorkflowTemplate(
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
     case "workflow_action_webhook_url_invalid":
+    case "workflow_action_redact_invalid":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
     case "workflow_template_already_exists":
       return new ConflictException(
@@ -354,6 +424,7 @@ export function generateErrorResponseForGetWorkflowTemplate(
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
     case "workflow_action_webhook_url_invalid":
+    case "workflow_action_redact_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -407,6 +478,7 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
     case "workflow_action_webhook_url_invalid":
+    case "workflow_action_redact_invalid":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
     case "workflow_template_update_before_create":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
@@ -491,6 +563,7 @@ export function generateErrorResponseForDeprecateWorkflowTemplate(
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
     case "workflow_action_webhook_url_invalid":
+    case "workflow_action_redact_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
@@ -558,6 +631,7 @@ export function generateErrorResponseForListWorkflowTemplates(
     case "workflow_action_missing_http_method":
     case "workflow_action_headers_invalid":
     case "workflow_action_webhook_url_invalid":
+    case "workflow_action_redact_invalid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)

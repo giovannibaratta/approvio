@@ -14,6 +14,12 @@ export enum WorkflowActionType {
   SLACK = "SLACK"
 }
 
+export enum WebhookActionRedactScope {
+  HEADERS = "HEADERS",
+  URL = "URL",
+  ALL = "ALL"
+}
+
 export type WorkflowAction = EmailAction | WebhookAction | SlackAction
 
 export type EmailAction = Readonly<{
@@ -26,6 +32,7 @@ export type WebhookAction = Readonly<{
   url: string
   method: WebhookActionHttpMethod
   headers?: Record<string, string>
+  redact?: WebhookActionRedactScope
 }>
 
 export type SlackAction = Readonly<{
@@ -44,6 +51,7 @@ type UnprefixedWorkflowActionValidationError =
   | "missing_http_method"
   | "headers_invalid"
   | "webhook_url_invalid"
+  | "redact_invalid"
 
 export function validateWorkflowActions(
   actions: unknown
@@ -85,11 +93,20 @@ function validateWebhookAction(data: Record<string, unknown>): Either<WorkflowAc
       if (typeof data.headers[key] !== "string") return left("workflow_action_headers_invalid")
     }
 
+  let redact: WebhookActionRedactScope | undefined = undefined
+
+  if (data.redact !== undefined) {
+    if (typeof data.redact !== "string") return left("workflow_action_redact_invalid")
+    redact = getStringAsEnum(data.redact, WebhookActionRedactScope)
+    if (redact === undefined) return left("workflow_action_redact_invalid")
+  }
+
   return right({
     type: WorkflowActionType.WEBHOOK,
     url: data.url,
     method,
-    headers: data.headers as Record<string, string> | undefined
+    headers: data.headers as Record<string, string> | undefined,
+    redact
   })
 }
 
