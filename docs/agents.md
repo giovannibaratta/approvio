@@ -57,30 +57,10 @@ To participate in a workflow, an agent must have the voter role for the specific
 
 Agents authenticate using a secure two-step challenge-response protocol:
 
-```text
-┌─────────┐                                            ┌─────────┐
-│  Agent  │                                            │ Server  │
-└────┬────┘                                            └────┬────┘
-     │                                                      │
-     │  1. Request Challenge                                │
-     │  POST /auth/agents/challenge                         │
-     │─────────────────────────────────────────────────────>│
-     │                                                      │
-     │  2. Encrypted Challenge (with nonce)                 │
-     │  RSA-encrypted with agent's public key               │
-     │<─────────────────────────────────────────────────────│
-     │                                                      │
-     │  [Agent decrypts challenge with private key]         │
-     │                                                      │
-     │  3. Signed JWT Assertion                             │
-     │  POST /auth/agents/token (with decrypted nonce)      │
-     │─────────────────────────────────────────────────────>│
-     │                                                      │
-     │  4. Access Token                                     │
-     │  JWT token for API access                            │
-     │<─────────────────────────────────────────────────────│
-     │                                                      │
-```
+1. **Request Challenge**: The agent requests a challenge from the server.
+2. **Encrypted Challenge**: The server replies with a challenge encrypted with the agent's public key.
+3. **Signed JWT Assertion**: The agent decrypts the challenge with its private key and sends back a signed JWT assertion containing the decrypted nonce.
+4. **Access Token**: The server validates the assertion and issues an access token for API access.
 
 ### Authentication Steps
 

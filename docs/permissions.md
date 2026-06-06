@@ -33,10 +33,12 @@ For detailed information about the role system, see [Roles](./roles.md).
 
 Permissions follow a hierarchical model:
 
-1. **Organization Admin**: Bypasses all permission checks
-2. **Organization-wide Roles**: Apply to all resources of that type
-3. **Space-scoped Roles**: Apply to a space and its templates
-4. **Resource-specific Roles**: Apply to individual templates or groups
+| Level | Role Type                   | Scope Description                       |
+| :---- | :-------------------------- | :-------------------------------------- |
+| 1     | **Organization Admin**      | Bypasses all permission checks          |
+| 2     | **Organization-wide Roles** | Apply to all resources of that type     |
+| 3     | **Space-scoped Roles**      | Apply to a space and its templates      |
+| 4     | **Resource-specific Roles** | Apply to individual templates or groups |
 
 ### Voting Permissions
 
@@ -55,10 +57,10 @@ Voting on workflows requires multiple conditions:
 
 ```text
 User "alice@company.com" can vote on a workflow if:
-✓ Alice is a member of "Finance Approvers" group
-✓ Alice has WorkflowTemplateVoter role for the template
-✓ Workflow requires "Finance Approvers" group approval
-✓ Workflow is actively accepting votes
+- Alice is a member of "Finance Approvers" group
+- Alice has WorkflowTemplateVoter role for the template
+- Workflow requires "Finance Approvers" group approval
+- Workflow is actively accepting votes
 ```
 
 ### Resource Permissions
@@ -74,6 +76,7 @@ User "alice@company.com" can vote on a workflow if:
 | **Workflow** | `workflow_read`   | View workflow details               |
 | **Workflow** | `workflow_list`   | List workflows                      |
 | **Workflow** | `workflow_cancel` | Cancel workflows                    |
+| **Audit**    | `read`            | View audit logs                     |
 
 ## Security Considerations
 

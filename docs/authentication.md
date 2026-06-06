@@ -94,26 +94,6 @@ The Web flow uses standard OIDC redirection and secures the session via `httpOnl
 - **Callback:** Upon successful authentication, the Identity Provider redirects back to the application. The backend exchanges the code for OIDC tokens and establishes an Approvio session using `httpOnly` cookies.
 - **Refresh:** Sessions can be transparently refreshed using the refresh token cookie.
 
-```mermaid
-sequenceDiagram
-    participant F as Frontend (Browser)
-    participant W as Backend
-    participant O as OIDC Provider
-
-    F->>W: GET /auth/web/login
-    W-->>F: 302 Redirect to OIDC Provider
-    F->>O: User Authentication & Consent
-    O-->>F: 302 Redirect to /auth/web/callback
-    F->>W: GET /auth/web/callback?code=...&state=...
-    Note over W,O: Backend exchanges code for OIDC tokens <br/> server-to-server
-    Note over W: Validates and Provisions User <br/> Generates Session Token
-    W-->>F: 302 Redirect to Frontend URL <br/> (Sets httpOnly access_token + refresh_token Cookies)
-
-    Note over F,W: Token Refresh
-    F->>W: POST /auth/web/refresh (refresh_token cookie)
-    W-->>F: 204 No Content (Rotates Cookies)
-```
-
 ### 2. CLI Flow (Terminal + Browser)
 
 The CLI flow involves initiating login via the CLI, performing authentication on the host browser, and finally exchanging the code for programmatic tokens on the CLI.
@@ -121,29 +101,6 @@ The CLI flow involves initiating login via the CLI, performing authentication on
 - **Initiate:** The CLI tool initiates the authentication process and opens a local browser window.
 - **Authenticate:** The user authenticates with the Identity Provider in their browser.
 - **Token Exchange:** The browser redirects back to a local server spun up by the CLI tool, passing the authorization code. The CLI exchanges this code for Approvio Access and Refresh tokens to use for subsequent API calls.
-
-```mermaid
-sequenceDiagram
-    participant C as CLI
-    participant B as Host Browser
-    participant A as Backend
-    participant O as OIDC Provider
-
-    C->>A: POST /auth/cli/initiate { redirectUri }
-    A-->>C: 200 { authorizationUrl }
-    C->>B: Opens local Browser
-    B->>O: User Authentication & Consent
-    O-->>B: 302 Redirect to CLI local server (redirectUri)
-    B-->>C: Returns code & state
-    C->>A: POST /auth/cli/token { code, state }
-    Note over A,O: Backend exchanges code for OIDC tokens <br/> server-to-server
-    Note over A: Validates and Provisions User <br/> Generates Approvio Tokens
-    A-->>C: 200 Returns Approvio Access & Refresh Tokens (JSON)
-
-    Note over C,A: Token Refresh
-    C->>A: POST /auth/cli/refresh { refreshToken }
-    A-->>C: 200 Returns new Access & Refresh Tokens (JSON)
-```
 
 ### 3. Agent Flow (Machine-to-Machine)
 
@@ -153,26 +110,10 @@ Agents use an asymmetric key-pair (JWT Assertion) mechanism to securely authenti
 - **Sign:** The agent signs the challenge with its private key, creating a Client Assertion JWT.
 - **Token:** The server validates the signature and returns Access and Refresh tokens for the agent to use.
 
-```mermaid
-sequenceDiagram
-    participant M as Trusted Agent
-    participant A as Backend
-
-    M->>A: POST /auth/agents/challenge { agentId }
-    A-->>M: 200 Returns PKCE Challenge
-    Note over M: Agent signs the challenge <br/> with its private key (Client Assertion JWT)
-    M->>A: POST /auth/agents/token { clientAssertion }
-    Note over A: Validates JWT Signature <br/> Registers agent if applicable
-    A-->>M: 200 Returns Access + Refresh Tokens
-
-    Note over M,A: Token Refresh
-    M->>A: POST /auth/agents/refresh { refreshToken }
-    Note over A: Validates Request
-    A-->>M: 200 Returns new TokenResponse
-```
-
 ## Troubleshooting
 
-- **Discovery Failed**: Ensure `OIDC_ISSUER_URL` is correct and accessible from the server. Check if `.well-known/openid-configuration` exists at that URL.
-- **Redirect Mismatch**: Ensure `OIDC_REDIRECT_URI` exactly matches the one registered with your IDP.
-- **Scopes**: Ensure the requested scopes are allowed for your client.
+| Issue                 | Resolution                                                                                                                          |
+| :-------------------- | :---------------------------------------------------------------------------------------------------------------------------------- |
+| **Discovery Failed**  | Ensure `OIDC_ISSUER_URL` is correct and accessible from the server. Check if `.well-known/openid-configuration` exists at that URL. |
+| **Redirect Mismatch** | Ensure `OIDC_REDIRECT_URI` exactly matches the one registered with your IDP.                                                        |
+| **Scopes**            | Ensure the requested scopes are allowed for your client.                                                                            |

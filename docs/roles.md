@@ -48,10 +48,7 @@ Control access to spaces and their organization:
 | **SpaceReadOnly** | read         | View space information                     |
 | **SpaceManager**  | read, manage | View and manage space (including deletion) |
 
-**Scopes Available:**
-
-- Space-specific: Applies to one space
-- Organization-wide: Applies to all spaces
+**Scopes Available:** Space-specific (applies to one space), Organization-wide (applies to all spaces).
 
 ### Workflow Template Roles
 
@@ -65,11 +62,7 @@ Control who can create, modify, and use workflow templates:
 | **WorkflowTemplateVoter**        | vote                     | Vote on workflows from this template |
 | **WorkflowTemplateFullAccess**   | All template permissions | Complete template control            |
 
-**Scopes Available:**
-
-- Workflow Template-specific: Applies to one template
-- Space-level: Applies to all templates in a space
-- Organization-wide: Applies to all templates
+**Scopes Available:** Workflow Template-specific (applies to one template), Space-level (applies to all templates in a space), Organization-wide (applies to all templates).
 
 ### Workflow Roles
 
@@ -82,11 +75,17 @@ Control who can view, cancel, and manage workflow instances:
 | **WorkflowCancel**     | workflow_read, workflow_list, workflow_cancel | List, view, and cancel workflows |
 | **WorkflowFullAccess** | All workflow permissions                      | Complete workflow control        |
 
-**Scopes Available:**
+**Scopes Available:** Workflow Template-specific (applies to workflows from one template), Space-level (applies to workflows from all templates in a space), Organization-wide (applies to all workflows).
 
-- Workflow Template-specific: Applies to workflows from one template
-- Space-level: Applies to workflows from all templates in a space
-- Organization-wide: Applies to all workflows
+### Audit Roles
+
+Control access to view organization audit logs:
+
+| Role              | Permissions | Description     |
+| :---------------- | :---------- | :-------------- |
+| **AuditorViewer** | `read`      | View audit logs |
+
+**Scopes Available:** Organization-wide (applies to all audit logs across the organization).
 
 ## Role Limits
 
