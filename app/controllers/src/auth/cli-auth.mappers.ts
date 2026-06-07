@@ -133,7 +133,9 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
     case "oidc_userinfo_fetch_failed":
     case "pkce_code_generation_failed":
     case "pkce_code_storage_failed":
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: unknown error`))
+    case "encryption_failed":
+    case "decryption_failed":
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "refresh_token_invalid_structure":
     case "refresh_token_expire_before_create":
     case "refresh_token_invalid_agent_id":
@@ -312,7 +314,9 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
     case "oidc_userinfo_fetch_failed":
     case "pkce_code_generation_failed":
     case "pkce_code_storage_failed":
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: unknown error`))
+    case "encryption_failed":
+    case "decryption_failed":
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "refresh_token_invalid_structure":
     case "refresh_token_expire_before_create":
     case "refresh_token_invalid_agent_id":
@@ -491,7 +495,9 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
     case "oidc_userinfo_fetch_failed":
     case "pkce_code_generation_failed":
     case "pkce_code_storage_failed":
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: unknown error`))
+    case "encryption_failed":
+    case "decryption_failed":
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "refresh_token_invalid_structure":
     case "refresh_token_expire_before_create":
     case "refresh_token_invalid_agent_id":
@@ -669,7 +675,9 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "oidc_userinfo_fetch_failed":
     case "pkce_code_generation_failed":
     case "pkce_code_storage_failed":
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: unknown error`))
+    case "encryption_failed":
+    case "decryption_failed":
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "refresh_token_invalid_structure":
     case "refresh_token_expire_before_create":
     case "refresh_token_invalid_agent_id":

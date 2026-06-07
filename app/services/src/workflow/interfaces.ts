@@ -5,7 +5,7 @@ import {
   WorkflowTemplateValidationError,
   WorkflowValidationError
 } from "@domain"
-import {UnknownError} from "@services/error"
+import {UnknownError, EncryptionError} from "@services/error"
 import {RequestorAwareRequest} from "@services/shared/types"
 import {TaskEither} from "fp-ts/TaskEither"
 
@@ -105,6 +105,7 @@ export type WorkflowGetError =
   | "workflow_not_found"
   | WorkflowValidationError
   | WorkflowTemplateValidationError
+  | EncryptionError
   | UnknownError
 
 export type WorkflowUpdateError =
@@ -112,6 +113,7 @@ export type WorkflowUpdateError =
   | "concurrency_error"
   | WorkflowValidationError
   | WorkflowTemplateValidationError
+  | EncryptionError
   | UnknownError
 
 export type CreateWorkflowRepoError = UnknownError | "workflow_already_exists"

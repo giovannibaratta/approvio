@@ -129,7 +129,11 @@ export function generateErrorResponseForCreateWorkflow(
     case "workflow_status_invalid":
     case "quota_check_error":
     case "unknown_error":
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
+    case "encryption_failed":
+    case "decryption_failed":
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
+      )
     case "name_missing":
     case "name_not_string":
     case "description_not_string":
@@ -187,7 +191,11 @@ export function generateErrorResponseForGetWorkflow(
     case "workflow_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow not found`))
     case "unknown_error":
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
+    case "encryption_failed":
+    case "decryption_failed":
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
+      )
     case "approval_rule_and_rule_must_have_rules":
     case "approval_rule_group_rule_invalid_group_id":
     case "approval_rule_group_rule_invalid_min_count":
@@ -281,7 +289,11 @@ export function generateErrorResponseForListWorkflows(
     case "malformed_object":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request parameter`))
     case "unknown_error":
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
+    case "encryption_failed":
+    case "decryption_failed":
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
+      )
     case "approval_rule_and_rule_must_have_rules":
     case "approval_rule_group_rule_invalid_group_id":
     case "approval_rule_group_rule_invalid_min_count":
@@ -507,6 +519,8 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
         generateErrorPayload(errorCode, `${context}: Invalid parameters for vote eligibility check`)
       )
     case "unknown_error":
+    case "encryption_failed":
+    case "decryption_failed":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
@@ -648,8 +662,10 @@ export function generateErrorResponseForCastVote(
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: User is not eligible to vote`))
     case "quota_check_error":
     case "unknown_error":
+    case "encryption_failed":
+    case "decryption_failed":
       return new InternalServerErrorException(
-        generateErrorPayload("VOTE_CAST_FAILED", `${context}: An unexpected error occurred while casting vote`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred while casting vote`)
       )
     case "malformed_request":
     case "vote_type_missing":
@@ -806,6 +822,8 @@ export function generateErrorResponseForListVotes(error: FindVotesError, context
     case "workflow_not_found":
       return new NotFoundException(generateErrorPayload("WORKFLOW_NOT_FOUND", `${context}: Workflow not found`))
     case "unknown_error":
+    case "encryption_failed":
+    case "decryption_failed":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )

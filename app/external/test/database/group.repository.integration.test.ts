@@ -1,6 +1,6 @@
 import {Test, TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
-import {DatabaseClient, GroupDbRepository, UserDbRepository} from "@external"
+import {DatabaseClient, GroupDbRepository, UserDbRepository, KmsModule, ConfigModule} from "@external"
 import {PrismaClient} from "@prisma/client"
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {createUserMembershipEntity, MembershipFactory} from "@domain"
@@ -18,16 +18,12 @@ describe("GroupDbRepository Integration", () => {
     const isolatedDb = await prepareDatabase()
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        GroupDbRepository,
-        UserDbRepository,
-        DatabaseClient,
-        {
-          provide: ConfigProvider,
-          useValue: MockConfigProvider.fromDbConnectionUrl(isolatedDb)
-        }
-      ]
-    }).compile()
+      imports: [ConfigModule, KmsModule],
+      providers: [GroupDbRepository, UserDbRepository, DatabaseClient]
+    })
+      .overrideProvider(ConfigProvider)
+      .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+      .compile()
 
     prisma = module.get(DatabaseClient).prisma
     repository = module.get(GroupDbRepository)

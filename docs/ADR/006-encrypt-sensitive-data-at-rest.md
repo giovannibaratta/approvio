@@ -307,3 +307,21 @@ The following items must be implemented as part of this architecture change:
 - **Cloud KMS Providers:** Per-provider implementations (AWS KMS, Google Cloud KMS, Azure Key Vault) for managed cloud deployments.
 - **Selective JSON Encryption:** If performance profiling warrants it, selectively encrypt only sensitive entries within JSON columns (e.g., only webhook actions within the `actions` array).
 - **DB-Level TDE:** Enable Transparent Data Encryption at the infrastructure level as a defense-in-depth measure when deploying on supporting platforms.
+
+## Appendix A: Revision on Encryption Middleware (2026-06-07)
+
+### Proposal Drift Rationale
+
+The original design proposed using Prisma Client Extensions (`client.$extends`) to transparently intercept and perform application-level encryption at the database driver boundary. However, during detailed implementation, a critical limitation was identified in Prisma Client Extensions:
+
+1. **Nested Relations Limitation:** Prisma model-specific query extensions (e.g., hooks registered on `prisma.workflowTemplate`) are **not** invoked when the model is loaded as a nested relation or join (e.g., when querying `prisma.workflow.findMany({ include: { workflowTemplates: true } })`). This is a known Prisma limitation tracked in [Prisma Issue #24525](https://github.com/prisma/prisma/issues/24525).
+2. **Loss of Type-Safety in Global Middleware:** The only way to intercept nested relation queries inside Prisma middleware is using a global query interceptor (`$allOperations`), which requires traversing untyped argument/result trees using dynamic reflection (`any` casting). This replicates the brittle behavior of the original implementation, posing risks of data leakage and silent error suppression.
+
+### Alternative Selected: Repository-Level Encryption
+
+To ensure complete type safety, correct error propagation via `TaskEither`, and strict data leakage detection, the implementation was changed to perform encryption/decryption at the repository layer:
+- **`PkceSessionDbRepository`** and **`WorkflowTemplateDbRepository`** handle the encryption/decryption of their respective fields.
+- **`WorkflowDbRepository`** explicitly intercepts queries containing nested templates to decrypt their actions before domain mapping.
+
+This architecture choice guarantees that all application code interacting with these entities is statically type-safe and that KMS/decryption failures are propagated cleanly as domain/repository errors rather than suppressed or bypassed. This decision may be revisited if Prisma resolves [Issue #24525](https://github.com/prisma/prisma/issues/24525) and introduces native support for model-specific hooks on nested relation queries.
+

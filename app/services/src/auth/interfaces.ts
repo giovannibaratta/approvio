@@ -21,7 +21,7 @@ import {AgentGetError} from "../agent/interfaces"
 import {AutoRegisterError} from "../user/user.service"
 import {UserGetError} from "../user/interfaces"
 import {OrganizationAdminCreateError} from "../organization-admin/interfaces"
-import {UnknownError} from "../error"
+import {UnknownError, EncryptionError} from "../error"
 import {PrefixUnion} from "@utils/types"
 import {TaskEither} from "fp-ts/TaskEither"
 import {DpopValidationError} from "@utils/dpop"
@@ -56,16 +56,18 @@ export type UseHighPrivilegeTokenError =
   | ConsumeTokenError
   | UnknownError
 
-export type PkceError = PrefixUnion<
-  "pkce",
-  | "code_generation_failed"
-  | "code_storage_failed"
-  | "code_verification_failed"
-  | "code_not_found"
-  | "code_expired"
-  | "code_already_used"
-  | "code_concurrency_conflict"
->
+export type PkceError =
+  | PrefixUnion<
+      "pkce",
+      | "code_generation_failed"
+      | "code_storage_failed"
+      | "code_verification_failed"
+      | "code_not_found"
+      | "code_expired"
+      | "code_already_used"
+      | "code_concurrency_conflict"
+    >
+  | EncryptionError
 
 export interface PkceChallenge {
   codeChallenge: string

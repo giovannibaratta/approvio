@@ -31,6 +31,9 @@ import * as TE from "fp-ts/TaskEither"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "./errors"
 import {DecorableEntity, isDecoratedWith} from "@utils"
+import {EncryptionService} from "../kms"
+import {decryptActions} from "./workflow-template.repository"
+import {EncryptionError} from "@services/error"
 
 interface Identifier {
   type: "id" | "name"
@@ -39,7 +42,33 @@ interface Identifier {
 
 @Injectable()
 export class WorkflowDbRepository implements WorkflowRepository {
-  constructor(private readonly dbClient: DatabaseClient) {}
+  constructor(
+    private readonly dbClient: DatabaseClient,
+    private readonly encryptionService: EncryptionService
+  ) {}
+
+  private decryptWorkflow<T extends PrismaWorkflowDecoratorSelector>(
+    workflow: PrismaDecoratedWorkflow<T>
+  ): TE.TaskEither<EncryptionError, PrismaDecoratedWorkflow<T>> {
+    if (iPrismaDecoratedWorkflow(workflow, "workflowTemplates")) {
+      const template = workflow.workflowTemplates
+      return pipe(
+        decryptActions(template.actions, this.encryptionService),
+        TE.map(decryptedActions => {
+          const updatedTemplate = {
+            ...template,
+            actions: decryptedActions
+          }
+          return {
+            ...workflow,
+            workflowTemplates: updatedTemplate
+          }
+        })
+      )
+    }
+
+    return TE.right(workflow)
+  }
 
   /**
    * Creates a new workflow in the database.
@@ -258,14 +287,17 @@ export class WorkflowDbRepository implements WorkflowRepository {
     includeRef?: T
   }) => TaskEither<WorkflowUpdateError, PrismaDecoratedWorkflow<T>> {
     return ({workflowId, data, occCheck, includeRef}) =>
-      TE.tryCatchK(
-        () => this.updateWorkflowTaskNoErrorHandling({workflowId, data, occCheck, includeRef}),
-        error => {
-          if (isPrismaRecordNotFoundError(error, Prisma.ModelName.Workflow)) return "concurrency_error" as const
-          Logger.error(`Error while updating workflow ${workflowId}. Unknown error`, error)
-          return "unknown_error" as const
-        }
-      )()
+      pipe(
+        TE.tryCatch(
+          () => this.updateWorkflowTaskNoErrorHandling({workflowId, data, occCheck, includeRef}),
+          error => {
+            if (isPrismaRecordNotFoundError(error, Prisma.ModelName.Workflow)) return "concurrency_error" as const
+            Logger.error(`Error while updating workflow ${workflowId}. Unknown error`, error)
+            return "unknown_error" as const
+          }
+        ),
+        TE.chainW(result => this.decryptWorkflow(result))
+      )
   }
 
   private updateWorkflowTaskNoErrorHandling<T extends PrismaWorkflowDecoratorSelector>(input: {
@@ -301,13 +333,19 @@ export class WorkflowDbRepository implements WorkflowRepository {
     include?: T
   ): (identifier: Identifier) => TaskEither<WorkflowGetError, PrismaDecoratedWorkflow<T> | null> {
     return identifier =>
-      TE.tryCatchK(
-        () => this.getObjectTaskNoErrorHandling(identifier, include),
-        error => {
-          Logger.error(`Error while retrieving workflow by ${identifier.type}. Unknown error`, error)
-          return "unknown_error" as const
-        }
-      )()
+      pipe(
+        TE.tryCatch(
+          () => this.getObjectTaskNoErrorHandling(identifier, include),
+          error => {
+            Logger.error(`Error while retrieving workflow by ${identifier.type}. Unknown error`, error)
+            return "unknown_error" as const
+          }
+        ),
+        TE.chainW(result => {
+          if (!result) return TE.right(null)
+          return this.decryptWorkflow(result)
+        })
+      )
   }
 
   private async getObjectTaskNoErrorHandling<T extends PrismaWorkflowDecoratorSelector>(
@@ -363,13 +401,25 @@ export class WorkflowDbRepository implements WorkflowRepository {
     {workflows: PrismaDecoratedWorkflow<PrismaSelectors>[]; pagination: {total: number; page: number; limit: number}}
   > {
     return request =>
-      TE.tryCatchK(
-        () => this.listWorkflowsTaskNoErrorHandling<DomainSelectors, PrismaSelectors>()(request),
-        error => {
-          Logger.error("Error while listing workflows. Unknown error", error)
-          return "unknown_error" as const
-        }
-      )()
+      pipe(
+        TE.tryCatch(
+          () => this.listWorkflowsTaskNoErrorHandling<DomainSelectors, PrismaSelectors>()(request),
+          error => {
+            Logger.error("Error while listing workflows. Unknown error", error)
+            return "unknown_error" as const
+          }
+        ),
+        TE.chainW(result =>
+          pipe(
+            result.workflows,
+            TE.traverseArray(w => this.decryptWorkflow(w)),
+            TE.map(decryptedWorkflows => ({
+              workflows: decryptedWorkflows as PrismaDecoratedWorkflow<PrismaSelectors>[],
+              pagination: result.pagination
+            }))
+          )
+        )
+      )
   }
 
   private listWorkflowsTaskNoErrorHandling<

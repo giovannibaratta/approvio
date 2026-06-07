@@ -71,7 +71,9 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
     case "unknown_error":
     case "quota_check_error":
     case "agent_token_generation_failed":
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: unknown error`))
+    case "encryption_failed":
+    case "decryption_failed":
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "agent_key_decode_error":
     case "agent_invalid_uuid":
     case "agent_name_empty":
@@ -259,8 +261,11 @@ export function generateErrorResponseForExchangePrivilegeToken(
     case "user_duplicate_roles":
     case "user_already_exists":
     case "auth_invalid_entity":
+    case "encryption_failed":
+    case "decryption_failed":
+      Logger.error(`Error in OIDC step-up token verification: ${context}`, error)
       return new InternalServerErrorException(
-        generateErrorPayload(errorCode, `${context}: OIDC step-up token verification failed`)
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: OIDC step-up token verification failed`)
       )
     case "oidc_network_error":
     case "oidc_invalid_userinfo_response":
@@ -328,6 +333,8 @@ export function generateErrorResponseForRefreshAgentToken(
     case "quota_check_error":
     case "agent_token_generation_failed":
     case "oidc_unknown_error":
+    case "encryption_failed":
+    case "decryption_failed":
       Logger.error(`Unknown error: ${errorCode}`)
       return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "agent_key_decode_error":
@@ -526,6 +533,8 @@ export function generateErrorResponseForGenerateToken(error: GenerateTokenError,
     case "unknown_error":
     case "auth_invalid_redirect_uri":
     case "quota_check_error":
+    case "encryption_failed":
+    case "decryption_failed":
       return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "request_empty_body":
     case "request_missing_code":

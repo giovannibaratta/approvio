@@ -42,6 +42,7 @@ import {
 } from "@services/auth"
 import {ConfigModule} from "./config.module"
 import {QueueModule} from "./queue/queue.module"
+import {KmsModule} from "./kms/kms.module"
 import {BullQueueProvider} from "./queue/queue.provider"
 import {RedisStepUpTokenRepository} from "./auth/step-up-token.provider"
 import {RedisClient} from "./redis"
@@ -163,7 +164,7 @@ const repositories = [
 ]
 
 @Module({
-  imports: [ConfigModule, QueueModule],
+  imports: [ConfigModule, QueueModule, KmsModule],
   providers: [DatabaseClient, ...repositories, queueProvider, RedisClient],
   exports: [...repositories, queueProvider, transactionManager]
 })

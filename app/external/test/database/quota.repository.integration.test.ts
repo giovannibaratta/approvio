@@ -1,6 +1,6 @@
 import {Test, TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
-import {DatabaseClient, QuotaDbRepository} from "@external"
+import {DatabaseClient, QuotaDbRepository, KmsModule, ConfigModule} from "@external"
 import {PrismaClient} from "@prisma/client"
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {MockConfigProvider, createMockQuotaInDb} from "@test/mock-data"
@@ -18,15 +18,12 @@ describe("QuotaDbRepository Integration", () => {
     const isolatedDb = await prepareDatabase()
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        QuotaDbRepository,
-        DatabaseClient,
-        {
-          provide: ConfigProvider,
-          useValue: MockConfigProvider.fromDbConnectionUrl(isolatedDb)
-        }
-      ]
-    }).compile()
+      imports: [ConfigModule, KmsModule],
+      providers: [QuotaDbRepository, DatabaseClient]
+    })
+      .overrideProvider(ConfigProvider)
+      .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+      .compile()
 
     prisma = module.get(DatabaseClient).prisma
     repository = module.get(QuotaDbRepository)

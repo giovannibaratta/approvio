@@ -5,7 +5,7 @@ import {
   WorkflowTemplateSummary,
   WorkflowTemplateStatus
 } from "@domain"
-import {UnknownError} from "@services/error"
+import {EncryptionError, UnknownError} from "@services/error"
 import {RequestorAwareRequest} from "@services/shared/types"
 import {TaskEither} from "fp-ts/TaskEither"
 import {Option} from "fp-ts/Option"
@@ -175,7 +175,7 @@ export interface DeprecateWorkflowTemplateRequest extends RequestorAwareRequest 
   cancelWorkflows?: boolean
 }
 
-export type CreateWorkflowTemplateRepoError = UnknownError | "workflow_template_already_exists"
+export type CreateWorkflowTemplateRepoError = UnknownError | "workflow_template_already_exists" | EncryptionError
 
 export interface CreateWorkflowTemplateRepo {
   workflowTemplate: WorkflowTemplate
@@ -186,17 +186,23 @@ export const WORKFLOW_TEMPLATE_REPOSITORY_TOKEN = Symbol("WORKFLOW_TEMPLATE_REPO
 export type WorkflowTemplateGetActiveError =
   | "active_workflow_template_not_found"
   | WorkflowTemplateValidationError
+  | EncryptionError
   | UnknownError
 
 export type WorkflowTemplateGetParentSpaceError = "workflow_template_not_found" | UnknownError
 
-export type WorkflowTemplateGetError = "workflow_template_not_found" | WorkflowTemplateValidationError | UnknownError
+export type WorkflowTemplateGetError =
+  | "workflow_template_not_found"
+  | WorkflowTemplateValidationError
+  | EncryptionError
+  | UnknownError
 
 export type WorkflowTemplateUpdateError =
   | "concurrency_error"
   | "workflow_template_already_exists"
   | UnknownError
   | WorkflowTemplateValidationError
+  | EncryptionError
 
 export type WorkflowTemplateDeprecateError =
   | "workflow_template_not_active"

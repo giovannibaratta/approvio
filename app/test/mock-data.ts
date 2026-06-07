@@ -47,6 +47,19 @@ import * as O from "fp-ts/Option"
 import {createSha256Hash} from "@utils"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "@external/database/constants"
 import {unwrapRight} from "@utils/either"
+import {EncryptionService} from "@external/kms/encryption.service"
+import {EnvVarKmsProvider} from "@external/kms/env-var-kms.provider"
+
+let testEncryptionService: EncryptionService | undefined
+
+function getTestEncryptionService(): EncryptionService {
+  if (!testEncryptionService) {
+    const keys = new Map([[1, Buffer.from("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=", "base64")]])
+    const provider = new EnvVarKmsProvider(keys, 1)
+    testEncryptionService = new EncryptionService(provider)
+  }
+  return testEncryptionService
+}
 
 const chance = new Chance()
 
@@ -638,6 +651,15 @@ export async function createMockWorkflowTemplateInDb(
   const data: Prisma.WorkflowTemplateCreateInput = {
     ...randomTemplate,
     ...overridesWithoutSpaceId
+  }
+
+  if (data.actions) {
+    const encryptionService = getTestEncryptionService()
+    const plaintext = JSON.stringify(data.actions)
+    const encryptionResult = await encryptionService.encrypt(plaintext)()
+    if (isLeft(encryptionResult)) throw encryptionResult.left
+
+    data.actions = {__encrypted_v1: encryptionResult.right}
   }
 
   const template = await prisma.workflowTemplate.create({data})
