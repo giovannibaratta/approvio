@@ -291,9 +291,19 @@ describe("Workflow Templates API", () => {
         const responseUuid: string = response.headers.location?.split("/").reverse()[0] ?? ""
         const templateDbObject = await prisma.workflowTemplate.findUnique({where: {id: responseUuid}})
 
-        assertIsNonEmptyArrayOfRecord(templateDbObject?.actions)
-        assertFirstActionIsDefined(templateDbObject.actions)
-        const firstAction = templateDbObject.actions[0]
+        // Verify actions are encrypted at rest in the database and do not leak clear text
+        const dbActionsString = JSON.stringify(templateDbObject?.actions)
+        expect(dbActionsString).not.toContain("https://example.com/webhook")
+        expect(dbActionsString).not.toContain("X-Custom-Header")
+        expect(templateDbObject?.actions).toMatchObject({
+          __encrypted_v1: expect.any(String)
+        })
+
+        // Verify actions are decrypted in the API response
+        const responseBody: WorkflowTemplateApi = response.body
+        assertIsNonEmptyArrayOfRecord(responseBody.actions)
+        assertFirstActionIsDefined(responseBody.actions)
+        const firstAction = responseBody.actions[0]
 
         expect(firstAction.type).toEqual("WEBHOOK")
         expect(firstAction.url).toEqual("https://example.com/webhook")

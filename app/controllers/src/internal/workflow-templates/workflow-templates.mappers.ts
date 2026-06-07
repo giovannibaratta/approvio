@@ -71,6 +71,10 @@ export function generateErrorResponseForCancelWorkflowsForTemplate(
       )
 
     case "unknown_error":
-      return new InternalServerErrorException(`An unknown error occurred. Context: ${context}`)
+    case "encryption_failed":
+    case "decryption_failed":
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `An unknown error occurred. Context: ${context}`)
+      )
   }
 }

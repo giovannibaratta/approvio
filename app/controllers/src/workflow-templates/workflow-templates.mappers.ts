@@ -380,7 +380,11 @@ export function generateErrorResponseForCreateWorkflowTemplate(
       )
     case "quota_check_error":
     case "unknown_error":
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
+    case "encryption_failed":
+    case "decryption_failed":
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
+      )
   }
 }
 
@@ -397,7 +401,11 @@ export function generateErrorResponseForGetWorkflowTemplate(
     case "active_workflow_template_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow template not found`))
     case "unknown_error":
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
+    case "encryption_failed":
+    case "decryption_failed":
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
+      )
     case "approval_rule_and_rule_must_have_rules":
     case "approval_rule_group_rule_invalid_group_id":
     case "approval_rule_group_rule_invalid_min_count":
@@ -497,7 +505,11 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
       )
     case "quota_check_error":
     case "unknown_error":
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
+    case "encryption_failed":
+    case "decryption_failed":
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
+      )
     case "quota_exceeded":
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded`))
     case "workflow_template_not_found":
@@ -569,7 +581,11 @@ export function generateErrorResponseForDeprecateWorkflowTemplate(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
       )
     case "unknown_error":
-      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
+    case "encryption_failed":
+    case "decryption_failed":
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
+      )
     case "workflow_template_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow template not found`))
   }

@@ -18,6 +18,24 @@ import "@utils/matchers"
 import {TokenPayloadBuilder} from "@services"
 import {Chance} from "chance"
 
+// Mock crypto.generateKeyPairSync to avoid slow 4096-bit RSA key generation (1-2s per call) during tests.
+// The require is deferred inside mockImplementation to prevent circular dependency/hoisting issues
+// with `@test/mock-data` (which imports `crypto` at initialization time).
+jest.mock("crypto", () => {
+  const actual = jest.requireActual("crypto")
+  return {
+    ...actual,
+    generateKeyPairSync: jest.fn().mockImplementation(() => {
+      const {MockKeyPool} = jest.requireActual("@test/mock-data")
+      const keyPair = MockKeyPool.getKeyPairByIndex(0)
+      return {
+        publicKey: keyPair.publicKey,
+        privateKey: keyPair.privateKey
+      }
+    })
+  }
+})
+
 const chance = new Chance()
 
 describe("Agents API", () => {

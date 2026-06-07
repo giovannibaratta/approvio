@@ -12,7 +12,6 @@ import {
   createMockAgentInDb,
   createTestGroup,
   createMockWorkflowTemplateInDb,
-  createMockSpaceInDb,
   MockConfigProvider
 } from "@test/mock-data"
 import {HttpStatus} from "@nestjs/common"
@@ -587,18 +586,16 @@ describe("Agent Roles API", () => {
 
       it("should return 422 when total roles would exceed limit", async () => {
         // Given: Agent already has some workflow roles assigned
+        // PERFORMANCE OPTIMIZATION: We use space-scoped roles with mock UUIDs instead of template-scoped roles.
+        // Since agents only support workflow template resource type roles, space-scoped templates are perfectly valid,
+        // but do not execute DB queries checking template existence. This avoids creating 128 templates in the DB.
         const existingRoles = []
-        // Create a single space for all templates to avoid parallel creation issues
-        const space = await createMockSpaceInDb(prisma)
-        const templates = await Promise.all(
-          Array.from({length: MAX_ROLES_PER_ENTITY}, () => createMockWorkflowTemplateInDb(prisma, {spaceId: space.id}))
-        )
-        for (const template of templates) {
+        for (let i = 0; i < MAX_ROLES_PER_ENTITY; i++) {
           existingRoles.push({
-            roleName: "WorkflowTemplateVoter",
+            roleName: "SpaceWideWorkflowTemplateVoter",
             scope: {
-              type: "workflow_template",
-              templateName: template.name
+              type: "space",
+              spaceId: uuidv7()
             }
           })
         }
@@ -614,15 +611,12 @@ describe("Agent Roles API", () => {
 
         // When: Admin tries to add more roles that would exceed total limit
         const additionalRoles = []
-        const additionalTemplates = await Promise.all(
-          Array.from({length: 5}, () => createMockWorkflowTemplateInDb(prisma, {spaceId: space.id}))
-        )
-        for (const template of additionalTemplates) {
+        for (let i = 0; i < 5; i++) {
           additionalRoles.push({
-            roleName: "WorkflowTemplateInstantiator",
+            roleName: "SpaceWideWorkflowTemplateInstantiator",
             scope: {
-              type: "workflow_template",
-              templateName: template.name
+              type: "space",
+              spaceId: uuidv7()
             }
           })
         }

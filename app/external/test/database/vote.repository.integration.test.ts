@@ -1,6 +1,6 @@
 import {Test, TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
-import {DatabaseClient, VoteDbRepository} from "@external"
+import {DatabaseClient, VoteDbRepository, KmsModule, ConfigModule} from "@external"
 import {PrismaClient} from "@prisma/client"
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {createMockUserInDb, createMockAgentInDb, createMockWorkflowInDb, MockConfigProvider} from "@test/mock-data"
@@ -15,15 +15,12 @@ describe("VoteDbRepository Integration", () => {
     const isolatedDb = await prepareDatabase()
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        VoteDbRepository,
-        DatabaseClient,
-        {
-          provide: ConfigProvider,
-          useValue: MockConfigProvider.fromDbConnectionUrl(isolatedDb)
-        }
-      ]
-    }).compile()
+      imports: [ConfigModule, KmsModule],
+      providers: [VoteDbRepository, DatabaseClient]
+    })
+      .overrideProvider(ConfigProvider)
+      .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+      .compile()
 
     prisma = module.get(DatabaseClient).prisma
     repository = module.get(VoteDbRepository)

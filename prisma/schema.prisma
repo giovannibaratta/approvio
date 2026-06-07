@@ -158,7 +158,7 @@ model WorkflowActionsEmailTask {
 
 model PkceSession {
   state        String    @id @db.VarChar(255)
-  codeVerifier String    @map("code_verifier") @db.VarChar(255)
+  codeVerifier String    @map("code_verifier") @db.VarChar(2048)
   redirectUri  String    @map("redirect_uri") @db.VarChar(500)
   oidcState    String    @map("oidc_state") @db.VarChar(255)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamp(6)

@@ -346,12 +346,8 @@ describe("User Roles API", () => {
 
       it("should handle maximum of 128 unique roles assignment with different scopes", async () => {
         // Given: Role assignment request with 128 unique roles (maximum allowed)
-        const groups = []
-        for (let i = 0; i < 127; i++) {
-          const group = await createTestGroup(prisma, {name: `Group ${i}`})
-          groups.push(group)
-        }
-
+        // PERFORMANCE OPTIMIZATION: We use mock group UUIDs directly instead of creating groups in the DB
+        // to avoid 127 sequential DB insertions.
         const roles = []
         // Add 127 group-specific roles
         for (let i = 0; i < 127; i++) {
@@ -359,7 +355,7 @@ describe("User Roles API", () => {
             roleName: "GroupReadOnly",
             scope: {
               type: "group" as const,
-              groupId: groups[i]!.id
+              groupId: uuidv7()
             }
           })
         }
@@ -713,14 +709,16 @@ describe("User Roles API", () => {
 
       it("should return 422 when total roles would exceed limit", async () => {
         // Given: User already has some roles assigned
+        // PERFORMANCE OPTIMIZATION: We use mock group UUIDs directly instead of creating groups in the DB.
+        // Role assignment validations check role schemas and permission configurations, but do not query
+        // group database existence. This avoids 128 sequential DB insertions.
         const existingRoles = []
         for (let i = 0; i < MAX_ROLES_PER_ENTITY; i++) {
-          const group = await createTestGroup(prisma, {name: `Existing Group ${i}`})
           existingRoles.push({
             roleName: "GroupReadOnly",
             scope: {
               type: "group",
-              groupId: group.id
+              groupId: uuidv7()
             }
           })
         }
@@ -737,12 +735,11 @@ describe("User Roles API", () => {
         // When: Admin tries to add more roles that would exceed total limit
         const additionalRoles = []
         for (let i = 0; i < 5; i++) {
-          const group = await createTestGroup(prisma, {name: `Additional Group ${i}`})
           additionalRoles.push({
             roleName: "GroupManager",
             scope: {
               type: "group",
-              groupId: group.id
+              groupId: uuidv7()
             }
           })
         }

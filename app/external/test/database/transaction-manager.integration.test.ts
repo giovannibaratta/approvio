@@ -1,6 +1,6 @@
 import {Test, TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
-import {DatabaseClient, UserDbRepository} from "@external"
+import {DatabaseClient, UserDbRepository, KmsModule, ConfigModule} from "@external"
 import {PrismaTransactionManager} from "@external/database/transaction-manager"
 import {ConflictingIsolationLevelError} from "@external/database/database-client"
 import {cleanDatabase, prepareDatabase} from "@test/database"
@@ -23,16 +23,12 @@ describe("PrismaTransactionManager Integration", () => {
       const isolatedDb = await prepareDatabase()
 
       const module: TestingModule = await Test.createTestingModule({
-        providers: [
-          DatabaseClient,
-          UserDbRepository,
-          PrismaTransactionManager,
-          {
-            provide: ConfigProvider,
-            useValue: MockConfigProvider.fromDbConnectionUrl(isolatedDb)
-          }
-        ]
-      }).compile()
+        imports: [ConfigModule, KmsModule],
+        providers: [DatabaseClient, UserDbRepository, PrismaTransactionManager]
+      })
+        .overrideProvider(ConfigProvider)
+        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .compile()
 
       module.createNestApplication({logger: false})
 

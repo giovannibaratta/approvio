@@ -88,23 +88,7 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
             })
           )()
         },
-        auditLog: {
-          async update() {
-            throw new Error("Audit logs are immutable. Action update is not allowed.")
-          },
-          async updateMany() {
-            throw new Error("Audit logs are immutable. Action updateMany is not allowed.")
-          },
-          async delete() {
-            throw new Error("Audit logs are immutable. Action delete is not allowed.")
-          },
-          async deleteMany() {
-            throw new Error("Audit logs are immutable. Action deleteMany is not allowed.")
-          },
-          async upsert() {
-            throw new Error("Audit logs are immutable. Action upsert is not allowed.")
-          }
-        }
+        auditLog: auditLogExtension
       }
     }) as PrismaClient
   }
@@ -195,5 +179,23 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
         return TE.fromEither(checkMigrationId(latestMigration.id, REQUIRED_DB_MIGRATION_TIMESTAMP))
       })
     )
+  }
+}
+
+const auditLogExtension = {
+  async update() {
+    throw new Error("Audit logs are immutable. Action update is not allowed.")
+  },
+  async updateMany() {
+    throw new Error("Audit logs are immutable. Action updateMany is not allowed.")
+  },
+  async delete() {
+    throw new Error("Audit logs are immutable. Action delete is not allowed.")
+  },
+  async deleteMany() {
+    throw new Error("Audit logs are immutable. Action deleteMany is not allowed.")
+  },
+  async upsert() {
+    throw new Error("Audit logs are immutable. Action upsert is not allowed.")
   }
 }
