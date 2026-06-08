@@ -8,7 +8,7 @@ datasource db {
 }
 
 model Databasechangelog {
-  id            String   @db.VarChar(255) @id
+  id            String   @db.VarChar(255)
   author        String   @db.VarChar(255)
   filename      String   @db.VarChar(255)
   dateexecuted  DateTime @db.Timestamp(6)
@@ -23,6 +23,7 @@ model Databasechangelog {
   labels        String?  @db.VarChar(255)
   deploymentId  String?  @map("deployment_id") @db.VarChar(10)
 
+  @@id([id, author, filename], map: "pk_databasechangelog")
   @@map("databasechangelog")
 }
 

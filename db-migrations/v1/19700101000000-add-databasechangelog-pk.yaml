@@ -1,0 +1,14 @@
+# https://docs.liquibase.com/secure/user-guide-5-1/what-is-the-databasechangelog-table
+
+# Liquibase is not generating a primary key for the table, this is causing Prisma to ignore
+# the table during the pull.
+
+databaseChangeLog:
+  - changeSet:
+      id: 19700101000000-add-databasechangelog-pk
+      author: giovannibaratta
+      changes:
+        - addPrimaryKey:
+            tableName: databasechangelog
+            columnNames: id, author, filename
+            constraintName: pk_databasechangelog

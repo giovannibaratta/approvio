@@ -1,5 +1,7 @@
 databaseChangeLog:
   - include:
+      file: v1/19700101000000-add-databasechangelog-pk.yaml
+  - include:
       file: v1/20260208132754-create-groups-table.yaml
   - include:
       file: v1/20260208132755-create-users-table.yaml
