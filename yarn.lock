@@ -109,7 +109,7 @@ __metadata:
     "@nestjs/passport": "npm:11.0.5"
     "@nestjs/platform-express": "npm:11.1.23"
     "@nestjs/schematics": "npm:11.1.0"
-    "@nestjs/testing": "npm:11.1.24"
+    "@nestjs/testing": "npm:11.1.26"
     "@prisma/adapter-pg": "npm:7.8.0"
     "@prisma/client": "npm:7.8.0"
     "@prisma/driver-adapter-utils": "npm:7.8.0"
@@ -2687,9 +2687,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@nestjs/testing@npm:11.1.24":
-  version: 11.1.24
-  resolution: "@nestjs/testing@npm:11.1.24"
+"@nestjs/testing@npm:11.1.26":
+  version: 11.1.26
+  resolution: "@nestjs/testing@npm:11.1.26"
   dependencies:
     tslib: "npm:2.8.1"
   peerDependencies:
@@ -2702,7 +2702,7 @@ __metadata:
       optional: true
     "@nestjs/platform-express":
       optional: true
-  checksum: 10/3a1c2ae722b5c9ba80d0acfa1821c3ec1a57b1135a5bee210a95683b32b7d9f3e419c86ff6fe7070f4ba3398a92c1a86284d2aa5662b8c1d927f83fa324738ab
+  checksum: 10/c9ede87fb309fcb4b3d295d1e88f61b52886794a68934dbddc9485e2c7950fa35425848d7efc3e3cc46a69dec62e53e5c6ad9c7a273629eee6181ab36adb2a13
   languageName: node
   linkType: hard
 
