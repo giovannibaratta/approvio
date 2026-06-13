@@ -2,32 +2,40 @@ import {v7 as uuidv7} from "uuid"
 import {Test, TestingModule} from "@nestjs/testing"
 
 import {AxiosWebhookClient} from "@external/webhook/axios-webhook.client"
+import {ConfigProvider} from "@external/config"
 import {createWiremockUrl, getWiremockRequestsFor, setupWiremockStub} from "@test/wiremock"
 import {unwrapRight} from "@utils/either"
 import {ResponseBodyStatus} from "@domain"
-import {ConfigProvider} from "@external/config"
 import {MockConfigProvider} from "@test/mock-data"
 import {SilentLogger} from "@test/logger-helpers"
 
 describe("AxiosWebhookClient (Integration)", () => {
   let client: AxiosWebhookClient
+  let mockConfigProvider: MockConfigProvider
   let endpoint: string
   let wiremockUrl: string
 
   beforeEach(async () => {
+    mockConfigProvider = MockConfigProvider.fromOriginalProvider({
+      webhookRetryConfig: {
+        maxAttempts: 3,
+        initialDelayMs: 0,
+        backoffFactor: 1,
+        maxDelayMs: 0
+      }
+    })
+
+    mockConfigProvider.ssrfProtectionConfig = {
+      mode: "strict",
+      allowedDestinations: ["localhost"] // Allow localhost for wiremock to work
+    }
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AxiosWebhookClient,
         {
           provide: ConfigProvider,
-          useValue: MockConfigProvider.fromOriginalProvider({
-            webhookRetryConfig: {
-              maxAttempts: 3,
-              initialDelayMs: 0,
-              backoffFactor: 1,
-              maxDelayMs: 0
-            }
-          })
+          useValue: mockConfigProvider
         }
       ]
     })
@@ -143,6 +151,46 @@ describe("AxiosWebhookClient (Integration)", () => {
 
       // Then
       expect(result).toBeRightOf({status: 204, bodyStatus: ResponseBodyStatus.MISSING, body: undefined})
+    })
+
+    it("should reject SSRF attempts when strict mode is active", async () => {
+      // Given
+      const blockedUrl = "http://169.254.169.254/latest/meta-data/"
+
+      // When
+      const result = await client.execute(blockedUrl, "GET")()
+
+      // Then
+      expect(result).toBeLeftOf("ssrf_blocked")
+    })
+
+    it("should allow SSRF attempts when mode is disabled", async () => {
+      // Given
+      mockConfigProvider.ssrfProtectionConfig = {mode: "disabled"}
+
+      // We point to a closed port on loopback just to see if it tries to connect
+      // instead of blocking immediately for SSRF
+      const unreachableUrl = "http://127.0.0.1:54321/nowhere"
+
+      // Re-initialize client with the updated config provider for this test
+      const testClient = new AxiosWebhookClient(mockConfigProvider as ConfigProvider)
+
+      // When
+      const result = await testClient.execute(unreachableUrl, "GET")()
+
+      // Then
+      expect(result).toBeLeftOf("http_request_failed")
+    })
+
+    it("should reject invalid protocols", async () => {
+      // Given
+      const invalidUrl = "file:///etc/passwd"
+
+      // When
+      const result = await client.execute(invalidUrl, "GET")()
+
+      // Then
+      expect(result).toBeLeftOf("ssrf_blocked")
     })
 
     describe("retries", () => {

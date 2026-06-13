@@ -556,6 +556,33 @@ describe("Workflow Templates API", () => {
       expect(response.body).toHaveErrorCode("WORKFLOW_ACTION_URL_INVALID")
     })
 
+    it("should return 400 BAD_REQUEST (WORKFLOW_ACTION_URL_INVALID) for non-http/https webhook URL protocol", async () => {
+      // Given
+      const requestBody: WorkflowTemplateCreate = {
+        name: "Unsupported Protocol Template",
+        approvalRule: {
+          type: ApprovalRuleType.GROUP_REQUIREMENT,
+          groupId: uuidv7(),
+          minCount: 1
+        },
+        actions: [
+          {
+            type: "WEBHOOK",
+            url: "ftp://example.com/webhook",
+            method: "POST"
+          }
+        ],
+        spaceId: testSpace.id
+      }
+
+      // When
+      const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+      // Expect
+      expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      expect(response.body).toHaveErrorCode("WORKFLOW_ACTION_URL_INVALID")
+    })
+
     it("should return 400 BAD_REQUEST (WORKFLOW_ACTION_MISSING_HTTP_METHOD) for missing webhook method", async () => {
       // Given
       const requestBody: WorkflowTemplateCreate = {

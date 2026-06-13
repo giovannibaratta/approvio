@@ -5552,11 +5552,12 @@ THE SOFTWARE.
 
 -----------
 
-The following npm package may be included in this product:
+The following npm packages may be included in this product:
 
  - ipaddr.js@1.9.1
+ - ipaddr.js@2.4.0
 
-This package contains the following license:
+These packages each contain the following license:
 
 Copyright (C) 2011-2017 whitequark <whitequark@whitequark.org>
 

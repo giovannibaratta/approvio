@@ -1,4 +1,4 @@
-import {PrefixUnion, getStringAsEnum, hasOwnProperty, isValidUrl, DecorableEntity} from "@utils"
+import {PrefixUnion, getStringAsEnum, hasOwnProperty, isValidHttpOrHttpsUrl, DecorableEntity} from "@utils"
 import {Either, isLeft, left, right} from "fp-ts/Either"
 import {
   TaskStatus,
@@ -139,7 +139,7 @@ export class WorkflowActionSlackTaskFactory {
       return left("workflow_action_slack_task_webhook_url_missing_or_invalid")
 
     if (
-      !isValidUrl(dataToBeValidated.webhookUrl) ||
+      !isValidHttpOrHttpsUrl(dataToBeValidated.webhookUrl) ||
       !WorkflowActionSlackTaskFactory.isValidSlackWebhookUrl(dataToBeValidated.webhookUrl)
     )
       return left("workflow_action_slack_task_webhook_url_invalid")

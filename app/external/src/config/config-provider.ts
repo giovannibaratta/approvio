@@ -1,6 +1,8 @@
 import {Injectable} from "@nestjs/common"
 import {Option} from "fp-ts/Option"
 import * as O from "fp-ts/Option"
+import * as net from "net"
+import * as ipaddr from "ipaddr.js"
 import {
   ConfigProviderInterface,
   DEFAULT_RATE_LIMIT_DURATION_IN_SECONDS,
@@ -10,6 +12,7 @@ import {
   OidcProviderConfig,
   RateLimitConfig,
   RedisConfig,
+  SsrfProtectionConfig,
   WebhookRetryConfig,
   EmailRetryConfig,
   DatabaseRetryConfig,
@@ -19,6 +22,14 @@ import {isOidcProvider, isKmsProviderType} from "./types"
 import {isEmail, isNonEmptyArray} from "@utils"
 
 const IS_PRIVILEGE_MODE_DEFAULT = true
+
+/**
+ * Regular expression to validate standard hostnames and domain names.
+ * Matches strings consisting of dot-separated alphanumeric labels (with optional hyphens),
+ * where each label can be up to 63 characters long and cannot start or end with a hyphen.
+ * Supports local hostnames (e.g. "localhost") and fully qualified domain names (e.g. "example.com").
+ */
+const HOSTNAME_REGEX = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i
 
 @Injectable()
 export class ConfigProvider implements ConfigProviderInterface {
@@ -35,6 +46,7 @@ export class ConfigProvider implements ConfigProviderInterface {
   readonly frontendUrl: string
   readonly cookieSecure: boolean
   readonly kmsConfig: KmsConfig
+  readonly ssrfProtectionConfig: SsrfProtectionConfig
 
   constructor() {
     this.isPrivilegeMode = this.validatePrivilegeMode()
@@ -52,6 +64,50 @@ export class ConfigProvider implements ConfigProviderInterface {
     this.frontendUrl = this.validateFrontendUrl()
     this.cookieSecure = this.validateCookieSecure()
     this.kmsConfig = this.validateKmsConfig()
+    this.ssrfProtectionConfig = this.validateSsrfProtectionConfig()
+  }
+
+  private validateSsrfProtectionConfig(): SsrfProtectionConfig {
+    const modeRaw = process.env.WEBHOOK_SSRF_PROTECTION_MODE ?? "strict"
+
+    if (modeRaw !== "disabled" && modeRaw !== "strict")
+      throw new Error("Invalid mode value. Allowed values: strict (default), disabled.")
+
+    const allowedDestinationsRaw = process.env.WEBHOOK_SSRF_ALLOWED_DESTINATIONS
+    const allowedDestinations = allowedDestinationsRaw
+      ? allowedDestinationsRaw
+          .split(",")
+          .map(d => d.trim())
+          .filter(Boolean)
+      : []
+
+    for (const dest of allowedDestinations)
+      if (!this.isValidDestination(dest))
+        throw new Error(
+          `Invalid destination in WEBHOOK_SSRF_ALLOWED_DESTINATIONS: "${dest}". Must be a valid domain name, IP address, or CIDR range.`
+        )
+
+    return {
+      mode: modeRaw,
+      allowedDestinations
+    }
+  }
+
+  private isValidDestination(dest: string): boolean {
+    const isIp = net.isIP(dest) !== 0
+
+    if (isIp) return true
+
+    if (dest.includes("/")) {
+      try {
+        ipaddr.parseCIDR(dest)
+        return true
+      } catch {
+        return false
+      }
+    }
+
+    return HOSTNAME_REGEX.test(dest)
   }
 
   private validatePrivilegeMode(): boolean {

@@ -60,6 +60,7 @@
     "express": "5.2.1",
     "fp-ts": "2.16.11",
     "ioredis": "5.11.0",
+    "ipaddr.js": "2.4.0",
     "jose": "6.2.3",
     "jsonwebtoken": "9.0.3",
     "nodemailer": "8.0.8",

@@ -1,4 +1,4 @@
-import {eitherParseInt, eitherParseOptionalBoolean} from "@utils/validation"
+import {eitherParseInt, eitherParseOptionalBoolean, isValidHttpOrHttpsUrl} from "@utils/validation"
 
 describe("eitherParseInt", () => {
   describe("good cases", () => {
@@ -352,5 +352,27 @@ describe("eitherParseOptionalBoolean", () => {
       // Expect: Left with custom error object
       expect(result).toBeLeftOf(customError)
     })
+  })
+})
+
+describe("isValidHttpOrHttpsUrl", () => {
+  it("should return true for valid HTTP URL", () => {
+    expect(isValidHttpOrHttpsUrl("http://example.com")).toBe(true)
+  })
+
+  it("should return true for valid HTTPS URL", () => {
+    expect(isValidHttpOrHttpsUrl("https://example.com")).toBe(true)
+  })
+
+  it("should return false for valid FTP URL", () => {
+    expect(isValidHttpOrHttpsUrl("ftp://example.com")).toBe(false)
+  })
+
+  it("should return false for valid FILE URL", () => {
+    expect(isValidHttpOrHttpsUrl("file:///etc/passwd")).toBe(false)
+  })
+
+  it("should return false for invalid URL string", () => {
+    expect(isValidHttpOrHttpsUrl("not-a-url")).toBe(false)
   })
 })
