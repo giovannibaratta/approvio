@@ -1,4 +1,4 @@
-import {getStringAsEnum, isEmail, isObject, isValidUrl, PrefixUnion} from "@utils"
+import {getStringAsEnum, isEmail, isObject, isValidHttpOrHttpsUrl, PrefixUnion} from "@utils"
 import {Either, left, right, traverseArray} from "fp-ts/Either"
 import {WorkflowActionSlackTaskFactory} from "./workflow-tasks/slack-task"
 
@@ -78,7 +78,7 @@ function validateWorkflowAction(action: unknown): Either<WorkflowActionValidatio
 }
 
 function validateWebhookAction(data: Record<string, unknown>): Either<WorkflowActionValidationError, WebhookAction> {
-  if (typeof data.url !== "string" || !isValidUrl(data.url)) return left("workflow_action_url_invalid")
+  if (typeof data.url !== "string" || !isValidHttpOrHttpsUrl(data.url)) return left("workflow_action_url_invalid")
   if (data.method === undefined) return left("workflow_action_missing_http_method")
   if (typeof data.method !== "string") return left("workflow_action_method_invalid")
 
@@ -128,7 +128,7 @@ function validateEmailAction(data: Record<string, unknown>): Either<WorkflowActi
 function validateSlackAction(data: Record<string, unknown>): Either<WorkflowActionValidationError, SlackAction> {
   if (
     typeof data.webhookUrl !== "string" ||
-    !isValidUrl(data.webhookUrl) ||
+    !isValidHttpOrHttpsUrl(data.webhookUrl) ||
     !WorkflowActionSlackTaskFactory.isValidSlackWebhookUrl(data.webhookUrl)
   )
     return left("workflow_action_webhook_url_invalid")

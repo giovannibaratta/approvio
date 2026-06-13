@@ -1,5 +1,12 @@
 import {Either, isLeft, left, right} from "fp-ts/Either"
-import {DecorableEntity, PrefixUnion, getStringAsEnum, hasOwnProperty, isRecordStringString, isValidUrl} from "@utils"
+import {
+  DecorableEntity,
+  PrefixUnion,
+  getStringAsEnum,
+  hasOwnProperty,
+  isRecordStringString,
+  isValidHttpOrHttpsUrl
+} from "@utils"
 import {
   TaskStatus,
   WorkflowActionTaskData,
@@ -153,7 +160,7 @@ export class WorkflowActionWebhookTaskFactory {
     if (!hasOwnProperty(dataToBeValidated, "url") || typeof dataToBeValidated.url !== "string")
       return left("workflow_action_webhook_task_url_missing_or_invalid")
 
-    if (!isValidUrl(dataToBeValidated.url)) return left("workflow_action_webhook_task_url_invalid")
+    if (!isValidHttpOrHttpsUrl(dataToBeValidated.url)) return left("workflow_action_webhook_task_url_invalid")
 
     let headers: Record<string, string> | undefined = undefined
     let payload: unknown = undefined

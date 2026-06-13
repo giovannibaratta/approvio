@@ -1,11 +1,15 @@
 import {Injectable, Logger} from "@nestjs/common"
 import axios, {Method} from "axios"
-import {ConfigProvider} from "@external/config"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {HttpClient, HttpClientOptions, HttpError} from "@services/webhook/interfaces"
 import {HttpResponse, ResponseBodyStatus} from "@domain"
 import {retryWithBackoff} from "@utils"
+import {ConfigProvider} from "../config"
+import {createSsrfSafeAgents, SsrfError, isBlockedIp, isAllowedDestination} from "./ssrf-protection"
+import * as http from "http"
+import * as https from "https"
+import * as net from "net"
 
 /**
  * Bodies exceeding this limit will be truncated to prevent database bloat
@@ -25,7 +29,14 @@ const TIMEOUT = 10000
 
 @Injectable()
 export class AxiosWebhookClient implements HttpClient {
-  constructor(private readonly config: ConfigProvider) {}
+  private readonly httpAgent: http.Agent
+  private readonly httpsAgent: https.Agent
+
+  constructor(private readonly config: ConfigProvider) {
+    const agents = createSsrfSafeAgents(this.config.ssrfProtectionConfig)
+    this.httpAgent = agents.httpAgent
+    this.httpsAgent = agents.httpsAgent
+  }
 
   /**
    * Executes an HTTP request
@@ -54,12 +65,14 @@ export class AxiosWebhookClient implements HttpClient {
    */
   private isTransientError(
     error:
+      | {type: "ssrf_blocked"}
       | {type: "unknown_error"}
       | {type: "http_timeout"}
       | {type: "http_request_failed"; code?: string}
       | {type: "http_response_error"; response: {status: number}},
     canRetryPayloadError: boolean
   ): boolean {
+    if (error.type === "ssrf_blocked") return false
     if (error.type === "unknown_error") return false
 
     if (error.type === "http_response_error")
@@ -98,6 +111,26 @@ export class AxiosWebhookClient implements HttpClient {
 
     const doRequest = TE.tryCatch(
       async () => {
+        const parsedUrl = new URL(url)
+
+        // 1. Protocol Validation: Validate that URL protocol is strictly http: or https:
+        // to prevent requests using other protocols (such as ftp:, file:, gopher:, etc.)
+        if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:")
+          throw new SsrfError(`Unsupported protocol: ${parsedUrl.protocol}`)
+
+        const hostname = parsedUrl.hostname
+
+        // 2. Pre-connection IP validation for raw IP hostnames:
+        // Node's http.Agent/https.Agent bypasses the custom `lookup` function when the hostname
+        // in the URL is already a raw IP address. Thus we validate it pre-request here.
+        if (net.isIP(hostname) !== 0) {
+          if (this.config.ssrfProtectionConfig.mode !== "disabled") {
+            const allowed = this.config.ssrfProtectionConfig.allowedDestinations || []
+            if (!isAllowedDestination(hostname, allowed) && isBlockedIp(hostname))
+              throw new SsrfError(`Blocked request to ${hostname}: resolved to private/reserved IP ${hostname}`)
+          }
+        }
+
         const response = await axios.request({
           url,
           method: method as Method,
@@ -106,6 +139,9 @@ export class AxiosWebhookClient implements HttpClient {
           timeout: TIMEOUT,
           maxContentLength: MAX_CONTENT_LENGTH,
           maxBodyLength: MAX_CONTENT_LENGTH,
+          // Use the custom agents which override DNS lookup to prevent TOCTOU DNS rebinding SSRF
+          httpAgent: this.httpAgent,
+          httpsAgent: this.httpsAgent,
           // Reject on 429 and 5xx so tryCatch catches it and we can retry it.
           // We will manually recover these errors if retries exhaust.
           validateStatus: status => status < 400 || (status >= 400 && status < 500 && status !== 429)
@@ -121,6 +157,18 @@ export class AxiosWebhookClient implements HttpClient {
         }
       },
       error => {
+        // Detect if the error indicates an SSRF block (custom SsrfError or standard axios error wrapping it)
+        const isSsrf =
+          error instanceof SsrfError ||
+          (error && typeof error === "object" && "cause" in error && error.cause instanceof SsrfError) ||
+          (axios.isAxiosError(error) && (error.message?.includes("SSRF") || error.cause instanceof SsrfError))
+
+        if (isSsrf) {
+          const errMsg = error instanceof Error ? error.message : "SSRF attempt blocked"
+          Logger.warn(`SSRF blocked: ${errMsg}`)
+          return {type: "ssrf_blocked" as const}
+        }
+
         if (axios.isAxiosError(error)) {
           // If it has a response, it's an HTTP error (429 or 5xx) we rejected in validateStatus
           if (error.response) {
@@ -155,10 +203,10 @@ export class AxiosWebhookClient implements HttpClient {
       ),
       // Recover HTTP response errors back to successful responses if retries exhaust
       TE.orElse(error => {
-        if (error.type === "http_response_error") return TE.right(error.response)
+        if (error.type !== "ssrf_blocked" && error.type === "http_response_error") return TE.right(error.response)
 
         // Return the simple string error types expected by the interface
-        return TE.left(error.type as HttpError)
+        return TE.left(error.type)
       })
     )
   }

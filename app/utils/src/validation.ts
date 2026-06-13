@@ -20,15 +20,6 @@ export function isObject(val: unknown): val is Record<string, unknown> {
   return typeof val === "object" && val !== null && !Array.isArray(val)
 }
 
-export function isValidUrl(url: string): boolean {
-  try {
-    new URL(url)
-    return true
-  } catch {
-    return false
-  }
-}
-
 export function isDate(value: unknown): value is Date {
   if (typeof value !== "object" || value === null) return false
 
@@ -54,4 +45,19 @@ export function eitherParseOptionalBoolean<T>(value: unknown, leftValue: T): Eit
 
   if (sanitized !== "true" && sanitized !== "false") return left(leftValue)
   return right(sanitized === "true")
+}
+
+/**
+ * Validates if a given string is an HTTP or HTTPS URL.
+ *
+ * @param url - The URL string to validate.
+ * @returns True if the URL is valid and uses http or https protocol, false otherwise.
+ */
+export function isValidHttpOrHttpsUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === "http:" || parsed.protocol === "https:"
+  } catch {
+    return false
+  }
 }

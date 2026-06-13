@@ -49,6 +49,7 @@ import {POSTGRES_BIGINT_LOWER_BOUND} from "@external/database/constants"
 import {unwrapRight} from "@utils/either"
 import {EncryptionService} from "@external/kms/encryption.service"
 import {EnvVarKmsProvider} from "@external/kms/env-var-kms.provider"
+import {SsrfProtectionConfig} from "@external/config/interfaces"
 
 let testEncryptionService: EncryptionService | undefined
 
@@ -285,6 +286,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
   frontendUrl: string
   cookieSecure: boolean
   kmsConfig: KmsConfig
+  ssrfProtectionConfig: SsrfProtectionConfig
 
   private constructor(
     originalProvider?: ConfigProvider,
@@ -361,6 +363,20 @@ export class MockConfigProvider implements ConfigProviderInterface {
         type: "env_var",
         currentVersion: 1,
         getKeys: () => new Map([[1, Buffer.from("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=", "base64")]])
+      },
+      ssrfProtectionConfig: {
+        mode: "strict",
+        allowedDestinations: [
+          "localhost",
+          "127.0.0.1",
+          ...((): string[] => {
+            try {
+              return process.env.WIREMOCK_BASE_URL ? [new URL(process.env.WIREMOCK_BASE_URL).hostname] : []
+            } catch {
+              return []
+            }
+          })()
+        ]
       }
     }
 
@@ -378,6 +394,21 @@ export class MockConfigProvider implements ConfigProviderInterface {
     this.databaseRetryConfig = mocks.databaseRetryConfig || provider.databaseRetryConfig
     this.frontendUrl = provider.frontendUrl
     this.cookieSecure = provider.cookieSecure
+    this.ssrfProtectionConfig = {
+      mode: provider.ssrfProtectionConfig.mode,
+      allowedDestinations: [
+        ...(provider.ssrfProtectionConfig.allowedDestinations || []),
+        "localhost",
+        "127.0.0.1",
+        ...((): string[] => {
+          try {
+            return process.env.WIREMOCK_BASE_URL ? [new URL(process.env.WIREMOCK_BASE_URL).hostname] : []
+          } catch {
+            return []
+          }
+        })()
+      ]
+    }
     this.kmsConfig = {
       type: "env_var",
       currentVersion: 1,

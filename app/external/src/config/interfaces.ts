@@ -90,6 +90,22 @@ export interface DatabaseRetryConfig {
   maxDelayMs: number
 }
 
+export interface SsrfProtectionConfig {
+  /**
+   * Protection mode:
+   * - "strict"   — Block all private/reserved IPs (default, recommended for SaaS)
+   * - "disabled" — No SSRF protection (for trusted/isolated environments only)
+   */
+  mode: "strict" | "disabled"
+
+  /**
+   * Optional allowlist of domains or CIDR ranges that bypass SSRF checks.
+   * Only applies when mode is "strict".
+   * Examples: ["internal-api.corp.example.com", "10.0.5.0/24"]
+   */
+  allowedDestinations?: string[]
+}
+
 export interface ConfigProviderInterface {
   /**
    * Indicates if the privilege mode (step-up authentication) is enabled.
@@ -111,6 +127,7 @@ export interface ConfigProviderInterface {
   /** Whether to set the Secure flag on auth cookies. Set to false for local HTTP development. */
   cookieSecure: boolean
   kmsConfig: KmsConfig
+  ssrfProtectionConfig: SsrfProtectionConfig
 }
 
 export interface KmsConfig {

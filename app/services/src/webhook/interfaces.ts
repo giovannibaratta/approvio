@@ -2,7 +2,7 @@ import {HttpResponse} from "@domain"
 import {UnknownError} from "@services/error"
 import {TaskEither} from "fp-ts/TaskEither"
 
-export type HttpError = "http_request_failed" | "http_timeout" | UnknownError
+export type HttpError = "http_request_failed" | "http_timeout" | "ssrf_blocked" | UnknownError
 
 export const HTTP_CLIENT_TOKEN = Symbol("HTTP_CLIENT_TOKEN")
 
