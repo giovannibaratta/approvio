@@ -20,11 +20,10 @@ export class WorkflowTemplateInternalController {
       TE.chainW(id => this.workflowTemplateService.cancelWorkflowsAndDeprecateTemplate(id))
     )()
 
-    if (isLeft(eitherResult)) {
+    if (isLeft(eitherResult))
       throw generateErrorResponseForCancelWorkflowsForTemplate(
         eitherResult.left,
         "Failed to cancel workflows for workflow template"
       )
-    }
   }
 }

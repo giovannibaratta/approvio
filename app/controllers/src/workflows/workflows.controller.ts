@@ -66,9 +66,8 @@ export class WorkflowsController {
       logSuccess("Workflow created", "WorkflowsController", w => ({id: w.id}))
     )()
 
-    if (isLeft(eitherWorkflow)) {
+    if (isLeft(eitherWorkflow))
       throw generateErrorResponseForCreateWorkflow(eitherWorkflow.left, "Failed to create workflow")
-    }
 
     const workflow = eitherWorkflow.right
     // Set Location header
@@ -153,12 +152,12 @@ export class WorkflowsController {
       logSuccess("Can vote check", "WorkflowsController", r => ({workflowId, canVote: r.canVote}))
     )()
 
-    if (isLeft(eitherCanVoteResponse)) {
+    if (isLeft(eitherCanVoteResponse))
       throw generateErrorResponseForCanVote(
         eitherCanVoteResponse.left,
         `Failed to process canVote request for workflow ${workflowId}`
       )
-    }
+
     return eitherCanVoteResponse.right
   }
 
@@ -200,9 +199,8 @@ export class WorkflowsController {
       logSuccess("Votes listed", "WorkflowsController", votes => ({count: votes.votes.length}))
     )()
 
-    if (isLeft(eitherVotes)) {
+    if (isLeft(eitherVotes))
       throw generateErrorResponseForListVotes(eitherVotes.left, `Failed to list votes for workflow ${workflowId}`)
-    }
 
     return eitherVotes.right
   }

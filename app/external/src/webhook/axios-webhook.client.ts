@@ -102,9 +102,7 @@ export class AxiosWebhookClient implements HttpClient {
   ): TE.TaskEither<HttpError, HttpResponse> {
     const idempotencyKey = options?.idempotencyKey
     const requestHeaders = {...headers}
-    if (idempotencyKey) {
-      requestHeaders["Idempotency-Key"] = idempotencyKey
-    }
+    if (idempotencyKey) requestHeaders["Idempotency-Key"] = idempotencyKey
 
     const isSafeMethod = ["GET", "PUT", "DELETE", "HEAD", "OPTIONS"].includes(method.toUpperCase())
     const canRetryPayloadError = isSafeMethod || options?.isIdempotent || idempotencyKey !== undefined
@@ -255,12 +253,11 @@ export class AxiosWebhookClient implements HttpClient {
     if (bodyString === "") return {bodyStatus: ResponseBodyStatus.MISSING}
 
     // Truncate if exceeds database storage limit
-    if (bodyString.length > MAX_BODY_LENGTH) {
+    if (bodyString.length > MAX_BODY_LENGTH)
       return {
         body: bodyString.substring(0, MAX_BODY_LENGTH),
         bodyStatus: ResponseBodyStatus.TRUNCATED
       }
-    }
 
     return {body: bodyString, bodyStatus: ResponseBodyStatus.OK}
   }

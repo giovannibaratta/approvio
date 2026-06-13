@@ -445,7 +445,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
       if (filters?.workflowTemplateId) where.workflowTemplateId = filters.workflowTemplateId
       else if (filters?.workflowTemplateName) where.workflowTemplates = {name: filters.workflowTemplateName}
 
-      if (filters?.includeGroups && filters.includeGroups.length > 0) {
+      if (filters?.includeGroups && filters.includeGroups.length > 0)
         where.workflowTemplates = {
           ...(where.workflowTemplates as Prisma.WorkflowTemplateWhereInput),
           OR: filters.includeGroups.map(groupId => ({
@@ -454,16 +454,11 @@ export class WorkflowDbRepository implements WorkflowRepository {
             }
           }))
         }
-      }
 
       const orderBy: Prisma.WorkflowOrderByWithRelationInput[] = []
       const sortItems = request.sort ?? []
 
-      if (sortItems.length > 0) {
-        for (const sortItem of sortItems) {
-          orderBy.push({[sortItem.param]: sortItem.order})
-        }
-      }
+      if (sortItems.length > 0) for (const sortItem of sortItems) orderBy.push({[sortItem.param]: sortItem.order})
 
       if (orderBy.length === 0) orderBy.push({updatedAt: "desc"})
 

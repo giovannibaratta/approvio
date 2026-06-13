@@ -34,11 +34,8 @@ export const AUDIT_LOGS_ENDPOINT_ROOT = "audit-logs"
  */
 function coerceQueryArray(query: Record<string, unknown>, keys: string[]): Record<string, unknown> {
   const result = {...query}
-  for (const key of keys) {
-    if (result[key] !== undefined && !Array.isArray(result[key])) {
-      result[key] = [result[key]]
-    }
-  }
+  for (const key of keys) if (result[key] !== undefined && !Array.isArray(result[key])) result[key] = [result[key]]
+
   return result
 }
 

@@ -174,12 +174,11 @@ export class BullQueueProvider implements QueueProvider, OnModuleDestroy, OnModu
       const repeatableJobs = await this.sweepQueue.getRepeatableJobs()
 
       // 2. Clean up any obsolete repeatable jobs with different cron frequencies
-      for (const job of repeatableJobs) {
+      for (const job of repeatableJobs)
         if (job.name === jobName && job.cron !== targetCron) {
           Logger.warn(`Removing obsolete repeatable job key ${job.key} (old cron: ${job.cron})`)
           await this.sweepQueue.removeRepeatableByKey(job.key)
         }
-      }
 
       // 3. Add/update the repeatable job with the target frequency on the sweep queue
       await this.sweepQueue.add(

@@ -59,12 +59,11 @@ export class WorkflowTemplatesController {
       logSuccess("Workflow template created", "WorkflowTemplatesController", t => ({id: t.id}))
     )()
 
-    if (isLeft(eitherWorkflowTemplate)) {
+    if (isLeft(eitherWorkflowTemplate))
       throw generateErrorResponseForCreateWorkflowTemplate(
         eitherWorkflowTemplate.left,
         "Failed to create workflow template"
       )
-    }
 
     const workflowTemplate = eitherWorkflowTemplate.right
     // Set Location header

@@ -262,15 +262,14 @@ export class UserFactory {
   private static checkForDuplicateRoles(
     roles: ReadonlyArray<UnconstrainedBoundRole>
   ): Either<UserValidationError, void> {
-    for (let i = 0; i < roles.length; i++) {
+    for (let i = 0; i < roles.length; i++)
       for (let j = i + 1; j < roles.length; j++) {
         const roleI = roles[i]
         const roleJ = roles[j]
-        if (roleI && roleJ && roleI.name === roleJ.name && RoleFactory.isSameScope(roleI.scope, roleJ.scope)) {
+        if (roleI && roleJ && roleI.name === roleJ.name && RoleFactory.isSameScope(roleI.scope, roleJ.scope))
           return left("user_duplicate_roles")
-        }
       }
-    }
+
     return right(undefined)
   }
 

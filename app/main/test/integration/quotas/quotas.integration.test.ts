@@ -252,12 +252,11 @@ describe("Quotas Integration Tests", () => {
 
         // Intercept getQuotaById to trigger concurrent modification
         spy = wrapTaskEitherWithSideEffect(repo, "getQuotaById", async id => {
-          if (id === quota.id) {
+          if (id === quota.id)
             await prisma.quota.update({
               where: {id: quota.id},
               data: {occ: {increment: 1}}
             })
-          }
         })
 
         const payload: QuotaUpdate = {limit: 50}

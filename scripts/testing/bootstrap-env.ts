@@ -55,9 +55,7 @@ async function simulateOidcAuthorization(redirectLocation: string, testUser: Oid
     })
   } catch (error: unknown) {
     // Ignore if user already exists or other non-critical errors for now
-    if (isAxiosError(error)) {
-      console.log(`Note: OIDC user creation status: ${error.response?.status}`)
-    }
+    if (isAxiosError(error)) console.log(`Note: OIDC user creation status: ${error.response?.status}`)
   }
 
   // Step 2: Get the login form HTML to extract verification tokens
@@ -208,7 +206,7 @@ async function ensureUserInDb(email: string, displayName: string, isAdmin: boole
       const orgAdmin = await prisma.organizationAdmin.findUnique({
         where: {email}
       })
-      if (!orgAdmin) {
+      if (!orgAdmin)
         await prisma.organizationAdmin.create({
           data: {
             id: uuidv7(),
@@ -216,17 +214,15 @@ async function ensureUserInDb(email: string, displayName: string, isAdmin: boole
             createdAt: new Date()
           }
         })
-      }
     }
   } else {
     console.log(`User ${email} already exists in DB. Ensuring valid state...`)
     // Ensure roles are empty array to avoid validation errors
-    if (!Array.isArray(user.roles)) {
+    if (!Array.isArray(user.roles))
       await prisma.user.update({
         where: {id: user.id},
         data: {roles: []}
       })
-    }
   }
   return user
 }
@@ -282,9 +278,8 @@ async function createGroup(client: AxiosInstance, name: string, description: str
     console.log(`Group Created: ${id}`)
     return id
   } catch (error: unknown) {
-    if (isAxiosError(error) && error.response?.status === 409) {
-      return handleConflict(client, "/groups", name, "Group")
-    }
+    if (isAxiosError(error) && error.response?.status === 409) return handleConflict(client, "/groups", name, "Group")
+
     if (isAxiosError(error)) {
       console.error(`Group creation failed with status: ${error.response?.status}`)
       console.error("Error details:", JSON.stringify(error.response?.data, null, 2))
@@ -304,12 +299,10 @@ async function createSpace(client: AxiosInstance, name: string, description: str
     console.log(`Space Created: ${id}`)
     return id
   } catch (error: unknown) {
-    if (isAxiosError(error) && error.response?.status === 409) {
-      return handleConflict(client, "/spaces", name, "Space")
-    }
-    if (isAxiosError(error)) {
-      console.error("Failed to create space:", error.response?.data || error.message)
-    }
+    if (isAxiosError(error) && error.response?.status === 409) return handleConflict(client, "/spaces", name, "Space")
+
+    if (isAxiosError(error)) console.error("Failed to create space:", error.response?.data || error.message)
+
     throw error
   }
 }
@@ -341,12 +334,11 @@ async function createWorkflowTemplate(
     console.log(`Workflow Template Created: ${id}`)
     return id
   } catch (error: unknown) {
-    if (isAxiosError(error) && error.response?.status === 409) {
+    if (isAxiosError(error) && error.response?.status === 409)
       return handleConflict(client, "/workflow-templates", name, "Workflow Template")
-    }
-    if (isAxiosError(error)) {
-      console.error("Failed to create workflow template:", error.response?.data || error.message)
-    }
+
+    if (isAxiosError(error)) console.error("Failed to create workflow template:", error.response?.data || error.message)
+
     throw error
   }
 }
@@ -370,9 +362,8 @@ async function addUserToGroup(client: AxiosInstance, groupId: string, userId: st
       console.log("User already in group")
       return
     }
-    if (isAxiosError(error)) {
-      console.error("Failed to add user to group:", error.response?.data || error.message)
-    }
+    if (isAxiosError(error)) console.error("Failed to add user to group:", error.response?.data || error.message)
+
     throw error
   }
 }
@@ -393,9 +384,8 @@ async function assignUserRole(client: AxiosInstance, userId: string, roleName: s
     })
     console.log("Role assigned")
   } catch (error: unknown) {
-    if (isAxiosError(error)) {
-      console.error("Failed to assign role:", error.response?.data || error.message)
-    }
+    if (isAxiosError(error)) console.error("Failed to assign role:", error.response?.data || error.message)
+
     throw error
   }
 }

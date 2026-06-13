@@ -221,12 +221,12 @@ describe("doesVotesCoverApprovalRules", () => {
 
   const toGroupVotersMap = (votes: ApproveVote[]): Map<string, Set<string>> => {
     const groupVoters = new Map<string, Set<string>>()
-    for (const vote of votes) {
+    for (const vote of votes)
       for (const groupId of vote.votedForGroups) {
         if (!groupVoters.has(groupId)) groupVoters.set(groupId, new Set())
         groupVoters.get(groupId)!.add(getNormalizedEntityId(vote.voter))
       }
-    }
+
     return groupVoters
   }
 

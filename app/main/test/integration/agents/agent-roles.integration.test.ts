@@ -560,14 +560,13 @@ describe("Agent Roles API", () => {
       it("should return 400 for exceeding maximum roles in request (129 roles)", async () => {
         // Given: Role assignment request with more than 128 roles
         const roles = []
-        for (let i = 0; i < MAX_ROLES_PER_ENTITY + 1; i++) {
+        for (let i = 0; i < MAX_ROLES_PER_ENTITY + 1; i++)
           roles.push({
             roleName: "OrgWideWorkflowTemplateVoter",
             scope: {
               type: "org" as const
             }
           })
-        }
 
         const roleAssignmentRequest: RoleAssignmentRequest = {
           roles,
@@ -590,7 +589,7 @@ describe("Agent Roles API", () => {
         // Since agents only support workflow template resource type roles, space-scoped templates are perfectly valid,
         // but do not execute DB queries checking template existence. This avoids creating 128 templates in the DB.
         const existingRoles = []
-        for (let i = 0; i < MAX_ROLES_PER_ENTITY; i++) {
+        for (let i = 0; i < MAX_ROLES_PER_ENTITY; i++)
           existingRoles.push({
             roleName: "SpaceWideWorkflowTemplateVoter",
             scope: {
@@ -598,7 +597,6 @@ describe("Agent Roles API", () => {
               spaceId: uuidv7()
             }
           })
-        }
 
         // Assign existing roles
         await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
@@ -611,7 +609,7 @@ describe("Agent Roles API", () => {
 
         // When: Admin tries to add more roles that would exceed total limit
         const additionalRoles = []
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 5; i++)
           additionalRoles.push({
             roleName: "SpaceWideWorkflowTemplateInstantiator",
             scope: {
@@ -619,7 +617,6 @@ describe("Agent Roles API", () => {
               spaceId: uuidv7()
             }
           })
-        }
 
         const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
         const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
@@ -651,14 +648,13 @@ describe("Agent Roles API", () => {
         // Intercept getAgentById to trigger concurrent modification
         spy = wrapTaskEitherWithSideEffect(agentRepository, "getAgentById", async agentId => {
           // Only trigger side effect if fetching the target agent
-          if (agentId === targetAgent.id) {
+          if (agentId === targetAgent.id)
             // Manually increment the OCC in the database via raw prisma query
             // This simulates a concurrent update to the agent between read and write
             await prisma.agent.update({
               where: {id: targetAgent.id},
               data: {occ: {increment: 1}}
             })
-          }
         })
 
         // When: Admin assigns role to agent

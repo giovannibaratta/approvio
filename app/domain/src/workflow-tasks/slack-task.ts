@@ -145,9 +145,8 @@ export class WorkflowActionSlackTaskFactory {
       return left("workflow_action_slack_task_webhook_url_invalid")
 
     let message: string | undefined = undefined
-    if (hasOwnProperty(dataToBeValidated, "message") && dataToBeValidated.message !== undefined) {
+    if (hasOwnProperty(dataToBeValidated, "message") && dataToBeValidated.message !== undefined)
       if (typeof dataToBeValidated.message === "string") message = dataToBeValidated.message
-    }
 
     const baseSlackTask: WorkflowActionSlackBaseTaskData = {
       ...baseTask,

@@ -101,9 +101,7 @@ function validateVoter(voter: EntityReference): Either<VoteValidationError, Enti
   const voterIdValidation = validateUUID(voter.entityId, "vote_invalid_voter_id")
   if (isLeft(voterIdValidation)) return voterIdValidation
 
-  if (voter.entityType !== "user" && voter.entityType !== "agent") {
-    return left("vote_invalid_voter_type")
-  }
+  if (voter.entityType !== "user" && voter.entityType !== "agent") return left("vote_invalid_voter_type")
 
   return right(voter)
 }

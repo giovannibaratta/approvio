@@ -256,12 +256,11 @@ describe("Spaces API", () => {
 
         // Intercept getUserById to trigger concurrent modification
         spy = wrapTaskEitherWithSideEffect(userRepository, "getUserById", async userId => {
-          if (userId === orgAdminUser.user.id) {
+          if (userId === orgAdminUser.user.id)
             await prisma.user.update({
               where: {id: orgAdminUser.user.id},
               data: {occ: {increment: 1}}
             })
-          }
         })
 
         // When

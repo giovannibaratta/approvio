@@ -149,9 +149,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
           authContext: stepUpContext
         }
       }
-    } else if (payload.entityType === "agent") {
-      authenticatedEntity = await this.validateAgentEntity(payload.sub)
-    } else throw new UnauthorizedException(generateErrorPayload("INVALID_ENTITY_TYPE", "Invalid entity type in token"))
+    } else if (payload.entityType === "agent") authenticatedEntity = await this.validateAgentEntity(payload.sub)
+    else throw new UnauthorizedException(generateErrorPayload("INVALID_ENTITY_TYPE", "Invalid entity type in token"))
 
     // Set requestor on request for GetAuthenticatedEntity decorator
     req.requestor = authenticatedEntity

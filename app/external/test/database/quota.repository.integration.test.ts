@@ -67,7 +67,7 @@ describe("QuotaDbRepository Integration", () => {
         unwrapRight(QuotaFactory.newQuota({node: {type: "Org", identifier: DEFAULT_ORG_ID}, quotaType}, 10))
       )
 
-      for (const q of quotas) {
+      for (const q of quotas)
         await createMockQuotaInDb(prisma, {
           id: q.id,
           scope: q.node.type,
@@ -77,7 +77,6 @@ describe("QuotaDbRepository Integration", () => {
           createdAt: now,
           updatedAt: now
         })
-      }
 
       // When: listing quotas
       const result = unwrapRight(await repository.listQuotas(1, 10)())

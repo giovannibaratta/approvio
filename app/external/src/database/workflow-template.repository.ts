@@ -269,25 +269,22 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
 
           const where: Prisma.WorkflowTemplateWhereInput = {}
 
-          if (request.search) {
+          if (request.search)
             if (request.searchMode === "EXACT") where.name = request.search
             else where.name = {contains: request.search, mode: "insensitive"}
-          }
 
-          if (request.filters?.spaceId) {
-            where.spaceId = request.filters.spaceId
-          } else if (request.filters?.spaceName) {
+          if (request.filters?.spaceId) where.spaceId = request.filters.spaceId
+          else if (request.filters?.spaceName)
             where.spaces = {
               name: request.filters.spaceName
             }
-          }
 
           if (request.filters?.status) where.status = {in: [...request.filters.status]}
 
           const orderBy: Prisma.WorkflowTemplateOrderByWithRelationInput[] = []
           const sortItems = request.sort ?? []
 
-          if (sortItems.length > 0) {
+          if (sortItems.length > 0)
             for (const {field, direction} of sortItems) {
               const dir = direction === SortDirection.DESC ? "desc" : "asc"
 
@@ -295,7 +292,6 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
               else if (field === SortBy.UPDATED_AT) orderBy.push({updatedAt: dir})
               else if (field === SortBy.VERSION) orderBy.push({version: dir})
             }
-          }
 
           if (orderBy.length === 0) orderBy.push({createdAt: "desc"})
 
@@ -424,9 +420,9 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
         TE.tryCatchK(
           () => this.atomicUpdateAndCreateTaskNoErrorHandling(data),
           error => {
-            if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+            if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
               return "concurrency_error" as const
-            }
+
             Logger.error(`Error while deprecating old template and creating new one: ${error}`, error)
             return "unknown_error" as const
           }

@@ -136,9 +136,8 @@ describe("Rate Limiter Integration", () => {
     const secondUserToken = jwtService.sign(secondTokenPayload)
 
     // When: Exhaust the first user's quota
-    for (let i = 0; i < RATE_LIMIT_POINTS; i++) {
+    for (let i = 0; i < RATE_LIMIT_POINTS; i++)
       await get(app, AUTHENTICATED_ENDPOINT).withToken(authenticatedUser.token).build()
-    }
 
     // Expect: First user is blocked
     const blockedResponse = await get(app, AUTHENTICATED_ENDPOINT).withToken(authenticatedUser.token).build()

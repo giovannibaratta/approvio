@@ -52,9 +52,7 @@ export function setupWorkerTestModule(processorsToKeep: Array<Injectable> = []):
 
   // Mock all processors except those in processorsToKeep
   ALL_WORKER_PROCESSORS.forEach(processor => {
-    if (!processorsToKeep.includes(processor)) {
-      builder.overrideProvider(processor).useClass(MockProcessor)
-    }
+    if (!processorsToKeep.includes(processor)) builder.overrideProvider(processor).useClass(MockProcessor)
   })
 
   return builder

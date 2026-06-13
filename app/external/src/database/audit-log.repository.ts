@@ -77,13 +77,13 @@ export class PostgresAuditLogRepository implements AuditLogRepository {
           items,
           A.traverse(E.Applicative)(record => this.mapToDomain(record)),
           E.map(domainItems => {
-            if (hasMore && nextCursor) {
+            if (hasMore && nextCursor)
               return {
                 items: domainItems,
                 hasMore: true as const,
                 nextCursor
               }
-            }
+
             return {
               items: domainItems,
               hasMore: false as const
@@ -133,35 +133,31 @@ export class PostgresAuditLogRepository implements AuditLogRepository {
   ): Prisma.AuditLogWhereInput {
     const andConditions: Prisma.AuditLogWhereInput[] = [{createdAt: {gte: fromDate}}]
 
-    if (filters.targets && filters.targets.length > 0) {
+    if (filters.targets && filters.targets.length > 0)
       andConditions.push({
         OR: filters.targets.map(target => ({
           entityType: target.entityType,
           entityId: target.entityId
         }))
       })
-    }
 
-    if (filters.actors && filters.actors.length > 0) {
+    if (filters.actors && filters.actors.length > 0)
       andConditions.push({
         OR: filters.actors.map(actor => ({
           actorType: actor.actorType,
           actorId: actor.actorId
         }))
       })
-    }
 
-    if (filters.auditTypes && filters.auditTypes.length > 0) {
+    if (filters.auditTypes && filters.auditTypes.length > 0)
       andConditions.push({
         auditType: {in: filters.auditTypes}
       })
-    }
 
-    if (cursor) {
+    if (cursor)
       andConditions.push({
         OR: [{createdAt: {lt: cursor.createdAt}}, {createdAt: cursor.createdAt, id: {lt: cursor.id}}]
       })
-    }
 
     return {AND: andConditions}
   }

@@ -1433,12 +1433,11 @@ describe("Workflow Templates API", () => {
 
         // Intercept getActiveWorkflowTemplateByName to trigger concurrent modification
         spy = wrapTaskEitherWithSideEffect(repo, "getActiveWorkflowTemplateByName", async name => {
-          if (name === createdTemplate.name) {
+          if (name === createdTemplate.name)
             await prisma.workflowTemplate.update({
               where: {id: createdTemplate.id},
               data: {occ: {increment: 1}}
             })
-          }
         })
 
         // When

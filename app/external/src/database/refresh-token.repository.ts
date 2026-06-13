@@ -150,12 +150,11 @@ export class RefreshTokenDbRepository implements RefreshTokenRepository {
 }
 
 function getUsedTokenProp(token: RefreshToken): {usedAt: Date | null; nextTokenId: string | null} {
-  if (token.status !== RefreshTokenStatus.USED) {
+  if (token.status !== RefreshTokenStatus.USED)
     return {
       usedAt: null,
       nextTokenId: null
     }
-  }
 
   return {
     usedAt: token.usedAt,
@@ -180,15 +179,14 @@ function mapDomainTokenToPrismaForUpdate(token: RefreshToken): Prisma.RefreshTok
   let userRef: Prisma.UserCreateNestedOneWithoutRefreshTokensInput | undefined = undefined
   let agentRef: Prisma.AgentCreateNestedOneWithoutRefreshTokensInput | undefined = undefined
 
-  if (token.entityType === "user") {
+  if (token.entityType === "user")
     userRef = {
       connect: {id: token.userId}
     }
-  } else {
+  else
     agentRef = {
       connect: {id: token.agentId}
     }
-  }
 
   return {
     ...baseData,
@@ -215,15 +213,14 @@ function mapDomainTokenToPrismaForCreate(token: DecoratedRefreshToken<{occ: true
   let userRef: Prisma.UserCreateNestedOneWithoutRefreshTokensInput | undefined = undefined
   let agentRef: Prisma.AgentCreateNestedOneWithoutRefreshTokensInput | undefined = undefined
 
-  if (token.entityType === "user") {
+  if (token.entityType === "user")
     userRef = {
       connect: {id: token.userId}
     }
-  } else {
+  else
     agentRef = {
       connect: {id: token.agentId}
     }
-  }
 
   return {
     ...baseData,

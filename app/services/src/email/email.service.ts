@@ -21,9 +21,7 @@ export class EmailService {
     const trimmedSubject = email.subject?.trim() || undefined
     const trimmedBody = email.htmlBody.trim()
 
-    if (trimmedTo.length === 0 || trimmedTo.some(to => !isEmail(to))) {
-      return TE.left("email_invalid_to")
-    }
+    if (trimmedTo.length === 0 || trimmedTo.some(to => !isEmail(to))) return TE.left("email_invalid_to")
 
     return TE.right({
       to: trimmedTo,

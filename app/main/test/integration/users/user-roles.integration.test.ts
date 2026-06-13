@@ -350,7 +350,7 @@ describe("User Roles API", () => {
         // to avoid 127 sequential DB insertions.
         const roles = []
         // Add 127 group-specific roles
-        for (let i = 0; i < 127; i++) {
+        for (let i = 0; i < 127; i++)
           roles.push({
             roleName: "GroupReadOnly",
             scope: {
@@ -358,7 +358,7 @@ describe("User Roles API", () => {
               groupId: uuidv7()
             }
           })
-        }
+
         // Add 1 org-wide role
         roles.push({
           roleName: "OrgWideSpaceReadOnly",
@@ -445,14 +445,13 @@ describe("User Roles API", () => {
         // Intercept getUserById to trigger concurrent modification
         spy = wrapTaskEitherWithSideEffect(userRepository, "getUserById", async userId => {
           // Only trigger side effect if fetching the target user (prevent intercepting jwt validation)
-          if (userId === targetUser.user.id) {
+          if (userId === targetUser.user.id)
             // Manually increment the OCC in the database via raw prisma query
             // This simulates a concurrent update to the user between read and write
             await prisma.user.update({
               where: {id: targetUser.user.id},
               data: {occ: {increment: 1}}
             })
-          }
         })
 
         // When: Admin assigns role to user
@@ -683,14 +682,13 @@ describe("User Roles API", () => {
       it("should return 400 for exceeding maximum roles in request (129 roles)", async () => {
         // Given: Role assignment request with more than 128 roles
         const roles = []
-        for (let i = 0; i < MAX_ROLES_PER_ENTITY + 1; i++) {
+        for (let i = 0; i < MAX_ROLES_PER_ENTITY + 1; i++)
           roles.push({
             roleName: "OrgWideSpaceReadOnly",
             scope: {
               type: "org" as const
             }
           })
-        }
 
         const roleAssignmentRequest: RoleAssignmentRequest = {
           roles,
@@ -713,7 +711,7 @@ describe("User Roles API", () => {
         // Role assignment validations check role schemas and permission configurations, but do not query
         // group database existence. This avoids 128 sequential DB insertions.
         const existingRoles = []
-        for (let i = 0; i < MAX_ROLES_PER_ENTITY; i++) {
+        for (let i = 0; i < MAX_ROLES_PER_ENTITY; i++)
           existingRoles.push({
             roleName: "GroupReadOnly",
             scope: {
@@ -721,7 +719,6 @@ describe("User Roles API", () => {
               groupId: uuidv7()
             }
           })
-        }
 
         // Assign existing roles
         await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)
@@ -734,7 +731,7 @@ describe("User Roles API", () => {
 
         // When: Admin tries to add more roles that would exceed total limit
         const additionalRoles = []
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 5; i++)
           additionalRoles.push({
             roleName: "GroupManager",
             scope: {
@@ -742,7 +739,6 @@ describe("User Roles API", () => {
               groupId: uuidv7()
             }
           })
-        }
 
         const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const response = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.user.id}/roles`)

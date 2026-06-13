@@ -46,12 +46,11 @@ export class RateLimiterGuard implements CanActivate {
         rateLimiterRes => {
           this.setHeaders(context, rateLimiterRes)
 
-          if (rateLimiterRes.consumedPoints > this.rateLimitMaximumRequestsPerWindows) {
+          if (rateLimiterRes.consumedPoints > this.rateLimitMaximumRequestsPerWindows)
             throw new HttpException(
               generateErrorPayload("TOO_MANY_REQUESTS", "Rate limit exceeded"),
               HttpStatus.TOO_MANY_REQUESTS
             )
-          }
 
           return true
         }

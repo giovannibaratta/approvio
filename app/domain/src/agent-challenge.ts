@@ -361,17 +361,13 @@ export class AgentChallengeFactory {
   > {
     try {
       const parts = jwtString.split(".")
-      if (parts.length !== 3) {
-        return left("agent_challenge_invalid_jwt_format" as const)
-      }
+      if (parts.length !== 3) return left("agent_challenge_invalid_jwt_format" as const)
 
       const headerB64 = parts[0]
       const payloadB64 = parts[1]
       const signatureB64 = parts[2]
 
-      if (!headerB64 || !payloadB64 || !signatureB64) {
-        return left("agent_challenge_invalid_jwt_format" as const)
-      }
+      if (!headerB64 || !payloadB64 || !signatureB64) return left("agent_challenge_invalid_jwt_format" as const)
 
       const header = JSON.parse(Buffer.from(headerB64, "base64url").toString("utf8"))
       const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"))
@@ -407,18 +403,14 @@ export class AgentChallengeFactory {
       const algorithm = parsedJwt.header.alg
 
       // Verify algorithm is RS256 (required by RFC 7523)
-      if (algorithm !== "RS256") {
-        return left("agent_challenge_invalid_jwt_signature" as const)
-      }
+      if (algorithm !== "RS256") return left("agent_challenge_invalid_jwt_signature" as const)
 
       const signature = Buffer.from(parsedJwt.rawSignature, "base64url")
       const data = Buffer.from(parsedJwt.rawPayload, "utf8")
 
       const isValid = verify("RSA-SHA256", data, agent.publicKey, signature)
 
-      if (!isValid) {
-        return left("agent_challenge_invalid_jwt_signature" as const)
-      }
+      if (!isValid) return left("agent_challenge_invalid_jwt_signature" as const)
 
       return right(parsedJwt.payload)
     } catch {

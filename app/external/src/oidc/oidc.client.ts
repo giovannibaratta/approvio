@@ -54,14 +54,13 @@ export class OidcClient implements OidcProvider {
             authUrl.searchParams.append("code_challenge_method", "S256")
 
             // Force login prompt for higher assurance level
-            if (assuranceLevel === AssuranceLevel.FORCE_LOGIN) {
+            if (assuranceLevel === AssuranceLevel.FORCE_LOGIN)
               if (
                 oidcConfig.provider === "auth0" ||
                 oidcConfig.provider === "zitadel" ||
                 oidcConfig.provider === "keycloak"
               )
                 authUrl.searchParams.append("prompt", "login")
-            }
 
             return authUrl.toString()
           },
@@ -101,12 +100,11 @@ export class OidcClient implements OidcProvider {
       error => {
         Logger.error("Token exchange failed", error)
         if (error instanceof Error) {
-          if (error.message.includes("invalid_grant") || error.message.includes("authorization code")) {
+          if (error.message.includes("invalid_grant") || error.message.includes("authorization code"))
             return "oidc_token_exchange_failed" as const
-          }
-          if (error.message.includes("network") || error.message.includes("timeout")) {
+
+          if (error.message.includes("network") || error.message.includes("timeout"))
             return "oidc_network_error" as const
-          }
         }
         return "oidc_token_exchange_failed" as const
       }

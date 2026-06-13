@@ -245,11 +245,10 @@ export class ConfigProvider implements ConfigProviderInterface {
         tokenEndpoint,
         userinfoEndpoint
       }
-    } else if (authorizationEndpoint || tokenEndpoint || userinfoEndpoint) {
+    } else if (authorizationEndpoint || tokenEndpoint || userinfoEndpoint)
       throw new Error(
         "Incomplete manual OIDC configuration. If providing manual endpoints, all of authorization, token, and userinfo endpoints must be specified."
       )
-    }
 
     let allowInsecure = false
 
@@ -257,9 +256,9 @@ export class ConfigProvider implements ConfigProviderInterface {
       if (
         process.env.OIDC_ALLOW_INSECURE.toLowerCase() !== "true" &&
         process.env.OIDC_ALLOW_INSECURE.toLowerCase() !== "false"
-      ) {
+      )
         throw new Error("OIDC_ALLOW_INSECURE must be 'true' or 'false'")
-      }
+
       allowInsecure = process.env.OIDC_ALLOW_INSECURE.toLowerCase() === "true"
     }
 
@@ -375,7 +374,7 @@ export class ConfigProvider implements ConfigProviderInterface {
     const db: number = parseInt(unparsedDb, 10)
     if (isNaN(db) || db < 0 || db > 15) throw new Error(`${prefix}DB must be a valid number between 0 and 15`)
 
-    if (sentinels) {
+    if (sentinels)
       return {
         connection: {
           type: "sentinel",
@@ -387,7 +386,7 @@ export class ConfigProvider implements ConfigProviderInterface {
         db,
         prefix: redisPrefix
       }
-    } else {
+    else {
       if (host === undefined) throw new Error(`${prefix}HOST or ${prefix}SENTINELS is not defined`)
       if (unparsedPort === undefined || unparsedPort === "") throw new Error(`${prefix}PORT is not defined`)
 
@@ -487,12 +486,9 @@ export class ConfigProvider implements ConfigProviderInterface {
         const cleanVersion = currentVersionRaw.replace(/^v/i, "")
         currentVersion = parseInt(cleanVersion, 10)
 
-        if (isNaN(currentVersion) || currentVersion <= 0) {
+        if (isNaN(currentVersion) || currentVersion <= 0)
           throw new Error("KMS_MASTER_KEY_ACTIVE_VERSION must be a valid number greater than 0")
-        }
-      } else {
-        currentVersion = 1
-      }
+      } else currentVersion = 1
 
       const keys = new Map<number, Buffer>()
 

@@ -214,13 +214,10 @@ export function evaluateWorkflowStatus(
 
     // 2.1 Remove effects of the previous vote if it existed.
     // A user's new vote (of any type) completely overrides their previous state in the timeline.
-    if (previousVote) {
+    if (previousVote)
       if (previousVote.type === "VETO") activeVetoers.delete(voterKey)
       else if (previousVote.type === "APPROVE")
-        for (const groupId of previousVote.votedForGroups) {
-          groupVoters.get(groupId)?.delete(voterKey)
-        }
-    }
+        for (const groupId of previousVote.votedForGroups) groupVoters.get(groupId)?.delete(voterKey)
 
     // 2.2 Apply the new vote
     activeVoters.set(voterKey, vote)
@@ -241,9 +238,8 @@ export function evaluateWorkflowStatus(
   }
 
   // 3. Fallback check for expired status if no terminal status was reached
-  if (currentStatus === WorkflowStatus.EVALUATION_IN_PROGRESS && workflow.expiresAt < now) {
+  if (currentStatus === WorkflowStatus.EVALUATION_IN_PROGRESS && workflow.expiresAt < now)
     currentStatus = WorkflowStatus.EXPIRED
-  }
 
   return changeStatusAndMarkAsRecalculated(workflow, currentStatus)
 }

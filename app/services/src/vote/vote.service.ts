@@ -68,13 +68,12 @@ export class VoteService {
         const entityRoles = getEntityRoles(request.requestor)
         const canVoteResult = canVoteOnWorkflow(workflowWithTemplate, entityMemberships, entityRoles)
 
-        if (isRight(canVoteResult)) {
+        if (isRight(canVoteResult))
           return TE.right({
             canVote: true,
             requireHighPrivilege: canVoteResult.right.requireHighPrivilege,
             status
           })
-        }
 
         if (canVoteResult.left === "inconsistent_memberships") return TE.left(canVoteResult.left)
 
