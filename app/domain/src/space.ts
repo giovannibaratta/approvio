@@ -76,9 +76,7 @@ function validateName(name: string): Either<SpaceValidationError, string> {
 
   // Space names should be URL-friendly and human-readable
   // Allow letters, numbers, hyphens, underscores, and spaces
-  if (!/^[a-zA-Z0-9\s_-]+$/.test(name)) {
-    return left("space_name_invalid_characters")
-  }
+  if (!/^[a-zA-Z0-9\s_-]+$/.test(name)) return left("space_name_invalid_characters")
 
   return right(name)
 }

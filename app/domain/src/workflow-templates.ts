@@ -252,9 +252,8 @@ function validateWorkflowTemplateDescription(
 
 function validateExpiresInHours(hours: unknown): Either<WorkflowTemplateValidationError, number | undefined> {
   if (hours === undefined) return right(undefined)
-  if (typeof hours !== "number" || !Number.isInteger(hours) || hours < 1 || hours > MAX_EXPIRES_IN_HOURS) {
+  if (typeof hours !== "number" || !Number.isInteger(hours) || hours < 1 || hours > MAX_EXPIRES_IN_HOURS)
     return left("workflow_template_expires_in_hours_invalid")
-  }
 
   return right(hours)
 }
@@ -403,9 +402,8 @@ export function markTemplateForDeprecation(
 export function markTemplateAsDeprecated(
   template: WorkflowTemplate
 ): Either<WorkflowTemplateValidationError | WorkflowTemplateDeprecationError, WorkflowTemplate> {
-  if (template.status !== WorkflowTemplateStatus.PENDING_DEPRECATION) {
+  if (template.status !== WorkflowTemplateStatus.PENDING_DEPRECATION)
     return left("workflow_template_not_pending_deprecation")
-  }
 
   const updatedTemplate = {
     ...template,

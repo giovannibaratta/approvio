@@ -157,19 +157,17 @@ function mapPrismaVoteToDomainVote(prismaVote: PrismaVote): E.Either<VoteValidat
     })
   }
 
-  if (prismaVote.voteType === "VETO") {
+  if (prismaVote.voteType === "VETO")
     return VoteFactory.validate({
       ...domainData,
       type: "VETO"
     })
-  }
 
-  if (prismaVote.voteType === "WITHDRAW") {
+  if (prismaVote.voteType === "WITHDRAW")
     return VoteFactory.validate({
       ...domainData,
       type: "WITHDRAW"
     })
-  }
 
   return E.left("vote_invalid_vote_type")
 }

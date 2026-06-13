@@ -70,9 +70,7 @@ export class AgentChallengeDbRepository implements AgentChallengeRepository {
           }
         })
 
-        if (result.count === 0) {
-          throw new Error("agent_challenge_concurrent_update")
-        }
+        if (result.count === 0) throw new Error("agent_challenge_concurrent_update")
       },
       (error: unknown) => {
         return this.mapUpdateError(error)

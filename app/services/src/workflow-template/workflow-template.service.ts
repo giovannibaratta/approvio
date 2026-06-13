@@ -86,12 +86,11 @@ export class WorkflowTemplateService {
   getWorkflowTemplateByIdentifier(
     templateIdentifier: string
   ): TaskEither<WorkflowTemplateGetError | WorkflowTemplateGetActiveError, Versioned<WorkflowTemplate>> {
-    if (isUUIDv7(templateIdentifier)) {
+    if (isUUIDv7(templateIdentifier))
       return pipe(
         this.workflowTemplateRepository.getWorkflowTemplateById(templateIdentifier),
         logSuccess("Workflow template retrieved by id", "WorkflowTemplateService", t => ({id: t.id}))
       )
-    }
 
     return pipe(
       this.workflowTemplateRepository.getActiveWorkflowTemplateByName(templateIdentifier),

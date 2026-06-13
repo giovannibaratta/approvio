@@ -161,13 +161,12 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
   private buildWhereClauseGetObjectTask(data: GetGroupWithMembershipRepo): Prisma.GroupWhereUniqueInput {
     let groupMembershipClause: Prisma.GroupWhereUniqueInput["groupMemberships"] = undefined
 
-    if (data.onlyIfMember) {
+    if (data.onlyIfMember)
       groupMembershipClause = {
         some: {
           userId: data.onlyIfMember.userId
         }
       }
-    }
 
     return {
       id: data.groupId,

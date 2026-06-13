@@ -263,9 +263,8 @@ export class MockKeyPool {
    * @throws Error if index is out of bounds
    */
   static getKeyPairByIndex(index: number): {publicKey: string; privateKey: string} {
-    if (index < 0 || index >= TEST_RSA_KEY_POOL.length) {
+    if (index < 0 || index >= TEST_RSA_KEY_POOL.length)
       throw new Error(`MockKeyPool: Index ${index} is out of bounds. Pool size: ${TEST_RSA_KEY_POOL.length}`)
-    }
 
     return TEST_RSA_KEY_POOL[index] as {publicKey: string; privateKey: string}
   }
@@ -397,9 +396,8 @@ export class MockConfigProvider implements ConfigProviderInterface {
    * setups to reuse it.
    */
   private static getCachedRealProvider(): ConfigProvider {
-    if (!this.cachedRealProvider) {
-      this.cachedRealProvider = new ConfigProvider()
-    }
+    if (!this.cachedRealProvider) this.cachedRealProvider = new ConfigProvider()
+
     return this.cachedRealProvider
   }
 
@@ -512,7 +510,7 @@ export async function createMockUserInDb(
   const payload = createMockUserPrismaPayload(userOverrides)
   const user = await prisma.user.create({data: payload})
 
-  if (orgAdmin) {
+  if (orgAdmin)
     await prisma.organizationAdmin.create({
       data: {
         createdAt: new Date(),
@@ -520,7 +518,6 @@ export async function createMockUserInDb(
         id: uuidv7()
       }
     })
-  }
 
   // Return user with organizationAdmin relationship included
   const userWithOrgAdmin = await prisma.user.findUnique({

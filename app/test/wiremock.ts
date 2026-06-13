@@ -24,9 +24,7 @@ export interface WiremockRequest {
 
 const WIREMOCK_BASE_URL = process.env.WIREMOCK_BASE_URL
 
-if (!WIREMOCK_BASE_URL) {
-  throw new Error("WIREMOCK_BASE_URL environment variable is not set")
-}
+if (!WIREMOCK_BASE_URL) throw new Error("WIREMOCK_BASE_URL environment variable is not set")
 
 const wireMock = new WireMock(WIREMOCK_BASE_URL)
 

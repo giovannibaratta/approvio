@@ -24,9 +24,8 @@ const getWorkflowTemplate = (rule: ApprovalRule): WorkflowTemplate => {
     spaceId: uuidv7()
   })
 
-  if (!isRight(result)) {
-    throw new Error(`Test setup failed: Unable to create workflow template. Error: ${result.left}`)
-  }
+  if (!isRight(result)) throw new Error(`Test setup failed: Unable to create workflow template. Error: ${result.left}`)
+
   return result.right
 }
 

@@ -53,9 +53,8 @@ if (!typeToResolve) {
 // Helper function to extract literals from a type
 const MAX_NESTING_LEVEL = 100
 function extractLiterals(type: Type, depth = 0): Set<string | number | boolean> {
-  if (depth > MAX_NESTING_LEVEL) {
-    throw new Error(`Exceeded maximum nesting level of ${MAX_NESTING_LEVEL}`)
-  }
+  if (depth > MAX_NESTING_LEVEL) throw new Error(`Exceeded maximum nesting level of ${MAX_NESTING_LEVEL}`)
+
   const literals = new Set<string | number | boolean>()
 
   // If the type is a union, traverse its constituent types
@@ -66,14 +65,11 @@ function extractLiterals(type: Type, depth = 0): Set<string | number | boolean> 
       const nestedLiterals = extractLiterals(unionType, depth + 1)
       nestedLiterals.forEach(val => literals.add(val))
     }
-  } else if (type.isStringLiteral()) {
-    literals.add(type.getLiteralValue() as string)
-  } else if (type.isNumberLiteral()) {
-    literals.add(type.getLiteralValue() as number)
-  } else if (type.isBooleanLiteral()) {
+  } else if (type.isStringLiteral()) literals.add(type.getLiteralValue() as string)
+  else if (type.isNumberLiteral()) literals.add(type.getLiteralValue() as number)
+  else if (type.isBooleanLiteral())
     // getLiteralValue() returns a boolean for boolean literals in ts-morph
     literals.add(type.getText() === "true")
-  }
 
   return literals
 }

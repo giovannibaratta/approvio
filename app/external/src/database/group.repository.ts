@@ -123,9 +123,8 @@ export class GroupDbRepository implements GroupRepository {
           if (
             isPrismaRecordNotFoundError(error, Prisma.ModelName.Group) ||
             isPrismaRecordNotFoundError(error, Prisma.ModelName.User)
-          ) {
+          )
             return "concurrency_error" as const
-          }
 
           Logger.error("Error while creating group. Unknown error", error)
           return "unknown_error"

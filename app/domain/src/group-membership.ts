@@ -204,9 +204,7 @@ export class GroupManager {
     // Validate that an entity does not appear twice in the memberships using normalized IDs
     const uniqueEntities = new Set(memberships.map(m => getNormalizedId(m.entity)))
 
-    if (uniqueEntities.size !== memberships.length) {
-      return left("membership_duplicated_membership")
-    }
+    if (uniqueEntities.size !== memberships.length) return left("membership_duplicated_membership")
 
     return right(new GroupManager(group, memberships))
   }

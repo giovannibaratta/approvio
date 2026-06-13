@@ -271,12 +271,12 @@ export function mapWorkflowActionToApi(action: WorkflowAction): WorkflowActionAp
         }
 
         const params = new URLSearchParams(urlObj.search)
-        for (const [key] of params.entries()) {
+        for (const [key] of params.entries())
           if (redactUrlMode === "all" || isSensitiveKey(key)) {
             params.set(key, "***")
             modified = true
           }
-        }
+
         if (modified) {
           urlObj.search = params.toString()
           redactedUrl = urlObj.toString()
@@ -289,9 +289,8 @@ export function mapWorkflowActionToApi(action: WorkflowAction): WorkflowActionAp
 
       if (action.headers) {
         redactedHeaders = {}
-        for (const [key, value] of Object.entries(action.headers)) {
+        for (const [key, value] of Object.entries(action.headers))
           redactedHeaders[key] = redactHeadersMode === "all" || isSensitiveKey(key) ? "***" : value
-        }
       }
 
       return {

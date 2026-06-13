@@ -247,12 +247,11 @@ describe("Workflows API", () => {
 
         // Intercept getWorkflowById to trigger concurrent modification
         spy = wrapTaskEitherWithSideEffect(repo, "getWorkflowById", async id => {
-          if (id === workflowForRaceVoting.id) {
+          if (id === workflowForRaceVoting.id)
             await prisma.workflow.update({
               where: {id: workflowForRaceVoting.id},
               data: {occ: {increment: 1}}
             })
-          }
         })
 
         const requestBody: WorkflowVoteRequestApi = {

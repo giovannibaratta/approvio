@@ -15,7 +15,7 @@ export class NodemailerEmailProvider implements EmailProviderExternal {
 
   constructor(private readonly configService: ConfigProvider) {
     this.emailProviderConfig = this.configService.emailProviderConfig
-    if (isSome(this.emailProviderConfig)) {
+    if (isSome(this.emailProviderConfig))
       this.transporter = nodemailer.createTransport({
         host: this.emailProviderConfig.value.smtpEndpoint,
         port: this.emailProviderConfig.value.smtpPort,
@@ -28,7 +28,7 @@ export class NodemailerEmailProvider implements EmailProviderExternal {
           pass: this.emailProviderConfig.value.smtpPassword
         }
       })
-    } else {
+    else {
       Logger.warn("Email provider configuration is missing. The email provider will not be able to send emails.")
       this.transporter = undefined
     }

@@ -55,12 +55,11 @@ function isEither(received: unknown): received is Either<unknown, unknown> {
 }
 
 export function toBeLeft(received: unknown): jest.CustomMatcherResult {
-  if (!isEither(received)) {
+  if (!isEither(received))
     return {
       pass: false,
       message: () => `Expected ${format(received)} to be an Either`
     }
-  }
 
   return {
     pass: isLeft(received),
@@ -69,19 +68,17 @@ export function toBeLeft(received: unknown): jest.CustomMatcherResult {
 }
 
 export function toBeLeftOf(received: unknown, expected: unknown): jest.CustomMatcherResult {
-  if (!isEither(received)) {
+  if (!isEither(received))
     return {
       pass: false,
       message: () => `Expected ${format(received)} to be an Either`
     }
-  }
 
-  if (!isLeft(received)) {
+  if (!isLeft(received))
     return {
       pass: false,
       message: () => `Expected ${format(received)} to be left`
     }
-  }
 
   const pass = received.left === expected
 
@@ -92,19 +89,17 @@ export function toBeLeftOf(received: unknown, expected: unknown): jest.CustomMat
 }
 
 export function toBeRight(received: unknown): jest.CustomMatcherResult {
-  if (!isEither(received)) {
+  if (!isEither(received))
     return {
       pass: false,
       message: () => `Expected ${format(received)} to be an Either`
     }
-  }
 
-  if (!isRight(received)) {
+  if (!isRight(received))
     return {
       pass: false,
       message: () => `Expected ${format(received)} to be right`
     }
-  }
 
   return {
     pass: true,
@@ -113,19 +108,17 @@ export function toBeRight(received: unknown): jest.CustomMatcherResult {
 }
 
 export function toBeRightOf(this: jest.MatcherContext, received: unknown, expected: unknown): jest.CustomMatcherResult {
-  if (!isEither(received)) {
+  if (!isEither(received))
     return {
       pass: false,
       message: () => `Expected ${format(received)} to be an Either`
     }
-  }
 
-  if (!isRight(received)) {
+  if (!isRight(received))
     return {
       pass: false,
       message: () => `Expected ${format(received)} to be right`
     }
-  }
 
   const pass = this.equals(received.right, expected)
 
@@ -151,12 +144,11 @@ export function toHaveErrorCode(received: unknown, expectedCode: string): jest.C
     )
   }
 
-  if (!isErrorPayload(received)) {
+  if (!isErrorPayload(received))
     return {
       pass: false,
       message: () => `Expected response body to match ErrorPayload structure but got ${JSON.stringify(received)}`
     }
-  }
 
   const pass = received.code === expectedCode
 
@@ -181,53 +173,47 @@ export function toHaveStatusCode(
   actualResponse: unknown,
   expectedStatusCode: number
 ): jest.CustomMatcherResult {
-  if (typeof actualResponse !== "object" || actualResponse === null) {
+  if (typeof actualResponse !== "object" || actualResponse === null)
     return {
       pass: false,
       message: () => "Expected response object to be an object, but it was not."
     }
-  }
 
-  if (!hasOwnProperty(actualResponse, "statusCode")) {
+  if (!hasOwnProperty(actualResponse, "statusCode"))
     return {
       pass: false,
       message: () => "Expected response object to have a 'statusCode' property."
     }
-  }
 
-  if (typeof actualResponse.statusCode !== "number") {
+  if (typeof actualResponse.statusCode !== "number")
     return {
       pass: false,
       message: () => "Expected response object to have a 'statusCode' property of type number."
     }
-  }
 
-  if (!hasOwnProperty(actualResponse, "body")) {
+  if (!hasOwnProperty(actualResponse, "body"))
     return {
       pass: false,
       message: () => "Expected response object to have a 'body' property."
     }
-  }
 
-  if (typeof actualResponse.body !== "object" || actualResponse.body === null) {
+  if (typeof actualResponse.body !== "object" || actualResponse.body === null)
     return {
       pass: false,
       message: () =>
         "Expected response object to have a 'body' property of type object, but it was missing or undefined."
     }
-  }
 
   // Determine if the response object has a 'statusCode' property.
   const actualStatusCode = actualResponse?.statusCode
   const actualBody = actualResponse?.body
 
   // Check if the actual response object or its status code is missing
-  if (actualStatusCode === undefined) {
+  if (actualStatusCode === undefined)
     return {
       pass: false,
       message: () => "Expected response object to have a 'statusCode' property, but it was missing or undefined."
     }
-  }
 
   // Check if the status codes match
   const pass = actualStatusCode === expectedStatusCode

@@ -131,9 +131,7 @@ export class ApprovalRuleFactory {
     data: Record<string, unknown>,
     depth: number
   ): Either<ApprovalRuleValidationError, OrRule> {
-    if (!Array.isArray(data.rules) || data.rules.length === 0) {
-      return left("approval_rule_or_rule_must_have_rules")
-    }
+    if (!Array.isArray(data.rules) || data.rules.length === 0) return left("approval_rule_or_rule_must_have_rules")
 
     return pipe(
       data.rules,

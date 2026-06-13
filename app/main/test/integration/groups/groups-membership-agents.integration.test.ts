@@ -310,7 +310,7 @@ describe("Groups API - Agent Membership", () => {
 
           // Simulate concurrent insertion by another request during the getAgentById fetch
           spy = wrapTaskEitherWithSideEffect(agentRepository, "getAgentById", async id => {
-            if (id === agent1.id) {
+            if (id === agent1.id)
               await prisma.agentGroupMembership.create({
                 data: {
                   groupId: group.id,
@@ -319,7 +319,6 @@ describe("Groups API - Agent Membership", () => {
                   updatedAt: new Date()
                 }
               })
-            }
           })
 
           // When
@@ -344,11 +343,10 @@ describe("Groups API - Agent Membership", () => {
           // Simulate concurrent group deletion during the read phase (getAgentById fetch).
           // At this point, the service has not yet fetched the group or checked its existence.
           spy = wrapTaskEitherWithSideEffect(agentRepository, "getAgentById", async id => {
-            if (id === agent1.id) {
+            if (id === agent1.id)
               await prisma.group.delete({
                 where: {id: group.id}
               })
-            }
           })
 
           // When

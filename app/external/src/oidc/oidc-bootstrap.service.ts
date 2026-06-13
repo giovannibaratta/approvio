@@ -80,16 +80,13 @@ export class OidcBootstrapService implements OnApplicationBootstrap {
           error => {
             this.logger.error("OIDC initialization failed", error)
             if (error instanceof Error) {
-              if (error.message.includes("Incomplete manual OIDC configuration")) {
-                throw error
-              }
+              if (error.message.includes("Incomplete manual OIDC configuration")) throw error
 
-              if (error.message.includes("network") || error.message.includes("timeout")) {
+              if (error.message.includes("network") || error.message.includes("timeout"))
                 return "oidc_network_error" as const
-              }
-              if (error.message.includes("discovery") || error.message.includes("well-known")) {
+
+              if (error.message.includes("discovery") || error.message.includes("well-known"))
                 return "oidc_invalid_provider_response" as const
-              }
             }
             return "oidc_network_error" as const
           }
@@ -99,20 +96,20 @@ export class OidcBootstrapService implements OnApplicationBootstrap {
   }
 
   getConfiguration(): OidcServerMetadata {
-    if (!this.validatedConfiguration) {
+    if (!this.validatedConfiguration)
       throw new Error(
         "OIDC configuration not initialized. Service may not have completed bootstrap. This should never happen at runtime."
       )
-    }
+
     return this.validatedConfiguration
   }
 
   getRawClientConfiguration(): client.Configuration {
-    if (!this.rawConfiguration) {
+    if (!this.rawConfiguration)
       throw new Error(
         "OIDC raw configuration not initialized. Service may not have completed bootstrap. This should never happen at runtime."
       )
-    }
+
     return this.rawConfiguration
   }
 
@@ -120,18 +117,14 @@ export class OidcBootstrapService implements OnApplicationBootstrap {
     const rawMetadata = config.serverMetadata()
 
     // Validate that all required OIDC endpoints exist
-    if (!rawMetadata.issuer) {
-      throw new Error("OIDC configuration missing required 'issuer' field")
-    }
-    if (!rawMetadata.authorization_endpoint) {
+    if (!rawMetadata.issuer) throw new Error("OIDC configuration missing required 'issuer' field")
+
+    if (!rawMetadata.authorization_endpoint)
       throw new Error("OIDC configuration missing required 'authorization_endpoint' field")
-    }
-    if (!rawMetadata.token_endpoint) {
-      throw new Error("OIDC configuration missing required 'token_endpoint' field")
-    }
-    if (!rawMetadata.userinfo_endpoint) {
-      throw new Error("OIDC configuration missing required 'userinfo_endpoint' field")
-    }
+
+    if (!rawMetadata.token_endpoint) throw new Error("OIDC configuration missing required 'token_endpoint' field")
+
+    if (!rawMetadata.userinfo_endpoint) throw new Error("OIDC configuration missing required 'userinfo_endpoint' field")
 
     // Create validated server metadata with guaranteed non-null values
     const validatedMetadata: OidcServerMetadata = {

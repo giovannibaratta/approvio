@@ -53,10 +53,9 @@ export function validateUserInfoResponse(
 
   // Validate optional claims types if present
   const optionalClaims = ["name", "email", "preferred_username", "given_name", "family_name"]
-  for (const claim of optionalClaims) {
+  for (const claim of optionalClaims)
     if (claim in rawResponse && rawResponse[claim] !== undefined && rawResponse[claim] !== null)
       if (typeof rawResponse[claim] !== "string") return E.left("invalid_claim_type")
-  }
 
   // Validate email_verified if present (must be boolean or string boolean)
   if (

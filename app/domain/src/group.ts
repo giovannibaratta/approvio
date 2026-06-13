@@ -77,29 +77,21 @@ function isGroupWithEntitiesCount(group: Group): group is GroupWithEntitiesCount
 }
 
 function validateGroupDescription(description: string): Either<GroupValidationError, string> {
-  if (description.length > DESCRIPTION_MAX_LENGTH) {
-    return left("group_description_too_long")
-  }
+  if (description.length > DESCRIPTION_MAX_LENGTH) return left("group_description_too_long")
 
   return right(description)
 }
 
 function validateGroupName(name: string): Either<GroupValidationError, string> {
-  if (!name || name.trim().length === 0) {
-    return left("group_name_empty")
-  }
+  if (!name || name.trim().length === 0) return left("group_name_empty")
 
-  if (name.length > NAME_MAX_LENGTH) {
-    return left("group_name_too_long")
-  }
+  if (name.length > NAME_MAX_LENGTH) return left("group_name_too_long")
 
   // A valid group name:
   // - Contains only letters (a-z, A-Z), numbers (0-9), or hyphens (-)
   // - Cannot start with a number
   // - Cannot start or end with a hyphen
-  if (/[^a-zA-Z0-9-]|(^[-0-9])|(-$)/.test(name)) {
-    return left("group_name_invalid_characters")
-  }
+  if (/[^a-zA-Z0-9-]|(^[-0-9])|(-$)/.test(name)) return left("group_name_invalid_characters")
 
   return right(name)
 }

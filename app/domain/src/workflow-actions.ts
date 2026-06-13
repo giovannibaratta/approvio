@@ -89,9 +89,8 @@ function validateWebhookAction(data: Record<string, unknown>): Either<WorkflowAc
 
   // Validate that all header values are strings
   if (data.headers !== undefined)
-    for (const key in data.headers) {
+    for (const key in data.headers)
       if (typeof data.headers[key] !== "string") return left("workflow_action_headers_invalid")
-    }
 
   let redact: WebhookActionRedactScope | undefined = undefined
 
@@ -113,9 +112,8 @@ function validateWebhookAction(data: Record<string, unknown>): Either<WorkflowAc
 function validateEmailAction(data: Record<string, unknown>): Either<WorkflowActionValidationError, EmailAction> {
   if (!Array.isArray(data.recipients) || data.recipients.length === 0) return left("workflow_action_recipients_empty")
 
-  for (const recipient of data.recipients) {
+  for (const recipient of data.recipients)
     if (typeof recipient !== "string" || !isEmail(recipient)) return left("workflow_action_recipients_invalid_email")
-  }
 
   return right({
     type: WorkflowActionType.EMAIL,

@@ -295,14 +295,13 @@ describe("Groups API", () => {
         // Intercept getUserById to trigger concurrent modification
         spy = wrapTaskEitherWithSideEffect(userRepository, "getUserById", async userId => {
           // Only trigger side effect if fetching the requestor
-          if (userId === orgAdminUser.user.id) {
+          if (userId === orgAdminUser.user.id)
             // Manually increment the OCC in the database via raw prisma query
             // This simulates a concurrent update to the user between read and write
             await prisma.user.update({
               where: {id: orgAdminUser.user.id},
               data: {occ: {increment: 1}}
             })
-          }
         })
 
         // When

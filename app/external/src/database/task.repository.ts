@@ -67,9 +67,9 @@ export class PrismaTaskRepository implements TaskRepository {
         })
       },
       error => {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
           return "task_already_exists" as const
-        }
+
         Logger.error(`Failed to create email task ${task.id}`, error)
         return "unknown_error" as const
       }
@@ -229,9 +229,9 @@ export class PrismaTaskRepository implements TaskRepository {
         })
       },
       error => {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
           return "task_already_exists" as const
-        }
+
         Logger.error(`Failed to create webhook task ${task.id}`, error)
         return "unknown_error" as const
       }
@@ -542,9 +542,8 @@ function mapHeadersToJsonValue(
 ): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
   if (!headers) return Prisma.JsonNull
   const result: Record<string, Prisma.InputJsonValue | null> = {}
-  for (const [key, value] of Object.entries(headers)) {
-    result[key] = value
-  }
+  for (const [key, value] of Object.entries(headers)) result[key] = value
+
   return result
 }
 
@@ -553,30 +552,27 @@ function mapHeadersToRecord(headers: Prisma.JsonValue): Record<string, string> {
 
   const result: Record<string, string> = {}
 
-  for (const [key, value] of Object.entries(headers)) {
-    result[key] = value
-  }
+  for (const [key, value] of Object.entries(headers)) result[key] = value
+
   return result
 }
 
 function extractResponseAttributes(
   task: DecoratedWorkflowActionWebhookTask<object> | DecoratedWorkflowActionSlackTask<object>
 ) {
-  if (task.status === TaskStatus.ERROR) {
+  if (task.status === TaskStatus.ERROR)
     return {
       responseStatus: task.response?.status,
       responseBody: task.response?.body,
       responseBodyStatus: task.response?.bodyStatus
     }
-  }
 
-  if (task.status === TaskStatus.COMPLETED) {
+  if (task.status === TaskStatus.COMPLETED)
     return {
       responseStatus: task.response.status,
       responseBody: task.response.body,
       responseBodyStatus: task.response.bodyStatus
     }
-  }
 
   return {
     responseStatus: undefined,

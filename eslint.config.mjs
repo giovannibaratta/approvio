@@ -38,7 +38,11 @@ export default tseslint.config(
           object: "it",
           property: "only"
         }
-      ]
+      ],
+      curly: ["error", "multi"],
+      // Starting with a very high value because we have several functions that do not meet the requirement
+      // of 20 or lower. The goal is to gradually reduce this value as we refactor the codebase.
+      complexity: ["error", 200]
     }
   },
   {

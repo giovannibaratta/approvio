@@ -259,10 +259,9 @@ export function validateInclude<T>(include: unknown, leftValue: T): Either<T, Wo
   const includes = typeof include === "string" ? include.split(",") : include
   const validatedIncludes: WorkflowInclude[] = []
 
-  for (const inc of includes) {
+  for (const inc of includes)
     if (inc === "workflow-template") validatedIncludes.push(inc)
     else return left(leftValue)
-  }
 
   return right(validatedIncludes)
 }
@@ -357,9 +356,8 @@ export function mapWorkflowToApi<T extends WorkflowDecoratorSelector>(
 
   const ref: WorkflowApi["ref"] = {}
 
-  if (isDecoratedWorkflow(workflowResult, "workflowTemplate", includeRequestedByUser)) {
+  if (isDecoratedWorkflow(workflowResult, "workflowTemplate", includeRequestedByUser))
     ref.workflowTemplate = mapWorkflowTemplateToApi(workflowResult.workflowTemplate)
-  }
 
   return {
     ...workflow,
@@ -422,47 +420,35 @@ type VoteApiValidationError =
 
 /** Validate the vote request structure and enum values according to OpenAPI spec */
 export function validateApiRequest(request: unknown): Either<VoteApiValidationError, WorkflowVoteRequestApi> {
-  if (typeof request !== "object" || request === null) {
-    return left("malformed_request")
-  }
+  if (typeof request !== "object" || request === null) return left("malformed_request")
 
   const requestObj = request as Record<string, unknown>
 
   if (!("voteType" in requestObj)) return left("vote_type_missing")
 
-  if (typeof requestObj.voteType !== "object" || requestObj.voteType === null) {
-    return left("vote_type_malformed")
-  }
+  if (typeof requestObj.voteType !== "object" || requestObj.voteType === null) return left("vote_type_malformed")
 
   const voteTypeObj = requestObj.voteType as Record<string, unknown>
 
-  if (!("type" in voteTypeObj) || typeof voteTypeObj.type !== "string") {
-    return left("vote_type_malformed")
-  }
+  if (!("type" in voteTypeObj) || typeof voteTypeObj.type !== "string") return left("vote_type_malformed")
 
   // Validate vote type enum values
   const validVoteTypes = ["APPROVE", "VETO", "WITHDRAW"] as const
-  if (!(validVoteTypes as readonly string[]).includes(voteTypeObj.type)) {
-    return left("vote_type_invalid")
-  }
+  if (!(validVoteTypes as readonly string[]).includes(voteTypeObj.type)) return left("vote_type_invalid")
 
   const voteTypeString = voteTypeObj.type as "APPROVE" | "VETO" | "WITHDRAW"
 
   // For APPROVE votes, votedForGroups is required
   if (voteTypeString === "APPROVE") {
-    if (!("votedForGroups" in voteTypeObj)) {
-      return left("voted_for_groups_missing")
-    }
+    if (!("votedForGroups" in voteTypeObj)) return left("voted_for_groups_missing")
 
-    if (!Array.isArray(voteTypeObj.votedForGroups) || !voteTypeObj.votedForGroups.every(id => typeof id === "string")) {
+    if (!Array.isArray(voteTypeObj.votedForGroups) || !voteTypeObj.votedForGroups.every(id => typeof id === "string"))
       return left("voted_for_groups_invalid")
-    }
   }
 
   // Validate optional reason field
-  if ("reason" in requestObj && requestObj.reason !== undefined && typeof requestObj.reason !== "string") {
+  if ("reason" in requestObj && requestObj.reason !== undefined && typeof requestObj.reason !== "string")
     return left("reason_invalid")
-  }
 
   // Construct the validated API request
   const voteType: WorkflowVoteRequestApi["voteType"] =

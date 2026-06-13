@@ -68,14 +68,13 @@ export class RedisLock {
    * 2. The task is raced against a timeout to guarantee it terminates before the lock TTL expires.
    */
   runLocked<E, T>(timeoutMs: number, fn: () => TE.TaskEither<E, T>): TE.TaskEither<RedisLockError | E, T> {
-    if (timeoutMs >= this.ttlMs) {
+    if (timeoutMs >= this.ttlMs)
       return TE.left({
         type: "lock_acquisition_failed" as const,
         error: new Error(
           `Timeout (${timeoutMs}ms) must be strictly less than Lock TTL (${this.ttlMs}ms) to ensure safety.`
         )
       } as RedisLockError)
-    }
 
     return pipe(
       this.acquire(),

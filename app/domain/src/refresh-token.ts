@@ -518,19 +518,18 @@ export type RefreshTokenEligibilityError =
 export function canTokenBeRefreshed(token: RefreshToken, time: Date): E.Either<RefreshTokenEligibilityError, true> {
   if (RefreshTokenFactory.isExpired(token, time)) return E.left("refresh_token_expired" as const)
   if (token.status === RefreshTokenStatus.REVOKED) return E.left("refresh_token_revoked")
-  if (token.status === RefreshTokenStatus.USED) {
-    // Within grace period - return the next token
-    if (!RefreshTokenFactory.isWithinGracePeriod(token, time)) {
+  if (token.status === RefreshTokenStatus.USED)
+    if (!RefreshTokenFactory.isWithinGracePeriod(token, time))
+      // Within grace period - return the next token
       // This is can be a possible race condition or someone that is trying to abuse the system.
       // Since the token was already used but we are outside the grace period,
       // the caller can not get anymore refreshed token
       return E.left("refresh_token_reuse_detected" as const)
-    }
-    // This is a race condition - the token was already used but since we are still inside the grace
-    // period we allow the caller to still obtain a new token. This is a relaxation of the
-    // strictness of the refresh token system to remove reduce the overhead of the caller logic
-    // in case multiple requests are made in quick succession
-  }
+
+  // This is a race condition - the token was already used but since we are still inside the grace
+  // period we allow the caller to still obtain a new token. This is a relaxation of the
+  // strictness of the refresh token system to remove reduce the overhead of the caller logic
+  // in case multiple requests are made in quick succession
 
   return E.right(true)
 }

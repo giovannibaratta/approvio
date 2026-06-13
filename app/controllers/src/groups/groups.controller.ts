@@ -190,9 +190,8 @@ export class GroupsController {
       logSuccess("Group entities added", "GroupsController", group => ({id: group.id}))
     )()
 
-    if (isLeft(eitherResult)) {
+    if (isLeft(eitherResult))
       throw generateErrorResponseForAddMembersToGroup(eitherResult.left, `Failed to add members to group ${groupId}`)
-    }
 
     return eitherResult.right
   }
@@ -224,12 +223,11 @@ export class GroupsController {
       logSuccess("Group entities removed", "GroupsController", group => ({id: group.id}))
     )()
 
-    if (isLeft(eitherResult)) {
+    if (isLeft(eitherResult))
       throw generateErrorResponseForRemoveMembersFromGroup(
         eitherResult.left,
         `Failed to remove entities from group ${groupId}`
       )
-    }
 
     return eitherResult.right
   }
