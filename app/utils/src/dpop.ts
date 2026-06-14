@@ -24,6 +24,7 @@ export type DpopValidationError = PrefixUnion<
   | "missing_htu_claim"
   | "missing_iat_claim"
   | "missing_jti_claim"
+  | "jti_reused"
 >
 
 /**
@@ -82,7 +83,7 @@ export function validateDpopJwt(
   dpopJwt: string,
   agentPublicKeyPem: string,
   validations: {expectedMethod: string; expectedUrl: string}
-): TaskEither<DpopValidationError, true> {
+): TaskEither<DpopValidationError, {jti: string}> {
   return pipe(
     TE.Do,
     TE.bindW("importedPublicKey", () => importSPKITask(agentPublicKeyPem)),
@@ -114,7 +115,7 @@ export function validateDpopJwt(
       if (eitherNormalizedExpectedUrl.right !== eitherNormalizedHtu.right)
         return TE.left("dpop_invalid_htu_claim" as const)
 
-      return TE.right(true)
+      return TE.right({jti: String(jti)})
     })
   )
 }

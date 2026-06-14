@@ -79,7 +79,9 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
     case "organization_admin_already_exists":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: concurrent update. Try again`))
     case "requestor_not_authorized":
-      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: ${errorCode}`))
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: insufficient permissions`))
+    case "dpop_jti_reused":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: unauthorized request`))
     case "auth_invalid_entity":
     case "organization_not_found":
     case "organization_admin_invalid_uuid":
@@ -260,7 +262,9 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
     case "organization_admin_already_exists":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: concurrent update. Try again`))
     case "requestor_not_authorized":
-      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: ${errorCode}`))
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: insufficient permissions`))
+    case "dpop_jti_reused":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: unauthorized request`))
     case "auth_invalid_entity":
     case "organization_not_found":
     case "organization_admin_invalid_uuid":
@@ -441,7 +445,9 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
     case "organization_admin_already_exists":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: concurrent update. Try again`))
     case "requestor_not_authorized":
-      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: ${errorCode}`))
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: insufficient permissions`))
+    case "dpop_jti_reused":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: unauthorized request`))
     case "auth_invalid_entity":
     case "organization_not_found":
     case "organization_admin_invalid_uuid":
@@ -622,7 +628,9 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "organization_admin_already_exists":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: concurrent update. Try again`))
     case "requestor_not_authorized":
-      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: ${errorCode}`))
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: insufficient permissions`))
+    case "dpop_jti_reused":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: unauthorized request`))
     case "auth_invalid_entity":
     case "organization_not_found":
     case "organization_admin_invalid_uuid":

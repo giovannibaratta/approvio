@@ -148,7 +148,6 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":
     case "user_already_exists":
-    case "requestor_not_authorized":
     case "organization_admin_already_exists":
     case "organization_not_found":
     case "organization_admin_invalid_uuid":
@@ -192,6 +191,10 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
+    case "requestor_not_authorized":
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: insufficient permissions`))
+    case "dpop_jti_reused":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: unauthorized request`))
   }
 }
 
@@ -454,7 +457,9 @@ export function generateErrorResponseForRefreshAgentToken(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
     case "requestor_not_authorized":
-      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: ${errorCode}`))
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: insufficient permissions`))
+    case "dpop_jti_reused":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: unauthorized request`))
   }
 }
 

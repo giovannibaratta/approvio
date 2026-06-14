@@ -38,13 +38,15 @@ import {TASK_REPOSITORY_TOKEN} from "@services/task/interfaces"
 import {
   PKCE_SESSION_REPOSITORY_TOKEN,
   REFRESH_TOKEN_REPOSITORY_TOKEN,
-  STEP_UP_TOKEN_REPOSITORY_TOKEN
+  STEP_UP_TOKEN_REPOSITORY_TOKEN,
+  DPOP_TOKEN_REPOSITORY_TOKEN
 } from "@services/auth"
 import {ConfigModule} from "./config.module"
 import {QueueModule} from "./queue/queue.module"
 import {KmsModule} from "./kms/kms.module"
 import {BullQueueProvider} from "./queue/queue.provider"
 import {RedisStepUpTokenRepository} from "./auth/step-up-token.provider"
+import {RedisDpopTokenRepository} from "./auth/dpop-token.provider"
 import {RedisClient} from "./redis"
 
 const agentRepository = {
@@ -132,6 +134,11 @@ const stepUpTokenRepository = {
   useClass: RedisStepUpTokenRepository
 }
 
+const dpopTokenRepository = {
+  provide: DPOP_TOKEN_REPOSITORY_TOKEN,
+  useClass: RedisDpopTokenRepository
+}
+
 const transactionManager = {
   provide: TRANSACTION_MANAGER_TOKEN,
   useClass: PrismaTransactionManager
@@ -160,6 +167,7 @@ const repositories = [
   healthRepository,
   quotaRepository,
   stepUpTokenRepository,
+  dpopTokenRepository,
   transactionManager
 ]
 

@@ -41,6 +41,8 @@ import {
   AuthError,
   STEP_UP_TOKEN_REPOSITORY_TOKEN,
   StepUpTokenRepository,
+  DPOP_TOKEN_REPOSITORY_TOKEN,
+  DpopTokenRepository,
   UseHighPrivilegeTokenError,
   PrivilegeTokenExchange,
   AssuranceLevel,
@@ -48,7 +50,7 @@ import {
   PrivilegedToken
 } from "./interfaces"
 import {TokenPayloadBuilder} from "./auth-token"
-import {createSha256Hash, validateDpopJwt, logSuccess} from "@utils"
+import {createSha256Hash, validateDpopJwt, logSuccess, DPOP_MAX_AGE_SECONDS, CLOCK_SKEW_TOLERANCE_SECONDS} from "@utils"
 import {AgentService} from "@services/agent"
 import {v7 as uuidv7} from "uuid"
 
@@ -80,7 +82,9 @@ export class AuthService {
     @Inject(REFRESH_TOKEN_REPOSITORY_TOKEN)
     private readonly refreshTokenRepo: RefreshTokenRepository,
     @Inject(STEP_UP_TOKEN_REPOSITORY_TOKEN)
-    private readonly stepUpTokenRepo: StepUpTokenRepository
+    private readonly stepUpTokenRepo: StepUpTokenRepository,
+    @Inject(DPOP_TOKEN_REPOSITORY_TOKEN)
+    private readonly dpopTokenRepo: DpopTokenRepository
   ) {
     const {audience, issuer, accessTokenExpirationSec} = this.configProvider.jwtConfig
 
@@ -403,7 +407,10 @@ export class AuthService {
         this.validateTokenRefreshEligibilityOrRevoke(oldTokenTyped, refreshTimestamp)
       ),
       TE.bindW("agent", ({oldTokenTyped}) => this.agentService.getAgentById(oldTokenTyped.agentId)),
-      TE.chainFirstW(({agent}) => validateDpopJwt(dpopJkt, agent.publicKey, jwtValidationProps)),
+      TE.bindW("dpopValidation", ({agent}) => validateDpopJwt(dpopJkt, agent.publicKey, jwtValidationProps)),
+      TE.chainFirstW(({dpopValidation}) =>
+        this.dpopTokenRepo.markJtiAsUsed(dpopValidation.jti, DPOP_MAX_AGE_SECONDS + CLOCK_SKEW_TOLERANCE_SECONDS + 60)
+      ),
       TE.bindW("newAccessToken", ({agent}) => this.generateJwtTokenForAgent(agent)),
       TE.bindW("refreshedToken", ({agent, oldTokenTyped}) =>
         TE.fromEither(RefreshTokenFactory.createForAgent(agent, oldTokenTyped.familyId))
