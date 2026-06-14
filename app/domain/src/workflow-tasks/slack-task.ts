@@ -1,4 +1,4 @@
-import {PrefixUnion, getStringAsEnum, hasOwnProperty, isValidHttpOrHttpsUrl, DecorableEntity} from "@utils"
+import {PrefixUnion, getStringAsEnum, hasOwnProperty, isValidHttpOrHttpsUrl, DecorableEntity, isObject} from "@utils"
 import {Either, isLeft, left, right} from "fp-ts/Either"
 import {
   TaskStatus,
@@ -127,8 +127,10 @@ export class WorkflowActionSlackTaskFactory {
   }
 
   static validate<T extends WorkflowActionTaskDecoratorSelector>(
-    dataToBeValidated: object
+    dataToBeValidated: unknown
   ): Either<WorkflowActionSlackTaskValidationError, DecoratedWorkflowActionSlackTask<T>> {
+    if (!isObject(dataToBeValidated)) return left("workflow_action_task_missing_or_invalid_status")
+
     const eitherBaseTask = WorkflowActionTaskFactory.validate(dataToBeValidated)
 
     if (isLeft(eitherBaseTask)) return eitherBaseTask

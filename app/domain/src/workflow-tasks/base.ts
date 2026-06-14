@@ -11,7 +11,8 @@ import {
   getStringAsEnum,
   hasOwnProperty,
   isDate,
-  isDecoratedWith
+  isDecoratedWith,
+  isObject
 } from "@utils"
 
 import {mapToLeftWithPrefix} from "@utils"
@@ -160,44 +161,14 @@ export class WorkflowActionTaskFactory {
    * ```
    */
   static validate<T extends WorkflowActionTaskDecoratorSelector>(
-    dataToBeValidated: object
+    dataToBeValidated: unknown
   ): Either<WorkflowActionTaskValidationError, DecoratedWorkflowActionTask<T>> {
-    if (!hasOwnProperty(dataToBeValidated, "status") || typeof dataToBeValidated.status !== "string")
-      return left("workflow_action_task_missing_or_invalid_status")
+    if (!isObject(dataToBeValidated)) return left("workflow_action_task_missing_or_invalid_status")
 
-    const statusValidation = validateTaskStatus(
-      dataToBeValidated.status,
-      "workflow_action_task_missing_or_invalid_status"
-    )
-    if (isLeft(statusValidation)) return statusValidation
+    const baseDataValidation = this.validateBaseTaskData(dataToBeValidated)
+    if (isLeft(baseDataValidation)) return baseDataValidation
 
-    if (!hasOwnProperty(dataToBeValidated, "id") || typeof dataToBeValidated.id !== "string")
-      return left("workflow_action_task_missing_or_invalid_id")
-
-    if (!hasOwnProperty(dataToBeValidated, "workflowId") || typeof dataToBeValidated.workflowId !== "string")
-      return left("workflow_action_task_missing_or_invalid_workflow_id")
-
-    if (!hasOwnProperty(dataToBeValidated, "createdAt") || !isDate(dataToBeValidated.createdAt))
-      return left("workflow_action_task_missing_or_invalid_created_at")
-
-    if (!hasOwnProperty(dataToBeValidated, "updatedAt") || !isDate(dataToBeValidated.updatedAt))
-      return left("workflow_action_task_missing_or_invalid_updated_at")
-
-    if (!hasOwnProperty(dataToBeValidated, "retryCount") || typeof dataToBeValidated.retryCount !== "number")
-      return left("workflow_action_task_missing_or_invalid_retry_count")
-
-    const unvalidatedBaseData: WorkflowActionTaskBaseData = {
-      // We need to preserve all the data from the original object while only keeping the validated
-      // properties. Otherwise they will be stripped an lost at each stage of the validation, making
-      // subsequent validations fail.
-      ...dataToBeValidated,
-      id: dataToBeValidated.id,
-      workflowId: dataToBeValidated.workflowId,
-      status: statusValidation.right,
-      createdAt: dataToBeValidated.createdAt,
-      updatedAt: dataToBeValidated.updatedAt,
-      retryCount: dataToBeValidated.retryCount
-    }
+    const unvalidatedBaseData = baseDataValidation.right
 
     let eitherTaskData: Either<WorkflowActionTaskValidationError, WorkflowActionTaskData>
 
@@ -241,6 +212,44 @@ export class WorkflowActionTaskFactory {
     }
 
     return right(decoratedTask)
+  }
+
+  private static validateBaseTaskData(
+    dataToBeValidated: object
+  ): Either<WorkflowActionTaskValidationError, WorkflowActionTaskBaseData> {
+    if (!hasOwnProperty(dataToBeValidated, "status") || typeof dataToBeValidated.status !== "string")
+      return left("workflow_action_task_missing_or_invalid_status")
+
+    const statusValidation = validateTaskStatus(
+      dataToBeValidated.status,
+      "workflow_action_task_missing_or_invalid_status"
+    )
+    if (isLeft(statusValidation)) return statusValidation
+
+    if (!hasOwnProperty(dataToBeValidated, "id") || typeof dataToBeValidated.id !== "string")
+      return left("workflow_action_task_missing_or_invalid_id")
+
+    if (!hasOwnProperty(dataToBeValidated, "workflowId") || typeof dataToBeValidated.workflowId !== "string")
+      return left("workflow_action_task_missing_or_invalid_workflow_id")
+
+    if (!hasOwnProperty(dataToBeValidated, "createdAt") || !isDate(dataToBeValidated.createdAt))
+      return left("workflow_action_task_missing_or_invalid_created_at")
+
+    if (!hasOwnProperty(dataToBeValidated, "updatedAt") || !isDate(dataToBeValidated.updatedAt))
+      return left("workflow_action_task_missing_or_invalid_updated_at")
+
+    if (!hasOwnProperty(dataToBeValidated, "retryCount") || typeof dataToBeValidated.retryCount !== "number")
+      return left("workflow_action_task_missing_or_invalid_retry_count")
+
+    return right({
+      ...dataToBeValidated,
+      id: dataToBeValidated.id,
+      workflowId: dataToBeValidated.workflowId,
+      status: statusValidation.right,
+      createdAt: dataToBeValidated.createdAt,
+      updatedAt: dataToBeValidated.updatedAt,
+      retryCount: dataToBeValidated.retryCount
+    })
   }
 
   private static validatePendingTaskData(

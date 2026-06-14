@@ -1,5 +1,5 @@
 import {Either, isLeft, left, right} from "fp-ts/Either"
-import {DecorableEntity, PrefixUnion, hasOwnProperty, isDecoratedWith, isEmail} from "@utils"
+import {DecorableEntity, PrefixUnion, hasOwnProperty, isDecoratedWith, isEmail, isObject} from "@utils"
 import {
   Lock,
   TaskStatus,
@@ -114,8 +114,10 @@ export class WorkflowActionEmailTaskFactory {
   }
 
   static validate<T extends WorkflowActionEmailTaskDecoratorSelector>(
-    dataToBeValidated: object
+    dataToBeValidated: unknown
   ): Either<WorkflowActionEmailTaskValidationError, DecoratedWorkflowActionEmailTask<T>> {
+    if (!isObject(dataToBeValidated)) return left("workflow_action_task_missing_or_invalid_status")
+
     const eitherBaseTask = WorkflowActionTaskFactory.validate(dataToBeValidated)
 
     if (isLeft(eitherBaseTask)) return eitherBaseTask

@@ -53,52 +53,69 @@ export function validateUserInfoResponse(
 
   if (typeof rawResponse.sub !== "string" || rawResponse.sub.trim() === "") return E.left("invalid_sub_claim_type")
 
-  // Validate optional claims types if present
-  const optionalClaims = ["name", "email", "preferred_username", "given_name", "family_name"]
-  for (const claim of optionalClaims)
-    if (claim in rawResponse && rawResponse[claim] !== undefined && rawResponse[claim] !== null)
-      if (typeof rawResponse[claim] !== "string") return E.left("invalid_claim_type")
+  const validatedOptionalClaims = validateOptionalClaims(rawResponse)
+  if (E.isLeft(validatedOptionalClaims)) return validatedOptionalClaims
 
-  // Validate email_verified if present (must be boolean or string boolean)
-  if (
-    "email_verified" in rawResponse &&
-    rawResponse.email_verified !== undefined &&
-    rawResponse.email_verified !== null
-  ) {
-    if (typeof rawResponse.email_verified !== "boolean" && typeof rawResponse.email_verified !== "string")
-      return E.left("invalid_claim_type")
+  const validatedEmailVerified = validateEmailVerified(rawResponse)
+  if (E.isLeft(validatedEmailVerified)) return validatedEmailVerified
 
-    if (typeof rawResponse.email_verified === "string") {
-      const lowerVal = rawResponse.email_verified.toLowerCase()
-      if (lowerVal !== "true" && lowerVal !== "false") return E.left("invalid_claim_type")
-    }
-  }
-
-  // All validations passed - construct validated response
-  const validatedUserInfo: OidcUserInfo = {
-    sub: rawResponse.sub
-  }
-
-  // Add optional claims if present and valid - using object construction
   const result: OidcUserInfo = {
-    ...validatedUserInfo,
-    ...(rawResponse.name && typeof rawResponse.name === "string" ? {name: rawResponse.name} : {}),
-    ...(rawResponse.email && typeof rawResponse.email === "string" ? {email: rawResponse.email} : {}),
-    ...(rawResponse.email_verified !== undefined && rawResponse.email_verified !== null
-      ? {
-          emailVerified: Boolean(rawResponse.email_verified)
-        }
-      : {}),
-    ...(rawResponse.preferred_username && typeof rawResponse.preferred_username === "string"
-      ? {preferredUsername: rawResponse.preferred_username}
-      : {}),
-    ...(rawResponse.given_name && typeof rawResponse.given_name === "string"
-      ? {givenName: rawResponse.given_name}
-      : {}),
-    ...(rawResponse.family_name && typeof rawResponse.family_name === "string"
-      ? {familyName: rawResponse.family_name}
-      : {})
+    sub: rawResponse.sub,
+    ...validatedOptionalClaims.right,
+    ...(validatedEmailVerified.right !== undefined ? {emailVerified: validatedEmailVerified.right} : {})
   }
 
   return E.right(result)
+}
+
+function validateOptionalClaims(
+  rawResponse: RawUserInfoResponse
+): E.Either<UserInfoValidationError, Partial<OidcUserInfo>> {
+  const result: Record<string, string> = {}
+
+  const validateStringClaim = (key: string): E.Either<UserInfoValidationError, string | undefined> => {
+    const value = rawResponse[key]
+    if (value === undefined || value === null) return E.right(undefined)
+    if (typeof value !== "string") return E.left("invalid_claim_type")
+    return E.right(value)
+  }
+
+  const name = validateStringClaim("name")
+  if (E.isLeft(name)) return name
+  if (name.right) result.name = name.right
+
+  const email = validateStringClaim("email")
+  if (E.isLeft(email)) return email
+  if (email.right) result.email = email.right
+
+  const preferredUsername = validateStringClaim("preferred_username")
+  if (E.isLeft(preferredUsername)) return preferredUsername
+  if (preferredUsername.right) result.preferredUsername = preferredUsername.right
+
+  const givenName = validateStringClaim("given_name")
+  if (E.isLeft(givenName)) return givenName
+  if (givenName.right) result.givenName = givenName.right
+
+  const familyName = validateStringClaim("family_name")
+  if (E.isLeft(familyName)) return familyName
+  if (familyName.right) result.familyName = familyName.right
+
+  return E.right(result as Partial<OidcUserInfo>)
+}
+
+function validateEmailVerified(
+  rawResponse: RawUserInfoResponse
+): E.Either<UserInfoValidationError, boolean | undefined> {
+  const value = rawResponse.email_verified
+  if (value === undefined || value === null) return E.right(undefined)
+
+  if (typeof value === "boolean") return E.right(value)
+
+  if (typeof value === "string") {
+    const lowerVal = value.toLowerCase()
+    if (lowerVal === "true") return E.right(true)
+    if (lowerVal === "false") return E.right(false)
+  }
+
+  return E.left("invalid_claim_type")
 }

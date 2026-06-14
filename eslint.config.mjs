@@ -27,7 +27,7 @@ export default tseslint.config(
       "eol-last": "error",
       "prefer-arrow-callback": "error",
       "no-trailing-spaces": "error",
-      quotes: ["warn", "double", {avoidEscape: true}],
+      quotes: ["warn", "double", { avoidEscape: true }],
       "no-restricted-properties": [
         "error",
         {
@@ -40,9 +40,9 @@ export default tseslint.config(
         }
       ],
       curly: ["error", "multi"],
-      // Starting with a very high value because we have several functions that do not meet the requirement
-      // of 20 or lower. The goal is to gradually reduce this value as we refactor the codebase.
-      complexity: ["error", 200]
+      // Using the modified variant to avoid flagging mappers that heavile rely on huge switch
+      // statement.
+      complexity: ["error", { max: 20, variant: "modified" }]
     }
   },
   {

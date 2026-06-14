@@ -180,24 +180,9 @@ function createSafeLookup(config: SsrfProtectionConfig): net.LookupFunction {
       // Format the returned value to match what the caller expects (array vs single string)
       const addressVal: string | dns.LookupAddress[] = isAll ? [{address: hostname, family}] : hostname
 
-      if (config.mode === "disabled") {
-        process.nextTick(() => cb(null, addressVal, family))
-        return
-      }
-
-      if (config.allowedDestinations?.length && isAllowedDestination(hostname, config.allowedDestinations)) {
-        process.nextTick(() => cb(null, addressVal, family))
-        return
-      }
-
-      if (isBlockedIp(hostname)) {
-        process.nextTick(() =>
-          cb(
-            new SsrfError(`Blocked request to ${hostname}: resolved to private/reserved IP ${hostname}`),
-            addressVal,
-            family
-          )
-        )
+      const error = validateHostnameOrIp(hostname, config)
+      if (error) {
+        process.nextTick(() => cb(error, addressVal, family))
         return
       }
 
@@ -210,70 +195,87 @@ function createSafeLookup(config: SsrfProtectionConfig): net.LookupFunction {
     // 3. DNS RESOLUTION & VALIDATION:
     // Execute the actual DNS lookup, resolving all available IP addresses.
     dns.lookup(hostname, lookupOptions, (err: NodeJS.ErrnoException | null, addresses: dns.LookupAddress[]) => {
-      if (err) {
-        // If DNS lookup fails, let the error propagate normally so the caller knows it failed.
-        cb(err, isAll ? [] : "", undefined)
-        return
-      }
-
-      // If addresses is null, undefined, or empty, handle it immediately.
-      // This guarantees that if we proceed, addresses[0] is always defined.
-      if (!addresses || addresses.length === 0) {
-        cb(null, isAll ? [] : "", undefined)
-        return
-      }
-
-      if (config.mode === "disabled") {
-        // If SSRF protection is disabled, skip checks and return results in caller's expected format.
-        const addressVal = isAll ? addresses : (addresses[0]?.address ?? "")
-        const familyVal = isAll ? undefined : addresses[0]?.family
-        cb(null, addressVal, familyVal)
-        return
-      }
-
-      // Defense-in-depth: limit maximum resolved IPs to prevent DNS inflation / DoS attacks.
-      if (addresses.length > 20) {
-        cb(
-          new SsrfError(`Blocked request to ${hostname}: too many resolved IP addresses (${addresses.length})`),
-          isAll ? addresses : (addresses[0]?.address ?? ""),
-          isAll ? undefined : addresses[0]?.family
-        )
-        return
-      }
-
-      // Check if the hostname (domain string) is explicitly allowed.
-      // If the domain is allowed, we bypass IP checking entirely for efficiency.
-      if (config.allowedDestinations?.length && isAllowedDestination(hostname, config.allowedDestinations)) {
-        const addressVal = isAll ? addresses : (addresses[0]?.address ?? "")
-        const familyVal = isAll ? undefined : addresses[0]?.family
-        cb(null, addressVal, familyVal)
-        return
-      }
-
-      // Validate every resolved IP address
-      for (const addr of addresses) {
-        const ip = addr.address
-
-        // Check if the resolved IP address matches any allowed destination/CIDR range
-        if (config.allowedDestinations?.length && isAllowedDestination(ip, config.allowedDestinations)) continue
-
-        // If the resolved IP is blocked (e.g. is private/reserved), block the entire request
-        if (isBlockedIp(ip)) {
-          cb(
-            new SsrfError(`Blocked request to ${hostname}: resolved to private/reserved IP ${ip}`),
-            isAll ? addresses : (addresses[0]?.address ?? ""),
-            isAll ? undefined : addresses[0]?.family
-          )
-          return
-        }
-      }
-
-      // If all resolved IPs are safe and/or allowed, return the result in caller's expected format
-      const addressVal = isAll ? addresses : (addresses[0]?.address ?? "")
-      const familyVal = isAll ? undefined : addresses[0]?.family
-      cb(null, addressVal, familyVal)
+      handleDnsResult(err, addresses, hostname, config, isAll, cb)
     })
   }
+}
+
+function validateHostnameOrIp(hostnameOrIp: string, config: SsrfProtectionConfig): SsrfError | null {
+  if (config.mode === "disabled") return null
+
+  if (config.allowedDestinations?.length && isAllowedDestination(hostnameOrIp, config.allowedDestinations)) return null
+
+  if (isBlockedIp(hostnameOrIp))
+    return new SsrfError(`Blocked request to ${hostnameOrIp}: resolved to private/reserved IP ${hostnameOrIp}`)
+
+  return null
+}
+
+function handleDnsResult(
+  err: NodeJS.ErrnoException | null,
+  addresses: dns.LookupAddress[],
+  hostname: string,
+  config: SsrfProtectionConfig,
+  isAll: boolean,
+  cb: (err: NodeJS.ErrnoException | null, address: string | dns.LookupAddress[], family?: number) => void
+): void {
+  if (err) {
+    // If DNS lookup fails, let the error propagate normally so the caller knows it failed.
+    cb(err, isAll ? [] : "", undefined)
+    return
+  }
+
+  // If addresses is null, undefined, or empty, handle it immediately.
+  // This guarantees that if we proceed, addresses[0] is always defined.
+  const firstAddress = addresses[0]
+
+  if (!addresses || addresses.length === 0 || !firstAddress) {
+    cb(null, isAll ? [] : "", undefined)
+    return
+  }
+
+  const addressVal = isAll ? addresses : firstAddress.address
+  const familyVal = isAll ? undefined : firstAddress.family
+
+  if (config.mode === "disabled") {
+    // If SSRF protection is disabled, skip checks and return results in caller's expected format.
+    cb(null, addressVal, familyVal)
+    return
+  }
+
+  // Defense-in-depth: limit maximum resolved IPs to prevent DNS inflation / DoS attacks.
+  if (addresses.length > 20) {
+    cb(
+      new SsrfError(`Blocked request to ${hostname}: too many resolved IP addresses (${addresses.length})`),
+      addressVal,
+      familyVal
+    )
+    return
+  }
+
+  // Check if the hostname (domain string) is explicitly allowed.
+  // If the domain is allowed, we bypass IP checking entirely for efficiency.
+  if (config.allowedDestinations?.length && isAllowedDestination(hostname, config.allowedDestinations)) {
+    cb(null, addressVal, familyVal)
+    return
+  }
+
+  // Validate every resolved IP address
+  for (const addr of addresses) {
+    const ip = addr.address
+
+    // Check if the resolved IP address matches any allowed destination/CIDR range
+    if (config.allowedDestinations?.length && isAllowedDestination(ip, config.allowedDestinations)) continue
+
+    // If the resolved IP is blocked (e.g. is private/reserved), block the entire request
+    if (isBlockedIp(ip)) {
+      cb(new SsrfError(`Blocked request to ${hostname}: resolved to private/reserved IP ${ip}`), addressVal, familyVal)
+      return
+    }
+  }
+
+  // If all resolved IPs are safe and/or allowed, return the result in caller's expected format
+  cb(null, addressVal, familyVal)
 }
 
 export function createSsrfSafeAgents(config: SsrfProtectionConfig): {httpAgent: http.Agent; httpsAgent: https.Agent} {

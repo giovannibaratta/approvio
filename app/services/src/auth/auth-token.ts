@@ -40,7 +40,15 @@ export class TokenPayloadValidator {
     const p = payload as Record<string, unknown>
 
     return (
-      // Core JWT claims validation
+      TokenPayloadValidator.hasCoreClaims(p) &&
+      TokenPayloadValidator.hasIanaClaims(p) &&
+      TokenPayloadValidator.hasCustomClaims(p) &&
+      TokenPayloadValidator.isValidStepUpContext(p)
+    )
+  }
+
+  private static hasCoreClaims(p: Record<string, unknown>): boolean {
+    return (
       typeof p.iss === "string" &&
       typeof p.sub === "string" &&
       Array.isArray(p.aud) &&
@@ -48,19 +56,29 @@ export class TokenPayloadValidator {
       typeof p.exp === "number" &&
       typeof p.iat === "number" &&
       (p.nbf === undefined || typeof p.nbf === "number") &&
-      (p.jti === undefined || typeof p.jti === "string") &&
-      // IANA registered claims
-      (p.email === undefined || typeof p.email === "string") &&
-      typeof p.name === "string" &&
-      // Custom application claims
-      (p.entityType === "user" || p.entityType === "agent") &&
-      // Entity-specific validation
-      (p.entityType === "agent" || typeof p.email === "string") &&
-      // Organization role validation (only for users)
-      (p.entityType === "agent" || p.orgRole === undefined || p.orgRole === "admin" || p.orgRole === "member") &&
-      // Roles validation (only for users, should be array if present)
-      (p.entityType === "agent" || p.roles === undefined || Array.isArray(p.roles)) &&
-      // Step-up context validation
+      (p.jti === undefined || typeof p.jti === "string")
+    )
+  }
+
+  private static hasIanaClaims(p: Record<string, unknown>): boolean {
+    return (p.email === undefined || typeof p.email === "string") && typeof p.name === "string"
+  }
+
+  private static hasCustomClaims(p: Record<string, unknown>): boolean {
+    if (p.entityType !== "user" && p.entityType !== "agent") return false
+
+    // Entity-specific validation
+    if (p.entityType === "user") {
+      if (typeof p.email !== "string") return false
+      if (p.orgRole !== undefined && p.orgRole !== "admin" && p.orgRole !== "member") return false
+      if (p.roles !== undefined && !Array.isArray(p.roles)) return false
+    }
+
+    return true
+  }
+
+  private static isValidStepUpContext(p: Record<string, unknown>): boolean {
+    return (
       (p.operation === undefined || typeof p.operation === "string") &&
       (p.resource === undefined || typeof p.resource === "string")
     )
