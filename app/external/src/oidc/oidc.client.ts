@@ -151,6 +151,7 @@ export class OidcClient implements OidcProvider {
 
           if (error.message.includes("unauthorized") || error.message.includes("invalid_token"))
             return "oidc_userinfo_fetch_failed" as const
+
           if (error.message.includes("network") || error.message.includes("timeout"))
             return "oidc_network_error" as const
         }

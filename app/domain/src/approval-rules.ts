@@ -98,6 +98,7 @@ export class ApprovalRuleFactory {
     if (!isUUIDv7(data.groupId)) return left("approval_rule_group_rule_invalid_group_id")
     if (typeof data.minCount !== "number" || !Number.isInteger(data.minCount))
       return left("approval_rule_group_rule_invalid_min_count")
+
     if (data.minCount < 1) return left("approval_rule_group_rule_invalid_min_count")
 
     let requireHighPrivilege: boolean | undefined = undefined

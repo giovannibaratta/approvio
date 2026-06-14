@@ -83,6 +83,7 @@ export class QuotaDbRepository implements QuotaRepository {
         error => {
           if (isPrismaUniqueConstraintError(error, ["scope", "quota_type", "target_id"]))
             return "quota_already_exists" as const
+
           Logger.error("Error creating quota", error)
           return "quota_unknown_error" as const
         }

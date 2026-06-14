@@ -67,4 +67,3 @@ databaseChangeLog:
                   descending: true
         - sql:
             sql: CREATE INDEX idx_audit_logs_created_at_brin ON audit_logs USING brin (created_at);
-

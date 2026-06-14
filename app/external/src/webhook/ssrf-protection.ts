@@ -89,10 +89,9 @@ function matchesIp(ip: ipaddr.IPv4 | ipaddr.IPv6, destIpStr: string): boolean {
 
 export function isBlockedIp(address: string): boolean {
   const ip = parseAndNormalizeIp(address)
-  if (!ip) {
+  if (!ip)
     // If we can't parse the IP, we should fail closed (block it by default) to be safe
     return true
-  }
 
   if (isIPv4(ip)) return BLOCKED_IPV4_CIDRS.some(cidr => ip.match(cidr))
 
@@ -124,9 +123,7 @@ export function isAllowedDestination(hostnameOrIp: string, allowedDestinations: 
 
     if (dest.includes("/")) {
       if (matchesCidr(ipToCheck, dest)) return true
-    } else {
-      if (matchesIp(ipToCheck, dest)) return true
-    }
+    } else if (matchesIp(ipToCheck, dest)) return true
   }
 
   return false
@@ -158,9 +155,8 @@ function createSafeLookup(config: SsrfProtectionConfig): net.LookupFunction {
     // This prevents attackers from bypasses where they map a domain to both a public and a private IP.
     let lookupOptions: dns.LookupAllOptions = {all: true}
 
-    if (typeof options === "function") {
-      cb = options as typeof cb
-    } else {
+    if (typeof options === "function") cb = options as typeof cb
+    else {
       cb = callback as typeof cb
 
       if (typeof options === "object" && options !== null) {
@@ -259,9 +255,7 @@ function createSafeLookup(config: SsrfProtectionConfig): net.LookupFunction {
         const ip = addr.address
 
         // Check if the resolved IP address matches any allowed destination/CIDR range
-        if (config.allowedDestinations?.length && isAllowedDestination(ip, config.allowedDestinations)) {
-          continue
-        }
+        if (config.allowedDestinations?.length && isAllowedDestination(ip, config.allowedDestinations)) continue
 
         // If the resolved IP is blocked (e.g. is private/reserved), block the entire request
         if (isBlockedIp(ip)) {

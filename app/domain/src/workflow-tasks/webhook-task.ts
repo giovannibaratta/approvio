@@ -168,6 +168,7 @@ export class WorkflowActionWebhookTaskFactory {
     if (hasOwnProperty(dataToBeValidated, "headers")) {
       if (dataToBeValidated.headers !== undefined && !isRecordStringString(dataToBeValidated.headers))
         return left("workflow_action_webhook_task_headers_invalid")
+
       headers = dataToBeValidated.headers
     }
 

@@ -271,6 +271,7 @@ function validateWorkflowTemplateVersion(
 ): Either<WorkflowTemplateValidationError, WorkflowTemplate["version"]> {
   if (typeof version !== "number" || !Number.isInteger(version))
     return E.left("workflow_template_version_invalid_format")
+
   return version < 1 ? E.left("workflow_template_version_invalid_number") : E.right(version)
 }
 

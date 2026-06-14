@@ -231,6 +231,7 @@ export class RoleFactory {
       case "agent":
         for (const role of roles)
           if (role.resourceType !== "workflow_template") return left("role_entity_type_role_restriction")
+
         return right(roles)
     }
   }

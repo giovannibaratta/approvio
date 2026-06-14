@@ -45,7 +45,15 @@ Always USE the following skills to assist with tasks:
 
 - **No Main Commits:** Never perform a commit directly to the main branch. Use pull requests or feature branches.
 
-### Retry & Exactly-Once Semantics Guidelines
+### Testing Conventions
+
+- **Integration Tests:** Use `NestApplication` from `@nestjs/core` for the `app` instance instead of `INestApplication` to ensure compatibility with the `RequestBuilder` utility.
+- **API Paths:** Tests do not use a global `/v1` prefix. Use routes directly (e.g., `/spaces` instead of `/v1/spaces`).
+- **Timeouts:** Complex integration tests involving database isolation may require increased timeouts (e.g., `jest.setTimeout(15000)`).
+- **Conditional Expectations:** Avoid `if` blocks around `expect` calls. Let the test fail naturally if data is missing to ensure clarity.
+- **Type Safety:** Avoid `any` in tests. Define specific mock types or use `jest.Mocked` to maintain type integrity.
+
+## Retry & Exactly-Once Semantics Guidelines
 
 - **External Integrations**: Always design external calls (webhooks, email dispatches, API calls) with transient failure retries.
 - **Transient vs. Permanent Failures**: Only retry errors that are transient (e.g., connection timed out, 502/503/504 status codes, 429 rate limits). Never retry logical errors (e.g., 400 Bad Request, 401/403 credentials failed, 404 Not Found).

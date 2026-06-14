@@ -1,6 +1,6 @@
 import {Injectable, Logger} from "@nestjs/common"
 import axios from "axios"
-import {TaskEither, tryCatch} from "fp-ts/lib/TaskEither"
+import {TaskEither, tryCatch} from "fp-ts/TaskEither"
 import {SlackExternalError, SlackMessage, SlackProviderExternal} from "@services/slack/interfaces"
 
 @Injectable()

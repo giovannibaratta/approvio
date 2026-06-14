@@ -38,5 +38,6 @@ export const GetAuthenticatedEntity = createParamDecorator((_: unknown, ctx: Exe
     throw new InternalServerErrorException(
       generateErrorPayload("entity_undefined", "Unable to identify the requestor.")
     )
+
   return request.requestor
 })

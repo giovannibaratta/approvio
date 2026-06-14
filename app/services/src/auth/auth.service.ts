@@ -467,6 +467,7 @@ export class AuthService {
 
     if (requestor.entityType !== "user")
       // Only users can step up using OAuth
+
       return TE.left("auth_invalid_entity" as const)
 
     return pipe(

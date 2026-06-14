@@ -129,6 +129,7 @@ export class GroupsController {
     )()
     if (isLeft(eitherGroup))
       throw generateErrorResponseForGetGroup(eitherGroup.left, `Failed to get group ${groupIdentifier}`)
+
     return mapGroupWithEntitiesCountToApi(eitherGroup.right)
   }
 
@@ -143,8 +144,10 @@ export class GroupsController {
     // This should be moved to the service layer once the pagination will be implemented
     if (page <= 0)
       throw generateErrorResponseForListMembersInGroup("invalid_page", `Failed to list members for group ${groupId}`)
+
     if (limit <= 0)
       throw generateErrorResponseForListMembersInGroup("invalid_limit", `Failed to list members for group ${groupId}`)
+
     if (limit > 100) limit = MAX_LIMIT
 
     const serviceListUsers = (request: GetGroupWithMembershipRequest) =>

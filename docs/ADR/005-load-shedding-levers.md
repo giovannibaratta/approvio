@@ -93,18 +93,24 @@ To prevent coupling the codebase to a specific tool, we will adopt the CNCF stan
   - _Why Unleash:_ It fits our criteria. The Unleash Server runs independently of the Approvio backend. The Unleash Node.js SDK works purely on **local evaluation** (it polls the Unleash Server in the background every 15–30 seconds and keeps rules in memory). It also supports **offline bootstrap files** so the Approvio backend can boot and run safely even if the Unleash Server container is fully offline.
 
 #### Serverless Scale-to-Zero and Bootstrapping Compatibility
+
 When running in a serverless environment (e.g., Google Cloud Run, AWS Fargate) where instances scale down to zero, cold-starts require immediate initialization without waiting for external API queries.
+
 - **Stateless Environment Variable Bootstrapping:** To achieve fully stateless, sub-millisecond cold starts, the application will support bootstrapping the Unleash/OpenFeature client directly from a single environment variable: `LEVERS_BOOTSTRAP_JSON`.
 - **Mechanism:** Operators can inject a serialized JSON string containing the full active lever configuration directly into the container's environment (e.g. `LEVERS_BOOTSTRAP_JSON='{"read_only_mode": true}'`). At boot time, the NestJS `LeverModule` parses this string in-memory and feeds it to the Unleash SDK as the initial bootstrap object. This provides a unified, zero-latency serverless startup path without requiring baked-in static files or build-time updates.
 - **Sufficient Payload Length:** Since standard Linux environment variables and modern cloud container runtimes (such as ECS/Fargate or Cloud Run) easily support string limits from 4KB to several megabytes (which is vastly larger than our expected lever configurations), this single-variable method is highly robust and completely eliminates the need for individual environment key-value merging or static image baking.
 
 ### 6. Fail-Open (Open-Fail) Default
+
 To ensure high system availability, **fail-open** is the primary resiliency policy.
+
 - If the Unleash Server, local Redis, or any remote configuration provider is completely unreachable during boot or runtime, the `LeverService` will log a high-priority system warning, trigger alerts, and **fail-open**.
 - In fail-open mode, all operational levers default to inactive/disabled. This guarantees that a failure in the configuration control plane will never trigger a cascading outage or block access to Approvio's primary APIs.
 
 ### 7. Disabled / Absent Provider Support
+
 To accommodate local development, testing pipelines, or lightweight on-premise deployments where Unleash is not deployed, the application will support operating without any configuration provider:
+
 - **Graceful Deactivation:** We will define a `LEVER_PROVIDER_ENABLED` environment variable (defaulting to `false` or derived by checking if `UNLEASH_URL` is undefined).
 - **Fallback No-Op Client:** If disabled, the `LeverModule` will register a local, static **No-Op Provider** (with all levers permanently turned off). This allows developers to run the backend and execute the full test suite locally without having to set up or run an Unleash/Redis container, while ensuring the code behaves consistently.
 

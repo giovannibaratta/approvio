@@ -95,7 +95,7 @@ services:
   # Local smtp server used for integration tests
   mailpit-test:
     profiles: [test]
-    image: ghcr.io/axllent/mailpit:v1.27.1 
+    image: ghcr.io/axllent/mailpit:v1.27.1
     ports:
       - "1026:1025" # SMTP port
       - "8026:8025" # Web UI port

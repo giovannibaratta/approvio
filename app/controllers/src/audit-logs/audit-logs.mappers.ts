@@ -11,7 +11,7 @@ import {Either} from "fp-ts/Either"
 import * as E from "fp-ts/Either"
 import * as A from "fp-ts/Array"
 import {ExtractLeftFromMethod} from "@utils"
-import {pipe} from "fp-ts/lib/function"
+import {pipe} from "fp-ts/function"
 
 const DEFAULT_LIMIT = 20
 

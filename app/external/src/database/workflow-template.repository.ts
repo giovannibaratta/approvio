@@ -81,6 +81,7 @@ export function decryptActions(
   if (!isEnvelope) {
     if (Array.isArray(actions) && actions.length > 0)
       Logger.error("Data leakage detected: unencrypted actions array found in database")
+
     return TE.left("decryption_failed" as const)
   }
 
@@ -473,8 +474,10 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
             error => {
               if (isPrismaRecordNotFoundError(error, Prisma.ModelName.WorkflowTemplate))
                 return "concurrency_error" as const
+
               if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
                 return "concurrency_error" as const
+
               Logger.error(`Error while updating workflow template ${data.id}. Unknown error`, error)
               return "unknown_error" as const
             }
@@ -553,6 +556,7 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
             error => {
               if (isPrismaUniqueConstraintError(error, ["name", "version"]))
                 return "workflow_template_already_exists" as const
+
               Logger.error(`Error creating workflow template: ${error}`, error)
               return "unknown_error" as const
             }

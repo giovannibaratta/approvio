@@ -183,14 +183,18 @@ export class GroupMembershipDbRepository implements GroupMembershipRepository {
         error => {
           if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_group"))
             return "concurrent_modification_error"
+
           if (isPrismaForeignKeyConstraintError(error, "fk_agent_group_memberships_group"))
             return "concurrent_modification_error"
+
           if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_user")) return "membership_user_not_found"
           if (isPrismaForeignKeyConstraintError(error, "fk_agent_group_memberships_agent"))
             return "membership_agent_not_found"
+
           if (isPrismaUniqueConstraintError(error, ["group_id", "user_id"])) return "membership_entity_already_in_group"
           if (isPrismaUniqueConstraintError(error, ["group_id", "agent_id"]))
             return "membership_entity_already_in_group"
+
           if (error instanceof ConcurrentModificationError) return "concurrent_modification_error"
           return "unknown_error"
         }

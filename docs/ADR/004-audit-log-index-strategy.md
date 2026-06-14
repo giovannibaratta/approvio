@@ -5,6 +5,7 @@
 Following the initial audit log table implementation (ADR 003), we analyzed the existing indexes against the actual query patterns in `audit-log.repository.ts` and the expected scaling trajectory. The analysis identified inefficiencies that should be corrected now, before the table accumulates significant data.
 
 Key concerns:
+
 - An index with no practical read benefit consuming write throughput on every insert.
 - `COUNT(*)` queries that become a bottleneck at scale due to PostgreSQL's MVCC architecture.
 - No time-based index to support range pruning on the immutable, time-ordered data.
@@ -14,12 +15,12 @@ Key concerns:
 
 ### Current Indexes
 
-| Index | Columns | Assessment |
-|---|---|---|
-| PK (`id`) | `id` | Necessary. UUIDv7 provides time-ordered, distributed-safe IDs. |
-| `idx_audit_logs_actor_id_created_at` | `(actor_id, created_at DESC)` | Covers the `listMyAuditLogs` path. |
-| `idx_audit_logs_entity_id_created_at` | `(entity_id, created_at DESC)` | Covers single-target entity queries. |
-| `idx_audit_logs_entity_type` | `(entity_type)` | **Net negative.** Only 4 distinct values. PostgreSQL's optimizer will reject this index in favor of a sequential scan for any realistic dataset. Write overhead with no read benefit. |
+| Index                                 | Columns                        | Assessment                                                                                                                                                                            |
+| ------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| PK (`id`)                             | `id`                           | Necessary. UUIDv7 provides time-ordered, distributed-safe IDs.                                                                                                                        |
+| `idx_audit_logs_actor_id_created_at`  | `(actor_id, created_at DESC)`  | Covers the `listMyAuditLogs` path.                                                                                                                                                    |
+| `idx_audit_logs_entity_id_created_at` | `(entity_id, created_at DESC)` | Covers single-target entity queries.                                                                                                                                                  |
+| `idx_audit_logs_entity_type`          | `(entity_type)`                | **Net negative.** Only 4 distinct values. PostgreSQL's optimizer will reject this index in favor of a sequential scan for any realistic dataset. Write overhead with no read benefit. |
 
 ### `COUNT(*)` Problem
 
@@ -30,6 +31,7 @@ No strategy (index-only counts, approximate counts, pre-computed counters) elimi
 ### BRIN Index Opportunity
 
 The table is append-only and `created_at` is monotonically increasing, making the physical heap order strongly correlated with time. A BRIN (Block Range INdex) on `created_at` provides:
+
 - ~1000x smaller footprint than an equivalent B-Tree
 - Near-zero insert overhead
 - Effective block exclusion for time-range predicates
@@ -63,18 +65,19 @@ The API response changes from `{items, total}` to `{items, hasMore, nextCursor}`
 ### 4. Limit the List API to the last 7 days
 
 All audit log list queries will include a mandatory time-range filter scoped to the last 7 days. This:
+
 - Bounds the maximum scan scope regardless of total table size.
 - Enables the BRIN index to exclude all blocks outside the 7-day window.
 - Prepares the architecture for future partitioning (time-range filters are required for partition pruning).
 
 ### Final Index Set
 
-| Index | Columns | Type |
-|---|---|---|
-| PK (`id`) | `id` | B-Tree |
-| `idx_audit_logs_actor_id_created_at` | `(actor_id, created_at DESC)` | B-Tree |
+| Index                                 | Columns                        | Type   |
+| ------------------------------------- | ------------------------------ | ------ |
+| PK (`id`)                             | `id`                           | B-Tree |
+| `idx_audit_logs_actor_id_created_at`  | `(actor_id, created_at DESC)`  | B-Tree |
 | `idx_audit_logs_entity_id_created_at` | `(entity_id, created_at DESC)` | B-Tree |
-| `idx_audit_logs_created_at_brin` | `(created_at)` | BRIN |
+| `idx_audit_logs_created_at_brin`      | `(created_at)`                 | BRIN   |
 
 ## Future Extensions
 
