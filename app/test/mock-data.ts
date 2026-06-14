@@ -49,7 +49,7 @@ import {POSTGRES_BIGINT_LOWER_BOUND} from "@external/database/constants"
 import {unwrapRight} from "@utils/either"
 import {EncryptionService} from "@external/kms/encryption.service"
 import {EnvVarKmsProvider} from "@external/kms/env-var-kms.provider"
-import {SsrfProtectionConfig} from "@external/config/interfaces"
+import {LeverConfig, SsrfProtectionConfig} from "@external/config/interfaces"
 
 let testEncryptionService: EncryptionService | undefined
 
@@ -286,6 +286,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
   cookieSecure: boolean
   kmsConfig: KmsConfig
   ssrfProtectionConfig: SsrfProtectionConfig
+  leverConfig: LeverConfig
 
   private constructor(
     originalProvider?: ConfigProvider,
@@ -297,6 +298,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
       webhookRetryConfig?: WebhookRetryConfig
       emailRetryConfig?: EmailRetryConfig
       databaseRetryConfig?: DatabaseRetryConfig
+      leverConfig?: LeverConfig
     } = {}
   ) {
     const provider: ConfigProviderInterface = originalProvider ?? {
@@ -376,6 +378,9 @@ export class MockConfigProvider implements ConfigProviderInterface {
             }
           })()
         ]
+      },
+      leverConfig: {
+        enabled: false
       }
     }
 
@@ -413,6 +418,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
       currentVersion: 1,
       getKeys: () => new Map([[1, Buffer.from("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=", "base64")]])
     }
+    this.leverConfig = mocks.leverConfig || provider.leverConfig
   }
 
   private static cachedRealProvider?: ConfigProvider
@@ -780,6 +786,7 @@ function generate_consistent_dates_for_workflow_template(
 
   if (overrides?.updatedAt && overrides?.createdAt)
     return {createdAt: overrides.createdAt, updatedAt: overrides.updatedAt}
+
   if (overrides?.updatedAt) return {createdAt: randomDateBefore(overrides.updatedAt), updatedAt: overrides.updatedAt}
   if (overrides?.createdAt) return {createdAt: overrides.createdAt, updatedAt: randomDateAfter(overrides.createdAt)}
 

@@ -1,6 +1,7 @@
 import {KmsProviderType} from "./types"
 import {Option} from "fp-ts/Option"
 import {OidcProvider} from "./types"
+import {FeatureInterface} from "unleash-client/lib/feature"
 
 export const DEFAULT_RATE_LIMIT_ENTITY_POINTS = 50
 export const DEFAULT_RATE_LIMIT_DURATION_IN_SECONDS = 60
@@ -128,7 +129,34 @@ export interface ConfigProviderInterface {
   cookieSecure: boolean
   kmsConfig: KmsConfig
   ssrfProtectionConfig: SsrfProtectionConfig
+  leverConfig: LeverConfig
 }
+
+export type LeverConfig =
+  | {
+      /** Lever provider is disabled. All levers will return their default fallback values (fail-open). */
+      enabled: false
+    }
+  | {
+      enabled: true
+      provider: "unleash"
+      /**
+       * URL of the remote Unleash API.
+       * Mandatory when enabled, as the system always expects to eventually synchronize with a control plane.
+       */
+      unleashUrl: string
+      /** API Token for authenticating with the Unleash server. */
+      unleashApiToken?: string
+      /**
+       * How often (in ms) to poll the Unleash server for updates.
+       * Default is 15000 (15 seconds).
+       */
+      refreshInterval?: number
+      /**
+       * Parsed and validated bootstrap data.
+       */
+      bootstrapData?: FeatureInterface[]
+    }
 
 export interface KmsConfig {
   type: KmsProviderType

@@ -262,3 +262,37 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+
+  # Unleash Server for feature flags and levers
+  unleash:
+    profiles: [dev]
+    image: unleashorg/unleash-server:8.0.0
+    command: ["sh", "-c", "sleep 3 && node dist/server.js"]
+    ports:
+      - "4242:4242"
+    environment:
+      DATABASE_URL: postgres://unleash_user:unleash_password@unleash-db:5432/unleash
+      DATABASE_SSL: "false"
+      LOG_LEVEL: warn
+      UNLEASH_URL: http://localhost:4242
+      CHECK_VERSION: "false"
+      SEND_TELEMETRY: "false"
+      UNLEASH_DEFAULT_ADMIN_USERNAME: "admin"
+      UNLEASH_DEFAULT_ADMIN_PASSWORD: "admin"
+      AUTH_TYPE: none
+      AUTH_ENABLE_API_TOKEN: "false"
+      REQUEST_LOGGER_ENABLE: "true"
+      DAILY_METRICS_STORAGE_DAYS: "1"
+
+  unleash-db:
+    profiles: [dev]
+    image: mirror.gcr.io/library/postgres:17.4
+    environment:
+      POSTGRES_USER: unleash_user
+      POSTGRES_PASSWORD: unleash_password
+      POSTGRES_DB: unleash
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "unleash_user", "-d", "unleash"]
+      interval: 5s
+      timeout: 3s
+      retries: 5

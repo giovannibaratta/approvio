@@ -29,6 +29,7 @@ import {
 import {get, post} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import {TokenPayloadBuilder, WORKFLOW_REPOSITORY_TOKEN, WorkflowRepository} from "@services"
+import {LeverService} from "@services/lever"
 import {wrapTaskEitherWithSideEffect} from "@test/injectors"
 import {getQueueToken} from "@nestjs/bull"
 import {WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"
@@ -367,6 +368,32 @@ describe("Workflows API", () => {
         // Expect: a 400 Bad Request status with WORKFLOW_DESCRIPTION_TOO_LONG error code
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
         expect(response.body).toHaveErrorCode("WORKFLOW_DESCRIPTION_TOO_LONG")
+      })
+    })
+
+    describe("load shedding", () => {
+      let isLeverActiveSpy: jest.SpyInstance
+
+      beforeEach(() => {
+        isLeverActiveSpy = jest.spyOn(app.get(LeverService), "isLeverActive")
+        isLeverActiveSpy.mockReturnValue(async () => true)
+      })
+
+      afterEach(() => {
+        isLeverActiveSpy.mockRestore()
+      })
+
+      it("should return 503 SERVICE_UNAVAILABLE when disable_workflow_creation lever is active", async () => {
+        // When: attempting to create a workflow
+        const requestBody: WorkflowCreate = {
+          name: "Lever-Workflow",
+          workflowTemplateId: mockWorkflowTemplate.id
+        }
+        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+        // Then: the request should be blocked with 503 SERVICE_UNAVAILABLE
+        expect(response).toHaveStatusCode(HttpStatus.SERVICE_UNAVAILABLE)
+        expect(response.body.code).toBe("SERVICE_UNAVAILABLE")
       })
     })
   })

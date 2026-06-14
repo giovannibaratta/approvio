@@ -110,6 +110,9 @@ __metadata:
     "@nestjs/platform-express": "npm:11.1.23"
     "@nestjs/schematics": "npm:11.1.0"
     "@nestjs/testing": "npm:11.1.26"
+    "@openfeature/core": "npm:^1.10.0"
+    "@openfeature/nestjs-sdk": "npm:^0.2.0"
+    "@openfeature/server-sdk": "npm:^1.22.0"
     "@prisma/adapter-pg": "npm:7.8.0"
     "@prisma/client": "npm:7.8.0"
     "@prisma/driver-adapter-utils": "npm:7.8.0"
@@ -165,6 +168,7 @@ __metadata:
     ts-node: "npm:10.9.2"
     typescript: "npm:6.0.3"
     typescript-eslint: "npm:8.60.0"
+    unleash-client: "npm:^6.11.0"
     uuid: "npm:14.0.0"
     webpack: "npm:5.107.2"
     wiremock: "npm:3.13.2"
@@ -2996,6 +3000,34 @@ __metadata:
   bin:
     opencollective: bin/opencollective.js
   checksum: 10/37739657e87196c7f1019a76bc33dc6e33b028eeeec43ffbf29c821e89bf5c170514e9e224456e1da85d95859ba63a3a36bd7ce1b82f2d366f7be3d6299e7631
+  languageName: node
+  linkType: hard
+
+"@openfeature/core@npm:^1.10.0":
+  version: 1.10.0
+  resolution: "@openfeature/core@npm:1.10.0"
+  checksum: 10/62e0289b9e9e86fcc56e6ee972ffb2e0de9511e58fdc6d01f4f9c2dc312b4c43a95ad266984f63b89f7faacfc5ece214e484c308edbd491be0053a94f60bd6b7
+  languageName: node
+  linkType: hard
+
+"@openfeature/nestjs-sdk@npm:^0.2.0":
+  version: 0.2.7
+  resolution: "@openfeature/nestjs-sdk@npm:0.2.7"
+  peerDependencies:
+    "@nestjs/common": ^8.0.0 || ^9.0.0 || ^10.0.0 || ^11.0.0
+    "@nestjs/core": ^8.0.0 || ^9.0.0 || ^10.0.0 || ^11.0.0
+    "@openfeature/server-sdk": ^1.22.0
+    rxjs: ^7.0.0 || ^8.0.0
+  checksum: 10/6c80190c053cd4b32663b5d6fd740138de88dd3af61ae7da476be929ee4e4e9f8a92f3364013540312e904d8a8f88f71a53e01b0f4572e4bd0c7ff5f19eed8c3
+  languageName: node
+  linkType: hard
+
+"@openfeature/server-sdk@npm:^1.22.0":
+  version: 1.22.0
+  resolution: "@openfeature/server-sdk@npm:1.22.0"
+  peerDependencies:
+    "@openfeature/core": ^1.11.0
+  checksum: 10/ae5dad733ef857328a90f354e537bf2c544359f096290431a7f4034d1cb8710f0263cb33fcd8bd845ec5c8731ff9038fe731e2686caa00b8669aa882c6677a97
   languageName: node
   linkType: hard
 
@@ -7652,7 +7684,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"http-proxy-agent@npm:^7.0.0":
+"http-proxy-agent@npm:^7.0.0, http-proxy-agent@npm:^7.0.2":
   version: 7.0.2
   resolution: "http-proxy-agent@npm:7.0.2"
   dependencies:
@@ -7679,7 +7711,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"https-proxy-agent@npm:^7.0.1":
+"https-proxy-agent@npm:^7.0.1, https-proxy-agent@npm:^7.0.5":
   version: 7.0.6
   resolution: "https-proxy-agent@npm:7.0.6"
   dependencies:
@@ -7838,7 +7870,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"ip-address@npm:^10.0.1":
+"ip-address@npm:^10.0.0, ip-address@npm:^10.0.1":
   version: 10.2.0
   resolution: "ip-address@npm:10.2.0"
   checksum: 10/12fec399e1af5753ac322e47a6d81a50d3a528b3abb17c09525b2a2edcaedcca628c40520706f7037bc4d8e951b0296c47e7b86d0a8e6e2335c8f0ba4afcfac1
@@ -8843,6 +8875,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"launchdarkly-eventsource@npm:2.2.0":
+  version: 2.2.0
+  resolution: "launchdarkly-eventsource@npm:2.2.0"
+  checksum: 10/9269ca3bc7dead8271e16c26efa4578e33dcf416ad35d05ff10d82d904df162ac4fe0e7a9cd89b9ca219bb5ef0e30005fcce5f8a837acbe3a8db38a7f6acfff6
+  languageName: node
+  linkType: hard
+
 "leven@npm:^3.1.0":
   version: 3.1.0
   resolution: "leven@npm:3.1.0"
@@ -9058,6 +9097,13 @@ __metadata:
   version: 11.2.5
   resolution: "lru-cache@npm:11.2.5"
   checksum: 10/be50f66c6e23afeaab9c7eefafa06344dd13cde7b3528809c2660c4ad70d93b9ba537366634623cbb2eb411671f526b5a4af2c602507b9258aead0fa8d713f6c
+  languageName: node
+  linkType: hard
+
+"lru-cache@npm:^11.2.5":
+  version: 11.5.1
+  resolution: "lru-cache@npm:11.5.1"
+  checksum: 10/02c4f73967d91fb101f4accf8ebac9e0541e08e16d987bdb9e9737f13e5f2c4bc33c593b98ec30e4486bf899bc97edb36fbd133684b36087336559e41edafdea
   languageName: node
   linkType: hard
 
@@ -9515,6 +9561,13 @@ __metadata:
     concat-stream: "npm:^2.0.0"
     type-is: "npm:^1.6.18"
   checksum: 10/fb22868caaed37d725715c14c60b740b81665265da3a026bb61954414f65b99f76b360128413b8a2a7cc1a95ecae28a42bf831fe172bb79682d19ec105b556bd
+  languageName: node
+  linkType: hard
+
+"murmurhash3js@npm:^3.0.1":
+  version: 3.0.1
+  resolution: "murmurhash3js@npm:3.0.1"
+  checksum: 10/a9e6e75aef8530f707defaca9dc3d82aa849a23f4a823dc56296b1875f6fca06340261eea478812b77f2b9da8f0e2eaddb5eb2ce102db495dd31021323dca588
   languageName: node
   linkType: hard
 
@@ -10544,6 +10597,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"proxy-from-env@npm:^1.1.0":
+  version: 1.1.0
+  resolution: "proxy-from-env@npm:1.1.0"
+  checksum: 10/f0bb4a87cfd18f77bc2fba23ae49c3b378fb35143af16cc478171c623eebe181678f09439707ad80081d340d1593cd54a33a0113f3ccb3f4bc9451488780ee23
+  languageName: node
+  linkType: hard
+
 "proxy-from-env@npm:^2.1.0":
   version: 2.1.0
   resolution: "proxy-from-env@npm:2.1.0"
@@ -10614,6 +10674,13 @@ __metadata:
     defu: "npm:^6.1.6"
     destr: "npm:^2.0.5"
   checksum: 10/fa74066c55bc342c4497d562a84a121a6e07af86a306a1f35a1ded077befb89f026f6f6f271d7b8207e173a66a5efcd6646e8d0cf3b9287a0fcdb5119d8feee7
+  languageName: node
+  linkType: hard
+
+"re2js@npm:^1.2.2":
+  version: 1.3.3
+  resolution: "re2js@npm:1.3.3"
+  checksum: 10/ab2c7c66bd6a914a07d2eba9661e77deca753412eb8821dba52841e990eb2381a09a07da7754b5fec719f882b962919ca79888b753e88121eec587e2aa13e2d0
   languageName: node
   linkType: hard
 
@@ -11959,6 +12026,24 @@ __metadata:
   version: 2.0.1
   resolution: "universalify@npm:2.0.1"
   checksum: 10/ecd8469fe0db28e7de9e5289d32bd1b6ba8f7183db34f3bfc4ca53c49891c2d6aa05f3fb3936a81285a905cc509fb641a0c3fc131ec786167eff41236ae32e60
+  languageName: node
+  linkType: hard
+
+"unleash-client@npm:^6.11.0":
+  version: 6.11.0
+  resolution: "unleash-client@npm:6.11.0"
+  dependencies:
+    http-proxy-agent: "npm:^7.0.2"
+    https-proxy-agent: "npm:^7.0.5"
+    ip-address: "npm:^10.0.0"
+    launchdarkly-eventsource: "npm:2.2.0"
+    lru-cache: "npm:^11.2.5"
+    make-fetch-happen: "npm:^15.0.3"
+    murmurhash3js: "npm:^3.0.1"
+    proxy-from-env: "npm:^1.1.0"
+    re2js: "npm:^1.2.2"
+    semver: "npm:^7.7.3"
+  checksum: 10/778cabe36af541b9ae94b28a9127235b731788b14f9aed8e1a50caba2324e55f279ebaf2ae12c28fcaf424ccaf12d0bcea90c3e9fd97fd1700eb70132a38103c
   languageName: node
   linkType: hard
 
