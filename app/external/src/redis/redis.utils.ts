@@ -63,6 +63,7 @@ export async function waitForRedisConnection(client: Redis, clientName: string):
         `Unable to connect to Redis Sentinel cluster. Sentinels: ${options.sentinels.map(s => `${s.host}:${s.port}`).join(", ")}`,
         {cause: error}
       )
+
     throw new Error(`Unable to connect to Redis at ${options.host}:${options.port}`, {cause: error})
   }
 }

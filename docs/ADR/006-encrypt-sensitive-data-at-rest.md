@@ -320,8 +320,8 @@ The original design proposed using Prisma Client Extensions (`client.$extends`) 
 ### Alternative Selected: Repository-Level Encryption
 
 To ensure complete type safety, correct error propagation via `TaskEither`, and strict data leakage detection, the implementation was changed to perform encryption/decryption at the repository layer:
+
 - **`PkceSessionDbRepository`** and **`WorkflowTemplateDbRepository`** handle the encryption/decryption of their respective fields.
 - **`WorkflowDbRepository`** explicitly intercepts queries containing nested templates to decrypt their actions before domain mapping.
 
 This architecture choice guarantees that all application code interacting with these entities is statically type-safe and that KMS/decryption failures are propagated cleanly as domain/repository errors rather than suppressed or bypassed. This decision may be revisited if Prisma resolves [Issue #24525](https://github.com/prisma/prisma/issues/24525) and introduces native support for model-specific hooks on nested relation queries.
-

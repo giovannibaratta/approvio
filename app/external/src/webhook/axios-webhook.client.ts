@@ -121,13 +121,12 @@ export class AxiosWebhookClient implements HttpClient {
         // 2. Pre-connection IP validation for raw IP hostnames:
         // Node's http.Agent/https.Agent bypasses the custom `lookup` function when the hostname
         // in the URL is already a raw IP address. Thus we validate it pre-request here.
-        if (net.isIP(hostname) !== 0) {
+        if (net.isIP(hostname) !== 0)
           if (this.config.ssrfProtectionConfig.mode !== "disabled") {
             const allowed = this.config.ssrfProtectionConfig.allowedDestinations || []
             if (!isAllowedDestination(hostname, allowed) && isBlockedIp(hostname))
               throw new SsrfError(`Blocked request to ${hostname}: resolved to private/reserved IP ${hostname}`)
           }
-        }
 
         const response = await axios.request({
           url,

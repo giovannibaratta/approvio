@@ -202,6 +202,7 @@ export class AgentChallengeFactory {
       E.chainW(({payload}) => {
         if (typeof payload.iss !== "string" || !payload.iss.trim())
           return left("agent_challenge_missing_required_claim" as const)
+
         return right(payload.iss)
       })
     )
@@ -324,6 +325,7 @@ export class AgentChallengeFactory {
     if (!nonce || nonce.trim().length === 0) return left("agent_challenge_nonce_empty")
     if (nonce.length !== NONCE_LENGTH * 2)
       // hex encoding doubles the length
+
       return left("agent_challenge_nonce_invalid_length")
 
     return right(nonce)

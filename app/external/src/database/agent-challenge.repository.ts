@@ -153,6 +153,7 @@ export class AgentChallengeDbRepository implements AgentChallengeRepository {
   private mapUpdateError = (error: unknown): AgentChallengeUpdateError => {
     if (error instanceof Error && error.message === "agent_challenge_concurrent_update")
       return "agent_challenge_concurrent_update"
+
     return "unknown_error"
   }
 }

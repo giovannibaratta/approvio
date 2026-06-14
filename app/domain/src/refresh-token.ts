@@ -297,6 +297,7 @@ export class RefreshTokenFactory {
         })
       )
         return E.left("refresh_token_missing_occ")
+
       occ = undecorated.occ
     }
 

@@ -233,6 +233,7 @@ export function evaluateWorkflowStatus(
     if (activeVetoers.size > 0) currentStatus = WorkflowStatus.REJECTED
     else if (doesVotesCoverApprovalRules(workflow.workflowTemplate.approvalRule, groupVoters))
       // Terminal state APPROVED reached! Stop playing subsequent votes.
+
       return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.APPROVED)
     else currentStatus = WorkflowStatus.EVALUATION_IN_PROGRESS
   }

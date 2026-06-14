@@ -47,8 +47,10 @@ export function validateUserInfoResponse(
 ): E.Either<UserInfoValidationError, OidcUserInfo> {
   if (!rawResponse || typeof rawResponse !== "object" || Array.isArray(rawResponse))
     return E.left("invalid_json_structure")
+
   if (!("sub" in rawResponse) || rawResponse.sub === undefined || rawResponse.sub === null)
     return E.left("missing_required_sub_claim")
+
   if (typeof rawResponse.sub !== "string" || rawResponse.sub.trim() === "") return E.left("invalid_sub_claim_type")
 
   // Validate optional claims types if present

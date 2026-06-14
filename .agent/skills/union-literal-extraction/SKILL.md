@@ -37,6 +37,7 @@ This skill allows you to programmatically extract all possible literal values fr
 ## Examples
 
 **User:** "Fix the exhaustiveness check in the workflow handler."
+
 1. Identify the type: `WorkflowStatus` in `app/domain/src/workflow.ts`.
 2. Run script: `yarn ai:get-union-literals app/domain/src/workflow.ts WorkflowStatus`.
 3. Output: `["PENDING", "APPROVED", "REJECTED"]`.

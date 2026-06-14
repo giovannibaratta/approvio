@@ -4,7 +4,7 @@ import {DEFAULT_ORG_ID} from "../constants"
 import {UnknownError} from "@services/error"
 import {WORKFLOW_REPOSITORY_TOKEN, WorkflowRepository} from "../workflow/interfaces"
 import {WORKFLOW_TEMPLATE_REPOSITORY_TOKEN, WorkflowTemplateRepository} from "../workflow-template/interfaces"
-import {pipe} from "fp-ts/lib/function"
+import {pipe} from "fp-ts/function"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
 

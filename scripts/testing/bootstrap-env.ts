@@ -456,6 +456,7 @@ async function bootstrap() {
         error.response?.data
       )
     else console.error(error)
+
     throw error
   } finally {
     await prisma.$disconnect()

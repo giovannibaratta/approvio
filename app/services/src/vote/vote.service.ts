@@ -143,6 +143,7 @@ export class VoteService {
           if (request.type !== "APPROVE") {
             if (canVoteCheck.requireHighPrivilege)
               return this.authService.useHighPrivilegeToken(request.requestor, "vote", request.workflowId)
+
             return TE.right(undefined)
           }
 

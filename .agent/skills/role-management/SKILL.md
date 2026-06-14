@@ -14,6 +14,7 @@ This skill provides guidelines, architectural details, and a step-by-step implem
 Approvio utilizes a type-safe, compile-time enforced Role-Based Access Control (RBAC) system. The system guarantees consistency and prevents runtime errors by deriving types directly from a **Single Source of Truth** using TypeScript's type mapping and index access.
 
 ### The Single Source of Truth Cascading Chain
+
 1. **`RESOURCE_TYPES`** (constant string array in [role.ts](file:///workspace/approvio/app/domain/src/role.ts)):
    - Defines all resource types present in the system (e.g., `"group"`, `"space"`, `"workflow_template"`, `"audit"`).
 2. **`ResourceType`** (derived union type):
@@ -26,7 +27,9 @@ Approvio utilizes a type-safe, compile-time enforced Role-Based Access Control (
    - Mapped type tying resource types to their permitted scopes and permissions.
 
 ### Hierarchical Scoping & Scope Matching
+
 The permission system resolves scopes hierarchically:
+
 - **Org Scope (`org`)**: Organization-wide permissions act as a root scope. A user with org-level permissions automatically matches all child scopes (groups, spaces, templates) under that organization.
 - **Specific Scopes (`space`, `group`, `workflow_template`)**: These scopes restrict permissions to resources matching the specific identifier (e.g. `spaceId`, `groupId`, or `templateName`).
 
@@ -37,6 +40,7 @@ The permission system resolves scopes hierarchically:
 To introduce a new resource type, permission, or standard system role, you must perform the following 4 steps.
 
 ### Step 1: Update `app/domain/src/role.ts`
+
 1. Add the new resource type to the `RESOURCE_TYPES` array if you are adding a new domain resource:
    ```typescript
    export const RESOURCE_TYPES = ["group", "space", "workflow_template", "audit", "my_new_resource"] as const
@@ -57,7 +61,9 @@ To introduce a new resource type, permission, or standard system role, you must 
    ```
 
 ### Step 2: Update `app/domain/src/system-role.ts`
+
 1. Define a template getter method for the standard role (using scope-specific naming where applicable):
+
    ```typescript
    static getMyNewResourceViewerTemplate(scopeType: MyNewResourceRoleTemplate["scopeType"] = "org"): MyNewResourceRoleTemplate {
      const baseRoleName = "MyNewResourceViewer"
@@ -71,6 +77,7 @@ To introduce a new resource type, permission, or standard system role, you must 
      }
    }
    ```
+
 2. Include the template in `getAllSystemRoleTemplates()` to ensure it's registered in the system cache:
    ```typescript
    static getAllSystemRoleTemplates(): ReadonlyArray<RoleTemplate> {
@@ -89,7 +96,9 @@ To introduce a new resource type, permission, or standard system role, you must 
    ```
 
 ### Step 3: Update `app/domain/src/permission-checker.ts`
+
 Add a dedicated static verification helper on `RolePermissionChecker` using the derived permission and scope types:
+
 ```typescript
 static hasMyNewResourcePermission(
   roles: ReadonlyArray<UnconstrainedBoundRole>,
@@ -101,24 +110,23 @@ static hasMyNewResourcePermission(
 ```
 
 ### Step 4: Apply in the Service Layer
+
 In the NestJS backend services:
+
 1. Import `RolePermissionChecker` and `getEntityRoles` from `@domain`.
 2. Extract the requester's bound roles using `getEntityRoles(requestor)`.
 3. Call the appropriate permission checker helper.
 
 **Example from `AuditLogService`**:
+
 ```typescript
-import { AuthenticatedEntity, getEntityRoles, RolePermissionChecker } from "@domain"
+import {AuthenticatedEntity, getEntityRoles, RolePermissionChecker} from "@domain"
 
 @Injectable()
 export class AuditLogService {
   public listAuditLogs(requestor: AuthenticatedEntity) {
     const isOrgAdmin = requestor.entityType === "user" && requestor.user.orgRole === "admin"
-    const isAuditor = RolePermissionChecker.hasAuditPermission(
-      getEntityRoles(requestor), 
-      { type: "org" }, 
-      "read"
-    )
+    const isAuditor = RolePermissionChecker.hasAuditPermission(getEntityRoles(requestor), {type: "org"}, "read")
 
     if (!isOrgAdmin && !isAuditor) {
       return TE.left("requestor_not_authorized" as const)
@@ -133,6 +141,7 @@ export class AuditLogService {
 ## 3. Verification & Testing
 
 Every role or permission modification MUST be verified via domain unit tests:
+
 1. **Open the Test File**: Open [permission-checker.test.ts](file:///workspace/approvio/app/domain/test/permission-checker.test.ts).
 2. **Add Test Cases**: Write comprehensive tests validating that:
    - The role templates have the expected permission arrays.
