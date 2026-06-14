@@ -16,10 +16,12 @@ import {
   WebhookRetryConfig,
   EmailRetryConfig,
   DatabaseRetryConfig,
-  KmsConfig
+  KmsConfig,
+  LeverConfig
 } from "./interfaces"
 import {isOidcProvider, isKmsProviderType} from "./types"
 import {isEmail, isNonEmptyArray} from "@utils"
+import {mapToUnleashFeatures} from "./lever-bootstrap.utils"
 
 const IS_PRIVILEGE_MODE_DEFAULT = true
 
@@ -47,6 +49,7 @@ export class ConfigProvider implements ConfigProviderInterface {
   readonly cookieSecure: boolean
   readonly kmsConfig: KmsConfig
   readonly ssrfProtectionConfig: SsrfProtectionConfig
+  readonly leverConfig: LeverConfig
 
   constructor() {
     this.isPrivilegeMode = this.validatePrivilegeMode()
@@ -65,6 +68,7 @@ export class ConfigProvider implements ConfigProviderInterface {
     this.cookieSecure = this.validateCookieSecure()
     this.kmsConfig = this.validateKmsConfig()
     this.ssrfProtectionConfig = this.validateSsrfProtectionConfig()
+    this.leverConfig = this.validateLeverConfig()
   }
 
   private validateSsrfProtectionConfig(): SsrfProtectionConfig {
@@ -98,14 +102,13 @@ export class ConfigProvider implements ConfigProviderInterface {
 
     if (isIp) return true
 
-    if (dest.includes("/")) {
+    if (dest.includes("/"))
       try {
         ipaddr.parseCIDR(dest)
         return true
       } catch {
         return false
       }
-    }
 
     return HOSTNAME_REGEX.test(dest)
   }
@@ -116,6 +119,7 @@ export class ConfigProvider implements ConfigProviderInterface {
     if (disableModeRaw !== undefined) {
       if (disableModeRaw.toLowerCase() !== "true" && disableModeRaw.toLowerCase() !== "false")
         throw new Error("DISABLE_HIGH_PRIVILEGE_MODE must be 'true' or 'false'")
+
       return disableModeRaw.toLowerCase() === "false"
     }
 
@@ -163,6 +167,7 @@ export class ConfigProvider implements ConfigProviderInterface {
     if (smtpAllowSelfSignedRaw !== undefined) {
       if (smtpAllowSelfSignedRaw.toLowerCase() !== "true" && smtpAllowSelfSignedRaw.toLowerCase() !== "false")
         throw new Error("SMTP_ALLOWED_SELF_SIGNED_CERTIFICATES must be 'true' or 'false'")
+
       allowSelfSignedCertificates = smtpAllowSelfSignedRaw.toLowerCase() === "true"
     }
 
@@ -555,6 +560,75 @@ export class ConfigProvider implements ConfigProviderInterface {
       initialDelayMs: initialDelayMsRaw ? parseInt(initialDelayMsRaw, 10) : 1000,
       backoffFactor: backoffFactorRaw ? parseFloat(backoffFactorRaw) : 2,
       maxDelayMs: maxDelayMsRaw ? parseInt(maxDelayMsRaw, 10) : 10000
+    }
+  }
+
+  private validateLeverConfig(): LeverConfig {
+    const enabledRaw = process.env.LEVER_PROVIDER_ENABLED
+    const unleashUrl = process.env.UNLEASH_URL
+    const unleashApiToken = process.env.UNLEASH_API_TOKEN
+    const refreshIntervalRaw = process.env.UNLEASH_REFRESH_INTERVAL_MS
+    const bootstrapJson = process.env.LEVERS_BOOTSTRAP_JSON
+
+    let enabled = false
+
+    if (enabledRaw !== undefined) {
+      if (enabledRaw.toLowerCase() !== "true" && enabledRaw.toLowerCase() !== "false")
+        throw new Error("LEVER_PROVIDER_ENABLED must be 'true' or 'false'")
+
+      enabled = enabledRaw.toLowerCase() === "true"
+    }
+
+    if (!enabled) return {enabled: false}
+
+    if (!unleashUrl) throw new Error("UNLEASH_URL must be provided if LEVER_PROVIDER_ENABLED is true")
+
+    const refreshInterval = refreshIntervalRaw ? parseInt(refreshIntervalRaw, 10) : undefined
+
+    if (refreshInterval !== undefined && (isNaN(refreshInterval) || refreshInterval < 0))
+      throw new Error("UNLEASH_REFRESH_INTERVAL_MS must be a positive number")
+
+    try {
+      new URL(unleashUrl)
+    } catch {
+      throw new Error(`Invalid UNLEASH_URL: ${unleashUrl}`)
+    }
+
+    if (bootstrapJson)
+      try {
+        const parsed = JSON.parse(bootstrapJson)
+
+        // Validation: Must be array of strings or object with boolean values
+        if (Array.isArray(parsed)) {
+          if (parsed.some(item => typeof item !== "string"))
+            throw new Error("LEVERS_BOOTSTRAP_JSON as an array must only contain strings")
+        } else if (typeof parsed === "object" && parsed !== null) {
+          if (Object.values(parsed).some(val => typeof val !== "boolean"))
+            throw new Error("LEVERS_BOOTSTRAP_JSON as an object must only contain boolean values")
+        } else throw new Error("LEVERS_BOOTSTRAP_JSON must be an array of names or a key-value object")
+
+        const bootstrapData = mapToUnleashFeatures(parsed)
+
+        return {
+          enabled: true,
+          provider: "unleash",
+          unleashUrl,
+          unleashApiToken,
+          refreshInterval,
+          bootstrapData
+        }
+      } catch (e) {
+        throw new Error(`Failed to parse or validate LEVERS_BOOTSTRAP_JSON: ${e instanceof Error ? e.message : e}`, {
+          cause: e
+        })
+      }
+
+    return {
+      enabled: true,
+      provider: "unleash",
+      unleashUrl,
+      unleashApiToken,
+      refreshInterval
     }
   }
 }

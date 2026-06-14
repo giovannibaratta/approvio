@@ -51,6 +51,9 @@
     "@nestjs/jwt": "11.0.2",
     "@nestjs/passport": "11.0.5",
     "@nestjs/platform-express": "11.1.23",
+    "@openfeature/core": "^1.10.0",
+    "@openfeature/nestjs-sdk": "^0.2.0",
+    "@openfeature/server-sdk": "^1.22.0",
     "@prisma/adapter-pg": "7.8.0",
     "@prisma/client": "7.8.0",
     "@prisma/driver-adapter-utils": "7.8.0",
@@ -69,6 +72,7 @@
     "passport-jwt": "4.0.1",
     "rate-limiter-flexible": "11.1.0",
     "reflect-metadata": "0.2.2",
+    "unleash-client": "^6.11.0",
     "uuid": "14.0.0"
   },
   "devDependencies": {

@@ -7,11 +7,19 @@ import {JwtAuthGuard} from "./auth"
 import {RateLimiterGuard} from "./rate-limiter"
 import {RequestIdMiddleware} from "./logging/request-id.middleware"
 import cookieParser from "cookie-parser"
+import {LeverMiddleware, LeverGuard} from "./lever"
+import {ServiceModule} from "@services/service.module"
+
 @Module({
-  imports: [ControllersModule, AuthModule, RateLimiterModule],
+  imports: [ControllersModule, AuthModule, RateLimiterModule, ServiceModule],
   controllers: [],
   providers: [
-    // Order is import, the JwtAuthGuard must be first to ensure that the user is authenticated before the rate limiter is applied
+    // Order is important, the LeverGuard must run before auth to shed load early
+    {
+      provide: APP_GUARD,
+      useClass: LeverGuard
+    },
+    // The JwtAuthGuard must be first to ensure that the user is authenticated before the rate limiter is applied
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard
@@ -24,6 +32,6 @@ import cookieParser from "cookie-parser"
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(cookieParser(), RequestIdMiddleware).forRoutes("*")
+    consumer.apply(cookieParser(), RequestIdMiddleware, LeverMiddleware).forRoutes("*")
   }
 }
