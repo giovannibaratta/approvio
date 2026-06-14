@@ -600,6 +600,45 @@ describe("Agent Authentication Integration", () => {
           expect(response.body).toHaveErrorCode("DPOP_INVALID_SIGNATURE")
         })
 
+        it("should return 401 when DPoP JTI is reused (replay attack)", async () => {
+          // Given: Valid refresh token
+          const {plainToken: refreshToken1} = await setupAgentWithRefreshToken()
+
+          // Create valid DPoP
+          const dpopJwt = await createDpopJwt(testAgent.privateKey, testAgent.publicKey, {
+            htm: "POST",
+            htu: expectedHtu
+          })
+
+          // First request: Should succeed
+          const response1 = await supertest(app.getHttpServer())
+            .post(refreshEndpoint)
+            .set("Host", host)
+            .set("DPoP", dpopJwt)
+            .send({
+              grantType: "refresh_token",
+              refreshToken: refreshToken1
+            })
+
+          expect(response1.status).toBe(HttpStatus.OK)
+
+          // Second request: Replay the same DPoP JWT (with a new valid refresh token so only DPoP fails)
+          const {plainToken: refreshToken2} = await setupAgentWithRefreshToken()
+
+          const response2 = await supertest(app.getHttpServer())
+            .post(refreshEndpoint)
+            .set("Host", host)
+            .set("DPoP", dpopJwt)
+            .send({
+              grantType: "refresh_token",
+              refreshToken: refreshToken2
+            })
+
+          // Then: Validation fails due to JTI reuse
+          expect(response2.status).toBe(HttpStatus.UNAUTHORIZED)
+          expect(response2.body).toHaveErrorCode("DPOP_JTI_REUSED")
+        })
+
         it("should return 400 for expired refresh token", async () => {
           // Given: Expired token
           const createdAt = new Date(Date.now() - 7200 * 1000)

@@ -46,7 +46,7 @@ describe("validateDpopJwt", () => {
       const result = await validateDpopJwt(dpopJwt, testAgentPublicKeyPem, {expectedMethod, expectedUrl})()
 
       // Expect: Validation passes
-      expect(result).toBeRight()
+      expect(result).toBeRightOf({jti: validPayload.jti})
     })
 
     it("should handle URLs with query parameters and fragments correctly", async () => {
@@ -59,7 +59,7 @@ describe("validateDpopJwt", () => {
       const result = await validateDpopJwt(dpopJwt, testAgentPublicKeyPem, {expectedMethod, expectedUrl})()
 
       // Expect: Validation passes (query/fragment ignored)
-      expect(result).toBeRight()
+      expect(result).toBeRightOf({jti: validPayload.jti})
     })
   })
 

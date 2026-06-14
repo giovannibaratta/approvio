@@ -31,6 +31,7 @@ export const OIDC_PROVIDER_TOKEN = "OIDC_PROVIDER_TOKEN"
 export const AGENT_CHALLENGE_REPOSITORY_TOKEN = "AGENT_CHALLENGE_REPOSITORY_TOKEN"
 export const REFRESH_TOKEN_REPOSITORY_TOKEN = "REFRESH_TOKEN_REPOSITORY_TOKEN"
 export const STEP_UP_TOKEN_REPOSITORY_TOKEN = "STEP_UP_TOKEN_REPOSITORY_TOKEN"
+export const DPOP_TOKEN_REPOSITORY_TOKEN = "DPOP_TOKEN_REPOSITORY_TOKEN"
 
 export type AuthError =
   | PrefixUnion<
@@ -300,4 +301,9 @@ export interface PrivilegeTokenExchange {
   readonly state: string
   readonly operation: StepUpOperation
   readonly resourceId?: string
+}
+
+export interface DpopTokenRepository {
+  /** Atomically marks a DPoP JTI as used and sets a TTL. Fails if JTI is already marked as used. */
+  markJtiAsUsed(jti: string, ttlSeconds: number): TaskEither<UnknownError | "dpop_jti_reused", void>
 }
