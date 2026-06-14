@@ -4,6 +4,7 @@ import {
   PrefixUnion,
   getStringAsEnum,
   hasOwnProperty,
+  isObject,
   isRecordStringString,
   isValidHttpOrHttpsUrl
 } from "@utils"
@@ -140,8 +141,10 @@ export class WorkflowActionWebhookTaskFactory {
   }
 
   static validate<T extends WorkflowActionTaskDecoratorSelector>(
-    dataToBeValidated: object
+    dataToBeValidated: unknown
   ): Either<WorkflowActionWebhookTaskValidationError, DecoratedWorkflowActionWebhookTask<T>> {
+    if (!isObject(dataToBeValidated)) return left("workflow_action_task_missing_or_invalid_status")
+
     const eitherBaseTask = WorkflowActionTaskFactory.validate(dataToBeValidated)
 
     if (isLeft(eitherBaseTask)) return eitherBaseTask

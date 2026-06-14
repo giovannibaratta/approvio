@@ -5,6 +5,7 @@ import {
   getStringAsEnum,
   hasOwnProperty,
   isDecoratedWith,
+  isObject,
   isUUIDv7,
   PrefixUnion
 } from "@utils"
@@ -228,44 +229,12 @@ export class RefreshTokenFactory {
     data: unknown,
     selectors?: T
   ): E.Either<RefreshTokenValidationError, DecoratedRefreshToken<T>> {
-    if (typeof data !== "object" || data === null) return E.left("refresh_token_invalid_structure" as const)
+    if (!isObject(data)) return E.left("refresh_token_invalid_structure" as const)
 
-    if (!hasOwnProperty(data, "id") || typeof data.id !== "string" || !isUUIDv7(data.id))
-      return E.left("refresh_token_invalid_id")
+    const commonFields = RefreshTokenFactory.validateCommonFields(data)
+    if (E.isLeft(commonFields)) return commonFields
 
-    if (!hasOwnProperty(data, "familyId") || typeof data.familyId !== "string" || !isUUIDv7(data.familyId))
-      return E.left("refresh_token_invalid_family_id")
-
-    if (!hasOwnProperty(data, "tokenHash") || typeof data.tokenHash !== "string" || data.tokenHash.length === 0)
-      return E.left("refresh_token_invalid_token_hash")
-
-    if (!hasOwnProperty(data, "status") || typeof data.status !== "string")
-      return E.left("refresh_token_invalid_status")
-
-    const status = getStringAsEnum(data.status, RefreshTokenStatus)
-    if (status === undefined) return E.left("refresh_token_invalid_status")
-
-    if (!hasOwnProperty(data, "entityType") || typeof data.entityType !== "string")
-      return E.left("refresh_token_missing_entity_type")
-
-    const entityType = getStringAsEnum(data.entityType, EntityType)
-    if (entityType === undefined) return E.left("refresh_token_invalid_entity_type")
-
-    if (!hasOwnProperty(data, "expiresAt") || !(data.expiresAt instanceof Date))
-      return E.left("refresh_token_invalid_expires_at")
-
-    if (!hasOwnProperty(data, "createdAt") || !(data.createdAt instanceof Date))
-      return E.left("refresh_token_invalid_created_at")
-
-    if (data.expiresAt < data.createdAt) return E.left("refresh_token_expire_before_create")
-
-    const base: RefreshTokenBase = {
-      id: data.id,
-      tokenHash: data.tokenHash,
-      familyId: data.familyId,
-      expiresAt: data.expiresAt,
-      createdAt: data.createdAt
-    }
+    const {status, entityType, ...base} = commonFields.right
 
     const eitherStatusProps = RefreshTokenFactory.validateStatusProps({
       ...data,
@@ -305,6 +274,63 @@ export class RefreshTokenFactory {
       ...undecorated,
       ...(occ !== undefined && {occ})
     })
+  }
+
+  private static validateCommonFields(
+    data: Record<string, unknown>
+  ): E.Either<RefreshTokenValidationError, RefreshTokenBase & {status: RefreshTokenStatus; entityType: EntityType}> {
+    if (!hasOwnProperty(data, "id") || typeof data.id !== "string" || !isUUIDv7(data.id))
+      return E.left("refresh_token_invalid_id")
+
+    if (!hasOwnProperty(data, "familyId") || typeof data.familyId !== "string" || !isUUIDv7(data.familyId))
+      return E.left("refresh_token_invalid_family_id")
+
+    if (!hasOwnProperty(data, "tokenHash") || typeof data.tokenHash !== "string" || data.tokenHash.length === 0)
+      return E.left("refresh_token_invalid_token_hash")
+
+    const status = RefreshTokenFactory.parseStatus(data)
+    if (E.isLeft(status)) return status
+
+    const entityType = RefreshTokenFactory.parseEntityType(data)
+    if (E.isLeft(entityType)) return entityType
+
+    if (!hasOwnProperty(data, "expiresAt") || !(data.expiresAt instanceof Date))
+      return E.left("refresh_token_invalid_expires_at")
+
+    if (!hasOwnProperty(data, "createdAt") || !(data.createdAt instanceof Date))
+      return E.left("refresh_token_invalid_created_at")
+
+    if (data.expiresAt < data.createdAt) return E.left("refresh_token_expire_before_create")
+
+    return E.right({
+      id: data.id,
+      tokenHash: data.tokenHash,
+      familyId: data.familyId,
+      expiresAt: data.expiresAt,
+      createdAt: data.createdAt,
+      status: status.right,
+      entityType: entityType.right
+    })
+  }
+
+  private static parseStatus(data: Record<string, unknown>): E.Either<RefreshTokenValidationError, RefreshTokenStatus> {
+    if (!hasOwnProperty(data, "status") || typeof data.status !== "string")
+      return E.left("refresh_token_invalid_status")
+
+    const status = getStringAsEnum(data.status, RefreshTokenStatus)
+    if (status === undefined) return E.left("refresh_token_invalid_status")
+
+    return E.right(status)
+  }
+
+  private static parseEntityType(data: Record<string, unknown>): E.Either<RefreshTokenValidationError, EntityType> {
+    if (!hasOwnProperty(data, "entityType") || typeof data.entityType !== "string")
+      return E.left("refresh_token_missing_entity_type")
+
+    const entityType = getStringAsEnum(data.entityType, EntityType)
+    if (entityType === undefined) return E.left("refresh_token_invalid_entity_type")
+
+    return E.right(entityType)
   }
 
   private static validateStatusProps(

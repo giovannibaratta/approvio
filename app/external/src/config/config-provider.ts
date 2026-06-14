@@ -138,8 +138,6 @@ export class ConfigProvider implements ConfigProviderInterface {
     const smtpUsername = process.env.SMTP_USERNAME
     const smtpPassword = process.env.SMTP_PASSWORD
     const smtpEndpoint = process.env.SMTP_ENDPOINT
-    const smtpPortRaw = process.env.SMTP_PORT
-    const smtpAllowSelfSignedRaw = process.env.SMTP_ALLOWED_SELF_SIGNED_CERTIFICATES
     const senderEmail = process.env.SMTP_SENDER_EMAIL
 
     if (!smtpUsername && !smtpPassword && !smtpEndpoint && !senderEmail) return O.none
@@ -150,26 +148,10 @@ export class ConfigProvider implements ConfigProviderInterface {
     if (smtpUsername.length === 0 || smtpPassword.length === 0 || smtpEndpoint.length === 0 || senderEmail.length === 0)
       throw new Error("Email provider configuration values cannot be empty")
 
-    let smtpPort: number | undefined
-
-    if (smtpPortRaw !== undefined) {
-      try {
-        smtpPort = parseInt(smtpPortRaw)
-      } catch (error) {
-        throw new Error("SMTP_PORT must be a valid number", {cause: error})
-      }
-
-      if (smtpPort <= 0 || smtpPort > 65535) throw new Error("SMTP_PORT must be a valid number between 1 and 65535")
-    }
-
-    let allowSelfSignedCertificates = false
-
-    if (smtpAllowSelfSignedRaw !== undefined) {
-      if (smtpAllowSelfSignedRaw.toLowerCase() !== "true" && smtpAllowSelfSignedRaw.toLowerCase() !== "false")
-        throw new Error("SMTP_ALLOWED_SELF_SIGNED_CERTIFICATES must be 'true' or 'false'")
-
-      allowSelfSignedCertificates = smtpAllowSelfSignedRaw.toLowerCase() === "true"
-    }
+    const smtpPort = ConfigProvider.parseSmtpPort(process.env.SMTP_PORT)
+    const allowSelfSignedCertificates = ConfigProvider.parseSmtpAllowSelfSigned(
+      process.env.SMTP_ALLOWED_SELF_SIGNED_CERTIFICATES
+    )
 
     if (!isEmail(senderEmail)) throw new Error("SMTP_SENDER_EMAIL must be a valid email")
 
@@ -184,28 +166,39 @@ export class ConfigProvider implements ConfigProviderInterface {
     })
   }
 
+  private static parseSmtpPort(smtpPortRaw: string | undefined): number | undefined {
+    if (smtpPortRaw === undefined) return undefined
+
+    let smtpPort: number
+    try {
+      smtpPort = parseInt(smtpPortRaw)
+    } catch (error) {
+      throw new Error("SMTP_PORT must be a valid number", {cause: error})
+    }
+
+    if (smtpPort <= 0 || smtpPort > 65535) throw new Error("SMTP_PORT must be a valid number between 1 and 65535")
+
+    return smtpPort
+  }
+
+  private static parseSmtpAllowSelfSigned(smtpAllowSelfSignedRaw: string | undefined): boolean {
+    if (smtpAllowSelfSignedRaw === undefined) return false
+
+    if (smtpAllowSelfSignedRaw.toLowerCase() !== "true" && smtpAllowSelfSignedRaw.toLowerCase() !== "false")
+      throw new Error("SMTP_ALLOWED_SELF_SIGNED_CERTIFICATES must be 'true' or 'false'")
+
+    return smtpAllowSelfSignedRaw.toLowerCase() === "true"
+  }
+
   private validateOidcProviderConfig(): OidcProviderConfig {
     const providerRaw = process.env.OIDC_PROVIDER
-
-    let provider: OidcProviderConfig["provider"] = "custom"
-
-    if (providerRaw) {
-      if (!isOidcProvider(providerRaw)) throw new Error("OIDC_PROVIDER not supported")
-
-      provider = providerRaw
-    }
+    const provider = this.parseOidcProvider(providerRaw)
 
     const issuerUrl = process.env.OIDC_ISSUER_URL
     const clientId = process.env.OIDC_CLIENT_ID
     const clientSecret = process.env.OIDC_CLIENT_SECRET
     const redirectUri = process.env.OIDC_REDIRECT_URI
-
-    const authorizationEndpoint = process.env.OIDC_AUTHORIZATION_ENDPOINT
-    const tokenEndpoint = process.env.OIDC_TOKEN_ENDPOINT
-    const userinfoEndpoint = process.env.OIDC_USERINFO_ENDPOINT
     const scopes = process.env.OIDC_SCOPES
-
-    let override: OidcProviderConfig["override"] | undefined = undefined
 
     if (!issuerUrl || !clientId || !clientSecret || !redirectUri)
       throw new Error("Incomplete OIDC provider configuration")
@@ -213,59 +206,16 @@ export class ConfigProvider implements ConfigProviderInterface {
     if (issuerUrl.length === 0 || clientId.length === 0 || clientSecret.length === 0 || redirectUri.length === 0)
       throw new Error("OIDC provider configuration values cannot be empty")
 
-    try {
-      new URL(issuerUrl)
-    } catch {
-      throw new Error("OIDC_ISSUER_URL must be a valid URL")
-    }
+    this.validateUrl(issuerUrl, "OIDC_ISSUER_URL")
+    this.validateUrl(redirectUri, "OIDC_REDIRECT_URI")
 
-    try {
-      new URL(redirectUri)
-    } catch {
-      throw new Error("OIDC_REDIRECT_URI must be a valid URL")
-    }
+    const override = this.parseOidcEndpoints(
+      process.env.OIDC_AUTHORIZATION_ENDPOINT,
+      process.env.OIDC_TOKEN_ENDPOINT,
+      process.env.OIDC_USERINFO_ENDPOINT
+    )
 
-    // Either all attributes are provided or none, mix is considered an error.
-    if (authorizationEndpoint && tokenEndpoint && userinfoEndpoint) {
-      try {
-        new URL(authorizationEndpoint)
-      } catch {
-        throw new Error("OIDC_AUTHORIZATION_ENDPOINT must be a valid URL")
-      }
-
-      try {
-        new URL(tokenEndpoint)
-      } catch {
-        throw new Error("OIDC_TOKEN_ENDPOINT must be a valid URL")
-      }
-
-      try {
-        new URL(userinfoEndpoint)
-      } catch {
-        throw new Error("OIDC_USERINFO_ENDPOINT must be a valid URL")
-      }
-
-      override = {
-        authorizationEndpoint,
-        tokenEndpoint,
-        userinfoEndpoint
-      }
-    } else if (authorizationEndpoint || tokenEndpoint || userinfoEndpoint)
-      throw new Error(
-        "Incomplete manual OIDC configuration. If providing manual endpoints, all of authorization, token, and userinfo endpoints must be specified."
-      )
-
-    let allowInsecure = false
-
-    if (process.env.OIDC_ALLOW_INSECURE !== undefined) {
-      if (
-        process.env.OIDC_ALLOW_INSECURE.toLowerCase() !== "true" &&
-        process.env.OIDC_ALLOW_INSECURE.toLowerCase() !== "false"
-      )
-        throw new Error("OIDC_ALLOW_INSECURE must be 'true' or 'false'")
-
-      allowInsecure = process.env.OIDC_ALLOW_INSECURE.toLowerCase() === "true"
-    }
+    const allowInsecure = this.parseOidcAllowInsecure(process.env.OIDC_ALLOW_INSECURE)
 
     return {
       provider,
@@ -277,6 +227,53 @@ export class ConfigProvider implements ConfigProviderInterface {
       override,
       scopes
     }
+  }
+
+  private parseOidcProvider(providerRaw: string | undefined): OidcProviderConfig["provider"] {
+    if (!providerRaw) return "custom"
+    if (!isOidcProvider(providerRaw)) throw new Error("OIDC_PROVIDER not supported")
+    return providerRaw
+  }
+
+  private validateUrl(url: string, envName: string): void {
+    try {
+      new URL(url)
+    } catch {
+      throw new Error(`${envName} must be a valid URL`)
+    }
+  }
+
+  private parseOidcEndpoints(
+    authEndpoint?: string,
+    tokenEndpoint?: string,
+    userinfoEndpoint?: string
+  ): OidcProviderConfig["override"] | undefined {
+    // Either all attributes are provided or none, mix is considered an error.
+    if (authEndpoint && tokenEndpoint && userinfoEndpoint) {
+      this.validateUrl(authEndpoint, "OIDC_AUTHORIZATION_ENDPOINT")
+      this.validateUrl(tokenEndpoint, "OIDC_TOKEN_ENDPOINT")
+      this.validateUrl(userinfoEndpoint, "OIDC_USERINFO_ENDPOINT")
+
+      return {
+        authorizationEndpoint: authEndpoint,
+        tokenEndpoint,
+        userinfoEndpoint
+      }
+    } else if (authEndpoint || tokenEndpoint || userinfoEndpoint)
+      throw new Error(
+        "Incomplete manual OIDC configuration. If providing manual endpoints, all of authorization, token, and userinfo endpoints must be specified."
+      )
+
+    return undefined
+  }
+
+  private parseOidcAllowInsecure(allowInsecureRaw: string | undefined): boolean {
+    if (allowInsecureRaw === undefined) return false
+
+    if (allowInsecureRaw.toLowerCase() !== "true" && allowInsecureRaw.toLowerCase() !== "false")
+      throw new Error("OIDC_ALLOW_INSECURE must be 'true' or 'false'")
+
+    return allowInsecureRaw.toLowerCase() === "true"
   }
 
   private validateJwtConfig(): JwtConfig {
