@@ -679,7 +679,6 @@ export async function createMockWorkflowTemplateInDb(
     updatedAt: dates.updatedAt
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const {spaceId: _, ...overridesWithoutSpaceId} = overrides ?? {}
 
   const data: Prisma.WorkflowTemplateCreateInput = {
@@ -690,10 +689,8 @@ export async function createMockWorkflowTemplateInDb(
   if (data.actions) {
     const encryptionService = getTestEncryptionService()
     const plaintext = JSON.stringify(data.actions)
-    const encryptionResult = await encryptionService.encrypt(plaintext)()
-    if (isLeft(encryptionResult)) throw encryptionResult.left
-
-    data.actions = {__encrypted_v1: encryptionResult.right}
+    const encryptionResult = unwrapRight(await encryptionService.encrypt(plaintext)())
+    data.actions = {__encrypted_v1: encryptionResult}
   }
 
   const template = await prisma.workflowTemplate.create({data})

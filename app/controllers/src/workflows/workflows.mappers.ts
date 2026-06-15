@@ -251,10 +251,16 @@ export function validateGetWorkflowParams(params: {
   )
 }
 
+function isStringOrArrayOfStrings(value: unknown): value is string | string[] {
+  if (typeof value === "string") return true
+  if (Array.isArray(value)) return value.every(item => typeof item === "string")
+  return false
+}
+
 export function validateInclude<T>(include: unknown, leftValue: T): Either<T, WorkflowInclude[] | undefined> {
   if (include === undefined) return right(undefined)
 
-  if (typeof include !== "string" && !Array.isArray(include)) return left(leftValue)
+  if (!isStringOrArrayOfStrings(include)) return left(leftValue)
 
   const includes = typeof include === "string" ? include.split(",") : include
   const validatedIncludes: WorkflowInclude[] = []

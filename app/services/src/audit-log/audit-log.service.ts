@@ -1,6 +1,6 @@
 import {Inject, Injectable} from "@nestjs/common"
 import {AuditLogRepository, AUDIT_LOG_REPOSITORY_TOKEN, ListAuditLogResponse, FindManyError} from "./interfaces"
-import {AuthenticatedEntity, getEntityRoles, RolePermissionChecker} from "@domain"
+import {AuthenticatedEntity, getEntityRoles, RolePermissionChecker, OrgRole} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
 import {AuthorizationError} from "../error"
@@ -20,7 +20,7 @@ export class AuditLogService {
     requestor: AuthenticatedEntity,
     request: ListAuditLogsRequest
   ): TaskEither<AuditLogListError, ListAuditLogResponse> {
-    const isOrgAdmin = requestor.entityType === "user" && requestor.user.orgRole === "admin"
+    const isOrgAdmin = requestor.entityType === "user" && requestor.user.orgRole === OrgRole.ADMIN
     const isAuditor = RolePermissionChecker.hasAuditPermission(getEntityRoles(requestor), {type: "org"}, "read")
 
     if (!isOrgAdmin && !isAuditor) return TE.left("requestor_not_authorized" as const)

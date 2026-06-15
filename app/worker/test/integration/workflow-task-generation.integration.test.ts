@@ -481,7 +481,7 @@ describe("Workflow Task Generation Integration", () => {
         await prisma.workflowTemplate.update({
           where: {id: templateId},
           data: {
-            actions: updatedActions as Prisma.InputJsonValue
+            actions: updatedActions
           }
         })
 

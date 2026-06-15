@@ -9,7 +9,7 @@ export class LeverMiddleware implements NestMiddleware {
 
   constructor(private readonly leverService: LeverService) {}
 
-  async use(req: Request, res: Response, next: NextFunction) {
+  async use(req: Request, _res: Response, next: NextFunction) {
     if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
       const result = await this.leverService.isLeverActive("read_only_mode")()
 

@@ -7,7 +7,7 @@ import {
   ListQuotasParams
 } from "@approvio/api"
 import {GetAuthenticatedEntity} from "@app/auth"
-import {AuthenticatedEntity, NodeType} from "@domain"
+import {AuthenticatedEntity} from "@domain"
 import {DEFAULT_ORG_ID, QuotaService} from "@services"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
@@ -62,7 +62,7 @@ export class QuotasController {
       TE.fromEither,
       TE.chainW((validatedQuery: ListQuotasParams) =>
         this.quotaService.listQuotas(validatedQuery.page ?? 1, validatedQuery.limit ?? 20, {
-          nodeType: validatedQuery.scope as NodeType | undefined,
+          nodeType: validatedQuery.scope,
           quotaType: validatedQuery.quotaType,
           nodeIdentifier: validatedQuery.scope === "Org" ? DEFAULT_ORG_ID : validatedQuery.targetId
         })

@@ -4,7 +4,7 @@ import {RequestContext} from "./request-context"
 @Injectable()
 export class CustomLogger extends ConsoleLogger {
   protected formatMessage(
-    logLevel: string,
+    _logLevel: string,
     message: unknown,
     pidMessage: string,
     formattedLogLevel: string,
@@ -14,6 +14,6 @@ export class CustomLogger extends ConsoleLogger {
     const requestId = RequestContext.currentRequestId
     const requestIdMessage = requestId ? `[${requestId}] ` : ""
 
-    return `${pidMessage}${timestampDiff}${formattedLogLevel}${requestIdMessage}${contextMessage}${message}\n`
+    return `${pidMessage}${timestampDiff}${formattedLogLevel}${requestIdMessage}${contextMessage}${String(message)}\n`
   }
 }

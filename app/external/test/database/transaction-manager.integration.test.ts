@@ -202,7 +202,7 @@ describe("PrismaTransactionManager Integration", () => {
       let attempts = 0
       const transactionSpy = jest
         .spyOn(prisma, "$transaction")
-        .mockImplementation(async (computation: (tx: Prisma.TransactionClient) => Promise<unknown>) => {
+        .mockImplementation((computation: (tx: Prisma.TransactionClient) => Promise<unknown>) => {
           attempts++
           if (attempts < 3) throw transientError
           // On 3rd attempt, run the actual computation
@@ -210,8 +210,8 @@ describe("PrismaTransactionManager Integration", () => {
         })
 
       // When
-      const result = await dbClient.transactional(async () => {
-        return "success"
+      const result = await dbClient.transactional(() => {
+        return Promise.resolve("success")
       })
 
       // Then
@@ -232,8 +232,8 @@ describe("PrismaTransactionManager Integration", () => {
 
       // When & Then
       await expect(
-        dbClient.transactional(async () => {
-          return "success"
+        dbClient.transactional(() => {
+          return Promise.resolve("success")
         })
       ).rejects.toThrow(nonTransientError)
 

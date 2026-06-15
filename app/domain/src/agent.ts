@@ -113,7 +113,7 @@ export class AgentFactory {
    * @returns Either validation error or validated agent
    */
   static validate<T extends AgentDecoratorSelector>(
-    data: Omit<DecoratedAgent<T>, "roles"> & {readonly roles: Agent["roles"] | unknown}
+    data: Omit<DecoratedAgent<T>, "roles"> & {readonly roles: unknown}
   ): Either<AgentValidationError, DecoratedAgent<T>> {
     return pipe(
       E.Do,
@@ -236,7 +236,7 @@ export class AgentFactory {
 
     return pipe(
       roles,
-      RoleFactory.validateBoundRoles,
+      rolesData => RoleFactory.validateBoundRoles(rolesData),
       E.mapLeft(error => ("agent_" + error) as AgentValidationError)
     )
   }

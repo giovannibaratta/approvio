@@ -376,7 +376,7 @@ describe("Workflows API", () => {
 
       beforeEach(() => {
         isLeverActiveSpy = jest.spyOn(app.get(LeverService), "isLeverActive")
-        isLeverActiveSpy.mockReturnValue(async () => true)
+        isLeverActiveSpy.mockReturnValue(() => Promise.resolve(true))
       })
 
       afterEach(() => {

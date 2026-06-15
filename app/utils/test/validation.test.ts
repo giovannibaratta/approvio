@@ -1,4 +1,55 @@
-import {eitherParseInt, eitherParseOptionalBoolean, isValidHttpOrHttpsUrl} from "@utils/validation"
+import {
+  eitherParseInt,
+  eitherParseOptionalBoolean,
+  isValidHttpOrHttpsUrl,
+  isRecordStringString
+} from "@utils/validation"
+
+describe("isRecordStringString", () => {
+  it("should return true for an empty object", () => {
+    expect(isRecordStringString({})).toBe(true)
+  })
+
+  it("should return true for an object with only string values", () => {
+    expect(isRecordStringString({key1: "value1", key2: "value2"})).toBe(true)
+  })
+
+  it("should return false if any value is a number", () => {
+    expect(isRecordStringString({key1: "value1", key2: 42})).toBe(false)
+  })
+
+  it("should return false if any value is null", () => {
+    expect(isRecordStringString({key1: "value1", key2: null})).toBe(false)
+  })
+
+  it("should return false if any value is an object", () => {
+    expect(isRecordStringString({key1: "value1", key2: {nested: "value"}})).toBe(false)
+  })
+
+  it("should return false if any value is an array", () => {
+    expect(isRecordStringString({key1: "value1", key2: ["value"]})).toBe(false)
+  })
+
+  it("should return false for null", () => {
+    expect(isRecordStringString(null)).toBe(false)
+  })
+
+  it("should return false for undefined", () => {
+    expect(isRecordStringString(undefined)).toBe(false)
+  })
+
+  it("should return false for an array", () => {
+    expect(isRecordStringString(["value1", "value2"])).toBe(false)
+  })
+
+  it("should return false for a string", () => {
+    expect(isRecordStringString("not-an-object")).toBe(false)
+  })
+
+  it("should return false for a number", () => {
+    expect(isRecordStringString(42)).toBe(false)
+  })
+})
 
 describe("eitherParseInt", () => {
   describe("good cases", () => {

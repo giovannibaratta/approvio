@@ -17,6 +17,10 @@ export default tseslint.config(
       globals: {
         ...globals.node,
         ...globals.jest
+      },
+      // https://typescript-eslint.io/getting-started/typed-linting/
+      parserOptions: {
+        projectService: true
       }
     },
     rules: {
@@ -27,7 +31,7 @@ export default tseslint.config(
       "eol-last": "error",
       "prefer-arrow-callback": "error",
       "no-trailing-spaces": "error",
-      quotes: ["warn", "double", { avoidEscape: true }],
+      quotes: ["warn", "double", {avoidEscape: true}],
       "no-restricted-properties": [
         "error",
         {
@@ -42,12 +46,12 @@ export default tseslint.config(
       curly: ["error", "multi"],
       // Using the modified variant to avoid flagging mappers that heavile rely on huge switch
       // statement.
-      complexity: ["error", { max: 20, variant: "modified" }]
+      complexity: ["error", {max: 20, variant: "modified"}]
     }
   },
   {
     files: ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.mjs", "**/*.cjs"],
-    extends: [...tseslint.configs.recommended],
+    extends: [...tseslint.configs.recommendedTypeChecked],
     rules: {
       "@typescript-eslint/no-warning-comments": "off",
       "@typescript-eslint/no-empty-function": "off",
@@ -56,11 +60,31 @@ export default tseslint.config(
       "n/no-empty-function": "off",
       "n/no-unsupported-features/es-syntax": "off",
       "n/no-missing-require": "off",
-      "no-dupe-class-members": "off"
+      "no-dupe-class-members": "off",
+      "@typescript-eslint/no-unnecessary-type-assertion": "error",
+      // https://typescript-eslint.io/rules/no-unused-vars/
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        {
+          args: "all",
+          argsIgnorePattern: "^_",
+          caughtErrorsIgnorePattern: "^_",
+          varsIgnorePattern: "^_",
+          ignoreRestSiblings: true
+        }
+      ]
     }
   },
   {
-    files: ["**/*.test.ts", "**/test/**/*.ts", "scripts/**/*.ts", "app/utils/src/matchers.ts", "eslint.config.mjs"],
+    files: [
+      "**/*.test.ts",
+      "**/test/**/*.ts",
+      "scripts/**/*.ts",
+      "app/utils/src/matchers.ts",
+      "eslint.config.mjs",
+      "webpack.config.js"
+    ],
     ...jestPlugin.configs["flat/recommended"],
     rules: {
       ...jestPlugin.configs["flat/recommended"].rules,
@@ -73,7 +97,13 @@ export default tseslint.config(
       "n/no-unpublished-require": "off",
       "n/no-unpublished-import": "off",
       "n/no-extraneous-import": "off",
-      "n/no-process-exit": "off"
+      "n/no-process-exit": "off",
+      "@typescript-eslint/no-unnecessary-type-assertion": "off",
+      "@typescript-eslint/no-unsafe-call": "off",
+      "@typescript-eslint/no-unsafe-member-access": "off",
+      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-unsafe-return": "off",
+      "@typescript-eslint/no-unsafe-argument": "off"
     }
   }
 )

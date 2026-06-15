@@ -67,8 +67,8 @@ function parseAndNormalizeIp(ipStr: string): ipaddr.IPv4 | ipaddr.IPv6 | null {
 function matchesCidr(ip: ipaddr.IPv4 | ipaddr.IPv6, cidrStr: string): boolean {
   try {
     const cidr = ipaddr.parseCIDR(cidrStr)
-    if (isIPv4(ip)) return ip.match(cidr as [ipaddr.IPv4, number])
-    return ip.match(cidr as [ipaddr.IPv6, number])
+    if (isIPv4(ip)) return ip.match(cidr)
+    return ip.match(cidr)
   } catch {
     return false
   }
@@ -167,7 +167,7 @@ function createSafeLookup(config: SsrfProtectionConfig): net.LookupFunction {
         lookupOptions = {
           ...options,
           all: true
-        } as dns.LookupAllOptions
+        }
       }
     }
 

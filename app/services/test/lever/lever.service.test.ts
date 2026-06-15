@@ -35,6 +35,7 @@ describe("LeverService", () => {
 
       // Except
       expect(result).toBe(true)
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       expect(mockProvider.isLeverActive).toHaveBeenCalledWith("read_only_mode", false, undefined)
     })
 

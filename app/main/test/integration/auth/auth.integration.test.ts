@@ -237,7 +237,7 @@ describe("Auth Integration", () => {
 
       // Expect: The family is marked as revoked
       const family = await prisma.refreshToken.findMany({where: {familyId}})
-      expect(family?.every(token => token.status === RefreshTokenStatus.REVOKED)).toBe(true)
+      expect(family?.every(token => token.status === (RefreshTokenStatus.REVOKED as string))).toBe(true)
     })
   })
 

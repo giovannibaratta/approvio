@@ -9,6 +9,7 @@ import {
   RefreshTokenFactory,
   DecoratedRefreshToken,
   RefreshTokenStatus,
+  EntityType,
   UsedUserRefreshToken,
   DecoratedActiveUserRefreshToken,
   DecoratedActiveAgentRefreshToken,
@@ -179,7 +180,7 @@ function mapDomainTokenToPrismaForUpdate(token: RefreshToken): Prisma.RefreshTok
   let userRef: Prisma.UserCreateNestedOneWithoutRefreshTokensInput | undefined = undefined
   let agentRef: Prisma.AgentCreateNestedOneWithoutRefreshTokensInput | undefined = undefined
 
-  if (token.entityType === "user")
+  if (token.entityType === EntityType.USER)
     userRef = {
       connect: {id: token.userId}
     }
@@ -213,7 +214,7 @@ function mapDomainTokenToPrismaForCreate(token: DecoratedRefreshToken<{occ: true
   let userRef: Prisma.UserCreateNestedOneWithoutRefreshTokensInput | undefined = undefined
   let agentRef: Prisma.AgentCreateNestedOneWithoutRefreshTokensInput | undefined = undefined
 
-  if (token.entityType === "user")
+  if (token.entityType === EntityType.USER)
     userRef = {
       connect: {id: token.userId}
     }

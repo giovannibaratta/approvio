@@ -27,7 +27,9 @@ export function isDate(value: unknown): value is Date {
 }
 
 export function isRecordStringString(value: unknown): value is Record<string, string> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false
+
+  return Object.values(value).every(v => typeof v === "string")
 }
 
 export function eitherParseInt<T>(value: unknown, leftValue: T, base: number = 10): Either<T, number> {

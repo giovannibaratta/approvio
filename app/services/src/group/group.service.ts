@@ -6,6 +6,7 @@ import {
   MembershipFactory,
   MembershipValidationError,
   User,
+  OrgRole,
   UserFactory,
   SystemRole,
   UserValidationError,
@@ -77,7 +78,7 @@ export class GroupService {
   createGroup(request: CreateGroupRequest): TaskEither<CreateGroupError, Group> {
     const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
 
-    const validateGroup = (req: CreateGroupRequest) => pipe(req.groupData, GroupFactory.newGroup, TE.fromEither)
+    const validateGroup = (req: CreateGroupRequest) => pipe(req.groupData, g => GroupFactory.newGroup(g), TE.fromEither)
 
     const fetchUser = (requestor: User) => this.userRepo.getUserById(requestor.id)
 
@@ -145,7 +146,7 @@ export class GroupService {
     }
 
     const checkPermissions = (requestor: User, groupId: string): TaskEither<GetGroupError, string> => {
-      const isOrgAdmin = requestor.orgRole === "admin"
+      const isOrgAdmin = requestor.orgRole === OrgRole.ADMIN
       const hasReadPermission = RolePermissionChecker.hasGroupPermission(
         requestor.roles,
         {type: "group", groupId},
@@ -153,7 +154,7 @@ export class GroupService {
       )
 
       if (isOrgAdmin || hasReadPermission) return TE.right(groupId)
-      return TE.left("requestor_not_authorized" as AuthorizationError)
+      return TE.left("requestor_not_authorized")
     }
 
     const fetchGroupData = (groupId: string): TaskEither<GetGroupError, Versioned<GroupWithEntitiesCount>> => {

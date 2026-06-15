@@ -53,6 +53,19 @@ export interface WorkflowTemplateScope {
 export type RoleScope = OrgScope | SpaceScope | GroupScope | WorkflowTemplateScope
 export type ScopeType = RoleScope["type"]
 
+export function roleScopeToString(scope: RoleScope): string {
+  switch (scope.type) {
+    case "org":
+      return "org"
+    case "space":
+      return `space:${scope.spaceId}`
+    case "group":
+      return `group:${scope.groupId}`
+    case "workflow_template":
+      return `workflow_template:${scope.templateName}`
+  }
+}
+
 /**
  * All resource types in the system.
  *
@@ -184,7 +197,7 @@ export class RoleFactory {
    * @returns Either validation error or validated roles array
    */
   static validateBoundRoles(rolesData: unknown[]): Either<RoleValidationError, ReadonlyArray<BoundRole>> {
-    return traverseArray(RoleFactory.validateRole)(rolesData)
+    return traverseArray((r: unknown) => RoleFactory.validateRole(r))(rolesData)
   }
 
   /**
@@ -261,7 +274,7 @@ export class RoleFactory {
   private static validateRole(role: unknown): Either<RoleValidationError, BoundRole> {
     const value = pipe(
       role,
-      RoleFactory.validateRoleStructure,
+      r => RoleFactory.validateRoleStructure(r),
       chainFirstW(boundRole => RoleFactory.validateRoleName(boundRole.name)),
       chainFirstW(boundRole =>
         RoleFactory.validatePermissionsForResourceType([...boundRole.permissions], boundRole.resourceType)

@@ -175,7 +175,7 @@ export class UserFactory {
             orgRole: user.orgRole,
             roles: consolidatedRoles
           }
-        : (updatedUser as User)
+        : updatedUser
 
     const validation = UserFactory.validate(baseUser)
     if (isLeft(validation)) return validation
@@ -216,7 +216,7 @@ export class UserFactory {
             orgRole: user.orgRole,
             roles: remainingRoles
           }
-        : (updatedUser as User)
+        : updatedUser
 
     const validation = UserFactory.validate(baseUser)
     if (isLeft(validation)) return validation
@@ -232,7 +232,7 @@ export class UserFactory {
   private static createUser(
     data: Omit<User, "orgRole" | "roles"> & {
       readonly orgRole: User["orgRole"] | string
-      readonly roles: User["roles"] | unknown
+      readonly roles: unknown
     }
   ): Either<UserValidationError, User> {
     const userSummaryValidation = this.createUserSummary(data)

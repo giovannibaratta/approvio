@@ -1,6 +1,7 @@
 import {generateErrorPayload} from "@controllers/error"
 import {createParamDecorator, ExecutionContext, InternalServerErrorException} from "@nestjs/common"
 import {AuthenticatedEntity} from "@domain"
+import {Request} from "express"
 
 /**
  * Parameter decorator to extract the authenticated entity from the request
@@ -31,10 +32,10 @@ import {AuthenticatedEntity} from "@domain"
  * Make sure to use `@UseGuards(JwtAuthGuard)` on protected routes.
  */
 export const GetAuthenticatedEntity = createParamDecorator((_: unknown, ctx: ExecutionContext): AuthenticatedEntity => {
-  const request = ctx.switchToHttp().getRequest()
+  const request = ctx.switchToHttp().getRequest<Request & {requestor?: AuthenticatedEntity}>()
   // The authenticated entity object is attached to the request by the JwtStrategy as request.requestor
   // This is a custom implementation that deviates from Passport's default behavior of using request.user
-  if (!("requestor" in request) || request.requestor === null || request.requestor === undefined)
+  if (request.requestor === null || request.requestor === undefined)
     throw new InternalServerErrorException(
       generateErrorPayload("entity_undefined", "Unable to identify the requestor.")
     )

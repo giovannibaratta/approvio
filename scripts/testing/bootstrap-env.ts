@@ -465,7 +465,10 @@ async function bootstrap() {
 
 // Main execution
 async function main() {
-  await bootstrap()
+  await bootstrap().catch(e => {
+    console.error(e)
+    process.exit(1)
+  })
 }
 
-main()
+main().catch(() => process.exit(1))

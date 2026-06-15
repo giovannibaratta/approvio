@@ -32,7 +32,7 @@ export class UserService {
     const persistUser = (user: User) => this.userRepo.createUser(user)
 
     const validateRequest = (req: CreateUserRequest, requestor: User) => {
-      if (requestor.orgRole !== "admin") return E.left("requestor_not_authorized" as const)
+      if (requestor.orgRole !== OrgRole.ADMIN) return E.left("requestor_not_authorized" as const)
       return UserFactory.newUser(req.userData)
     }
 

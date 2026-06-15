@@ -96,8 +96,8 @@ export function failTaskEither<
   const spy = jest.spyOn(obj, methodName)
 
   return spy.mockImplementation(() => {
-    return async () => {
-      return E.left(error)
+    return () => {
+      return Promise.resolve(E.left(error))
     }
   })
 }

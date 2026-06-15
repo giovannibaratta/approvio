@@ -77,7 +77,7 @@ export class WorkflowActionEmailTaskFactory {
     const decoratedEntity: DecoratedWorkflowActionEmailTask<{occ: true}> = {
       ...baseEntity,
       occ: 0n
-    } as DecoratedWorkflowActionEmailTask<{occ: true}>
+    }
 
     return WorkflowActionEmailTaskFactory.validate<{occ: true}>(decoratedEntity)
   }

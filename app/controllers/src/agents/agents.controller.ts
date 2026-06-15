@@ -29,7 +29,7 @@ import {
   mapAgentToRegistrationResponse,
   mapAgentToApi
 } from "./agents.mappers"
-import {AuthenticatedEntity} from "@domain"
+import {AuthenticatedEntity, roleScopeToString} from "@domain"
 import {logSuccess} from "@utils"
 
 export const AGENTS_ENDPOINT_ROOT = "agents"
@@ -103,7 +103,7 @@ export class AgentsController {
       TE.chainFirstW(({serviceRequest}) => assignRole(serviceRequest)),
       logSuccess("Roles assigned to agent", "AgentsController", ({serviceRequest}) => ({
         agentId,
-        roles: serviceRequest.roles.map(role => `${role.scope}-${role.roleName}`)
+        roles: serviceRequest.roles.map(role => `${roleScopeToString(role.scope)}:${role.roleName}`)
       }))
     )()
 
@@ -133,7 +133,7 @@ export class AgentsController {
       TE.chainFirstW(({serviceRequest}) => removeRole(serviceRequest)),
       logSuccess("Roles removed from agent", "AgentsController", ({serviceRequest}) => ({
         agentId,
-        roles: serviceRequest.roles.map(role => `${role.scope}-${role.roleName}`)
+        roles: serviceRequest.roles.map(role => `${roleScopeToString(role.scope)}:${role.roleName}`)
       }))
     )()
 

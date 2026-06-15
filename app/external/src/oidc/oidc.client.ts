@@ -2,6 +2,7 @@ import {Injectable, Logger} from "@nestjs/common"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
+import {Either} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 import * as client from "openid-client"
 import {decodeJwt} from "jose"
@@ -28,20 +29,20 @@ export class OidcClient implements OidcProvider {
     private readonly configProvider: ConfigProvider
   ) {}
 
-  private getAuthorizationEndpoint(): TaskEither<OidcError, string> {
-    return TE.right(this.oidcBootstrapService.getConfiguration().authorization_endpoint)
+  private getAuthorizationEndpoint(): Either<OidcError, string> {
+    return E.right(this.oidcBootstrapService.getConfiguration().authorization_endpoint)
   }
 
   getAuthorizationUrl(
     pkce: PkceChallenge,
     assuranceLevel: AssuranceLevel,
     redirectUri: string
-  ): TaskEither<OidcError, string> {
+  ): Either<OidcError, string> {
     return pipe(
       this.getAuthorizationEndpoint(),
-      TE.chainW(authorizationEndpoint =>
-        TE.tryCatch(
-          async () => {
+      E.chainW(authorizationEndpoint =>
+        E.tryCatch(
+          () => {
             const oidcConfig = this.configProvider.oidcConfig
 
             const authUrl = new URL(authorizationEndpoint)
@@ -111,26 +112,27 @@ export class OidcClient implements OidcProvider {
     )
   }
 
-  getUserInfo(accessToken: string): TaskEither<OidcError, OidcUserInfo> {
-    return TE.tryCatch(
-      async () => {
-        Logger.log("Fetching user info from OIDC provider")
+  getUserInfo(accessToken: string, expectedSubject: string): TaskEither<OidcError, OidcUserInfo> {
+    return pipe(
+      TE.tryCatch(
+        async () => {
+          Logger.log("Fetching user info from OIDC provider")
 
-        const configuration = this.oidcBootstrapService.getConfiguration()
-        const rawConfiguration = this.oidcBootstrapService.getRawClientConfiguration()
-        const userinfoUrl = new URL(configuration.userinfo_endpoint)
-        const response = await client.fetchProtectedResource(rawConfiguration, accessToken, userinfoUrl, "GET")
-        const rawUserInfoData = (await response.json()) as RawUserInfoResponse
-
-        Logger.verbose(`Raw UserInfo response received: ${JSON.stringify(rawUserInfoData)}`)
-
-        const validationResult = validateUserInfoResponse(rawUserInfoData)
-        if (E.isLeft(validationResult)) {
-          Logger.error("UserInfo response validation failed", validationResult.left)
-          throw new Error(`UserInfo validation failed: ${validationResult.left}`)
+          const rawConfiguration = this.oidcBootstrapService.getRawClientConfiguration()
+          const userInfoResponse: RawUserInfoResponse = await client.fetchUserInfo(
+            rawConfiguration,
+            accessToken,
+            expectedSubject
+          )
+          return userInfoResponse
+        },
+        error => {
+          Logger.error("Error while fetching user info", error)
+          return "oidc_userinfo_fetch_failed" as const
         }
-
-        const validatedUserInfo = validationResult.right
+      ),
+      TE.chainEitherKW(validateUserInfoResponse),
+      TE.map(validatedUserInfo => {
         const userInfo: OidcUserInfo = {
           sub: validatedUserInfo.sub,
           name: validatedUserInfo.name,
@@ -143,57 +145,53 @@ export class OidcClient implements OidcProvider {
 
         Logger.log(`User info fetch completed successfully for sub: ${userInfo.sub}`)
         return userInfo
-      },
-      error => {
+      }),
+      TE.mapLeft(error => {
         Logger.error("User info fetch failed", error)
-        if (error instanceof Error) {
-          if (error.message.includes("UserInfo validation failed")) return "oidc_invalid_provider_response" as const
 
-          if (error.message.includes("unauthorized") || error.message.includes("invalid_token"))
-            return "oidc_userinfo_fetch_failed" as const
+        if (error === "invalid_json_structure") return "oidc_invalid_provider_response" as const
+        if (error === "missing_required_sub_claim") return "oidc_invalid_provider_response" as const
+        if (error === "invalid_sub_claim_type") return "oidc_invalid_provider_response" as const
+        if (error === "invalid_claim_type") return "oidc_invalid_provider_response" as const
 
-          if (error.message.includes("network") || error.message.includes("timeout"))
-            return "oidc_network_error" as const
-        }
         return "oidc_userinfo_fetch_failed" as const
-      }
+      })
     )
   }
 
-  verifyAssuranceLevel(idToken: string, assuranceLevel: AssuranceLevel): TaskEither<OidcError, void> {
-    if (assuranceLevel !== AssuranceLevel.FORCE_LOGIN) return TE.right(undefined)
+  verifyAssuranceLevel(idToken: string, assuranceLevel: AssuranceLevel): Either<OidcError, void> {
+    if (assuranceLevel !== AssuranceLevel.FORCE_LOGIN) return E.right(undefined)
 
     const provider = this.configProvider.oidcConfig.provider
 
     if (provider !== "auth0" && provider !== "zitadel" && provider !== "keycloak") {
       Logger.warn(`Assurance level verification is not supported for provider: ${provider}`)
-      return TE.left("oidc_invalid_token_response" as const)
+      return E.left("oidc_invalid_token_response" as const)
     }
 
-    let decodedIdToken
+    let decodedIdToken: Record<string, unknown>
+
     try {
       decodedIdToken = decodeJwt(idToken)
     } catch {
       Logger.error("Failed to decode idToken JWT")
-      return TE.left("oidc_invalid_token_response" as const)
+      return E.left("oidc_invalid_token_response" as const)
     }
 
     const authTime = decodedIdToken.auth_time
     if (typeof authTime !== "number" || !Number.isFinite(authTime)) {
       Logger.warn(`Assurance level validation failed: auth_time is missing or invalid for ${provider}`)
-      return TE.left("oidc_invalid_token_response" as const)
+      return E.left("oidc_invalid_token_response" as const)
     }
 
     const currentEpoch = Math.floor(Date.now() / 1000)
     if (currentEpoch - authTime > STEP_UP_MAX_AGE_SECONDS) {
       const age = currentEpoch - authTime
-      Logger.warn(
-        `Assurance level validation failed: auth_time is older than max age (${age}s > ${STEP_UP_MAX_AGE_SECONDS}s)`
-      )
-      return TE.left("oidc_invalid_token_response" as const)
+      Logger.warn(`Assurance level validation failed: token is too old (${age}s) for provider ${provider}`)
+      return E.left("oidc_invalid_token_response" as const)
     }
 
     Logger.log(`Assurance level verified: auth_time is fresh for ${provider}`)
-    return TE.right(undefined)
+    return E.right(undefined)
   }
 }

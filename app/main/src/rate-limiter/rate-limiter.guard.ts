@@ -1,4 +1,5 @@
 import {CanActivate, ExecutionContext, Injectable, Logger, HttpException, HttpStatus} from "@nestjs/common"
+import {Request, Response} from "express"
 import {RateLimiterRes} from "@external/rate-limiter"
 import {AuthenticatedEntity} from "@domain"
 import {RateLimiterService} from "@services/rate-limiter"
@@ -21,8 +22,8 @@ export class RateLimiterGuard implements CanActivate {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest()
-    const user = request.user as AuthenticatedEntity | undefined
+    const request = context.switchToHttp().getRequest<Request & {user?: AuthenticatedEntity}>()
+    const user = request.user
 
     if (!user) {
       Logger.debug("Rate limiter: user not authenticated, allowing request")
@@ -61,7 +62,7 @@ export class RateLimiterGuard implements CanActivate {
   }
 
   private setHeaders(context: ExecutionContext, rateLimiterRes: RateLimiterRes) {
-    const response = context.switchToHttp().getResponse()
+    const response = context.switchToHttp().getResponse<Response>()
 
     // IETF standard
     // RateLimit: limit=<number>, remaining=<number>, reset=<seconds>

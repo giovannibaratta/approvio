@@ -166,7 +166,7 @@ export class RefreshTokenFactory {
 
     return pipe(
       {...token, occ: 0n},
-      RefreshTokenFactory.validate<{occ: true}>,
+      t => RefreshTokenFactory.validate(t),
       E.map((t): DecoratedActiveUserRefreshToken<{occ: true}> & {tokenValue: string} => {
         return {
           ...(t as DecoratedActiveUserRefreshToken<{occ: true}>),
@@ -334,7 +334,7 @@ export class RefreshTokenFactory {
   }
 
   private static validateStatusProps(
-    data: unknown & RefreshTokenBase & {status: RefreshTokenStatus}
+    data: RefreshTokenBase & {status: RefreshTokenStatus}
   ): E.Either<RefreshTokenValidationError, StatusProps> {
     let eitherStatusProps: E.Either<RefreshTokenValidationError, StatusProps>
 
@@ -362,9 +362,9 @@ export class RefreshTokenFactory {
     return eitherStatusProps
   }
 
-  private static validateActiveStatusProps(
-    data: unknown & {status: RefreshTokenStatus.ACTIVE}
-  ): E.Either<RefreshTokenValidationError, ActiveStatusProps> {
+  private static validateActiveStatusProps(data: {
+    status: RefreshTokenStatus.ACTIVE
+  }): E.Either<RefreshTokenValidationError, ActiveStatusProps> {
     if (typeof data !== "object" || data === null) return E.left("refresh_token_invalid_structure" as const)
 
     return E.right({
@@ -373,7 +373,7 @@ export class RefreshTokenFactory {
   }
 
   private static validateUsedStatusProps(
-    data: unknown & RefreshTokenBase & {status: RefreshTokenStatus.USED}
+    data: RefreshTokenBase & {status: RefreshTokenStatus.USED}
   ): E.Either<RefreshTokenValidationError, UsedStatusProps> {
     if (typeof data !== "object" || data === null) return E.left("refresh_token_invalid_structure" as const)
 
@@ -392,9 +392,9 @@ export class RefreshTokenFactory {
     })
   }
 
-  private static validateRevokedStatusProps(
-    data: unknown & {status: RefreshTokenStatus.REVOKED}
-  ): E.Either<RefreshTokenValidationError, RevokedStatusProps> {
+  private static validateRevokedStatusProps(data: {
+    status: RefreshTokenStatus.REVOKED
+  }): E.Either<RefreshTokenValidationError, RevokedStatusProps> {
     if (typeof data !== "object" || data === null) return E.left("refresh_token_invalid_structure" as const)
 
     return E.right({
@@ -403,7 +403,7 @@ export class RefreshTokenFactory {
   }
 
   private static validateEntityProps(
-    data: unknown & RefreshTokenBase & {entityType: EntityType}
+    data: RefreshTokenBase & {entityType: EntityType}
   ): E.Either<RefreshTokenValidationError, EntityProps> {
     let eitherEntityProps: E.Either<RefreshTokenValidationError, EntityProps>
 
@@ -426,7 +426,7 @@ export class RefreshTokenFactory {
   }
 
   private static validateUserEntityProps(
-    data: unknown & RefreshTokenBase & {entityType: EntityType.USER}
+    data: RefreshTokenBase & {entityType: EntityType.USER}
   ): E.Either<RefreshTokenValidationError, UserProps> {
     if (typeof data !== "object" || data === null) return E.left("refresh_token_invalid_structure" as const)
 
@@ -440,7 +440,7 @@ export class RefreshTokenFactory {
   }
 
   private static validateAgentEntityProps(
-    data: unknown & RefreshTokenBase & {entityType: EntityType.AGENT}
+    data: RefreshTokenBase & {entityType: EntityType.AGENT}
   ): E.Either<RefreshTokenValidationError, AgentProps> {
     if (typeof data !== "object" || data === null) return E.left("refresh_token_invalid_structure" as const)
 

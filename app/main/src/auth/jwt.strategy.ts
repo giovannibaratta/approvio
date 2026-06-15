@@ -36,8 +36,9 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
     super({
       jwtFromRequest: (req: Request) => {
         // Try HttpOnly cookie first (browser clients)
-        const cookieToken = req?.cookies?.access_token
-        if (cookieToken) return cookieToken
+        const reqWithCookies = req as Omit<Request, "cookies"> & {cookies?: Record<string, unknown>}
+        const cookieToken = reqWithCookies.cookies?.access_token
+        if (typeof cookieToken === "string") return cookieToken
 
         // Fallback to Authorization header (CLI, agents)
         return ExtractJwt.fromAuthHeaderAsBearerToken()(req)

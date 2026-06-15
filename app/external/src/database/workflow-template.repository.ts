@@ -58,13 +58,14 @@ export function encryptActions(
   if (actions === null || actions === undefined) return TE.right(null)
 
   return pipe(
-    TE.tryCatch(
-      async () => JSON.stringify(actions),
+    E.tryCatch(
+      () => JSON.stringify(actions),
       error => {
         Logger.error("Failed to stringify actions", error)
         return "encryption_failed" as const
       }
     ),
+    TE.fromEither,
     TE.chain(plaintext => encryptionService.encrypt(plaintext)),
     TE.map(ciphertext => ({__encrypted_v1: ciphertext}))
   )
@@ -93,11 +94,11 @@ export function decryptActions(
 
   return pipe(
     encryptionService.decrypt(envelope.__encrypted_v1),
-    TE.chainW(decrypted =>
-      TE.tryCatch(
-        async () => JSON.parse(decrypted) as Prisma.JsonValue,
+    TE.chainEitherKW(decrypted =>
+      E.tryCatch(
+        () => JSON.parse(decrypted) as Prisma.JsonValue,
         error => {
-          Logger.error(`Failed to parse decrypted actions JSON: ${error}`, error)
+          Logger.error(`Failed to parse decrypted actions JSON: ${String(error)}`, error)
           return "decryption_failed" as const
         }
       )
@@ -424,7 +425,7 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
             if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
               return "concurrency_error" as const
 
-            Logger.error(`Error while deprecating old template and creating new one: ${error}`, error)
+            Logger.error(`Error while deprecating old template and creating new one: ${String(error)}`, error)
             return "unknown_error" as const
           }
         )(),
@@ -557,7 +558,7 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
               if (isPrismaUniqueConstraintError(error, ["name", "version"]))
                 return "workflow_template_already_exists" as const
 
-              Logger.error(`Error creating workflow template: ${error}`, error)
+              Logger.error(`Error creating workflow template: ${String(error)}`, error)
               return "unknown_error" as const
             }
           )

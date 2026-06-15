@@ -11,7 +11,7 @@ const kmsProvider = {
     if (config.kmsConfig.type === "env_var")
       return new EnvVarKmsProvider(config.kmsConfig.getKeys(), config.kmsConfig.currentVersion)
 
-    throw new Error(`Unsupported KMS provider type: ${config.kmsConfig.type}`)
+    throw new Error(`Unsupported KMS provider type: ${String(config.kmsConfig.type)}`)
   },
   inject: [ConfigProvider]
 }
