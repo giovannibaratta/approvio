@@ -25,7 +25,6 @@ export type UserRoleAssignmentError =
   | "quota_exceeded"
   | "quota_check_error"
   | AuditLogValidationError
-  | ExecutionError
 
 export type AgentRoleAssignmentError =
   | "agent_not_found"

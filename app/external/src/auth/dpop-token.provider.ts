@@ -21,7 +21,7 @@ export class RedisDpopTokenRepository implements DpopTokenRepository {
       },
       error => {
         if (error instanceof JtiReusedError) return "dpop_jti_reused" as const
-        Logger.error(`Failed to store DPoP JTI: ${error}`, "RedisDpopTokenRepository")
+        Logger.error(`Failed to store DPoP JTI: ${String(error)}`, "RedisDpopTokenRepository")
         return "unknown_error" as const
       }
     )

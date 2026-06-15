@@ -32,7 +32,7 @@ export class AgentChallengeDbRepository implements AgentChallengeRepository {
       challenge,
       TE.right,
       TE.chainW(this.persistChallengeTask()),
-      TE.chainEitherKW(this.mapPrismaChallengeToDomainForCreate)
+      TE.chainEitherKW(c => this.mapPrismaChallengeToDomainForCreate(c))
     )
   }
 

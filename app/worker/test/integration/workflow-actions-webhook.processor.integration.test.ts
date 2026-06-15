@@ -117,7 +117,7 @@ describe("Workflow Action Webhook Processor Integration", () => {
     await cleanRedisByPrefix(redisPrefix)
   })
 
-  beforeEach(async () => {
+  beforeEach(() => {
     uniqueWebhookPath = `/webhook-${uuidv7()}`
     wiremockUrl = createWiremockUrl(uniqueWebhookPath)
   })

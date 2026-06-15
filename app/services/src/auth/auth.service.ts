@@ -3,10 +3,13 @@ import {JwtService} from "@nestjs/jwt"
 import {UserService, AutoRegisterOidcUserRequest} from "../user/user.service"
 import {PkceService} from "./pkce.service"
 import {pipe} from "fp-ts/function"
+import * as E from "fp-ts/Either"
+import {Either} from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
 import {UserGetError} from "../user/interfaces"
 import {ConfigProvider} from "@external/config/config-provider"
+import {decodeJwt} from "jose"
 import {
   Agent,
   AgentChallenge,
@@ -96,9 +99,9 @@ export class AuthService {
   private generateJwtToken(
     user: User,
     stepUpContext?: StepUpContext & {expiresInSeconds: number}
-  ): TaskEither<AuthError, string> {
-    return TE.tryCatch(
-      async () => {
+  ): Either<AuthError, string> {
+    return E.tryCatch(
+      () => {
         const tokenPayload = TokenPayloadBuilder.fromUser(user, {
           issuer: this.issuer,
           audience: [this.audience],
@@ -164,9 +167,9 @@ export class AuthService {
     return this.oidcClient.exchangeCodeForTokens(tokenRequest)
   }
 
-  private getUserInfoFromProvider(accessToken: string): TaskEither<AuthError, OidcUserInfo> {
+  private getUserInfoFromProvider(accessToken: string, expectedSubject: string): TaskEither<AuthError, OidcUserInfo> {
     return pipe(
-      this.oidcClient.getUserInfo(accessToken),
+      this.oidcClient.getUserInfo(accessToken, expectedSubject),
       TE.mapLeft((error: OidcError): AuthError => {
         Logger.error("Failed to get user info from OIDC provider", error)
         return error
@@ -195,13 +198,19 @@ export class AuthService {
 
     return pipe(
       this.exchangeCodeForTokens(code, pkceData),
-      TE.chainW(tokenResponse => this.getUserInfoFromProvider(tokenResponse.accessToken)),
+      TE.chainW(tokenResponse =>
+        pipe(
+          this.extractSubFromIdToken(tokenResponse.idToken, "authentication flow"),
+          TE.fromEither,
+          TE.chainW(({sub}) => this.getUserInfoFromProvider(tokenResponse.accessToken, sub))
+        )
+      ),
       TE.chainW(mapUserInfoToOidcUser),
       TE.chainW(oidcUser => this.authenticateOrRegisterOidcUser(oidcUser)),
       TE.chainW(user =>
         pipe(
           TE.Do,
-          TE.bindW("accessToken", () => this.generateJwtToken(user)),
+          TE.bindW("accessToken", () => TE.fromEither(this.generateJwtToken(user))),
           TE.bindW("refreshToken", () => TE.fromEither(RefreshTokenFactory.createForUser(user))),
           TE.chainFirstW(({refreshToken}) => this.refreshTokenRepo.createToken(refreshToken)),
           TE.map(({accessToken, refreshToken}) => ({
@@ -242,7 +251,7 @@ export class AuthService {
         })
       ),
       TE.chainW(({pkceChallenge}) =>
-        this.oidcClient.getAuthorizationUrl(pkceChallenge, assuranceLevel, finalRedirectUri)
+        TE.fromEither(this.oidcClient.getAuthorizationUrl(pkceChallenge, assuranceLevel, finalRedirectUri))
       )
     )
   }
@@ -276,9 +285,9 @@ export class AuthService {
     )
   }
 
-  private generateJwtTokenForAgent(agent: Agent): TaskEither<AgentTokenError, string> {
-    return TE.tryCatch(
-      async () => {
+  private generateJwtTokenForAgent(agent: Agent): Either<AgentTokenError, string> {
+    return E.tryCatch(
+      () => {
         const tokenPayload = TokenPayloadBuilder.fromAgent(agent, {
           issuer: this.issuer,
           audience: [this.audience]
@@ -312,7 +321,7 @@ export class AuthService {
       )
     }
 
-    const generateToken = (agent: Agent) => this.generateJwtTokenForAgent(agent)
+    const generateToken = (agent: Agent) => TE.fromEither(this.generateJwtTokenForAgent(agent))
 
     return pipe(
       TE.Do,
@@ -364,7 +373,7 @@ export class AuthService {
         this.validateTokenRefreshEligibilityOrRevoke(oldTokenTyped, refreshTimestamp)
       ),
       TE.bindW("user", ({oldTokenTyped}) => this.userService.getUserByIdentifier(oldTokenTyped.userId)),
-      TE.bindW("newAccessToken", ({user}) => this.generateJwtToken(user)),
+      TE.bindW("newAccessToken", ({user}) => TE.fromEither(this.generateJwtToken(user))),
       TE.bindW("refreshedToken", ({user, oldTokenTyped}) =>
         TE.fromEither(RefreshTokenFactory.createForUser(user, oldTokenTyped.familyId))
       ),
@@ -411,7 +420,7 @@ export class AuthService {
       TE.chainFirstW(({dpopValidation}) =>
         this.dpopTokenRepo.markJtiAsUsed(dpopValidation.jti, DPOP_MAX_AGE_SECONDS + CLOCK_SKEW_TOLERANCE_SECONDS + 60)
       ),
-      TE.bindW("newAccessToken", ({agent}) => this.generateJwtTokenForAgent(agent)),
+      TE.bindW("newAccessToken", ({agent}) => TE.fromEither(this.generateJwtTokenForAgent(agent))),
       TE.bindW("refreshedToken", ({agent, oldTokenTyped}) =>
         TE.fromEither(RefreshTokenFactory.createForAgent(agent, oldTokenTyped.familyId))
       ),
@@ -482,15 +491,14 @@ export class AuthService {
       TE.chainW(pkceData => this.exchangeCodeForTokens(request.code, pkceData)),
       TE.chainW(tokenResponse =>
         pipe(
-          this.getUserInfoFromProvider(tokenResponse.accessToken),
-          TE.chainW(() => {
-            if (!tokenResponse.idToken) {
-              Logger.error("Step-up token exchange returned no id_token from IDP")
-              return TE.left("oidc_invalid_token_response" as const)
-            }
-
-            return this.oidcClient.verifyAssuranceLevel(tokenResponse.idToken, AssuranceLevel.FORCE_LOGIN)
-          })
+          this.extractSubFromIdToken(tokenResponse.idToken, "step-up flow"),
+          TE.fromEither,
+          TE.chainW(({idToken, sub}) =>
+            pipe(
+              this.getUserInfoFromProvider(tokenResponse.accessToken, sub),
+              TE.chainW(() => TE.fromEither(this.oidcClient.verifyAssuranceLevel(idToken, AssuranceLevel.FORCE_LOGIN)))
+            )
+          )
         )
       ),
       TE.chainW(() => {
@@ -499,12 +507,14 @@ export class AuthService {
           this.stepUpTokenRepo.storeToken(jti, STEP_UP_TOKEN_EXPIRY_SECONDS),
           TE.chainW(() =>
             pipe(
-              this.generateJwtToken(requestor.user, {
-                operation: request.operation,
-                resource: request.resourceId,
-                jti,
-                expiresInSeconds: STEP_UP_TOKEN_EXPIRY_SECONDS
-              }),
+              TE.fromEither(
+                this.generateJwtToken(requestor.user, {
+                  operation: request.operation,
+                  resource: request.resourceId,
+                  jti,
+                  expiresInSeconds: STEP_UP_TOKEN_EXPIRY_SECONDS
+                })
+              ),
               TE.map(token => ({
                 token,
                 expiresInSec: STEP_UP_TOKEN_EXPIRY_SECONDS
@@ -534,6 +544,27 @@ export class AuthService {
       return TE.left("step_up_resource_mismatch" as const)
 
     return this.stepUpTokenRepo.consumeToken(stepUpContext.jti)
+  }
+
+  private extractSubFromIdToken(
+    idToken: string | undefined,
+    context: string
+  ): Either<"oidc_invalid_token_response", {idToken: string; sub: string}> {
+    if (!idToken) {
+      Logger.error(`OIDC authentication returned no id_token from IDP in ${context}`)
+      return E.left("oidc_invalid_token_response" as const)
+    }
+    try {
+      const claims = decodeJwt(idToken)
+      if (typeof claims.sub !== "string") {
+        Logger.error(`OIDC id_token missing sub claim in ${context}`)
+        return E.left("oidc_invalid_token_response" as const)
+      }
+      return E.right({idToken, sub: claims.sub})
+    } catch (error) {
+      Logger.error(`Failed to decode OIDC id_token in ${context}`, error)
+      return E.left("oidc_invalid_token_response" as const)
+    }
   }
 
   private isLoopbackRedirectUri(uri: string): boolean {

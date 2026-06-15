@@ -1,6 +1,7 @@
 import {
   Group,
   User,
+  OrgRole,
   MembershipEntity,
   getMembershipEntityId,
   getMembershipEntityType,
@@ -127,7 +128,10 @@ export class GroupManager {
   }
 
   addMemberships(membershipsToAdd: ReadonlyArray<Membership>): Either<AddMembershipError, GroupManager> {
-    const result = pipe([...membershipsToAdd], A.traverse(Applicative)(this.addMembership))
+    const result = pipe(
+      [...membershipsToAdd],
+      A.traverse(Applicative)(m => this.addMembership(m))
+    )
     if (isLeft(result)) return result
     return right(this)
   }
@@ -187,7 +191,7 @@ export class GroupManager {
 
   private canAdministerGroup(requestor: User): boolean {
     // Organization admins can administer any group
-    if (requestor.orgRole === "admin") return true
+    if (requestor.orgRole === OrgRole.ADMIN) return true
 
     const groupScope: GroupScope = {
       type: "group",

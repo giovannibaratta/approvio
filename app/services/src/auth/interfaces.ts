@@ -24,6 +24,7 @@ import {OrganizationAdminCreateError} from "../organization-admin/interfaces"
 import {UnknownError, EncryptionError} from "../error"
 import {PrefixUnion} from "@utils/types"
 import {TaskEither} from "fp-ts/TaskEither"
+import {Either} from "fp-ts/Either"
 import {DpopValidationError} from "@utils/dpop"
 
 export const PKCE_SESSION_REPOSITORY_TOKEN = "PKCE_SESSION_REPOSITORY_TOKEN"
@@ -176,7 +177,7 @@ export enum AssuranceLevel {
 
 export interface OidcProvider {
   exchangeCodeForTokens(request: OidcTokenRequest): TaskEither<OidcError, OidcTokenResponse>
-  getUserInfo(accessToken: string): TaskEither<OidcError, OidcUserInfo>
+  getUserInfo(accessToken: string, expectedSubject: string): TaskEither<OidcError, OidcUserInfo>
   /**
    * Generate a redirect URL to the IDP provider to obtain a token with the requested level of assurance
    */
@@ -184,11 +185,11 @@ export interface OidcProvider {
     pkce: PkceChallenge,
     assuranceLevel: AssuranceLevel,
     redirectUri: string
-  ): TaskEither<OidcError, string>
+  ): Either<OidcError, string>
   /**
    * Validates the assurance level of the provided token
    */
-  verifyAssuranceLevel(idToken: string, assuranceLevel: AssuranceLevel): TaskEither<OidcError, void>
+  verifyAssuranceLevel(idToken: string, assuranceLevel: AssuranceLevel): Either<OidcError, void>
 }
 
 export type GetChallengeByNonceError =

@@ -3,7 +3,7 @@ import {EvaluationContext} from "@openfeature/server-sdk"
 import {LeverProvider, LEVER_PROVIDER_TOKEN} from "./lever.interface"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
-import {Task} from "fp-ts/Task"
+import {Task, of as taskOf} from "fp-ts/Task"
 
 /**
  * List of all supported operational levers (feature flags) in the system.
@@ -64,7 +64,7 @@ export class LeverService {
 
     return pipe(
       this.provider.isLeverActive(leverName, defaultValue, context),
-      TE.getOrElse(() => async () => defaultValue)
+      TE.getOrElse(() => taskOf(defaultValue))
     )
   }
 }

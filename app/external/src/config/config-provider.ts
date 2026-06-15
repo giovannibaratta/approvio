@@ -21,7 +21,7 @@ import {
 } from "./interfaces"
 import {isOidcProvider, isKmsProviderType} from "./types"
 import {isEmail, isNonEmptyArray} from "@utils"
-import {mapToUnleashFeatures} from "./lever-bootstrap.utils"
+import {mapToUnleashFeatures, ApprovioLeverBootstrap} from "./lever-bootstrap.utils"
 
 const IS_PRIVILEGE_MODE_DEFAULT = true
 
@@ -543,7 +543,7 @@ export class ConfigProvider implements ConfigProviderInterface {
       }
     }
 
-    throw new Error(`Unsupported KMS provider type: ${typeRaw}`)
+    throw new Error(`Unsupported KMS provider type: ${String(typeRaw)}`)
   }
 
   private validateDatabaseRetryConfig(): DatabaseRetryConfig {
@@ -593,7 +593,7 @@ export class ConfigProvider implements ConfigProviderInterface {
 
     if (bootstrapJson)
       try {
-        const parsed = JSON.parse(bootstrapJson)
+        const parsed = JSON.parse(bootstrapJson) as unknown
 
         // Validation: Must be array of strings or object with boolean values
         if (Array.isArray(parsed)) {
@@ -604,7 +604,7 @@ export class ConfigProvider implements ConfigProviderInterface {
             throw new Error("LEVERS_BOOTSTRAP_JSON as an object must only contain boolean values")
         } else throw new Error("LEVERS_BOOTSTRAP_JSON must be an array of names or a key-value object")
 
-        const bootstrapData = mapToUnleashFeatures(parsed)
+        const bootstrapData = mapToUnleashFeatures(parsed as ApprovioLeverBootstrap)
 
         return {
           enabled: true,
@@ -615,7 +615,8 @@ export class ConfigProvider implements ConfigProviderInterface {
           bootstrapData
         }
       } catch (e) {
-        throw new Error(`Failed to parse or validate LEVERS_BOOTSTRAP_JSON: ${e instanceof Error ? e.message : e}`, {
+        const msg = e instanceof Error ? e.message : String(e)
+        throw new Error(`Failed to parse or validate LEVERS_BOOTSTRAP_JSON: ${msg}`, {
           cause: e
         })
       }

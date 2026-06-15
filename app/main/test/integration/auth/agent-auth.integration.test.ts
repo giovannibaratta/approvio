@@ -387,7 +387,7 @@ describe("Agent Authentication Integration", () => {
           })
 
           // Verify JWT token content
-          const decodedToken = jwtService.decode(response.body.accessToken) as Record<string, unknown>
+          const decodedToken = jwtService.decode(response.body.accessToken)
           expect(decodedToken).toHaveProperty("sub", testAgent.agentName)
           expect(decodedToken).toHaveProperty("entityType", "agent")
           expect(decodedToken).toHaveProperty("name", testAgent.agentName)
@@ -502,7 +502,7 @@ describe("Agent Authentication Integration", () => {
           })
 
           // Verify JWT token content matches
-          const decodedToken = jwtService.decode(response.body.accessToken) as Record<string, unknown>
+          const decodedToken = jwtService.decode(response.body.accessToken)
           expect(decodedToken).toHaveProperty("name", testAgent.agentName)
         })
       })
@@ -700,7 +700,7 @@ describe("Agent Authentication Integration", () => {
 
           // Expect family revocation
           const family = await prisma.refreshToken.findMany({where: {familyId}})
-          expect(family?.every(token => token.status === RefreshTokenStatus.REVOKED)).toBe(true)
+          expect(family?.every(token => token.status === (RefreshTokenStatus.REVOKED as string))).toBe(true)
         })
       })
     })

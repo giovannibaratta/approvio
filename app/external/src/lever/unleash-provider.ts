@@ -117,52 +117,52 @@ export class UnleashProvider implements Provider {
     })
   }
 
-  async onClose(): Promise<void> {
+  onClose(): Promise<void> {
     if (this.refreshTimer) clearInterval(this.refreshTimer)
-    if (this.unleash) await this.unleash.destroy()
+    if (this.unleash) this.unleash.destroy()
+    return Promise.resolve()
   }
 
-  async resolveBooleanEvaluation(
+  resolveBooleanEvaluation(
     flagKey: string,
     defaultValue: boolean,
     context: EvaluationContext
   ): Promise<ResolutionDetails<boolean>> {
     if (!this.unleash || !this.isInitialized)
-      return {
+      return Promise.resolve({
         value: defaultValue,
         reason: StandardResolutionReasons.ERROR,
         errorCode: ErrorCode.PROVIDER_NOT_READY
-      }
+      })
 
     if (this.isStale())
-      return {
+      return Promise.resolve({
         value: defaultValue,
         reason: StandardResolutionReasons.STALE,
         errorCode: ErrorCode.PROVIDER_NOT_READY
-      }
+      })
 
     const contextData = this.mapContext(context)
     const enabled = this.unleash.isEnabled(flagKey, contextData, defaultValue)
 
-    return {
+    return Promise.resolve({
       value: enabled,
       reason: StandardResolutionReasons.CACHED
-    }
+    })
   }
 
-  async resolveStringEvaluation(): Promise<ResolutionDetails<string>> {
+  resolveStringEvaluation(): Promise<ResolutionDetails<string>> {
     throw new Error("resolveStringEvaluation is not supported by this provider")
   }
 
-  async resolveNumberEvaluation(): Promise<ResolutionDetails<number>> {
+  resolveNumberEvaluation(): Promise<ResolutionDetails<number>> {
     throw new Error("resolveNumberEvaluation is not supported by this provider")
   }
 
-  async resolveObjectEvaluation(): Promise<ResolutionDetails<never>> {
+  resolveObjectEvaluation(): Promise<ResolutionDetails<never>> {
     throw new Error("resolveObjectEvaluation is not supported by this provider")
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private mapContext(_: EvaluationContext): Context {
     // As of now, no context is supported
     return {}

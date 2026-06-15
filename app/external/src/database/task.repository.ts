@@ -298,7 +298,7 @@ export class PrismaTaskRepository implements TaskRepository {
 
         return TE.right({
           ...rest,
-          headers: mapHeadersToRecord(headers),
+          headers: headers === null ? undefined : headers,
           lock
         })
       }),
@@ -542,16 +542,6 @@ function mapHeadersToJsonValue(
 ): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
   if (!headers) return Prisma.JsonNull
   const result: Record<string, Prisma.InputJsonValue | null> = {}
-  for (const [key, value] of Object.entries(headers)) result[key] = value
-
-  return result
-}
-
-function mapHeadersToRecord(headers: Prisma.JsonValue): Record<string, string> {
-  if (headers === undefined || headers === null) return {}
-
-  const result: Record<string, string> = {}
-
   for (const [key, value] of Object.entries(headers)) result[key] = value
 
   return result

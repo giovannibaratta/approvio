@@ -1,5 +1,5 @@
 import {Injectable, Logger} from "@nestjs/common"
-import axios, {Method} from "axios"
+import axios from "axios"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {HttpClient, HttpClientOptions, HttpError} from "@services/webhook/interfaces"
@@ -130,7 +130,7 @@ export class AxiosWebhookClient implements HttpClient {
 
         const response = await axios.request({
           url,
-          method: method as Method,
+          method,
           headers: requestHeaders,
           data: payload,
           timeout: TIMEOUT,

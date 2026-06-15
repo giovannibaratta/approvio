@@ -65,7 +65,7 @@ export function mapToDomainVersionedGroup(dbObject: PrismaGroup): Either<GroupVa
 
   return pipe(
     object,
-    GroupFactory.validate,
+    obj => GroupFactory.validate(obj),
     E.map(group => ({...group, occ: dbObject.occ}))
   )
 }
@@ -84,7 +84,7 @@ export function mapToDomainVersionedGroupWithEntities(
 
   return pipe(
     object,
-    GroupFactory.validate,
+    obj => GroupFactory.validate(obj),
     E.map(group => ({...group, occ: dbObject.occ}))
   )
 }
@@ -109,7 +109,7 @@ export function mapUserToDomain(dbObject: PrismaUserWithOrgAdmin): Either<UserVa
     roles: dbObject.roles
   }
 
-  return pipe(object, UserFactory.validate)
+  return pipe(object, obj => UserFactory.validate(obj))
 }
 
 export function mapWorkflowToDomain<
@@ -151,7 +151,7 @@ function mapWorkflowToNonVersionedDomain(dbObject: PrismaWorkflow): Either<Workf
     expiresAt: dbObject.expiresAt,
     occ: dbObject.occ
   }
-  return pipe(object, WorkflowFactory.validate)
+  return pipe(object, obj => WorkflowFactory.validate(obj))
 }
 
 export function mapToDomainVersionedWorkflow(
@@ -195,7 +195,7 @@ export function mapToDomainUserSummary(dbObject: UserSummaryRepo): Either<UserSu
     ...dbObject
   }
 
-  return pipe(object, UserFactory.validateUserSummary)
+  return pipe(object, obj => UserFactory.validateUserSummary(obj))
 }
 
 export function mapWorkflowTemplateToDomain(
@@ -222,7 +222,7 @@ export function mapWorkflowTemplateToDomain(
     spaceId: dbObject.spaceId,
     occ: dbObject.occ
   }
-  return pipe(object, WorkflowTemplateFactory.validate)
+  return pipe(object, obj => WorkflowTemplateFactory.validate(obj))
 }
 
 export function mapToDomainVersionedWorkflowTemplate(
@@ -247,7 +247,7 @@ export function mapOrganizationAdminToDomain(
     createdAt: dbObject.createdAt
   }
 
-  return pipe(object, OrganizationAdminFactory.validate)
+  return pipe(object, obj => OrganizationAdminFactory.validate(obj))
 }
 
 export function mapToDomainVersionedSpace(dbObject: PrismaSpace): Either<SpaceValidationError, Versioned<Space>> {
@@ -261,7 +261,7 @@ export function mapToDomainVersionedSpace(dbObject: PrismaSpace): Either<SpaceVa
 
   return pipe(
     object,
-    SpaceFactory.validate,
+    obj => SpaceFactory.validate(obj),
     E.map(space => ({...space, occ: dbObject.occ}))
   )
 }

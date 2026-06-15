@@ -1,4 +1,4 @@
-import {isUUIDv7, PrefixUnion} from "@utils"
+import {getStringAsEnum, isUUIDv7, PrefixUnion} from "@utils"
 import * as E from "fp-ts/Either"
 import {Either, left, right} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
@@ -24,12 +24,14 @@ interface PrivateGroupRequirementRule {
 }
 
 export type AndRule = Readonly<PrivateAndRule>
+
 interface PrivateAndRule {
   type: ApprovalRuleType.AND
   rules: ReadonlyArray<ApprovalRule>
 }
 
 export type OrRule = Readonly<PrivateOrRule>
+
 interface PrivateOrRule {
   type: ApprovalRuleType.OR
   rules: ReadonlyArray<ApprovalRule>
@@ -53,16 +55,20 @@ interface ApprovalRuleLogic {
 export type ApprovalRuleValidationError = PrefixUnion<"approval_rule", UnprefixedApprovalRuleValidationError>
 
 type UnprefixedApprovalRuleValidationError =
-  | "malformed_content"
   | "invalid_rule_type"
+  | "group_rule_invalid_group_id"
+  | "group_rule_invalid_min_count"
   | "and_rule_must_have_rules"
   | "or_rule_must_have_rules"
-  | "group_rule_invalid_min_count"
-  | "group_rule_invalid_group_id"
   | "max_rule_nesting_exceeded"
+  | "malformed_content"
 
 const MAX_NESTING_DEPTH = 2
 
+/**
+ * Factory for creating ApprovalRules.
+ * Handles validation and evaluation logic.
+ */
 export class ApprovalRuleFactory {
   /**
    * Validates a raw object structure against the ApprovalRules domain model.
@@ -71,23 +77,32 @@ export class ApprovalRuleFactory {
    * @returns Either a validation error or the valid ApprovalRules object.
    */
   static validate(data: unknown): Either<ApprovalRuleValidationError, ApprovalRule> {
-    const rule = this.validateApprovalRuleData(data, 0)
-    return E.isRight(rule) ? right(this.decorateApprovalRuleData(rule.right)) : rule
+    return this.validateApprovalRuleData(data, 0)
   }
 
   private static validateApprovalRuleData(data: unknown, depth = 0): Either<ApprovalRuleValidationError, ApprovalRule> {
     if (depth > MAX_NESTING_DEPTH) return left("approval_rule_max_rule_nesting_exceeded")
     if (!isObject(data) || typeof data.type !== "string") return left("approval_rule_invalid_rule_type")
 
-    switch (data.type) {
+    const ruleType = getStringAsEnum(data.type, ApprovalRuleType)
+    if (ruleType === undefined) return left("approval_rule_invalid_rule_type")
+
+    switch (ruleType) {
       case ApprovalRuleType.GROUP_REQUIREMENT:
-        return pipe(this.validateGroupRequirementRule(data), E.map(this.decorateApprovalRuleData))
+        return pipe(
+          this.validateGroupRequirementRule(data),
+          E.map(rule => this.decorateApprovalRuleData(rule))
+        )
       case ApprovalRuleType.AND:
-        return pipe(this.validateAndRule(data, depth), E.map(this.decorateApprovalRuleData))
+        return pipe(
+          this.validateAndRule(data, depth),
+          E.map(rule => this.decorateApprovalRuleData(rule))
+        )
       case ApprovalRuleType.OR:
-        return pipe(this.validateOrRule(data, depth), E.map(this.decorateApprovalRuleData))
-      default:
-        return left("approval_rule_invalid_rule_type")
+        return pipe(
+          this.validateOrRule(data, depth),
+          E.map(rule => this.decorateApprovalRuleData(rule))
+        )
     }
   }
 
@@ -98,7 +113,6 @@ export class ApprovalRuleFactory {
     if (!isUUIDv7(data.groupId)) return left("approval_rule_group_rule_invalid_group_id")
     if (typeof data.minCount !== "number" || !Number.isInteger(data.minCount))
       return left("approval_rule_group_rule_invalid_min_count")
-
     if (data.minCount < 1) return left("approval_rule_group_rule_invalid_min_count")
 
     let requireHighPrivilege: boolean | undefined = undefined
@@ -123,8 +137,11 @@ export class ApprovalRuleFactory {
 
     return pipe(
       data.rules,
-      A.traverse(E.Applicative)(rule => ApprovalRuleFactory.validateApprovalRuleData(rule, depth + 1)),
-      E.map(rules => ({type: ApprovalRuleType.AND, rules}))
+      A.traverse(E.Applicative)(rule => this.validateApprovalRuleData(rule, depth + 1)),
+      E.map(rules => ({
+        type: ApprovalRuleType.AND,
+        rules
+      }))
     )
   }
 
@@ -136,8 +153,11 @@ export class ApprovalRuleFactory {
 
     return pipe(
       data.rules,
-      A.traverse(E.Applicative)(rule => ApprovalRuleFactory.validateApprovalRuleData(rule, depth + 1)),
-      E.map(rules => ({type: ApprovalRuleType.OR, rules}))
+      A.traverse(E.Applicative)(rule => this.validateApprovalRuleData(rule, depth + 1)),
+      E.map(rules => ({
+        type: ApprovalRuleType.OR,
+        rules
+      }))
     )
   }
 
@@ -179,7 +199,6 @@ function getVotingGroupIds(rule: ApprovalRuleData): ReadonlyArray<string> {
     case ApprovalRuleType.GROUP_REQUIREMENT:
       return [rule.groupId]
     case ApprovalRuleType.AND:
-      return rule.rules.flatMap(getVotingGroupIds)
     case ApprovalRuleType.OR:
       return rule.rules.flatMap(getVotingGroupIds)
   }

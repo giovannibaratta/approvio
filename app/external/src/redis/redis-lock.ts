@@ -1,5 +1,4 @@
 import * as TE from "fp-ts/TaskEither"
-import * as E from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 
 // Use a type representing the subset of ioredis client we need to prevent version/module mismatches
@@ -15,6 +14,13 @@ export type RedisLockError =
   | {type: "lock_execution_failed"; error: unknown}
   | {type: "operation_timeout"}
 
+class RedisLockTimeoutError extends Error {
+  constructor() {
+    super("Operation timed out")
+    this.name = "RedisLockTimeoutError"
+  }
+}
+
 export class RedisLock {
   constructor(
     private readonly redis: RedisLockClient,
@@ -29,13 +35,11 @@ export class RedisLock {
   acquire(): TE.TaskEither<RedisLockError, string> {
     const value = `${Date.now()}-${Math.random()}`
     return pipe(
-      TE.tryCatch(
+      TE.tryCatch<RedisLockError, unknown>(
         () => this.redis.set(this.key, value, "PX", this.ttlMs, "NX"),
         error => ({type: "lock_acquisition_failed" as const, error})
       ),
-      TE.chain(acquired =>
-        acquired === "OK" ? TE.right(value) : TE.left({type: "lock_already_acquired" as const} as RedisLockError)
-      )
+      TE.chainW(acquired => (acquired === "OK" ? TE.right(value) : TE.left({type: "lock_already_acquired" as const})))
     )
   }
 
@@ -53,11 +57,9 @@ export class RedisLock {
     return pipe(
       TE.tryCatch(
         () => this.redis.eval(releaseScript, 1, this.key, value),
-        error => ({type: "lock_release_failed" as const, error}) as RedisLockError
+        error => ({type: "lock_release_failed" as const, error})
       ),
-      TE.chain(result =>
-        result === 1 ? TE.right(undefined) : TE.left({type: "lock_release_failed" as const} as RedisLockError)
-      )
+      TE.chain(result => (result === 1 ? TE.right(undefined) : TE.left({type: "lock_release_failed" as const})))
     )
   }
 
@@ -74,38 +76,33 @@ export class RedisLock {
         error: new Error(
           `Timeout (${timeoutMs}ms) must be strictly less than Lock TTL (${this.ttlMs}ms) to ensure safety.`
         )
-      } as RedisLockError)
-
-    return pipe(
-      this.acquire(),
-      TE.chain(lockValue => {
-        return async (): Promise<E.Either<RedisLockError | E, T>> => {
-          let timeoutId: NodeJS.Timeout | undefined
-          const timeoutPromise = new Promise<never>((_, reject) => {
-            timeoutId = setTimeout(() => {
-              reject({type: "operation_timeout" as const})
-            }, timeoutMs)
-          })
-
-          try {
-            return await Promise.race([fn()(), timeoutPromise])
-          } catch (err) {
-            if (
-              typeof err === "object" &&
-              err !== null &&
-              "type" in err &&
-              typeof err.type === "string" &&
-              err.type === "operation_timeout"
-            )
-              return E.left({type: "operation_timeout"})
-
-            return E.left({type: "lock_execution_failed" as const, error: err})
-          } finally {
-            if (timeoutId) clearTimeout(timeoutId)
-            await this.release(lockValue)()
-          }
-        }
       })
+
+    return TE.bracket(
+      this.acquire(),
+      _ =>
+        pipe(
+          TE.tryCatch(
+            async () => {
+              let timeoutId: NodeJS.Timeout | undefined
+              const timeoutPromise = new Promise<never>((_, reject) => {
+                timeoutId = setTimeout(() => reject(new RedisLockTimeoutError()), timeoutMs)
+              })
+
+              try {
+                return await Promise.race([fn()(), timeoutPromise])
+              } finally {
+                if (timeoutId) clearTimeout(timeoutId)
+              }
+            },
+            (error): RedisLockError | E => {
+              if (error instanceof RedisLockTimeoutError) return {type: "operation_timeout"}
+              return {type: "lock_execution_failed", error}
+            }
+          ),
+          TE.chainW(TE.fromEither)
+        ),
+      lockValue => this.release(lockValue)
     )
   }
 }

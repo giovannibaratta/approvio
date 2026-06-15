@@ -14,7 +14,7 @@ import {
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError, UnknownError} from "@services"
-import {User} from "@domain"
+import {User, OrgRole} from "@domain"
 import {GetGroupRepoError} from "@services/group/interfaces"
 import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 import {Versioned} from "@domain"
@@ -92,7 +92,7 @@ export class GroupMembershipService {
     }
 
     const prepareRepoData = (req: GetGroupWithMembershipRequest, requestor: User): GetGroupWithMembershipRepo => {
-      const onlyIfMember = requestor.orgRole === "admin" ? false : {userId: requestor.id}
+      const onlyIfMember = requestor.orgRole === OrgRole.ADMIN ? false : {userId: requestor.id}
 
       return {
         groupId: req.groupId,

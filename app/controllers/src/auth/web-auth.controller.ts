@@ -156,7 +156,7 @@ export class WebAuthController {
   @PublicRoute()
   @Post("logout")
   @HttpCode(204)
-  async logout(@Res() res: Response): Promise<void> {
+  logout(@Res() res: Response): void {
     res.clearCookie("access_token", {path: "/"})
     res.clearCookie("refresh_token", {path: "/auth/web/refresh"})
     res.send()

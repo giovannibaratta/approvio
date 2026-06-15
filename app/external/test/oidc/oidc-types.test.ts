@@ -104,8 +104,8 @@ describe("validateUserInfoResponse", () => {
         const rawResponse: RawUserInfoResponse = {
           sub: "user-123",
           email: "test@example.com",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          email_verified: value as any
+
+          email_verified: value
         }
 
         // When: validating the response
@@ -252,8 +252,7 @@ describe("validateUserInfoResponse", () => {
       it("should reject response with null sub claim", () => {
         // Given: response with null sub
         const rawResponse: RawUserInfoResponse = {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          sub: null as any,
+          sub: null,
           name: "John Doe"
         }
 
@@ -267,8 +266,7 @@ describe("validateUserInfoResponse", () => {
       it("should reject response with undefined sub claim", () => {
         // Given: response with undefined sub
         const rawResponse: RawUserInfoResponse = {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          sub: undefined as any,
+          sub: undefined,
           name: "John Doe"
         }
 
@@ -284,8 +282,7 @@ describe("validateUserInfoResponse", () => {
       it("should reject response with number sub claim", () => {
         // Given: response with number sub
         const rawResponse: RawUserInfoResponse = {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          sub: 12345 as any,
+          sub: 12345,
           name: "John Doe"
         }
 
@@ -299,8 +296,7 @@ describe("validateUserInfoResponse", () => {
       it("should reject response with boolean sub claim", () => {
         // Given: response with boolean sub
         const rawResponse: RawUserInfoResponse = {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          sub: true as any,
+          sub: true,
           name: "John Doe"
         }
 
@@ -314,8 +310,7 @@ describe("validateUserInfoResponse", () => {
       it("should reject response with object sub claim", () => {
         // Given: response with object sub
         const rawResponse: RawUserInfoResponse = {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          sub: {id: "user-123"} as any,
+          sub: {id: "user-123"},
           name: "John Doe"
         }
 
@@ -329,8 +324,7 @@ describe("validateUserInfoResponse", () => {
       it("should reject response with array sub claim", () => {
         // Given: response with array sub
         const rawResponse: RawUserInfoResponse = {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          sub: ["user", "123"] as any,
+          sub: ["user", "123"],
           name: "John Doe"
         }
 
@@ -375,8 +369,8 @@ describe("validateUserInfoResponse", () => {
         // Given: response with number name
         const rawResponse: RawUserInfoResponse = {
           sub: "user-123",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          name: 12345 as any
+
+          name: 12345
         }
 
         // When: validating the response
@@ -390,8 +384,8 @@ describe("validateUserInfoResponse", () => {
         // Given: response with boolean email
         const rawResponse: RawUserInfoResponse = {
           sub: "user-123",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          email: true as any
+
+          email: true
         }
 
         // When: validating the response
@@ -405,8 +399,8 @@ describe("validateUserInfoResponse", () => {
         // Given: response with object preferred_username
         const rawResponse: RawUserInfoResponse = {
           sub: "user-123",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          preferred_username: {username: "johndoe"} as any
+
+          preferred_username: {username: "johndoe"}
         }
 
         // When: validating the response
@@ -420,8 +414,8 @@ describe("validateUserInfoResponse", () => {
         // Given: response with array given_name
         const rawResponse: RawUserInfoResponse = {
           sub: "user-123",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          given_name: ["John", "Middle"] as any
+
+          given_name: ["John", "Middle"]
         }
 
         // When: validating the response
@@ -435,8 +429,8 @@ describe("validateUserInfoResponse", () => {
         // Given: response with number family_name
         const rawResponse: RawUserInfoResponse = {
           sub: "user-123",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          family_name: 67890 as any
+
+          family_name: 67890
         }
 
         // When: validating the response
@@ -451,8 +445,8 @@ describe("validateUserInfoResponse", () => {
         const rawResponse: RawUserInfoResponse = {
           sub: "user-123",
           email: "test@example.com",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          email_verified: 1 as any
+
+          email_verified: 1
         }
 
         // When: validating the response
@@ -467,8 +461,8 @@ describe("validateUserInfoResponse", () => {
         const rawResponse: RawUserInfoResponse = {
           sub: "user-123",
           email: "test@example.com",
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          email_verified: {verified: true} as any
+
+          email_verified: {verified: true}
         }
 
         // When: validating the response

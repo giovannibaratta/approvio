@@ -2,7 +2,7 @@ import * as E from "fp-ts/Either"
 import {Either, left, right} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 import {constants, publicEncrypt, randomBytes, verify} from "crypto"
-import {isUUIDv7, PrefixUnion, DecorableEntity, isDecoratedWith, DynamicDecorators} from "@utils"
+import {isUUIDv7, PrefixUnion, DecorableEntity, isDecoratedWith, DynamicDecorators, isObject} from "@utils"
 import {Agent} from "./agent"
 import {v7 as uuidv7} from "uuid"
 
@@ -371,8 +371,10 @@ export class AgentChallengeFactory {
 
       if (!headerB64 || !payloadB64 || !signatureB64) return left("agent_challenge_invalid_jwt_format" as const)
 
-      const header = JSON.parse(Buffer.from(headerB64, "base64url").toString("utf8"))
-      const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"))
+      const header = JSON.parse(Buffer.from(headerB64, "base64url").toString("utf8")) as unknown
+      const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8")) as unknown
+
+      if (!isObject(header) || !isObject(payload)) return left("agent_challenge_invalid_jwt_format" as const)
 
       return right({
         header,

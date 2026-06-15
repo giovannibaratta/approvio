@@ -35,7 +35,7 @@ async function bootstrap() {
 
   if (process.env.ENV === "development") {
     Logger.log("Injecting middleware to log OPTIONS requests in development environment.")
-    app.use((req: Request, res: Response, next: NextFunction) => {
+    app.use((req: Request, _res: Response, next: NextFunction) => {
       if (req.method === "OPTIONS") Logger.debug(`Received OPTIONS request for ${req.url}`)
       next()
     })
@@ -52,4 +52,4 @@ async function bootstrap() {
   await app.listen(3000)
 }
 
-bootstrap()
+void bootstrap()

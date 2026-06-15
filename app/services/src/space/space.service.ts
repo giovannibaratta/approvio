@@ -2,6 +2,7 @@ import {
   Space,
   SpaceFactory,
   User,
+  OrgRole,
   UserFactory,
   SystemRole,
   RolePermissionChecker,
@@ -80,7 +81,7 @@ export class SpaceService {
   createSpace(request: CreateSpaceRequest): TaskEither<CreateSpaceError, Space> {
     const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
 
-    const validateSpace = (req: CreateSpaceRequest) => pipe(req.spaceData, SpaceFactory.newSpace, TE.fromEither)
+    const validateSpace = (req: CreateSpaceRequest) => pipe(req.spaceData, s => SpaceFactory.newSpace(s), TE.fromEither)
 
     const fetchUser = (requestor: User): TaskEither<CreateSpaceError, Versioned<User>> =>
       this.userRepo.getUserById(requestor.id)
@@ -146,7 +147,7 @@ export class SpaceService {
     const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
 
     const checkPermissions = (requestor: User, spaceId: string): TaskEither<GetSpaceError, string> => {
-      const isOrgAdmin = requestor.orgRole === "admin"
+      const isOrgAdmin = requestor.orgRole === OrgRole.ADMIN
       const hasReadPermission = RolePermissionChecker.hasSpacePermission(
         requestor.roles,
         {type: "space", spaceId},
@@ -154,7 +155,7 @@ export class SpaceService {
       )
 
       if (isOrgAdmin || hasReadPermission) return TE.right(spaceId)
-      return TE.left("requestor_not_authorized" as AuthorizationError)
+      return TE.left("requestor_not_authorized")
     }
 
     const fetchSpaceData = (spaceId: string): TaskEither<GetSpaceError, Versioned<Space>> => {
@@ -202,7 +203,7 @@ export class SpaceService {
     const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
 
     const checkPermissions = (requestor: User, spaceId: string): TaskEither<DeleteSpaceError, string> => {
-      const isOrgAdmin = requestor.orgRole === "admin"
+      const isOrgAdmin = requestor.orgRole === OrgRole.ADMIN
       const hasManagePermission = RolePermissionChecker.hasSpacePermission(
         requestor.roles,
         {type: "space", spaceId},
@@ -210,7 +211,7 @@ export class SpaceService {
       )
 
       if (isOrgAdmin || hasManagePermission) return TE.right(spaceId)
-      return TE.left("requestor_not_authorized" as AuthorizationError)
+      return TE.left("requestor_not_authorized")
     }
 
     const actorDetails = extractActorDetails(request.requestor)

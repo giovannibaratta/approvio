@@ -1,7 +1,7 @@
 import {OrganizationAdmin, OrganizationAdminFactory} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError} from "@services/error"
-import {User} from "@domain"
+import {User, OrgRole} from "@domain"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
@@ -38,7 +38,7 @@ export class OrganizationAdminService {
     const persistAdmin = (admin: OrganizationAdmin) => this.orgAdminRepo.createOrganizationAdmin(admin)
 
     const validateRequest = (req: AddOrganizationAdminRequest, requestor: User) => {
-      if (requestor.orgRole !== "admin") return E.left("requestor_not_authorized" as const)
+      if (requestor.orgRole !== OrgRole.ADMIN) return E.left("requestor_not_authorized" as const)
       if (req.organizationName !== SUPPORTED_ORGANIZATION) return E.left("organization_not_found" as const)
 
       return OrganizationAdminFactory.newOrganizationAdmin({email: req.email})
@@ -57,7 +57,7 @@ export class OrganizationAdminService {
     request: ListOrganizationAdminsRequest
   ): TaskEither<OrganizationAdminListError | AuthorizationError, PaginatedOrganizationAdminsList> {
     const validateRequest = (req: ListOrganizationAdminsRequest, requestor: User) => {
-      if (requestor.orgRole !== "admin") return E.left("requestor_not_authorized" as const)
+      if (requestor.orgRole !== OrgRole.ADMIN) return E.left("requestor_not_authorized" as const)
       if (req.organizationName !== SUPPORTED_ORGANIZATION) return E.left("organization_not_found" as const)
 
       const page = req.page ?? 1
@@ -89,7 +89,7 @@ export class OrganizationAdminService {
     request: RemoveOrganizationAdminRequest
   ): TaskEither<OrganizationAdminRemoveError | AuthorizationError, void> {
     const validateRequest = (req: RemoveOrganizationAdminRequest, requestor: User) => {
-      if (requestor.orgRole !== "admin") return E.left("requestor_not_authorized" as const)
+      if (requestor.orgRole !== OrgRole.ADMIN) return E.left("requestor_not_authorized" as const)
       if (req.organizationName !== SUPPORTED_ORGANIZATION) return E.left("organization_not_found" as const)
 
       return E.right(req)

@@ -274,7 +274,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
         })
       },
       error => {
-        Logger.error(`Error marking workflows as recalculation required: ${workflowIds}`, error)
+        Logger.error(`Error marking workflows as recalculation required: ${workflowIds.join(", ")}`, error)
         return "unknown_error" as const
       }
     )
@@ -385,7 +385,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
           }),
         error => {
           if (isPrismaUniqueConstraintError(error, ["name"])) return "workflow_already_exists"
-          Logger.error(`Error creating workflow: ${error}`, error)
+          Logger.error(`Error creating workflow: ${String(error)}`, error)
           return "unknown_error" as const
         }
       )()
@@ -475,7 +475,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
 
       const workflows = rawWorkflows.map(w => ({...w, occ: BigInt(w.occ)}))
       return {
-        workflows: workflows as PrismaDecoratedWorkflow<PrismaSelectors>[],
+        workflows: workflows,
         pagination: {total, page: pagination ? pagination.page : 1, limit: pagination ? pagination.limit : total}
       }
     }

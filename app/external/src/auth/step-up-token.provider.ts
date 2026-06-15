@@ -18,7 +18,7 @@ export class RedisStepUpTokenRepository implements StepUpTokenRepository {
         await this.redisClient.set(key, "active", "EX", ttlSeconds)
       },
       error => {
-        Logger.error(`Failed to store token: ${error}`, "RedisStepUpTokenRepository")
+        Logger.error(`Failed to store token: ${String(error)}`, "RedisStepUpTokenRepository")
         return "unknown_error" as const
       }
     )
@@ -34,7 +34,7 @@ export class RedisStepUpTokenRepository implements StepUpTokenRepository {
       },
       error => {
         if (error instanceof TokenNotFoundError) return "token_not_found" as const
-        Logger.error(`Failed to consume token: ${error}`, "RedisStepUpTokenRepository")
+        Logger.error(`Failed to consume token: ${String(error)}`, "RedisStepUpTokenRepository")
         return "unknown_error" as const
       }
     )

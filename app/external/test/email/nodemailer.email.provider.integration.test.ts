@@ -63,11 +63,11 @@ describe("NodemailerEmailProvider", () => {
     }
 
     emailProvider = module.get(EMAIL_EXTERNAL_TOKEN)
-    cleanMailpitEmailInbox(mailpitEndpoint, `from:"${senderUniqueTestIdentifier}"`)
+    await cleanMailpitEmailInbox(mailpitEndpoint, `from:"${senderUniqueTestIdentifier}"`)
   })
 
-  afterEach(() => {
-    cleanMailpitEmailInbox(mailpitEndpoint, `from:"${senderUniqueTestIdentifier}"`)
+  afterEach(async () => {
+    await cleanMailpitEmailInbox(mailpitEndpoint, `from:"${senderUniqueTestIdentifier}"`)
   })
 
   it("should be defined", () => {

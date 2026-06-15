@@ -31,7 +31,7 @@ export class OpenFeatureLeverProvider implements LeverProvider, OnModuleInit, On
         await OpenFeature.setProviderAndWait(provider)
         Logger.log("OpenFeature provider initialized successfully")
       } catch (e) {
-        Logger.warn(`Failed to initialize OpenFeature provider, failing open: ${e}`)
+        Logger.warn(`Failed to initialize OpenFeature provider, failing open: ${String(e)}`)
       }
     } else Logger.log("Lever provider is disabled. Using default No-Op Provider.")
   }
@@ -48,7 +48,7 @@ export class OpenFeatureLeverProvider implements LeverProvider, OnModuleInit, On
     return TE.tryCatch(
       () => this.client.getBooleanValue(leverName, defaultValue, context),
       error => {
-        Logger.error(`Error evaluating lever ${leverName}: ${error}`)
+        Logger.error(`Error evaluating lever ${leverName}: ${String(error)}`)
         return "lever_provider_error" as const
       }
     )

@@ -100,7 +100,7 @@ function validateOptionalClaims(
   if (E.isLeft(familyName)) return familyName
   if (familyName.right) result.familyName = familyName.right
 
-  return E.right(result as Partial<OidcUserInfo>)
+  return E.right(result)
 }
 
 function validateEmailVerified(

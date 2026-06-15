@@ -128,7 +128,9 @@ export class RoleService {
   private fetchWorkflowTemplateSpaceMappings(
     boundRoles: ReadonlyArray<BoundRole>
   ): TaskEither<"workflow_template_not_found", ReadonlyMap<string, string>> {
-    const workflowTemplateNames = boundRoles.filter(this.isWorkflowTemplateRole).map(role => role.scope.templateName)
+    const workflowTemplateNames = boundRoles
+      .filter(role => this.isWorkflowTemplateRole(role))
+      .map(role => role.scope.templateName)
 
     return this.workflowTemplateRepo.getWorkflowTemplatesParentsByNames(workflowTemplateNames)
   }

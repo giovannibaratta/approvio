@@ -69,18 +69,18 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
         $allOperations: async ({args, query}) => {
           // If we are already running inside transactional() context, do not retry individual query.
           // Let the outer transactional() retry block handle it!
-          if (transactionContext.getStore() !== undefined) return query(args)
+          if (transactionContext.getStore() !== undefined) return query(args) as Promise<unknown>
 
           // Otherwise, we are outside of a transaction. Let's retry on transient errors!
           const executeWithRetry = TE.tryCatch(
-            () => query(args),
+            () => query(args) as Promise<unknown>,
             error => error
           )
 
           return pipe(
             retryWithBackoff(
               () => executeWithRetry,
-              DatabaseClient.isTransientPrismaError,
+              e => DatabaseClient.isTransientPrismaError(e),
               this.config.databaseRetryConfig
             ),
             TE.getOrElse(error => {
@@ -152,7 +152,11 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
     )
 
     return pipe(
-      retryWithBackoff(() => doTx, DatabaseClient.isTransientPrismaError, this.config.databaseRetryConfig),
+      retryWithBackoff(
+        () => doTx,
+        e => DatabaseClient.isTransientPrismaError(e),
+        this.config.databaseRetryConfig
+      ),
       // If TE.left, we exhausted retries or hit a non-transient error; throw it so Promise rejects
       TE.getOrElse(error => {
         throw error
@@ -183,19 +187,19 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
 }
 
 const auditLogExtension = {
-  async update() {
+  update() {
     throw new Error("Audit logs are immutable. Action update is not allowed.")
   },
-  async updateMany() {
+  updateMany() {
     throw new Error("Audit logs are immutable. Action updateMany is not allowed.")
   },
-  async delete() {
+  delete() {
     throw new Error("Audit logs are immutable. Action delete is not allowed.")
   },
-  async deleteMany() {
+  deleteMany() {
     throw new Error("Audit logs are immutable. Action deleteMany is not allowed.")
   },
-  async upsert() {
+  upsert() {
     throw new Error("Audit logs are immutable. Action upsert is not allowed.")
   }
 }

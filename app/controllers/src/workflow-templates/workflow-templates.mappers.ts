@@ -21,6 +21,7 @@ import {
   ApprovalRuleFactory,
   WorkflowAction,
   WorkflowActionType,
+  WebhookActionRedactScope,
   WorkflowTemplateSummary,
   AuthenticatedEntity,
   Versioned,
@@ -167,14 +168,14 @@ export function mapListWorkflowTemplatesParamsToServiceRequest(
   )
 
   const sortDirectionEither = pipe(
-    (params.sortDirection as string[] | undefined) ?? [],
+    params.sortDirection ?? [],
     E.traverseArray((v: string) =>
       E.fromNullable("invalid_sort_direction" as const)(getStringAsEnum(v.toUpperCase(), SortDirection))
     )
   )
 
   const sortByEither = pipe(
-    (params.sortBy as string[] | undefined) ?? [],
+    params.sortBy ?? [],
     E.traverseArray((v: string) => E.fromNullable("invalid_sort_by" as const)(getStringAsEnum(v.toUpperCase(), SortBy)))
   )
 
@@ -201,7 +202,7 @@ export function mapListWorkflowTemplatesParamsToServiceRequest(
                       limit: params.limit ?? 20
                     },
                     search: params.search,
-                    searchMode: searchMode as "CONTAINS" | "EXACT" | undefined,
+                    searchMode,
                     sort: sort.length > 0 ? sort : undefined,
                     filters: {
                       spaceIdentifier: params.spaceIdentifier,
@@ -240,8 +241,12 @@ export function mapWorkflowActionToApi(action: WorkflowAction): WorkflowActionAp
       }
     case WorkflowActionType.WEBHOOK: {
       const redactScope = action.redact
-      const redactHeadersMode = redactScope === "HEADERS" || redactScope === "ALL" ? "all" : "smart"
-      const redactUrlMode = redactScope === "URL" || redactScope === "ALL" ? "all" : "smart"
+      const redactHeadersMode =
+        redactScope === WebhookActionRedactScope.HEADERS || redactScope === WebhookActionRedactScope.ALL
+          ? "all"
+          : "smart"
+      const redactUrlMode =
+        redactScope === WebhookActionRedactScope.URL || redactScope === WebhookActionRedactScope.ALL ? "all" : "smart"
 
       let redactedUrl = action.url
       const isSensitiveKey = (key: string): boolean => {

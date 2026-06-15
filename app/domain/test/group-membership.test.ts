@@ -15,7 +15,7 @@ import {Either, isLeft, isRight} from "fp-ts/Either"
 
 // Helpers for unwrapping Either in tests
 const unwrapRight = <L, R>(either: Either<L, R>): R => {
-  if (isLeft(either)) throw new Error(`Failed to unwrap Either right. Either is left: ${either.left}`)
+  if (isLeft(either)) throw new Error(`Failed to unwrap Either right. Either is left: ${String(either.left)}`)
   return either.right
 }
 
