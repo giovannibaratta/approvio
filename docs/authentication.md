@@ -149,20 +149,21 @@ sequenceDiagram
 
 Agents use an asymmetric key-pair (JWT Assertion) mechanism to securely authenticate without interactive logins.
 
-- **Challenge:** The agent requests an authentication challenge from the server.
-- **Sign:** The agent signs the challenge with its private key, creating a Client Assertion JWT.
-- **Token:** The server validates the signature and returns Access and Refresh tokens for the agent to use.
+- **Challenge:** The agent requests an authentication challenge from the server. The server generates a nonce, encrypts it with the agent's registered public key, and returns the encrypted challenge.
+- **Sign:** The agent decrypts the challenge using its private key. It then creates and signs a Client Assertion JWT that includes the decrypted nonce.
+- **Token:** The server validates the JWT signature and the nonce, and returns Access and Refresh tokens for the agent to use.
 
 ```mermaid
 sequenceDiagram
     participant M as Trusted Agent
     participant A as Backend
 
-    M->>A: POST /auth/agents/challenge { agentId }
-    A-->>M: 200 Returns PKCE Challenge
-    Note over M: Agent signs the challenge <br/> with its private key (Client Assertion JWT)
-    M->>A: POST /auth/agents/token { clientAssertion }
-    Note over A: Validates JWT Signature <br/> Registers agent if applicable
+    M->>A: POST /auth/agents/challenge { agentName }
+    A-->>M: 200 Returns Encrypted Challenge (nonce)
+    Note over M: Agent decrypts the challenge <br/> with its private key
+    Note over M: Creates signed JWT <br/> assertion with nonce
+    M->>A: POST /auth/agents/token { assertion }
+    Note over A: Validates JWT Signature & nonce
     A-->>M: 200 Returns Access + Refresh Tokens
 
     Note over M,A: Token Refresh
