@@ -65,6 +65,9 @@ User "alice@company.com" can vote on a workflow if:
 
 | Resource     | Permission        | Description                         |
 | :----------- | :---------------- | :---------------------------------- |
+| **Group**    | `read`            | View group information              |
+| **Group**    | `write`           | Modify group basic settings         |
+| **Group**    | `manage`          | Full control over group membership  |
 | **Space**    | `read`            | View space information              |
 | **Space**    | `manage`          | Modify and delete spaces            |
 | **Template** | `read`            | View template details               |
@@ -74,6 +77,7 @@ User "alice@company.com" can vote on a workflow if:
 | **Workflow** | `workflow_read`   | View workflow details               |
 | **Workflow** | `workflow_list`   | List workflows                      |
 | **Workflow** | `workflow_cancel` | Cancel workflows                    |
+| **Audit**    | `read`            | View system-wide audit logs         |
 
 ## Security Considerations
 
