@@ -56,3 +56,6 @@ TODO
 
 manual-tests
 .archive
+load-tests/seed-data.json
+load-tests/report.html
+load-tests/summary.json

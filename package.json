@@ -9,6 +9,7 @@
   "scripts": {
     "start:backend": "dotenv -e .env.local -- nest start backend",
     "start:backend:dev": "dotenv -e .env.local -- nest start backend --watch --debug",
+    "start:backend:load-test": "RATE_LIMIT_POINTS=1000000 dotenv -e .env.local -- nest start backend",
     "deps:start": "./scripts/dependencies.sh start",
     "deps:start:test": "./scripts/dependencies.sh start test",
     "deps:stop": "./scripts/dependencies.sh stop",
@@ -39,7 +40,12 @@
     "ai:test:setup": "yarn deps:start:test --silent && ./scripts/prisma.sh --silent generate && ./scripts/liquibase.sh --silent update test",
     "ai:test": "yarn ai:test:setup && AI_AGENT=true yarn test:jest",
     "ai:test:all": "yarn ai:test:setup && AI_AGENT=true yarn test:jest app/**/*.test.ts",
-    "ai:get-union-literals": "ts-node scripts/ai/get-union-literals.ts"
+    "ai:get-union-literals": "ts-node scripts/ai/get-union-literals.ts",
+    "load-test:seed": "dotenv -e .env.local -- yarn ts-node load-tests/scripts/seed.ts",
+    "load-test": "./scripts/load-test.sh",
+    "load-test:smoke": "yarn load-test smoke workflow-crud",
+    "load-test:baseline": "yarn load-test baseline workflow-crud",
+    "load-test:stress": "THINK_TIME=0 yarn load-test stress workflow-crud"
   },
   "packageManager": "yarn@4.7.0",
   "dependencies": {
@@ -85,6 +91,7 @@
     "@types/express": "5.0.6",
     "@types/jest": "30.0.0",
     "@types/jsonwebtoken": "9.0.10",
+    "@types/k6": "^2.0.0",
     "@types/node": "22.19.21",
     "@types/nodemailer": "8.0.1",
     "@types/passport-jwt": "4.0.1",

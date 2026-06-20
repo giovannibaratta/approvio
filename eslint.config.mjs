@@ -1,3 +1,5 @@
+import {fileURLToPath} from "node:url"
+import path from "node:path"
 import eslint from "@eslint/js"
 import tseslint from "typescript-eslint"
 import jestPlugin from "eslint-plugin-jest"
@@ -5,9 +7,11 @@ import prettierPlugin from "eslint-plugin-prettier/recommended"
 import nPlugin from "eslint-plugin-n"
 import globals from "globals"
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
 export default tseslint.config(
   {
-    ignores: ["build/**", "generated/**", "dist/**", ".yarn/**"]
+    ignores: ["build/**", "generated/**", "dist/**", ".yarn/**", "load-tests/**", "coverage/**"]
   },
   eslint.configs.recommended,
   nPlugin.configs["flat/recommended"],
@@ -20,7 +24,10 @@ export default tseslint.config(
       },
       // https://typescript-eslint.io/getting-started/typed-linting/
       parserOptions: {
-        projectService: true
+        tsconfigRootDir: __dirname,
+        projectService: {
+          allowDefaultProject: ["eslint.config.mjs", "webpack.config.js", "jest.config.js"]
+        }
       }
     },
     rules: {
@@ -104,6 +111,16 @@ export default tseslint.config(
       "@typescript-eslint/no-unsafe-assignment": "off",
       "@typescript-eslint/no-unsafe-return": "off",
       "@typescript-eslint/no-unsafe-argument": "off"
+    }
+  },
+  {
+    languageOptions: {
+      parserOptions: {
+        tsconfigRootDir: __dirname,
+        projectService: {
+          allowDefaultProject: ["eslint.config.mjs", "webpack.config.js", "jest.config.js"]
+        }
+      }
     }
   }
 )

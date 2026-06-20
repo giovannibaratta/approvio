@@ -28,5 +28,13 @@
       "@prisma/client": ["./generated/prisma/client.ts"]
     }
   },
-  "exclude": ["node_modules", "dist"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "load-tests",
+    "coverage",
+    "eslint.config.mjs",
+    "jest.config.js",
+    "webpack.config.js"
+  ]
 }
