@@ -123,13 +123,11 @@ export function mapWorkflowToDomain<
   DecoratedWorkflow<DomainSelectors>
 > {
   if (include?.workflowTemplates === true) {
-    if (iPrismaDecoratedWorkflow(dbObject, "workflowTemplates", include)) {
-      const workflowWithTemplate = dbObject as PrismaWorkflowWithTemplate
-      return mapToDomainVersionedWorkflowWithTemplate(workflowWithTemplate) as Either<
+    if (iPrismaDecoratedWorkflow(dbObject, "workflowTemplates", include))
+      return mapToDomainVersionedWorkflowWithTemplate(dbObject) as Either<
         WorkflowValidationError | WorkflowTemplateValidationError,
         DecoratedWorkflow<DomainSelectors>
       >
-    }
 
     // This should never happen, but we need to handle the case where the workflow template is not found
     return E.left("unknown_error" as const)

@@ -11,6 +11,7 @@ export interface SpaceRepository {
   createSpaceWithUserPermissions(data: CreateSpaceWithUserPermissionsRepo): TaskEither<CreateSpaceRepoError, Space>
   getSpaceById(data: GetSpaceByIdRepo): TaskEither<GetSpaceRepoError, Versioned<Space>>
   getSpaceByName(data: GetSpaceByNameRepo): TaskEither<GetSpaceRepoError, Versioned<Space>>
+  getSpacesByIds(spaceIds: string[]): TaskEither<UnknownError, {id: string; name: string}[]>
   listSpaces(data: ListSpacesRepo): TaskEither<ListSpacesRepoError, ListSpacesResult>
   deleteSpace(data: DeleteSpaceRepo): TaskEither<DeleteSpaceRepoError, void>
   countSpaces(): TaskEither<UnknownError, number>

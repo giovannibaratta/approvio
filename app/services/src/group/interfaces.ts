@@ -29,6 +29,7 @@ export interface GroupRepository {
   getGroupById(data: GetGroupByIdRepo): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>>
   getGroupByName(data: GetGroupByNameRepo): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>>
   getGroupIdByName(groupName: string): TaskEither<GetGroupRepoError, string>
+  getGroupsByIds(groupIds: string[]): TaskEither<UnknownError, {id: string; name: string}[]>
   listGroups(data: ListGroupsRepo): TaskEither<ListGroupsRepoError, ListGroupsResult>
   /**
    * Get all groups the user is a member of

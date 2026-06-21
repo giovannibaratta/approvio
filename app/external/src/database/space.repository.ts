@@ -89,6 +89,30 @@ export class SpaceDbRepository implements SpaceRepository {
     return this.getSpace({identifier: {type: "name", value: data.spaceName}})
   }
 
+  getSpacesByIds(spaceIds: string[]): TaskEither<"unknown_error", {id: string; name: string}[]> {
+    return pipe(
+      TE.tryCatch(
+        () =>
+          this.dbClient.cx.space.findMany({
+            where: {
+              id: {
+                in: spaceIds
+              }
+            },
+            select: {
+              id: true,
+              name: true
+            }
+          }),
+        error => {
+          Logger.error("Error while fetching spaces by ids. Unknown error", error)
+          return "unknown_error" as const
+        }
+      ),
+      TE.map(spaces => spaces.map(s => ({id: s.id, name: s.name})))
+    )
+  }
+
   private getSpace(request: GetSpaceTaskRequest): TaskEither<GetSpaceRepoError, Versioned<Space>> {
     return pipe(
       request,

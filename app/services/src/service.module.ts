@@ -26,6 +26,7 @@ import {QuotaService} from "./quota"
 import {HierarchyService} from "./hierarchy/hierarchy.service"
 import {AuditLogService} from "./audit-log"
 import {LeverService} from "./lever"
+import {ResourcesService} from "./resources"
 
 const services = [
   AgentService,
@@ -51,7 +52,8 @@ const services = [
   RateLimiterService,
   QuotaService,
   HierarchyService,
-  LeverService
+  LeverService,
+  ResourcesService
 ]
 
 const internalServices = [PkceService]
