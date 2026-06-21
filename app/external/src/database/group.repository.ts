@@ -162,6 +162,30 @@ export class GroupDbRepository implements GroupRepository {
     )
   }
 
+  getGroupsByIds(groupIds: string[]): TaskEither<"unknown_error", {id: string; name: string}[]> {
+    return pipe(
+      TE.tryCatch(
+        () =>
+          this.dbClient.cx.group.findMany({
+            where: {
+              id: {
+                in: groupIds
+              }
+            },
+            select: {
+              id: true,
+              name: true
+            }
+          }),
+        error => {
+          Logger.error("Error while fetching groups by ids. Unknown error", error)
+          return "unknown_error" as const
+        }
+      ),
+      TE.map(groups => groups.map(g => ({id: g.id, name: g.name})))
+    )
+  }
+
   getGroupsByUserId(userId: string): TaskEither<GetGroupRepoError, Group[]> {
     return pipe(
       userId,
