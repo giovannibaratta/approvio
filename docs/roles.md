@@ -88,6 +88,16 @@ Control who can view, cancel, and manage workflow instances:
 - Space-level: Applies to workflows from all templates in a space
 - Organization-wide: Applies to all workflows
 
+### Audit Roles
+
+Control access to view system-wide audit logs:
+
+| Role              | Permissions | Description                              |
+| ----------------- | ----------- | ---------------------------------------- |
+| **AuditorViewer** | read        | View organization-wide system audit logs |
+
+**Scope:** Organization-wide only (cannot be scoped to specific spaces or groups)
+
 ## Role Limits
 
 The system enforces specific limits and behaviors regarding roles to maintain efficiency and clarity. A user or agent can have a maximum of 128 roles assigned to them. If duplicate roles—meaning roles with the exact same name and scope—are assigned, the system automatically deduplicates them.
