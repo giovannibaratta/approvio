@@ -7,16 +7,15 @@ import {cleanDatabase, cleanRedisByPrefix, prepareDatabase, prepareRedisPrefix} 
 import {MockConfigProvider} from "@test/mock-data"
 import {get} from "@test/requests"
 import {DatabaseClient} from "@external"
-import {RequestContext} from "../../../src/logging/request-context"
-import {HealthService} from "@services/health"
-import * as TE from "fp-ts/TaskEither"
 import {PrismaClient} from "@prisma/client"
+import {RequestContext} from "@app/logging/request-context"
+import {PingController} from "@controllers/ping/ping.controller"
 
 describe("RequestIdMiddleware Integration", () => {
   let app: NestApplication
   let prisma: PrismaClient
   let redisPrefix: string
-  let healthService: HealthService
+  let capturedRequestId = ""
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -33,7 +32,23 @@ describe("RequestIdMiddleware Integration", () => {
       logger: false
     })
     prisma = module.get(DatabaseClient).prisma
-    healthService = module.get(HealthService)
+
+    // Read NestJS controller metadata before replacing the method with a Jest spy
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalGetPing = PingController.prototype.getPing
+    const keys = Reflect.getMetadataKeys(originalGetPing)
+    const metadataMap = new Map(keys.map(key => [key, Reflect.getMetadata(key, originalGetPing)]))
+
+    const spy = jest.spyOn(PingController.prototype, "getPing").mockImplementation(() => {
+      capturedRequestId = RequestContext.currentRequestId
+      return {status: "OK"}
+    })
+
+    // Restore NestJS routing metadata to the spy function
+    metadataMap.forEach((meta, key) => {
+      Reflect.defineMetadata(key, meta, spy)
+    })
+
     await app.init()
   }, 30000)
 
@@ -43,16 +58,18 @@ describe("RequestIdMiddleware Integration", () => {
   })
 
   afterEach(async () => {
+    capturedRequestId = ""
     await cleanDatabase(prisma)
     await cleanRedisByPrefix(redisPrefix)
   })
 
   it("should generate a valid traceparent if missing and populate RequestContext", async () => {
-    const response = await get(app, "/health").build()
+    const response = await get(app, "/ping").build()
 
     expect(response.status).toBe(HttpStatus.OK)
     const traceparent = response.headers["traceparent"]
     expect(traceparent).toMatch(/^00-[0-9a-f]{32}-[0-9a-f]{16}-01$/)
+    expect(capturedRequestId).toBe(traceparent)
   })
 
   it("should preserve traceId and generate new spanId from valid traceparent", async () => {
@@ -60,13 +77,7 @@ describe("RequestIdMiddleware Integration", () => {
     const incomingParentId = "00f067aa0ba902b7"
     const validTraceparent = `00-${validTraceId}-${incomingParentId}-01`
 
-    let capturedRequestId: string = ""
-    jest.spyOn(healthService, "checkHealth").mockImplementation(() => {
-      capturedRequestId = RequestContext.currentRequestId
-      return TE.right(undefined)
-    })
-
-    const response = await get(app, "/health").build().set("traceparent", validTraceparent)
+    const response = await get(app, "/ping").build().set("traceparent", validTraceparent)
 
     expect(response.status).toBe(HttpStatus.OK)
     const traceparentHeader = response.headers["traceparent"]
@@ -78,7 +89,7 @@ describe("RequestIdMiddleware Integration", () => {
   })
 
   it("should handle invalid traceparent by generating a new one", async () => {
-    const response = await get(app, "/health").build().set("traceparent", "invalid-traceparent")
+    const response = await get(app, "/ping").build().set("traceparent", "invalid-traceparent")
 
     expect(response.status).toBe(HttpStatus.OK)
     const traceparent = response.headers["traceparent"]

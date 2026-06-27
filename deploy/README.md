@@ -107,3 +107,9 @@ The stack includes:
 - **Worker**: Background processor.
 
 **Note**: An external OIDC provider must be configured using the `--oidc-*` arguments in the generation script.
+
+---
+
+## Production Deployment Guidelines
+
+For production deployments behind a reverse proxy, load balancer, or WAF (e.g. header configuration and protecting internal routes), refer to the [Proxy and WAF Deployment Guide](../docs/infra/proxy-waf-deployment.md).

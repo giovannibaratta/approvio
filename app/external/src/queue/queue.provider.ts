@@ -155,7 +155,7 @@ export class BullQueueProvider implements QueueProvider, OnModuleDestroy, OnModu
         // The ping function does not throw an error when the connection is not available, it just
         // block the execution. The timeout is needed to return without waiting for the ping
         // response.
-        const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Redis ping timeout")), 2000))
+        const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Redis ping timeout")), 500))
         await Promise.race([this.queue.client.ping(), timeout])
       },
       error => {

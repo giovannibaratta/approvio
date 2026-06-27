@@ -287,6 +287,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
   kmsConfig: KmsConfig
   ssrfProtectionConfig: SsrfProtectionConfig
   leverConfig: LeverConfig
+  healthCacheTtlMs: number
 
   private constructor(
     originalProvider?: ConfigProvider,
@@ -419,6 +420,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
       getKeys: () => new Map([[1, Buffer.from("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=", "base64")]])
     }
     this.leverConfig = mocks.leverConfig || provider.leverConfig
+    this.healthCacheTtlMs = provider.healthCacheTtlMs ?? 1000
   }
 
   private static cachedRealProvider?: ConfigProvider

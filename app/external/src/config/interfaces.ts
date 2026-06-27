@@ -130,6 +130,8 @@ export interface ConfigProviderInterface {
   kmsConfig: KmsConfig
   ssrfProtectionConfig: SsrfProtectionConfig
   leverConfig: LeverConfig
+  /** TTL for the health check result cache in milliseconds. */
+  healthCacheTtlMs?: number
 }
 
 export type LeverConfig =
