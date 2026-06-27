@@ -71,9 +71,9 @@ Control who can create, modify, and use workflow templates:
 - Space-level: Applies to all templates in a space
 - Organization-wide: Applies to all templates
 
-### Workflow Roles
+### Workflow Roles (Workflow Template Scoped)
 
-Control who can view, cancel, and manage workflow instances:
+These are a specialized subset of Workflow Template Roles. They grant permissions to view, list, and cancel specific workflow instances, but are scoped strictly to the workflow template (or space/org):
 
 | Role                   | Permissions                                   | Description                      |
 | ---------------------- | --------------------------------------------- | -------------------------------- |
@@ -88,9 +88,21 @@ Control who can view, cancel, and manage workflow instances:
 - Space-level: Applies to workflows from all templates in a space
 - Organization-wide: Applies to all workflows
 
+### Audit Roles
+
+Control access to view system-wide audit logs:
+
+| Role              | Permissions | Description                 |
+| ----------------- | ----------- | --------------------------- |
+| **AuditorViewer** | read        | View system-wide audit logs |
+
+**Scopes Available:**
+
+- Organization-wide: Applies to all audit logs across the organization
+
 ## Role Limits
 
-The system enforces specific limits and behaviors regarding roles to maintain efficiency and clarity. A user or agent can have a maximum of 128 roles assigned to them. If duplicate roles—meaning roles with the exact same name and scope—are assigned, the system automatically deduplicates them.
+The system enforces specific limits and behaviors regarding roles to maintain efficiency and clarity. A user or agent can have a maximum number of roles assigned to them (defined by the MAX_ROLES_PER_USER quota). If duplicate roles—meaning roles with the exact same name and scope—are assigned, the system automatically deduplicates them.
 
 ## Authorization Rules
 

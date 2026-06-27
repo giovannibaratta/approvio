@@ -38,6 +38,34 @@ Permissions follow a hierarchical model:
 3. **Space-scoped Roles**: Apply to a space and its templates
 4. **Resource-specific Roles**: Apply to individual templates or groups
 
+```mermaid
+sequenceDiagram
+    participant U as User/Agent
+    participant API as API
+    participant RBAC as Permission Checker
+
+    U->>API: Request Action on Resource
+    API->>RBAC: Check Permissions
+
+    alt Is Organization Admin?
+        RBAC-->>API: Allowed (Admin Override)
+    else Has Organization-wide Role?
+        RBAC-->>API: Allowed (Org Scope)
+    else Has Space-scoped Role?
+        RBAC-->>API: Allowed (Space Scope)
+    else Has Resource-specific Role?
+        RBAC-->>API: Allowed (Resource Scope)
+    else
+        RBAC-->>API: Denied
+    end
+
+    alt Allowed
+        API-->>U: Action Successful
+    else Denied
+        API-->>U: 403 Forbidden
+    end
+```
+
 ### Voting Permissions
 
 Voting on workflows requires multiple conditions:
@@ -74,6 +102,7 @@ User "alice@company.com" can vote on a workflow if:
 | **Workflow** | `workflow_read`   | View workflow details               |
 | **Workflow** | `workflow_list`   | List workflows                      |
 | **Workflow** | `workflow_cancel` | Cancel workflows                    |
+| **Audit**    | `read`            | View system-wide audit logs         |
 
 ## Security Considerations
 

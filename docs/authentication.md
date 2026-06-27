@@ -13,7 +13,9 @@ This feature requires the IDP to support this kind of interaction, if using a cu
 
 You can explicitly control this mode via a top-level environmental variable:
 
-- `DISABLE_HIGH_PRIVILEGE_MODE`: (Optional) Boolean flag to globally disable the high privilege token mode. Defaults to `false`.
+| Variable                      | Description                                                                                     |
+| :---------------------------- | :---------------------------------------------------------------------------------------------- |
+| `DISABLE_HIGH_PRIVILEGE_MODE` | (Optional) Boolean flag to globally disable the high privilege token mode. Defaults to `false`. |
 
 > [!IMPORTANT]
 > The high privilege flow **does not support automatic registration**. Only pre-existing users can complete the step-up process. If an authenticated user from the IDP does not match an existing user in Approvio, the flow will fail.
