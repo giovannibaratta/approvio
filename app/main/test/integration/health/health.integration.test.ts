@@ -11,6 +11,7 @@ import {PrismaClient} from "@prisma/client"
 import {DatabaseClient} from "@external"
 import {HEALTH_REPOSITORY_TOKEN, HealthRepository} from "@services/health"
 import * as TE from "fp-ts/TaskEither"
+import {HealthRateLimiterGuard} from "@app/rate-limiter"
 
 describe("Health API", () => {
   let app: NestApplication
@@ -22,13 +23,18 @@ describe("Health API", () => {
     const isolatedDb = await prepareDatabase()
     redisPrefix = prepareRedisPrefix()
 
+    const configProvider = MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix)
+    configProvider.healthCacheTtlMs = 0
+
     let module: TestingModule
     try {
       module = await Test.createTestingModule({
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix))
+        .useValue(configProvider)
+        .overrideGuard(HealthRateLimiterGuard)
+        .useValue({canActivate: () => true})
         .compile()
     } catch (error) {
       console.error(error)
@@ -53,7 +59,7 @@ describe("Health API", () => {
 
   describe("Good cases", () => {
     it("should return 200 OK with status OK when dependencies are healthy", async () => {
-      const response = await get(app, "/health").build()
+      const response = await get(app, "/internal/health").build()
 
       expect(response).toHaveStatusCode(HttpStatus.OK)
       const body: HealthResponse = response.body
@@ -63,12 +69,12 @@ describe("Health API", () => {
 
   it("should return 503 Service Unavailable when database connection fails", async () => {
     // Given: an initially healthy app
-    let response = await get(app, "/health").build()
+    let response = await get(app, "/internal/health").build()
     expect(response).toHaveStatusCode(HttpStatus.OK)
 
     // When: the database connection fails
     jest.spyOn(healthRepository, "checkDatabaseConnection").mockReturnValue(TE.left("db_health_check_failed"))
-    response = await get(app, "/health").build()
+    response = await get(app, "/internal/health").build()
 
     // Expect: 503 Service Unavailable with status DEPENDENCY_ERROR and a message
     expect(response).toHaveStatusCode(HttpStatus.SERVICE_UNAVAILABLE)

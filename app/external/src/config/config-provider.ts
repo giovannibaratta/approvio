@@ -50,6 +50,7 @@ export class ConfigProvider implements ConfigProviderInterface {
   readonly kmsConfig: KmsConfig
   readonly ssrfProtectionConfig: SsrfProtectionConfig
   readonly leverConfig: LeverConfig
+  readonly healthCacheTtlMs?: number
 
   constructor() {
     this.isPrivilegeMode = this.validatePrivilegeMode()
@@ -69,6 +70,18 @@ export class ConfigProvider implements ConfigProviderInterface {
     this.kmsConfig = this.validateKmsConfig()
     this.ssrfProtectionConfig = this.validateSsrfProtectionConfig()
     this.leverConfig = this.validateLeverConfig()
+    this.healthCacheTtlMs = this.validateHealthCacheTtlMs()
+  }
+
+  private validateHealthCacheTtlMs(): number {
+    const raw = process.env.HEALTH_CACHE_TTL_MS
+
+    if (raw) {
+      const parsed = parseInt(raw, 10)
+      if (!isNaN(parsed) && parsed >= 0) return parsed
+    }
+
+    return 1000
   }
 
   private validateSsrfProtectionConfig(): SsrfProtectionConfig {

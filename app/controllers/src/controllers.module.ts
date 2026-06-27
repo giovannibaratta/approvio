@@ -11,14 +11,15 @@ import {WorkflowTemplatesController} from "./workflow-templates"
 import {WorkflowTemplateInternalController} from "./internal"
 import {AuthController, WebAuthController, CliAuthController} from "./auth"
 import {RolesController} from "./roles"
-import {HealthController} from "./health"
+import {HealthController} from "./internal/health"
+import {PingController} from "./ping"
 import {QuotasController} from "./quotas"
 import {AuditLogsController} from "./audit-logs"
 import {ResourcesController} from "./resources"
 
 import {ConfigModule} from "@external/config.module"
 
-const internalControllers = [WorkflowTemplateInternalController]
+const internalControllers = [WorkflowTemplateInternalController, HealthController]
 
 @Module({
   imports: [ServiceModule, AuthModule, ConfigModule],
@@ -34,7 +35,7 @@ const internalControllers = [WorkflowTemplateInternalController]
     WebAuthController,
     CliAuthController,
     RolesController,
-    HealthController,
+    PingController,
     QuotasController,
     AuditLogsController,
     ResourcesController,

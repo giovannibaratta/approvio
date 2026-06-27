@@ -11,7 +11,7 @@ import {LeverMiddleware, LeverGuard} from "./lever"
 import {ServiceModule} from "@services/service.module"
 
 @Module({
-  imports: [ControllersModule, AuthModule, RateLimiterModule, ServiceModule],
+  imports: [RateLimiterModule, ControllersModule, AuthModule, ServiceModule],
   controllers: [],
   providers: [
     // Order is important, the LeverGuard must run before auth to shed load early
