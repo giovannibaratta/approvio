@@ -55,6 +55,8 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
     case "auth_token_generation_failed":
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
+    case "auth_identity_conflict":
+    case "user_identity_already_exists":
     case "user_not_found":
     case "request_invalid_user_identifier":
     case "auth_invalid_redirect_uri":
@@ -238,6 +240,8 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
     case "auth_token_generation_failed":
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
+    case "auth_identity_conflict":
+    case "user_identity_already_exists":
     case "user_not_found":
     case "request_invalid_user_identifier":
     case "auth_invalid_redirect_uri":
@@ -421,6 +425,8 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
     case "auth_token_generation_failed":
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
+    case "auth_identity_conflict":
+    case "user_identity_already_exists":
     case "user_not_found":
     case "request_invalid_user_identifier":
     case "auth_invalid_redirect_uri":
@@ -604,6 +610,8 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "auth_token_generation_failed":
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
+    case "auth_identity_conflict":
+    case "user_identity_already_exists":
     case "user_not_found":
     case "request_invalid_user_identifier":
     case "auth_invalid_redirect_uri":

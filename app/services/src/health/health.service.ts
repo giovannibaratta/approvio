@@ -22,7 +22,7 @@ export class HealthService {
 
   checkHealth(): TE.TaskEither<DbHealthCheckFailed | QueueHealthCheckFailed, void> {
     const now = Date.now()
-    if (this.cachedHealthResult && now - this.cacheTimestampMs < this.healthCacheTtlMs){
+    if (this.cachedHealthResult && now - this.cacheTimestampMs < this.healthCacheTtlMs) {
       Logger.log("Returning cached health result", "HealthService")
       return TE.fromEither(this.cachedHealthResult)
     }

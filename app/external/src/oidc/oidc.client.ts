@@ -29,21 +29,22 @@ export class OidcClient implements OidcProvider {
     private readonly configProvider: ConfigProvider
   ) {}
 
-  private getAuthorizationEndpoint(): Either<OidcError, string> {
-    return E.right(this.oidcBootstrapService.getConfiguration().authorization_endpoint)
+  private getAuthorizationEndpoint(providerId: string): Either<OidcError, string> {
+    return E.right(this.oidcBootstrapService.getConfiguration(providerId).authorization_endpoint)
   }
 
   getAuthorizationUrl(
     pkce: PkceChallenge,
     assuranceLevel: AssuranceLevel,
-    redirectUri: string
+    redirectUri: string,
+    providerId: string
   ): Either<OidcError, string> {
     return pipe(
-      this.getAuthorizationEndpoint(),
+      this.getAuthorizationEndpoint(providerId),
       E.chainW(authorizationEndpoint =>
         E.tryCatch(
           () => {
-            const oidcConfig = this.configProvider.oidcConfig
+            const oidcConfig = this.configProvider.oidcProviders.get(providerId)!
 
             const authUrl = new URL(authorizationEndpoint)
             authUrl.searchParams.append("response_type", "code")
@@ -77,9 +78,9 @@ export class OidcClient implements OidcProvider {
   exchangeCodeForTokens(request: OidcTokenRequest): TaskEither<OidcError, OidcTokenResponse> {
     return TE.tryCatch(
       async () => {
-        Logger.log("Exchanging authorization code for tokens")
+        Logger.log(`Exchanging authorization code for tokens with provider ${request.providerId}`)
 
-        const rawConfiguration = this.oidcBootstrapService.getRawClientConfiguration()
+        const rawConfiguration = this.oidcBootstrapService.getRawClientConfiguration(request.providerId)
         const tokens = await client.genericGrantRequest(rawConfiguration, "authorization_code", {
           code: request.code,
           redirect_uri: request.redirectUri,
@@ -112,13 +113,13 @@ export class OidcClient implements OidcProvider {
     )
   }
 
-  getUserInfo(accessToken: string, expectedSubject: string): TaskEither<OidcError, OidcUserInfo> {
+  getUserInfo(accessToken: string, expectedSubject: string, providerId: string): TaskEither<OidcError, OidcUserInfo> {
     return pipe(
       TE.tryCatch(
         async () => {
-          Logger.log("Fetching user info from OIDC provider")
+          Logger.log(`Fetching user info from OIDC provider ${providerId}`)
 
-          const rawConfiguration = this.oidcBootstrapService.getRawClientConfiguration()
+          const rawConfiguration = this.oidcBootstrapService.getRawClientConfiguration(providerId)
           const userInfoResponse: RawUserInfoResponse = await client.fetchUserInfo(
             rawConfiguration,
             accessToken,
@@ -159,10 +160,14 @@ export class OidcClient implements OidcProvider {
     )
   }
 
-  verifyAssuranceLevel(idToken: string, assuranceLevel: AssuranceLevel): Either<OidcError, void> {
+  verifyAssuranceLevel(
+    idToken: string,
+    assuranceLevel: AssuranceLevel,
+    providerId: string = "google"
+  ): Either<OidcError, void> {
     if (assuranceLevel !== AssuranceLevel.FORCE_LOGIN) return E.right(undefined)
 
-    const provider = this.configProvider.oidcConfig.provider
+    const provider = this.configProvider.oidcProviders.get(providerId)!.provider
 
     if (provider !== "auth0" && provider !== "zitadel" && provider !== "keycloak") {
       Logger.warn(`Assurance level verification is not supported for provider: ${provider}`)

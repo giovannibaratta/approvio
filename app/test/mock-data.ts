@@ -275,7 +275,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
   isPrivilegeMode: boolean
   dbConnectionUrl: string
   emailProviderConfig: Option<EmailProviderConfig>
-  oidcConfig: OidcProviderConfig
+  oidcProviders: Map<string, OidcProviderConfig>
   jwtConfig: JwtConfig
   redisConfig: RedisConfig
   rateLimitConfig: RateLimitConfig
@@ -306,15 +306,20 @@ export class MockConfigProvider implements ConfigProviderInterface {
       isPrivilegeMode: true,
       dbConnectionUrl: "postgresql://test:test@localhost:5433/postgres?schema=public",
       emailProviderConfig: O.none,
-      oidcConfig: {
-        provider: "custom",
-        issuerUrl: "http://localhost:4011",
-        clientId: "integration-test-client-id",
-        clientSecret: "integration-test-client-secret",
-        redirectUri: "http://localhost:3000/auth/web/callback",
-        allowInsecure: true,
-        override: undefined
-      },
+      oidcProviders: new Map([
+        [
+          "google",
+          {
+            provider: "custom",
+            issuerUrl: "http://localhost:4011",
+            clientId: "integration-test-client-id",
+            clientSecret: "integration-test-client-secret",
+            redirectUri: "http://localhost:3000/auth/web/callback",
+            allowInsecure: true,
+            override: undefined
+          }
+        ]
+      ]),
       jwtConfig: {
         secret: "test-jwt-secret-for-integration-tests",
         trustedIssuers: ["idp.test.localhost"],
@@ -389,7 +394,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
     this.dbConnectionUrl = mocks.dbConnectionUrl || provider.dbConnectionUrl
     this.emailProviderConfig =
       mocks.emailProviderConfig !== undefined ? O.some(mocks.emailProviderConfig) : provider.emailProviderConfig
-    this.oidcConfig = provider.oidcConfig
+    this.oidcProviders = provider.oidcProviders
     this.jwtConfig = provider.jwtConfig
     this.redisConfig =
       mocks.redisPrefix !== undefined ? {...provider.redisConfig, prefix: mocks.redisPrefix} : provider.redisConfig

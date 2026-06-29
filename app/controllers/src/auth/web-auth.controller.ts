@@ -45,9 +45,9 @@ export class WebAuthController {
   @PublicRoute()
   @HttpCode(HttpStatusCode.Found)
   @Get("login")
-  async login(@Res() res: Response): Promise<void> {
+  async login(@Query("provider") provider: string | undefined, @Res() res: Response): Promise<void> {
     const result = await pipe(
-      this.authService.initiateOidcLogin(),
+      this.authService.initiateOidcLogin(provider),
       logSuccess("OIDC login initiated", "WebAuthController")
     )()
 

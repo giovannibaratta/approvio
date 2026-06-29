@@ -28,10 +28,12 @@ export interface OidcMockUser {
 export async function simulateOidcAuthorization(
   redirectLocation: string,
   testUser: OidcMockUser,
-  configProvider: ConfigProvider
+  configProvider: ConfigProvider,
+  providerId: string = "google"
 ): Promise<string> {
   // Step 1: Create user on OIDC server via API
-  const oidcApiUrl = `${configProvider.oidcConfig.issuerUrl}/api/v1/user`
+  const providerConfig = configProvider.oidcProviders.get(providerId)!
+  const oidcApiUrl = `${providerConfig.issuerUrl}/api/v1/user`
   const createUserResponse = await axios.post(oidcApiUrl, testUser, {
     headers: {"Content-Type": "application/json"}
   })

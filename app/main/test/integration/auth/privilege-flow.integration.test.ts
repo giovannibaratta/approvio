@@ -43,7 +43,7 @@ describe("Privilege Flow Integration", () => {
     }
 
     const mockConfigProvider = MockConfigProvider.fromDbConnectionUrl(isolatedDb)
-    mockConfigProvider.oidcConfig.provider = "auth0" // Must be supported provider for step-up auth
+    mockConfigProvider.oidcProviders.get("google")!.provider = "auth0" // Must be supported provider for step-up auth
 
     const module: TestingModule = await Test.createTestingModule({
       imports: [AppModule]

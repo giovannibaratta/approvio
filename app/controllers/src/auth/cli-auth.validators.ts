@@ -25,11 +25,13 @@ export type CliPrivilegedTokenExchangeRequestValidationError =
 
 export function validateInitiateCliLoginRequest(
   body: unknown
-): Either<CliInitiateLoginRequestValidationError, {redirectUri: string}> {
+): Either<CliInitiateLoginRequestValidationError, {redirectUri: string; provider?: string}> {
   if (!body || !hasOwnProperty(body, "redirectUri")) return left("request_missing_redirect_uri")
   if (typeof body.redirectUri !== "string" || !body.redirectUri) return left("request_invalid_redirect_uri")
 
-  return right({redirectUri: body.redirectUri})
+  const provider = hasOwnProperty(body, "provider") && typeof body.provider === "string" ? body.provider : undefined
+
+  return right({redirectUri: body.redirectUri, provider})
 }
 
 export function validateGenerateCliTokenRequest(
