@@ -33,5 +33,3 @@ export function extractIdFromLocation(res: Response) {
   }
   return null
 }
-
-

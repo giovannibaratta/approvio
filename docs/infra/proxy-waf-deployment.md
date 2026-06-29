@@ -10,11 +10,11 @@ When deploying in these environments, configure your proxies and the application
 
 Ensure your upstream proxy or load balancer is configured to inject/preserve the standard forwarding headers:
 
-| Header | Description | Required Value / Action |
-|---|---|---|
-| `X-Forwarded-For` | Identifies the originating IP address of a client. | Must be set by the edge proxy. Ensure internal proxies append to it. |
-| `X-Forwarded-Proto` | Identifies the protocol (HTTP or HTTPS) used by the client. | Should match the protocol used at the edge. |
-| `X-Forwarded-Host` | Identifies the original host requested by the client. | Should match the original `Host` header. |
+| Header              | Description                                                 | Required Value / Action                                              |
+| ------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------- |
+| `X-Forwarded-For`   | Identifies the originating IP address of a client.          | Must be set by the edge proxy. Ensure internal proxies append to it. |
+| `X-Forwarded-Proto` | Identifies the protocol (HTTP or HTTPS) used by the client. | Should match the protocol used at the edge.                          |
+| `X-Forwarded-Host`  | Identifies the original host requested by the client.       | Should match the original `Host` header.                             |
 
 > [!CAUTION]
 > **WAF/Proxy Spoofing Prevention**:

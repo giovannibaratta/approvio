@@ -38,7 +38,7 @@ export class ConfigProvider implements ConfigProviderInterface {
   readonly isPrivilegeMode: boolean
   readonly dbConnectionUrl: string
   readonly emailProviderConfig: Option<EmailProviderConfig>
-  readonly oidcConfig: OidcProviderConfig
+  readonly oidcProviders: Map<string, OidcProviderConfig>
   readonly jwtConfig: JwtConfig
   readonly redisConfig: RedisConfig
   readonly rateLimitConfig: RateLimitConfig
@@ -56,7 +56,7 @@ export class ConfigProvider implements ConfigProviderInterface {
     this.isPrivilegeMode = this.validatePrivilegeMode()
     this.dbConnectionUrl = this.validateConnectionUrl()
     this.emailProviderConfig = ConfigProvider.validateEmailProviderConfig()
-    this.oidcConfig = this.validateOidcProviderConfig()
+    this.oidcProviders = this.validateOidcProviderConfig()
     this.jwtConfig = this.validateJwtConfig()
     // redisConfig must be initialized BEFORE rateLimitConfig because the latter
     // falls back to the main redisConfig if no specific rate limit connection is provided.
@@ -203,43 +203,66 @@ export class ConfigProvider implements ConfigProviderInterface {
     return smtpAllowSelfSignedRaw.toLowerCase() === "true"
   }
 
-  private validateOidcProviderConfig(): OidcProviderConfig {
-    const providerRaw = process.env.OIDC_PROVIDER
-    const provider = this.parseOidcProvider(providerRaw)
+  private validateOidcProviderConfig(): Map<string, OidcProviderConfig> {
+    const providers = new Map<string, OidcProviderConfig>()
+    const prefixMap = new Map<string, Record<string, string | undefined>>()
 
-    const issuerUrl = process.env.OIDC_ISSUER_URL
-    const clientId = process.env.OIDC_CLIENT_ID
-    const clientSecret = process.env.OIDC_CLIENT_SECRET
-    const redirectUri = process.env.OIDC_REDIRECT_URI
-    const scopes = process.env.OIDC_SCOPES
+    // Scan for OIDC_PROVIDER_<NAME>_<PROPERTY>
+    for (const [key, value] of Object.entries(process.env)) {
+      const match = /^OIDC_PROVIDER_([A-Za-z0-9_-]+)_(.+)$/.exec(key)
+      if (match) {
+        const id = match[1]!
+        const property = match[2]!
+        if (!prefixMap.has(id)) prefixMap.set(id, {})
 
-    if (!issuerUrl || !clientId || !clientSecret || !redirectUri)
-      throw new Error("Incomplete OIDC provider configuration")
-
-    if (issuerUrl.length === 0 || clientId.length === 0 || clientSecret.length === 0 || redirectUri.length === 0)
-      throw new Error("OIDC provider configuration values cannot be empty")
-
-    this.validateUrl(issuerUrl, "OIDC_ISSUER_URL")
-    this.validateUrl(redirectUri, "OIDC_REDIRECT_URI")
-
-    const override = this.parseOidcEndpoints(
-      process.env.OIDC_AUTHORIZATION_ENDPOINT,
-      process.env.OIDC_TOKEN_ENDPOINT,
-      process.env.OIDC_USERINFO_ENDPOINT
-    )
-
-    const allowInsecure = this.parseOidcAllowInsecure(process.env.OIDC_ALLOW_INSECURE)
-
-    return {
-      provider,
-      issuerUrl,
-      clientId,
-      clientSecret,
-      redirectUri,
-      allowInsecure,
-      override,
-      scopes
+        prefixMap.get(id)![property] = value
+      }
     }
+
+    if (prefixMap.size === 0)
+      throw new Error("No OIDC providers configured. At least one OIDC_PROVIDER_<NAME>_<PROPERTY> is required.")
+
+    for (const [id, env] of prefixMap.entries()) {
+      const providerRaw = env.TYPE
+      const provider = this.parseOidcProvider(providerRaw)
+
+      const issuerUrl = env.ISSUER_URL
+      const clientId = env.CLIENT_ID
+      const clientSecret = env.CLIENT_SECRET
+      const redirectUri = env.REDIRECT_URI
+      const scopes = env.SCOPES
+
+      if (!issuerUrl || !clientId || !clientSecret || !redirectUri)
+        throw new Error(`Incomplete OIDC provider configuration for '${id}'`)
+
+      if (issuerUrl.length === 0 || clientId.length === 0 || clientSecret.length === 0 || redirectUri.length === 0)
+        throw new Error(`OIDC provider configuration values cannot be empty for '${id}'`)
+
+      this.validateUrl(issuerUrl, `OIDC_PROVIDER_${id}_ISSUER_URL`)
+      this.validateUrl(redirectUri, `OIDC_PROVIDER_${id}_REDIRECT_URI`)
+
+      const override = this.parseOidcEndpoints(
+        env.AUTHORIZATION_ENDPOINT,
+        env.TOKEN_ENDPOINT,
+        env.USERINFO_ENDPOINT,
+        id
+      )
+
+      const allowInsecure = this.parseOidcAllowInsecure(env.ALLOW_INSECURE)
+
+      providers.set(id, {
+        provider,
+        issuerUrl,
+        clientId,
+        clientSecret,
+        redirectUri,
+        allowInsecure,
+        override,
+        scopes
+      })
+    }
+
+    return providers
   }
 
   private parseOidcProvider(providerRaw: string | undefined): OidcProviderConfig["provider"] {
@@ -259,13 +282,14 @@ export class ConfigProvider implements ConfigProviderInterface {
   private parseOidcEndpoints(
     authEndpoint?: string,
     tokenEndpoint?: string,
-    userinfoEndpoint?: string
+    userinfoEndpoint?: string,
+    id?: string
   ): OidcProviderConfig["override"] | undefined {
     // Either all attributes are provided or none, mix is considered an error.
     if (authEndpoint && tokenEndpoint && userinfoEndpoint) {
-      this.validateUrl(authEndpoint, "OIDC_AUTHORIZATION_ENDPOINT")
-      this.validateUrl(tokenEndpoint, "OIDC_TOKEN_ENDPOINT")
-      this.validateUrl(userinfoEndpoint, "OIDC_USERINFO_ENDPOINT")
+      this.validateUrl(authEndpoint, `OIDC_PROVIDER_${id}_AUTHORIZATION_ENDPOINT`)
+      this.validateUrl(tokenEndpoint, `OIDC_PROVIDER_${id}_TOKEN_ENDPOINT`)
+      this.validateUrl(userinfoEndpoint, `OIDC_PROVIDER_${id}_USERINFO_ENDPOINT`)
 
       return {
         authorizationEndpoint: authEndpoint,

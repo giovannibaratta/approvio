@@ -44,6 +44,7 @@ describe("PkceSessionDbRepository Integration", () => {
         codeVerifier,
         redirectUri: "http://localhost:3000/callback",
         oidcState: "oidc-state-value",
+        providerId: "google",
         expiresAt: new Date(Date.now() + 100000)
       }
 

@@ -47,7 +47,7 @@
     "load-test:baseline": "yarn load-test baseline workflow-crud",
     "load-test:stress": "THINK_TIME=0 yarn load-test stress workflow-crud"
   },
-  "packageManager": "yarn@4.7.0",
+  "packageManager": "yarn@4.17.0",
   "dependencies": {
     "@approvio/api": "0.0.56",
     "@aws-crypto/client-node": "^5.0.0",

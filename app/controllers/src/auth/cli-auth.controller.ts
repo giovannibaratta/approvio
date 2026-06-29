@@ -34,7 +34,7 @@ export class CliAuthController {
   async initiateCliLogin(@Body() body: unknown): Promise<{authorizationUrl: string}> {
     const result = await pipe(
       TE.fromEither(validateInitiateCliLoginRequest(body)),
-      TE.chainW(({redirectUri}) => this.authService.initiateOidcLoginFromCli(redirectUri)),
+      TE.chainW(({redirectUri, provider}) => this.authService.initiateOidcLoginFromCli(redirectUri, provider)),
       logSuccess("CLI OIDC login initiated", "CliAuthController")
     )()
 

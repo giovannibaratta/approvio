@@ -116,7 +116,7 @@ export interface ConfigProviderInterface {
   isPrivilegeMode: boolean
   dbConnectionUrl: string
   emailProviderConfig: Option<EmailProviderConfig>
-  oidcConfig: OidcProviderConfig
+  oidcProviders: Map<string, OidcProviderConfig>
   jwtConfig: JwtConfig
   redisConfig: RedisConfig
   rateLimitConfig: RateLimitConfig

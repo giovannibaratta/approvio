@@ -52,6 +52,7 @@ import {
   HighPrivilegeAuthError,
   PrivilegedToken
 } from "./interfaces"
+import {USER_IDENTITY_REPOSITORY_TOKEN, UserIdentityRepository} from "../user-identity/interfaces"
 import {TokenPayloadBuilder} from "./auth-token"
 import {createSha256Hash, validateDpopJwt, logSuccess, DPOP_MAX_AGE_SECONDS, CLOCK_SKEW_TOLERANCE_SECONDS} from "@utils"
 import {AgentService} from "@services/agent"
@@ -64,6 +65,7 @@ export interface OidcUser {
   oidcSubjectId: string
   email: string
   displayName?: string
+  providerId: string
 }
 
 @Injectable()
@@ -87,7 +89,9 @@ export class AuthService {
     @Inject(STEP_UP_TOKEN_REPOSITORY_TOKEN)
     private readonly stepUpTokenRepo: StepUpTokenRepository,
     @Inject(DPOP_TOKEN_REPOSITORY_TOKEN)
-    private readonly dpopTokenRepo: DpopTokenRepository
+    private readonly dpopTokenRepo: DpopTokenRepository,
+    @Inject(USER_IDENTITY_REPOSITORY_TOKEN)
+    private readonly userIdentityRepo: UserIdentityRepository
   ) {
     const {audience, issuer, accessTokenExpirationSec} = this.configProvider.jwtConfig
 
@@ -140,19 +144,49 @@ export class AuthService {
         displayName
       }
 
-      return this.userService.autoRegisterOidcUser(autoRegisterRequest)
+      return pipe(
+        this.userService.autoRegisterOidcUser(autoRegisterRequest),
+        TE.chainW(user =>
+          pipe(
+            this.userIdentityRepo.create({
+              userId: user.id,
+              providerId: oidcUserData.providerId,
+              subjectId: oidcUserData.oidcSubjectId,
+              email: oidcUserData.email
+            }),
+            TE.map(() => user)
+          )
+        )
+      )
     }
 
     return pipe(
-      this.userService.getUserByIdentifier(oidcUser.email),
-      TE.orElse((error: UserGetError) => {
-        if (error === "user_not_found") {
-          Logger.log(`User with email ${oidcUser.email} not found, attempting auto-registration`)
-          return autoRegisterUser(oidcUser)
-        }
-        Logger.error(`Error retrieving user: ${error}`)
-        return TE.left(error)
-      })
+      // First, try to find an existing identity for this provider+subject
+      this.userIdentityRepo.findByProviderAndSubject(oidcUser.providerId, oidcUser.oidcSubjectId),
+      TE.chainW(identity => this.userService.getUserByIdentifier(identity.userId)),
+      TE.orElseW(() =>
+        // If not found, fall back to email matching (Day-1 Identity Linking / Auto-Registration)
+        pipe(
+          this.userService.getUserByIdentifier(oidcUser.email),
+          TE.chainW(existingUser => {
+            // Day 1: Reject auto-linking across providers
+            Logger.warn(
+              `Identity conflict: User ${existingUser.email} exists but no identity link found for provider ${oidcUser.providerId}`
+            )
+            return TE.left("auth_identity_conflict" as const)
+          }),
+          TE.orElse((error: UserGetError | "auth_identity_conflict") => {
+            if (error === "user_not_found") {
+              Logger.log(`User with email ${oidcUser.email} not found, attempting auto-registration`)
+              return autoRegisterUser(oidcUser)
+            }
+            if (error === "auth_identity_conflict") return TE.left(error)
+
+            Logger.error(`Error retrieving user: ${error}`)
+            return TE.left(error)
+          })
+        )
+      )
     )
   }
 
@@ -161,15 +195,20 @@ export class AuthService {
       grantType: "authorization_code",
       code,
       redirectUri: pkceData.redirectUri,
-      codeVerifier: pkceData.codeVerifier
+      codeVerifier: pkceData.codeVerifier,
+      providerId: pkceData.providerId
     }
 
     return this.oidcClient.exchangeCodeForTokens(tokenRequest)
   }
 
-  private getUserInfoFromProvider(accessToken: string, expectedSubject: string): TaskEither<AuthError, OidcUserInfo> {
+  private getUserInfoFromProvider(
+    accessToken: string,
+    expectedSubject: string,
+    providerId: string
+  ): TaskEither<AuthError, OidcUserInfo> {
     return pipe(
-      this.oidcClient.getUserInfo(accessToken, expectedSubject),
+      this.oidcClient.getUserInfo(accessToken, expectedSubject, providerId),
       TE.mapLeft((error: OidcError): AuthError => {
         Logger.error("Failed to get user info from OIDC provider", error)
         return error
@@ -182,6 +221,10 @@ export class AuthService {
     pkceData: PkceData
   ): TaskEither<AuthError | RefreshTokenCreateError, TokenPair> {
     const mapUserInfoToOidcUser = (userInfo: OidcUserInfo): TE.TaskEither<AuthError, OidcUser> => {
+      if (userInfo.emailVerified === false) {
+        Logger.warn("OIDC provider returned unverified email")
+        return TE.left("auth_missing_email_from_oidc_provider" as const) // Treating unverified email as missing/invalid for security
+      }
       if (!userInfo.email) {
         Logger.warn("OIDC provider did not return email claim")
         return TE.left("auth_missing_email_from_oidc_provider" as const)
@@ -190,7 +233,8 @@ export class AuthService {
       const oidcUser: OidcUser = {
         oidcSubjectId: userInfo.sub,
         email: userInfo.email,
-        displayName: userInfo.name || userInfo.preferredUsername || userInfo.email
+        displayName: userInfo.name || userInfo.preferredUsername || userInfo.email,
+        providerId: pkceData.providerId
       }
 
       return TE.right(oidcUser)
@@ -202,7 +246,7 @@ export class AuthService {
         pipe(
           this.extractSubFromIdToken(tokenResponse.idToken, "authentication flow"),
           TE.fromEither,
-          TE.chainW(({sub}) => this.getUserInfoFromProvider(tokenResponse.accessToken, sub))
+          TE.chainW(({sub}) => this.getUserInfoFromProvider(tokenResponse.accessToken, sub, pkceData.providerId))
         )
       ),
       TE.chainW(mapUserInfoToOidcUser),
@@ -225,21 +269,22 @@ export class AuthService {
     )
   }
 
-  private getWebRedirectUri(): string {
-    return this.configProvider.oidcConfig.redirectUri
+  private getWebRedirectUri(providerId: string): string {
+    return this.configProvider.oidcProviders.get(providerId)!.redirectUri
   }
 
-  initiateOidcLoginFromCli(redirectUri: string): TaskEither<AuthError, string> {
+  initiateOidcLoginFromCli(redirectUri: string, providerId: string = "google"): TaskEither<AuthError, string> {
     if (!this.isLoopbackRedirectUri(redirectUri)) return TE.left("auth_invalid_redirect_uri" as const)
 
-    return this.initiateOidcLogin(AssuranceLevel.NONE, redirectUri)
+    return this.initiateOidcLogin(providerId, AssuranceLevel.NONE, redirectUri)
   }
 
   initiateOidcLogin(
+    providerId: string = "google",
     assuranceLevel: AssuranceLevel = AssuranceLevel.NONE,
     redirectUri?: string
   ): TaskEither<AuthError, string> {
-    const finalRedirectUri = redirectUri ?? this.getWebRedirectUri()
+    const finalRedirectUri = redirectUri ?? this.getWebRedirectUri(providerId)
     return pipe(
       TE.Do,
       TE.bindW("pkceChallenge", () => this.pkceService.generatePkceChallenge()),
@@ -247,11 +292,12 @@ export class AuthService {
         this.pkceService.storePkceData(pkceChallenge.state, {
           codeVerifier: pkceChallenge.codeVerifier,
           redirectUri: finalRedirectUri,
-          oidcState: pkceChallenge.state
+          oidcState: pkceChallenge.state,
+          providerId
         })
       ),
       TE.chainW(({pkceChallenge}) =>
-        TE.fromEither(this.oidcClient.getAuthorizationUrl(pkceChallenge, assuranceLevel, finalRedirectUri))
+        TE.fromEither(this.oidcClient.getAuthorizationUrl(pkceChallenge, assuranceLevel, finalRedirectUri, providerId))
       )
     )
   }
@@ -464,7 +510,7 @@ export class AuthService {
   initiatePrivilegeTokenGeneration(redirectUri?: string): TaskEither<HighPrivilegeAuthError, string> {
     if (!this.configProvider.isPrivilegeMode) return TE.left("auth_high_privilege_flow_disabled" as const)
 
-    return this.initiateOidcLogin(AssuranceLevel.FORCE_LOGIN, redirectUri)
+    return this.initiateOidcLogin("google", AssuranceLevel.FORCE_LOGIN, redirectUri)
   }
 
   /**
@@ -488,14 +534,15 @@ export class AuthService {
 
     return pipe(
       this.pkceService.retrieveAndConsumePkceData(request.state),
-      TE.chainW(pkceData => this.exchangeCodeForTokens(request.code, pkceData)),
-      TE.chainW(tokenResponse =>
+      TE.bindTo("pkceData"),
+      TE.bindW("tokenResponse", ({pkceData}) => this.exchangeCodeForTokens(request.code, pkceData)),
+      TE.chainW(({pkceData, tokenResponse}) =>
         pipe(
           this.extractSubFromIdToken(tokenResponse.idToken, "step-up flow"),
           TE.fromEither,
           TE.chainW(({idToken, sub}) =>
             pipe(
-              this.getUserInfoFromProvider(tokenResponse.accessToken, sub),
+              this.getUserInfoFromProvider(tokenResponse.accessToken, sub, pkceData.providerId),
               TE.chainW(() => TE.fromEither(this.oidcClient.verifyAssuranceLevel(idToken, AssuranceLevel.FORCE_LOGIN)))
             )
           )
