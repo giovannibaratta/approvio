@@ -184,7 +184,7 @@ __metadata:
     license-checker-rseidelsohn: "npm:^5.0.0"
     mailpit-api: "npm:^2.0.0"
     node-loader: "npm:2.1.0"
-    nodemailer: "npm:8.0.11"
+    nodemailer: "npm:9.0.3"
     openid-client: "npm:6.8.4"
     passport: "npm:0.7.0"
     passport-jwt: "npm:4.0.1"
@@ -9621,10 +9621,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"nodemailer@npm:8.0.11":
-  version: 8.0.11
-  resolution: "nodemailer@npm:8.0.11"
-  checksum: 10/81f74337c99d5af0ced47558d7e0bf629b5f4c4f5403fd7e515430b3ce982fdf72ab09a18040822090c640e3707d7e32172de66265e5f04097150d1c07b4b567
+"nodemailer@npm:9.0.3":
+  version: 9.0.3
+  resolution: "nodemailer@npm:9.0.3"
+  checksum: 10/0118b6fc1e2f459b2b953c4827167a8c8422e1df2fb5055df3af307f4eff4fc71e7c19eb5aff923a6dcc26242e9c1008d63595117b4519a2698591dac64ee82c
   languageName: node
   linkType: hard
 
