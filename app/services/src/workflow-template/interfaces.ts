@@ -146,10 +146,7 @@ export interface ListWorkflowTemplatesResponse {
 }
 
 export type CreateWorkflowTemplateError =
-  | WorkflowTemplateValidationError
-  | CreateWorkflowTemplateRepoError
-  | "quota_exceeded"
-  | "quota_check_error"
+  WorkflowTemplateValidationError | CreateWorkflowTemplateRepoError | "quota_exceeded" | "quota_check_error"
 
 export interface CreateWorkflowTemplateRequest extends RequestorAwareRequest {
   workflowTemplateData: {
@@ -184,18 +181,12 @@ export interface CreateWorkflowTemplateRepo {
 export const WORKFLOW_TEMPLATE_REPOSITORY_TOKEN = Symbol("WORKFLOW_TEMPLATE_REPOSITORY_TOKEN")
 
 export type WorkflowTemplateGetActiveError =
-  | "active_workflow_template_not_found"
-  | WorkflowTemplateValidationError
-  | EncryptionError
-  | UnknownError
+  "active_workflow_template_not_found" | WorkflowTemplateValidationError | EncryptionError | UnknownError
 
 export type WorkflowTemplateGetParentSpaceError = "workflow_template_not_found" | UnknownError
 
 export type WorkflowTemplateGetError =
-  | "workflow_template_not_found"
-  | WorkflowTemplateValidationError
-  | EncryptionError
-  | UnknownError
+  "workflow_template_not_found" | WorkflowTemplateValidationError | EncryptionError | UnknownError
 
 export type WorkflowTemplateUpdateError =
   | "concurrency_error"

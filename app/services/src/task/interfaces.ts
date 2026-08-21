@@ -22,22 +22,13 @@ type TaskNotFoundError = "task_not_found"
 type TaskLockInconsistentError = "task_lock_inconsistent"
 
 export type TaskGetErrorWebhookTask =
-  | UnknownError
-  | WorkflowActionWebhookTaskValidationError
-  | TaskNotFoundError
-  | TaskLockInconsistentError
+  UnknownError | WorkflowActionWebhookTaskValidationError | TaskNotFoundError | TaskLockInconsistentError
 
 export type TaskGetErrorEmailTask =
-  | UnknownError
-  | WorkflowActionEmailTaskValidationError
-  | TaskNotFoundError
-  | TaskLockInconsistentError
+  UnknownError | WorkflowActionEmailTaskValidationError | TaskNotFoundError | TaskLockInconsistentError
 
 export type TaskGetErrorSlackTask =
-  | UnknownError
-  | WorkflowActionSlackTaskValidationError
-  | TaskNotFoundError
-  | TaskLockInconsistentError
+  UnknownError | WorkflowActionSlackTaskValidationError | TaskNotFoundError | TaskLockInconsistentError
 
 export type TaskCreateError = UnknownError | TaskAlreadyExists
 export type TaskUpdateError = UnknownError | TaskConcurrentUpdateError | TaskLockedByOtherError

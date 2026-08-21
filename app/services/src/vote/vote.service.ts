@@ -227,8 +227,7 @@ export enum VoteStatus {
 }
 
 export type CanVoteResponse = {status: VoteStatus} & (
-  | {canVote: true; requireHighPrivilege: boolean}
-  | {canVote: false; reason: CantVoteReason}
+  {canVote: true; requireHighPrivilege: boolean} | {canVote: false; reason: CantVoteReason}
 )
 
 export type CanVoteError =

@@ -72,9 +72,9 @@ export type DynamicDecorators<
 > = {
   // Include in the final type only the keys that are in the both AllowedDecorators and SelectedDecorators
   // and have a value of true.
-  [K in keyof AllowedDecorators & keyof SelectedDecorators as SelectedDecorators[K] extends true
-    ? K
-    : never]: AllowedDecorators[K]
+  [
+    K in keyof AllowedDecorators & keyof SelectedDecorators as SelectedDecorators[K] extends true ? K : never
+  ]: AllowedDecorators[K]
 }
 
 /**

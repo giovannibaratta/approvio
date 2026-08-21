@@ -28,8 +28,7 @@ type GroupValidationReferenceError = "invalid_group_uuid"
 
 type UnprefixedMembershipValidationError = EntityValidationReferenceError | "inconsistent_dates"
 type UnprefixedMembershipValidationErrorWithGroupRef =
-  | UnprefixedMembershipValidationError
-  | GroupValidationReferenceError
+  UnprefixedMembershipValidationError | GroupValidationReferenceError
 
 interface PrivateMembershipWithGroupRef extends PrivateMembership {
   groupId: string

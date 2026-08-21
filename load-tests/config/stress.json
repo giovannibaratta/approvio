@@ -7,10 +7,10 @@
       "preAllocatedVUs": 20,
       "maxVUs": 200,
       "stages": [
-        { "target": 50, "duration": "2m" },
-        { "target": 100, "duration": "3m" },
-        { "target": 200, "duration": "3m" },
-        { "target": 10, "duration": "2m" }
+        {"target": 50, "duration": "2m"},
+        {"target": 100, "duration": "3m"},
+        {"target": 200, "duration": "3m"},
+        {"target": 10, "duration": "2m"}
       ]
     }
   },

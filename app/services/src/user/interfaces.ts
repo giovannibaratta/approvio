@@ -4,19 +4,12 @@ import {Versioned} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 
 export type UserCreateError =
-  | "user_already_exists"
-  | AuthorizationError
-  | UserValidationError
-  | UnknownError
-  | "quota_check_error"
+  "user_already_exists" | AuthorizationError | UserValidationError | UnknownError | "quota_check_error"
 export type UserGetError = "user_not_found" | "request_invalid_user_identifier" | UserValidationError | UnknownError
 export type UserUpdateError = UserGetError | ConcurrentModificationError
 
 export type UserListValidationError =
-  | "invalid_page_number"
-  | "invalid_limit_number"
-  | "search_too_long"
-  | "search_term_invalid_characters"
+  "invalid_page_number" | "invalid_limit_number" | "search_too_long" | "search_term_invalid_characters"
 export type UserListError = UserListValidationError | UserSummaryValidationError | UnknownError
 
 export interface PaginatedUsersList {

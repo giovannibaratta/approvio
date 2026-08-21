@@ -32,9 +32,7 @@ export type DecoratedWorkflowActionTask<T extends WorkflowActionTaskDecoratorSel
 >
 
 export type WorkflowActionTaskData =
-  | WorkflowActionPendingTaskData
-  | WorkflowActionCompletedTaskData
-  | WorkflowActionErrorTaskData
+  WorkflowActionPendingTaskData | WorkflowActionCompletedTaskData | WorkflowActionErrorTaskData
 
 interface WorkflowActionTaskBaseData {
   createdAt: Date
@@ -75,9 +73,7 @@ export type WorkflowActionTaskValidationError = PrefixUnion<
 >
 
 type UnprefixedWorkflowActionTaskValidationError =
-  | LockValidationError
-  | StructureValidationError
-  | ErrorReasonValidationError
+  LockValidationError | StructureValidationError | ErrorReasonValidationError
 
 type StructureValidationError =
   | "missing_or_invalid_status"
@@ -92,10 +88,7 @@ type StructureValidationError =
 type ErrorReasonValidationError = "error_reason_too_long" | "error_reason_is_empty" | "error_reason_not_defined"
 
 export type LockValidationError =
-  | "lock_date_prior_creation"
-  | "lock_by_too_long"
-  | "lock_by_is_empty"
-  | "lock_by_invalid_format"
+  "lock_date_prior_creation" | "lock_by_too_long" | "lock_by_is_empty" | "lock_by_invalid_format"
 
 export const MAX_LOCK_BY_LENGTH = 1024
 export const MAX_ERROR_REASON_LENGTH = 16384

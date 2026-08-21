@@ -24,10 +24,7 @@ export enum WorkflowStatus {
 }
 
 export type CantVoteReason =
-  | "workflow_already_approved"
-  | "workflow_cancelled"
-  | "workflow_expired"
-  | WorkflowTemplateCantVoteReason
+  "workflow_already_approved" | "workflow_cancelled" | "workflow_expired" | WorkflowTemplateCantVoteReason
 
 export type Workflow = Readonly<WorkflowData>
 

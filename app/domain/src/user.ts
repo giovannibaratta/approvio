@@ -38,9 +38,7 @@ export type UserValidationError = PrefixUnion<"user", UnprefixedUserValidationEr
 export type UserSummaryValidationError = PrefixUnion<"user", UnprefixedUserSummaryValidationError>
 
 type UnprefixedUserValidationError =
-  | UnprefixedUserSummaryValidationError
-  | OrgValidationError
-  | RoleAssignmentValidationError
+  UnprefixedUserSummaryValidationError | OrgValidationError | RoleAssignmentValidationError
 type UnprefixedUserSummaryValidationError = IdValidationError | DisplayNameValidationError | EmailValidationError
 
 export class UserFactory {

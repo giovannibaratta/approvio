@@ -102,11 +102,7 @@ export interface WorkflowRepository {
 export type WorkflowGetParentTemplateError = "workflow_not_found" | UnknownError
 
 export type WorkflowGetError =
-  | "workflow_not_found"
-  | WorkflowValidationError
-  | WorkflowTemplateValidationError
-  | EncryptionError
-  | UnknownError
+  "workflow_not_found" | WorkflowValidationError | WorkflowTemplateValidationError | EncryptionError | UnknownError
 
 export type WorkflowUpdateError =
   | "workflow_not_found"

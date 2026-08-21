@@ -148,9 +148,7 @@ export interface OidcTokenRequest {
 
 export type AgentChallengeGetError = "agent_challenge_not_found" | UnknownError
 export type AgentChallengeUpdateError =
-  | "agent_challenge_update_failed"
-  | "agent_challenge_concurrent_update"
-  | UnknownError
+  "agent_challenge_update_failed" | "agent_challenge_concurrent_update" | UnknownError
 
 export type AgentTokenError =
   | "agent_token_generation_failed"
@@ -193,9 +191,7 @@ export interface OidcProvider {
 }
 
 export type GetChallengeByNonceError =
-  | "agent_challenge_not_found"
-  | AgentChallengeDecoratedValidationError
-  | UnknownError
+  "agent_challenge_not_found" | AgentChallengeDecoratedValidationError | UnknownError
 
 export interface AgentChallengeRepository {
   persistChallenge(challenge: AgentChallenge): TaskEither<AgentChallengeCreateError, AgentChallenge>

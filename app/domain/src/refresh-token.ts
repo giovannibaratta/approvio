@@ -538,9 +538,7 @@ export class RefreshTokenFactory {
 }
 
 export type RefreshTokenEligibilityError =
-  | "refresh_token_expired"
-  | "refresh_token_revoked"
-  | "refresh_token_reuse_detected"
+  "refresh_token_expired" | "refresh_token_revoked" | "refresh_token_reuse_detected"
 
 export function canTokenBeRefreshed(token: RefreshToken, time: Date): E.Either<RefreshTokenEligibilityError, true> {
   if (RefreshTokenFactory.isExpired(token, time)) return E.left("refresh_token_expired" as const)

@@ -4,15 +4,10 @@ import {hasOwnProperty} from "@utils"
 import {Either, left, right} from "fp-ts/Either"
 
 export type RefreshTokenRequestValidationError =
-  | "request_empty_body"
-  | "request_missing_refresh_token"
-  | "request_invalid_refresh_token"
+  "request_empty_body" | "request_missing_refresh_token" | "request_invalid_refresh_token"
 
 export type RefreshAgentTokenRequestValidationError =
-  | "request_empty_body"
-  | "request_missing_refresh_token"
-  | "request_invalid_refresh_token"
-  | "request_invalid_dpop_jkt"
+  "request_empty_body" | "request_missing_refresh_token" | "request_invalid_refresh_token" | "request_invalid_dpop_jkt"
 
 export type GenerateTokenRequestValidationError =
   | "request_empty_body"

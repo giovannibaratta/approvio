@@ -38,9 +38,7 @@ export type DecoratedWorkflowActionSlackErrorTask<T extends WorkflowActionTaskDe
 >
 
 export type WorkflowActionSlackTaskData =
-  | WorkflowActionSlackPendingTaskData
-  | WorkflowActionSlackCompletedTaskData
-  | WorkflowActionSlackErrorTaskData
+  WorkflowActionSlackPendingTaskData | WorkflowActionSlackCompletedTaskData | WorkflowActionSlackErrorTaskData
 
 export type WorkflowActionSlackBaseTaskData = WorkflowActionTaskData & {
   webhookUrl: string
@@ -62,10 +60,7 @@ export type WorkflowActionSlackTaskValidationError =
   | PrefixUnion<"workflow_action_slack_task", UnprefixedWorkflowActionSlackTaskValidationError>
 
 type UnprefixedWorkflowActionSlackTaskValidationError =
-  | "completed_with_response_missing"
-  | "response_invalid"
-  | "webhook_url_invalid"
-  | "webhook_url_missing_or_invalid"
+  "completed_with_response_missing" | "response_invalid" | "webhook_url_invalid" | "webhook_url_missing_or_invalid"
 
 export class WorkflowActionSlackTaskFactory {
   static newWorkflowActionSlackTask(

@@ -1,6 +1,6 @@
-import { Counter } from "k6/metrics"
-import { check } from "k6"
-import { Response } from "k6/http"
+import {Counter} from "k6/metrics"
+import {check} from "k6"
+import {Response} from "k6/http"
 
 // Predefined counters for transport-level errors and common Approvio errors
 export const error_CONNECTION_RESET = new Counter("error_CONNECTION_RESET")
@@ -18,7 +18,6 @@ export const error_OTHER = new Counter("error_OTHER")
  */
 export function trackResponse(res: Response, endpoint: string) {
   let errorCode: string | null = null
-
 
   // 1. Handle transport-level socket/network errors
   if (res.error) {

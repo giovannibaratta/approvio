@@ -27,10 +27,7 @@ export type GroupProps = keyof Group | keyof GroupWithEntitiesCount
 export type GroupValidationError = PrefixUnion<"group", UnprefixedGroupValidationError>
 
 type UnprefixedGroupValidationError =
-  | NameValidationError
-  | TimestampValidationError
-  | DescriptionValidationError
-  | "entities_count_invalid"
+  NameValidationError | TimestampValidationError | DescriptionValidationError | "entities_count_invalid"
 
 type TimestampValidationError = "update_before_create"
 type NameValidationError = "name_empty" | "name_too_long" | "name_invalid_characters"
