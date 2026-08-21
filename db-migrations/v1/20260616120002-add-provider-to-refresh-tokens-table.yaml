@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260616120002-add-provider-to-refresh-tokens-table
+      author: ai-agent
+      changes:
+        - addColumn:
+            tableName: refresh_tokens
+            columns:
+              - column:
+                  name: provider_id
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: true

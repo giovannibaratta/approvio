@@ -24,6 +24,7 @@ export interface OidcProviderConfig {
   clientId: string
   clientSecret: string
   redirectUri: string
+  displayName: string
   allowInsecure?: boolean
   override?: {
     authorizationEndpoint: string
@@ -116,7 +117,7 @@ export interface ConfigProviderInterface {
   isPrivilegeMode: boolean
   dbConnectionUrl: string
   emailProviderConfig: Option<EmailProviderConfig>
-  oidcConfig: OidcProviderConfig
+  oidcProviders: Map<string, OidcProviderConfig>
   jwtConfig: JwtConfig
   redisConfig: RedisConfig
   rateLimitConfig: RateLimitConfig

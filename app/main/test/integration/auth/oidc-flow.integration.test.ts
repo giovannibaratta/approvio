@@ -136,10 +136,14 @@ describe("OIDC Flow Integration", () => {
     prisma = module.get(DatabaseClient).prisma
     configProvider = module.get(ConfigProvider)
 
-    // Create database user with email that matches OIDC user claims
+    // Create database user with email that matches OIDC user claims and identity link
     await createMockUserInDb(prisma, {
       displayName,
-      email: userEmail
+      email: userEmail,
+      identity: {
+        providerId: "custom",
+        subjectId: uuid
+      }
     })
 
     await app.init()
@@ -173,7 +177,7 @@ describe("OIDC Flow Integration", () => {
       expect(redirectLocation).toContain("state=")
 
       // Extract state and code_challenge for later use
-      const urlParams = new URLSearchParams(redirectLocation!.split("?")[1])
+      const urlParams = new URLSearchParams(redirectLocation?.split("?")[1] ?? "")
       const state = urlParams.get("state") ?? ""
       const codeChallenge = urlParams.get("code_challenge") ?? ""
 
@@ -188,7 +192,7 @@ describe("OIDC Flow Integration", () => {
       expect(session).toBeTruthy()
 
       // When: Simulate OIDC provider authorization (get authorization code)
-      const authCode = await simulateOidcAuthorization(redirectLocation!, testUser, configProvider)
+      const authCode = await simulateOidcAuthorization(redirectLocation ?? "", testUser, configProvider)
       expect(authCode).toBeTruthy()
 
       // When: Frontend exchanges authorization code for JWT token

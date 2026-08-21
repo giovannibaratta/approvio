@@ -1,8 +1,10 @@
 import {TokenRequest, RefreshTokenRequest, PrivilegedTokenExchangeRequest} from "@approvio/api"
-import {Either, left, right} from "fp-ts/Either"
+import {Either, left, map, right} from "fp-ts/Either"
+import {pipe} from "fp-ts/function"
 import {hasOwnProperty} from "@utils"
 
-export type CliInitiateLoginRequestValidationError = "request_missing_redirect_uri" | "request_invalid_redirect_uri"
+export type CliInitiateLoginRequestValidationError =
+  "request_missing_redirect_uri" | "request_invalid_redirect_uri" | "request_invalid_provider"
 
 export type CliGenerateTokenRequestValidationError =
   | "request_empty_body"
@@ -23,13 +25,30 @@ export type CliPrivilegedTokenExchangeRequestValidationError =
   | "request_missing_operation"
   | "request_invalid_operation"
 
+function extractProvider(body: object): Either<"request_invalid_provider", string | undefined> {
+  if (!hasOwnProperty(body, "provider") || body.provider === undefined) return right(undefined)
+
+  if (typeof body.provider !== "string" || !body.provider) return left("request_invalid_provider")
+
+  return right(body.provider)
+}
+
 export function validateInitiateCliLoginRequest(
   body: unknown
-): Either<CliInitiateLoginRequestValidationError, {redirectUri: string}> {
-  if (!body || !hasOwnProperty(body, "redirectUri")) return left("request_missing_redirect_uri")
+): Either<CliInitiateLoginRequestValidationError, {redirectUri: string; provider?: string}> {
+  if (!body || typeof body !== "object") return left("request_missing_redirect_uri")
+  if (!hasOwnProperty(body, "redirectUri")) return left("request_missing_redirect_uri")
   if (typeof body.redirectUri !== "string" || !body.redirectUri) return left("request_invalid_redirect_uri")
 
-  return right({redirectUri: body.redirectUri})
+  const redirectUri = body.redirectUri
+
+  return pipe(
+    extractProvider(body),
+    map(provider => ({
+      redirectUri,
+      ...(provider && {provider})
+    }))
+  )
 }
 
 export function validateGenerateCliTokenRequest(

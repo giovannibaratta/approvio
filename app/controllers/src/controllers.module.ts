@@ -9,7 +9,7 @@ import {AuthModule} from "@app/auth"
 import {WorkflowsController} from "./workflows"
 import {WorkflowTemplatesController} from "./workflow-templates"
 import {WorkflowTemplateInternalController} from "./internal"
-import {AuthController, WebAuthController, CliAuthController} from "./auth"
+import {AuthController, WebAuthController, CliAuthController, AuthProvidersController} from "./auth"
 import {RolesController} from "./roles"
 import {HealthController} from "./internal/health"
 import {PingController} from "./ping"
@@ -34,6 +34,7 @@ const internalControllers = [WorkflowTemplateInternalController, HealthControlle
     AuthController,
     WebAuthController,
     CliAuthController,
+    AuthProvidersController,
     RolesController,
     PingController,
     QuotasController,

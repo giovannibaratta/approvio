@@ -275,7 +275,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
   isPrivilegeMode: boolean
   dbConnectionUrl: string
   emailProviderConfig: Option<EmailProviderConfig>
-  oidcConfig: OidcProviderConfig
+  oidcProviders: Map<string, OidcProviderConfig>
   jwtConfig: JwtConfig
   redisConfig: RedisConfig
   rateLimitConfig: RateLimitConfig
@@ -306,15 +306,21 @@ export class MockConfigProvider implements ConfigProviderInterface {
       isPrivilegeMode: true,
       dbConnectionUrl: "postgresql://test:test@localhost:5433/postgres?schema=public",
       emailProviderConfig: O.none,
-      oidcConfig: {
-        provider: "custom",
-        issuerUrl: "http://localhost:4011",
-        clientId: "integration-test-client-id",
-        clientSecret: "integration-test-client-secret",
-        redirectUri: "http://localhost:3000/auth/web/callback",
-        allowInsecure: true,
-        override: undefined
-      },
+      oidcProviders: new Map([
+        [
+          "custom",
+          {
+            provider: "custom",
+            issuerUrl: "http://localhost:4011",
+            clientId: "integration-test-client-id",
+            clientSecret: "integration-test-client-secret",
+            redirectUri: "http://localhost:3000/auth/web/callback",
+            displayName: "Custom OIDC",
+            allowInsecure: true,
+            override: undefined
+          }
+        ]
+      ]),
       jwtConfig: {
         secret: "test-jwt-secret-for-integration-tests",
         trustedIssuers: ["idp.test.localhost"],
@@ -389,7 +395,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
     this.dbConnectionUrl = mocks.dbConnectionUrl || provider.dbConnectionUrl
     this.emailProviderConfig =
       mocks.emailProviderConfig !== undefined ? O.some(mocks.emailProviderConfig) : provider.emailProviderConfig
-    this.oidcConfig = provider.oidcConfig
+    this.oidcProviders = provider.oidcProviders
     this.jwtConfig = provider.jwtConfig
     this.redisConfig =
       mocks.redisPrefix !== undefined ? {...provider.redisConfig, prefix: mocks.redisPrefix} : provider.redisConfig
@@ -543,9 +549,13 @@ export async function createMockUserInDb(
   overrides?: Partial<Omit<Prisma.UserCreateInput, "roles">> & {
     orgAdmin?: boolean
     roles?: ReadonlyArray<UnconstrainedBoundRole>
+    identity?: {
+      providerId: string
+      subjectId: string
+    }
   }
 ): Promise<PrismaUserWithOrgAdmin> {
-  const {orgAdmin, ...userOverrides} = overrides || {}
+  const {orgAdmin, identity, ...userOverrides} = overrides || {}
   const payload = createMockUserPrismaPayload(userOverrides)
   const user = await prisma.user.create({data: payload})
 
@@ -555,6 +565,18 @@ export async function createMockUserInDb(
         createdAt: new Date(),
         email: user.email,
         id: uuidv7()
+      }
+    })
+
+  if (identity)
+    await prisma.userIdentity.create({
+      data: {
+        id: uuidv7(),
+        userId: user.id,
+        providerId: identity.providerId,
+        subjectId: identity.subjectId,
+        email: user.email,
+        createdAt: new Date()
       }
     })
 
@@ -870,6 +892,7 @@ export async function createMockRefreshTokenInDb(
     expiresInSeconds?: number
     createdAt?: Date
     familyId?: string
+    providerId?: string
   }
 ): Promise<{token: PrismaRefreshToken; plainToken: string; tokenId: string; familyId: string}> {
   if (!params.userId && !params.agentId) throw new Error("Must provide either userId or agentId")
@@ -895,6 +918,7 @@ export async function createMockRefreshTokenInDb(
       familyId,
       userId: params.userId,
       agentId: params.agentId,
+      providerId: params.userId ? params.providerId || "custom" : null,
       status: params.status,
       expiresAt,
       createdAt,

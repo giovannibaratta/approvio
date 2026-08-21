@@ -5,6 +5,7 @@ import {AppModule} from "@app/app.module"
 import {DatabaseClient} from "@external/database"
 import {cleanDatabase, prepareDatabase} from "@test/database"
 import {ConfigProvider} from "@external/config"
+import {OidcBootstrapService} from "@external/oidc/oidc-bootstrap.service"
 import {MockConfigProvider, createMockGroupInDb, createUserWithRefreshToken} from "@test/mock-data"
 import {PrismaClient} from "@prisma/client"
 import "expect-more-jest"
@@ -13,6 +14,7 @@ import {GRACE_PERIOD_SECONDS, RefreshTokenStatus} from "@domain"
 describe("Auth Integration", () => {
   let app: INestApplication
   let prisma: PrismaClient
+  let configProvider: ConfigProvider
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -32,6 +34,7 @@ describe("Auth Integration", () => {
 
     app = module.createNestApplication({logger: false})
     prisma = module.get(DatabaseClient).prisma
+    configProvider = module.get(ConfigProvider)
 
     await app.init()
   }, 20000)
@@ -74,6 +77,105 @@ describe("Auth Integration", () => {
       expect(location).toContain("code_challenge=")
       expect(location).toContain("code_challenge_method=S256")
       expect(location).toContain("state=")
+    })
+
+    it("should return 400 when invalid provider is requested", async () => {
+      const response = await request(app.getHttpServer()).get("/auth/web/login?provider=nonexistent")
+
+      expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      expect(response.body).toHaveErrorCode("AUTH_INVALID_OIDC_PROVIDER")
+    })
+
+    describe("when multiple providers are configured", () => {
+      beforeEach(async () => {
+        configProvider.oidcProviders.set("okta", {
+          provider: "custom",
+          issuerUrl: "http://localhost:4011",
+          clientId: "okta-test-client-id",
+          clientSecret: "okta-test-client-secret",
+          redirectUri: "http://localhost:3000/auth/web/callback",
+          displayName: "Okta",
+          scopes: "openid profile email groups",
+          allowInsecure: true
+        })
+        const oidcBootstrapService = app.get(OidcBootstrapService)
+        await oidcBootstrapService.onApplicationBootstrap()
+      })
+
+      afterEach(async () => {
+        configProvider.oidcProviders.delete("okta")
+        const oidcBootstrapService = app.get(OidcBootstrapService)
+        await oidcBootstrapService.onApplicationBootstrap()
+      })
+
+      it("should return 400 Bad Request when attempting login without provider", async () => {
+        const response = await request(app.getHttpServer()).get("/auth/web/login")
+
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("AUTH_MISSING_OIDC_PROVIDER")
+      })
+
+      it("should redirect to the specified OIDC provider with its configured client_id and scopes", async () => {
+        const response = await request(app.getHttpServer()).get("/auth/web/login?provider=okta")
+
+        expect(response).toHaveStatusCode(302)
+        const location = response.headers.location
+        expect(location).toContain("client_id=okta-test-client-id")
+        expect(location).toContain("scope=openid+profile+email+groups")
+        expect(location).toContain("response_type=code")
+        expect(location).toContain("code_challenge=")
+      })
+    })
+  })
+
+  describe("GET /auth/providers", () => {
+    it("should return available authentication providers with cache header", async () => {
+      const response = await request(app.getHttpServer()).get("/auth/providers")
+
+      expect(response).toHaveStatusCode(HttpStatus.OK)
+      expect(response.headers["cache-control"]).toBe("public, max-age=300")
+      expect(Array.isArray(response.body)).toBe(true)
+      expect(response.body).toHaveLength(1)
+      expect(response.body[0]).toMatchObject({
+        id: "custom",
+        displayName: "Custom OIDC",
+        loginUrl: "/auth/web/login?provider=custom"
+      })
+    })
+
+    describe("when multiple providers are configured", () => {
+      beforeEach(() => {
+        configProvider.oidcProviders.set("okta", {
+          provider: "custom",
+          issuerUrl: "http://localhost:4011",
+          clientId: "integration-test-client-id",
+          clientSecret: "integration-test-client-secret",
+          redirectUri: "http://localhost:3000/auth/web/callback",
+          displayName: "Okta",
+          allowInsecure: true
+        })
+      })
+
+      afterEach(() => {
+        configProvider.oidcProviders.delete("okta")
+      })
+
+      it("should return multiple providers", async () => {
+        const response = await request(app.getHttpServer()).get("/auth/providers")
+
+        expect(response).toHaveStatusCode(HttpStatus.OK)
+        expect(response.body).toHaveLength(2)
+        expect(response.body).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              id: "custom",
+              displayName: "Custom OIDC",
+              loginUrl: "/auth/web/login?provider=custom"
+            }),
+            expect.objectContaining({id: "okta", displayName: "Okta", loginUrl: "/auth/web/login?provider=okta"})
+          ])
+        )
+      })
     })
   })
 
@@ -291,14 +393,14 @@ describe("Auth Integration", () => {
       const accessTokenCookie = setCookieHeaders.find(c => c.startsWith("access_token="))
       expect(accessTokenCookie).toBeDefined()
       expect(accessTokenCookie).toContain("access_token=;")
-      expect(accessTokenCookie!.toLowerCase()).toContain("path=/")
-      expect(accessTokenCookie!.toLowerCase()).toContain("expires=thu, 01 jan 1970")
+      expect(accessTokenCookie?.toLowerCase()).toContain("path=/")
+      expect(accessTokenCookie?.toLowerCase()).toContain("expires=thu, 01 jan 1970")
 
       const refreshTokenCookie = setCookieHeaders.find(c => c.startsWith("refresh_token="))
       expect(refreshTokenCookie).toBeDefined()
       expect(refreshTokenCookie).toContain("refresh_token=;")
-      expect(refreshTokenCookie!.toLowerCase()).toContain("path=/auth/web/refresh")
-      expect(refreshTokenCookie!.toLowerCase()).toContain("expires=thu, 01 jan 1970")
+      expect(refreshTokenCookie?.toLowerCase()).toContain("path=/auth/web/refresh")
+      expect(refreshTokenCookie?.toLowerCase()).toContain("expires=thu, 01 jan 1970")
     })
   })
 
@@ -316,6 +418,70 @@ describe("Auth Integration", () => {
       expect(authUrl).toContain("response_type=code")
       expect(authUrl).toContain("code_challenge=")
       expect(authUrl).toContain(encodeURIComponent(redirectUri))
+    })
+
+    it("should return 400 when invalid provider is requested", async () => {
+      const redirectUri = "http://127.0.0.1:8080/callback"
+
+      const response = await request(app.getHttpServer())
+        .post("/auth/cli/initiate")
+        .send({redirectUri, provider: "nonexistent"})
+
+      expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      expect(response.body).toHaveErrorCode("AUTH_INVALID_OIDC_PROVIDER")
+    })
+
+    it("should return 400 when provider is not a string", async () => {
+      const redirectUri = "http://127.0.0.1:8080/callback"
+
+      const response = await request(app.getHttpServer())
+        .post("/auth/cli/initiate")
+        .send({redirectUri, provider: 12345})
+
+      expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      expect(response.body).toHaveErrorCode("REQUEST_INVALID_PROVIDER")
+    })
+
+    describe("when multiple providers are configured", () => {
+      beforeEach(async () => {
+        configProvider.oidcProviders.set("okta", {
+          provider: "custom",
+          issuerUrl: "http://localhost:4011",
+          clientId: "okta-test-client-id",
+          clientSecret: "okta-test-client-secret",
+          redirectUri: "http://localhost:3000/auth/web/callback",
+          displayName: "Okta",
+          scopes: "openid profile email groups",
+          allowInsecure: true
+        })
+        const oidcBootstrapService = app.get(OidcBootstrapService)
+        await oidcBootstrapService.onApplicationBootstrap()
+      })
+
+      afterEach(async () => {
+        configProvider.oidcProviders.delete("okta")
+        const oidcBootstrapService = app.get(OidcBootstrapService)
+        await oidcBootstrapService.onApplicationBootstrap()
+      })
+
+      it("should return 400 Bad Request when initiating without provider", async () => {
+        const redirectUri = "http://127.0.0.1:8080/callback"
+        const response = await request(app.getHttpServer()).post("/auth/cli/initiate").send({redirectUri})
+
+        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+        expect(response.body).toHaveErrorCode("AUTH_MISSING_OIDC_PROVIDER")
+      })
+
+      it("should succeed and return authorizationUrl with provider-specific client_id and scopes", async () => {
+        const redirectUri = "http://127.0.0.1:8080/callback"
+        const successResponse = await request(app.getHttpServer())
+          .post("/auth/cli/initiate")
+          .send({redirectUri, provider: "okta"})
+
+        expect(successResponse).toHaveStatusCode(HttpStatus.OK)
+        expect(successResponse.body.authorizationUrl).toContain("client_id=okta-test-client-id")
+        expect(successResponse.body.authorizationUrl).toContain("scope=openid+profile+email+groups")
+      })
     })
 
     it("should return 400 for non-loopback redirect URI", async () => {

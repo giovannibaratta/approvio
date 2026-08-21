@@ -173,6 +173,25 @@ sequenceDiagram
     A-->>M: 200 Returns new TokenResponse
 ```
 
+## Operational Levers (Feature Flags)
+
+### Disabling Authentication Providers (`disable_auth_provider`)
+
+Approvio supports dynamically disabling individual authentication providers in real-time via feature flags (OpenFeature) without service restarts.
+
+When disabled for a specific provider, that provider is filtered out from `GET /auth/providers` and cannot be used for new logins.
+
+#### Unleash Configuration Guide
+
+> [!CAUTION]
+> **Do NOT enable the `disable_auth_provider` toggle with a 100% standard strategy.** Doing so will disable **all** authentication providers globally. Always configure strategy constraints targeting specific providers.
+
+1. **Flag Name**: `disable_auth_provider` (Type: `Operational` / `Kill-Switch`).
+2. **Strategy**: Add a strategy with **Strategy Constraints**.
+3. **Context Attribute**: Set `providerId` (or `targetingKey`).
+4. **Constraint Operator**: `IN` or `STR_CONTAINS`.
+5. **Values**: Enter the exact provider ID(s) to disable (e.g. `okta`, `auth0`).
+
 ## Troubleshooting
 
 - **Discovery Failed**: Ensure `OIDC_ISSUER_URL` is correct and accessible from the server. Check if `.well-known/openid-configuration` exists at that URL.

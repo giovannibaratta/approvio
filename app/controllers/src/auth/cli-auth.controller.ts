@@ -1,4 +1,4 @@
-import {Controller, Get, Post, Res, Logger, Body, HttpCode} from "@nestjs/common"
+import {Controller, Get, Post, Res, Logger, Body, HttpCode, Query} from "@nestjs/common"
 import {Response} from "express"
 import {AuthService} from "@services"
 import {isLeft} from "fp-ts/Either"
@@ -34,7 +34,7 @@ export class CliAuthController {
   async initiateCliLogin(@Body() body: unknown): Promise<{authorizationUrl: string}> {
     const result = await pipe(
       TE.fromEither(validateInitiateCliLoginRequest(body)),
-      TE.chainW(({redirectUri}) => this.authService.initiateOidcLoginFromCli(redirectUri)),
+      TE.chainW(({redirectUri, provider}) => this.authService.initiateOidcLoginFromCli(redirectUri, provider)),
       logSuccess("CLI OIDC login initiated", "CliAuthController")
     )()
 
@@ -86,8 +86,8 @@ export class CliAuthController {
   @PublicRoute()
   @HttpCode(HttpStatusCode.Found)
   @Get("initiatePrivilegedTokenExchange")
-  async initiatePrivilegeToken(@Res() res: Response): Promise<void> {
-    const runInitiation = () => this.authService.initiatePrivilegeTokenGeneration()
+  async initiatePrivilegeToken(@Query("provider") provider: string | undefined, @Res() res: Response): Promise<void> {
+    const runInitiation = () => this.authService.initiatePrivilegeTokenGenerationForCli(provider)
 
     const result = await pipe(runInitiation(), logSuccess("Privilege token initiation started", "CliAuthController"))()
 

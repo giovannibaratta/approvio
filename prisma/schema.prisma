@@ -74,9 +74,25 @@ model User {
   groupMemberships   GroupMembership[]
   organizationAdmins OrganizationAdmin?
   refreshTokens      RefreshToken[]
+  userIdentities     UserIdentity[]
   votes              Vote[]
 
   @@map("users")
+}
+
+model UserIdentity {
+  id         String   @id @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  providerId String   @map("provider_id") @db.VarChar(255)
+  subjectId  String   @map("subject_id") @db.VarChar(255)
+  email      String   @db.VarChar(512)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(6)
+  occ        BigInt   @default(1)
+  users      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_identities_user")
+
+  @@unique([providerId, subjectId], map: "user_identities_provider_subject_unique")
+  @@unique([userId, providerId], map: "user_identities_user_provider_unique")
+  @@map("user_identities")
 }
 
 model Workflow {
@@ -166,6 +182,7 @@ model PkceSession {
   expiresAt    DateTime  @map("expires_at") @db.Timestamp(6)
   usedAt       DateTime? @map("used_at") @db.Timestamp(6)
   occ          BigInt
+  providerId   String    @map("provider_id") @db.VarChar(255)
 
   @@map("pkce_sessions")
 }
@@ -289,6 +306,7 @@ model RefreshToken {
   expiresAt   DateTime  @map("expires_at") @db.Timestamp(6)
   createdAt   DateTime  @map("created_at") @db.Timestamp(6)
   occ         BigInt
+  providerId  String?   @map("provider_id") @db.VarChar(255)
   agents      Agent?    @relation(fields: [agentId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_refresh_tokens_agent")
   users       User?     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_refresh_tokens_user")
 

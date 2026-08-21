@@ -1,8 +1,8 @@
-import {User, Agent, OrgRole, AuthenticatedEntity, StepUpContext} from "@domain"
+import {User, Agent, OrgRole, StepUpContext} from "@domain"
 
 const CLOCK_SKEW_TOLERANCE_IN_SECONDS = 60
 
-export interface TokenPayloadForSigning {
+interface TokenPayloadCore {
   // Core JWT claims
   iss: string // Issuer - identifies who issued the token
   sub: string // Subject - user/agent ID
@@ -10,23 +10,39 @@ export interface TokenPayloadForSigning {
   nbf?: number // Not before - optional validity start time
   jti?: string // JWT ID - unique identifier for the token
 
-  // IANA registered claims
-  email?: string // User email (not applicable for agents)
-  name: string // Display name (using standard 'name' claim)
-
-  // Custom application claims
-  entityType: AuthenticatedEntity["entityType"]
-  orgRole?: OrgRole // Organizational role (admin/member) - only for users
+  // Display name
+  name: string
 
   // Step-up context
   operation?: string // The operation this token is bound to
   resource?: string // The resource ID this token is bound to
 }
 
-export interface TokenPayload extends TokenPayloadForSigning {
-  exp: number // Expiration time
-  iat: number // Issued at time
+export interface UserTokenPayloadForSigning extends TokenPayloadCore {
+  entityType: "user"
+  // IANA registered claims
+  email: string
+  providerId: string
+  orgRole?: OrgRole // Organizational role (admin/member)
 }
+
+export interface AgentTokenPayloadForSigning extends TokenPayloadCore {
+  entityType: "agent"
+}
+
+export type TokenPayloadForSigning = UserTokenPayloadForSigning | AgentTokenPayloadForSigning
+
+export type UserTokenPayload = UserTokenPayloadForSigning & {
+  exp: number
+  iat: number
+}
+
+export type AgentTokenPayload = AgentTokenPayloadForSigning & {
+  exp: number
+  iat: number
+}
+
+export type TokenPayload = UserTokenPayload | AgentTokenPayload
 
 export class TokenPayloadValidator {
   /**
@@ -70,9 +86,12 @@ export class TokenPayloadValidator {
     // Entity-specific validation
     if (p.entityType === "user") {
       if (typeof p.email !== "string") return false
+      if (typeof p.providerId !== "string" || !p.providerId) return false
       if (p.orgRole !== undefined && p.orgRole !== "admin" && p.orgRole !== "member") return false
       if (p.roles !== undefined && !Array.isArray(p.roles)) return false
     }
+
+    if (p.entityType === "agent") if (p.providerId !== undefined) return false
 
     return true
   }
@@ -96,71 +115,90 @@ export class TokenPayloadValidator {
     // Check expiration
     if (payload.exp <= now) return false
 
-    // Check if the token is already active
-    if (payload.nbf !== undefined && payload.nbf > now) return false
+    // Check not before if present
+    if (payload.nbf !== undefined && payload.nbf > now + CLOCK_SKEW_TOLERANCE_IN_SECONDS) return false
 
-    // Check issued-at is not in the future (with small tolerance for clock skew)
+    // Check issued at (cannot be in the future beyond skew tolerance)
     if (payload.iat > now + CLOCK_SKEW_TOLERANCE_IN_SECONDS) return false
 
     return true
   }
 
   /**
-   * Validates token issuer
+   * Validates that token issuer is in the trusted issuers list
    * @param payload The token payload to validate
-   * @param trustedIssuers The trusted issuer value(s)
-   * @returns true if issuer matches any trusted issuer
+   * @param trustedIssuers List of trusted issuer identifiers
+   * @returns true if issuer is trusted
    */
-  static isValidIssuer(payload: TokenPayload, trustedIssuers: string | string[]): boolean {
-    const trusted = Array.isArray(trustedIssuers) ? trustedIssuers : [trustedIssuers]
-    return trusted.includes(payload.iss)
+  static isValidIssuer(payload: TokenPayload, trustedIssuers: string[]): boolean {
+    return trustedIssuers.includes(payload.iss)
   }
 
   /**
-   * Validates token audience
+   * Validates that token audience matches the expected audience
    * @param payload The token payload to validate
-   * @param expectedAudience The expected audience value(s)
-   * @returns true if at least one audience matches
+   * @param expectedAudience The expected audience string
+   * @returns true if audience matches
    */
-  static isValidAudience(payload: TokenPayload, expectedAudience: string | string[]): boolean {
-    const expected = Array.isArray(expectedAudience) ? expectedAudience : [expectedAudience]
-    return expected.some(aud => payload.aud.includes(aud))
+  static isValidAudience(payload: TokenPayload, expectedAudience: string): boolean {
+    return payload.aud.includes(expectedAudience)
   }
 }
+
+export type CreateUserTokenPayloadData = {
+  entityType: "user"
+  sub: string
+  displayName: string
+  email: string
+  providerId: string
+  issuer: string
+  audience: string[]
+  orgRole?: OrgRole
+  stepUpContext?: StepUpContext
+}
+
+export type CreateAgentTokenPayloadData = {
+  entityType: "agent"
+  sub: string
+  displayName: string
+  issuer: string
+  audience: string[]
+  stepUpContext?: StepUpContext
+}
+
+export type CreateTokenPayloadData = CreateUserTokenPayloadData | CreateAgentTokenPayloadData
 
 /**
  * Helper class for building JWT-compliant token payloads
  */
 export class TokenPayloadBuilder {
-  /**
-   * Creates token payload data ready for JWT signing from user/agent data
-   * @param data The base data to create token from
-   * @returns A TokenPayloadForSigning
-   */
-  static from(data: {
-    sub: string
-    entityType: AuthenticatedEntity["entityType"]
-    displayName: string
-    email?: string
-    orgRole?: OrgRole
-    issuer: string
-    audience: string[]
-    stepUpContext?: StepUpContext
-  }): TokenPayloadForSigning {
+  static from(data: CreateUserTokenPayloadData): UserTokenPayloadForSigning
+  static from(data: CreateAgentTokenPayloadData): AgentTokenPayloadForSigning
+  static from(data: CreateTokenPayloadData): TokenPayloadForSigning {
+    if (data.entityType === "user")
+      return {
+        iss: data.issuer,
+        sub: data.sub,
+        aud: data.audience,
+        jti: data.stepUpContext?.jti,
+        email: data.email,
+        name: data.displayName,
+        entityType: "user",
+        providerId: data.providerId,
+        // Custom claims
+        ...(data.orgRole && {orgRole: data.orgRole}),
+        // Step-up context
+        ...(data.stepUpContext?.operation && {operation: data.stepUpContext.operation}),
+        ...(data.stepUpContext?.resource && {resource: data.stepUpContext.resource})
+      }
+
     return {
       iss: data.issuer,
       sub: data.sub,
       aud: data.audience,
       jti: data.stepUpContext?.jti,
-
-      // IANA registered claims
-      email: data.email,
       name: data.displayName,
-
-      // Custom application claims
-      entityType: data.entityType,
-      ...(data.entityType === "user" && data.orgRole && {orgRole: data.orgRole}),
-
+      entityType: "agent",
       // Step-up context
       ...(data.stepUpContext?.operation && {operation: data.stepUpContext.operation}),
       ...(data.stepUpContext?.resource && {resource: data.stepUpContext.resource})
@@ -170,23 +208,25 @@ export class TokenPayloadBuilder {
   /**
    * Creates token payload data ready for JWT signing from a User domain object
    * @param user The User domain object
-   * @param options Optional configuration for token generation
-   * @returns A TokenPayloadForSigning
+   * @param options Configuration for token generation
+   * @returns A UserTokenPayloadForSigning
    */
   static fromUser(
     user: User,
     options: {
       issuer: string
       audience: string[]
+      providerId: string
       stepUpContext?: StepUpContext
     }
-  ): TokenPayloadForSigning {
+  ): UserTokenPayloadForSigning {
     return TokenPayloadBuilder.from({
       sub: user.id,
       entityType: "user",
       displayName: user.displayName,
       email: user.email,
       orgRole: user.orgRole,
+      providerId: options.providerId,
       issuer: options.issuer,
       audience: options.audience,
       stepUpContext: options.stepUpContext
@@ -197,7 +237,7 @@ export class TokenPayloadBuilder {
    * Creates token payload data ready for JWT signing from an Agent domain object
    * @param agent The Agent domain object
    * @param options Optional configuration for token generation
-   * @returns A TokenPayloadForSigning
+   * @returns An AgentTokenPayloadForSigning
    */
   static fromAgent(
     agent: Agent,
@@ -205,7 +245,7 @@ export class TokenPayloadBuilder {
       issuer: string
       audience: string[]
     }
-  ): TokenPayloadForSigning {
+  ): AgentTokenPayloadForSigning {
     return TokenPayloadBuilder.from({
       sub: agent.agentName,
       entityType: "agent",

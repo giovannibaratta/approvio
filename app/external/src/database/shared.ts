@@ -33,8 +33,10 @@ import {
   OrganizationAdmin as PrismaOrganizationAdmin,
   Space as PrismaSpace,
   Workflow as PrismaWorkflow,
-  WorkflowTemplate as PrismaWorkflowTemplate
+  WorkflowTemplate as PrismaWorkflowTemplate,
+  UserIdentity as PrismaUserIdentity
 } from "@prisma/client"
+import {UserIdentity} from "@services"
 import {Versioned} from "@domain"
 import * as E from "fp-ts/Either"
 import {Either} from "fp-ts/Either"
@@ -338,5 +340,16 @@ function mapScopeToPrisma(scope: UnconstrainedBoundRole["scope"]): Prisma.JsonOb
       return {
         type: scope.type
       }
+  }
+}
+
+export function mapUserIdentityToDomain(dbObject: PrismaUserIdentity): UserIdentity {
+  return {
+    id: dbObject.id,
+    userId: dbObject.userId,
+    providerId: dbObject.providerId,
+    subjectId: dbObject.subjectId,
+    email: dbObject.email,
+    createdAt: dbObject.createdAt
   }
 }

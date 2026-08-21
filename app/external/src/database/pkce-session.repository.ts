@@ -25,6 +25,7 @@ export class PkceSessionDbRepository implements PkceSessionRepository {
                 codeVerifier: encryptedVerifier,
                 redirectUri: data.redirectUri,
                 oidcState: data.oidcState,
+                providerId: data.providerId,
                 expiresAt: data.expiresAt,
                 occ: 0
               }
@@ -66,6 +67,7 @@ export class PkceSessionDbRepository implements PkceSessionRepository {
             codeVerifier: decryptedVerifier,
             redirectUri: session.redirectUri,
             oidcState: session.oidcState,
+            providerId: session.providerId,
             expiresAt: session.expiresAt,
             occ: session.occ,
             usedAt: session.usedAt || undefined

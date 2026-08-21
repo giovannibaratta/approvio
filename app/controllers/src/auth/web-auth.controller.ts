@@ -45,14 +45,19 @@ export class WebAuthController {
   @PublicRoute()
   @HttpCode(HttpStatusCode.Found)
   @Get("login")
-  async login(@Res() res: Response): Promise<void> {
+  async login(@Query("provider") provider: string | undefined, @Res() res: Response): Promise<void> {
     const result = await pipe(
-      this.authService.initiateOidcLogin(),
+      this.authService.initiateOidcLogin(provider),
       logSuccess("OIDC login initiated", "WebAuthController")
     )()
 
     if (isLeft(result)) {
       Logger.error("Failed to initiate OIDC login", result.left)
+      if (result.left === "auth_invalid_oidc_provider" || result.left === "auth_missing_oidc_provider")
+        throw new BadRequestException(
+          generateErrorPayload(result.left.toUpperCase(), `WebAuthController: ${result.left}`)
+        )
+
       throw new InternalServerErrorException(
         generateErrorPayload("OIDC_INITIATION_FAILED", "Failed to initiate OIDC login")
       )
@@ -105,9 +110,11 @@ export class WebAuthController {
 
   @Post("initiatePrivilegedTokenExchange")
   @HttpCode(200)
-  async initiatePrivilegeTokenWeb(): Promise<{authorizationUrl: string}> {
+  async initiatePrivilegeTokenWeb(
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+  ): Promise<{authorizationUrl: string}> {
     const result = await pipe(
-      this.authService.initiatePrivilegeTokenGeneration(),
+      this.authService.initiatePrivilegeTokenGenerationForWeb(requestor),
       logSuccess("Web Privilege token initiation started", "WebAuthController")
     )()
 

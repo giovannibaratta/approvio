@@ -27,6 +27,8 @@ export interface StepUpContext {
 export type AuthenticatedUser = {
   entityType: "user"
   user: Versioned<User>
+  /** Identifier of the OIDC provider used for this user session */
+  providerId: string
   authContext?: StepUpContext
 }
 

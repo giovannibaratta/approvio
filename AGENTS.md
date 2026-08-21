@@ -53,6 +53,11 @@ Always USE the following skills to assist with tasks:
 - **Conditional Expectations:** Avoid `if` blocks around `expect` calls. Let the test fail naturally if data is missing to ensure clarity.
 - **Type Safety:** Avoid `any` in tests. Define specific mock types or use `jest.Mocked` to maintain type integrity.
 
+### Type Safety & Modeling Conventions
+
+- **Discriminated Unions**: In discriminated union variants (e.g., `UserProps | AgentProps`), omit non-applicable properties instead of typing them as optional `never` (e.g., avoid `prop?: never`). Enforce explicit type-narrowing through domain type guards (e.g., `RefreshTokenFactory.isUserToken(token)`) or discriminator checks (`entityType === EntityType.USER`) rather than allowing nullable property probing.
+- **Strict Typing**: Avoid `any` in application code and tests. Avoid unsafe type casting (`as Type`).
+
 ## Retry & Exactly-Once Semantics Guidelines
 
 - **External Integrations**: Always design external calls (webhooks, email dispatches, API calls) with transient failure retries.

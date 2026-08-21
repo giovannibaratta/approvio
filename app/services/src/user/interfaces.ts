@@ -2,6 +2,7 @@ import {User, UserSummary, UserSummaryValidationError, UserValidationError} from
 import {AuthorizationError, ConcurrentModificationError, UnknownError} from "@services/error"
 import {Versioned} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
+import {UserIdentityCreate} from "../user-identity/interfaces"
 
 export type UserCreateError =
   "user_already_exists" | AuthorizationError | UserValidationError | UnknownError | "quota_check_error"
@@ -24,6 +25,8 @@ export const USER_REPOSITORY_TOKEN = "USER_REPOSITORY_TOKEN"
 export interface UserRepository {
   createUser(user: User): TaskEither<UserCreateError, User>
   createUserWithOrgAdmin(user: User): TaskEither<UserCreateError, User>
+  createUserWithIdentity(user: User, identity: UserIdentityCreate): TaskEither<UserCreateError, User>
+  createUserWithOrgAdminAndIdentity(user: User, identity: UserIdentityCreate): TaskEither<UserCreateError, User>
   getUserById(userId: string): TaskEither<UserGetError, Versioned<User>>
   getUserByEmail(email: string): TaskEither<UserGetError, Versioned<User>>
   listUsers(params: ListUsersRepoRequest): TaskEither<UserListError, PaginatedUsersList>
