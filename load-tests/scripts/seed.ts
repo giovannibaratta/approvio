@@ -388,8 +388,7 @@ async function seed() {
   console.log(`Seed data written to ${outputPath}`)
 }
 
-seed()
-  .catch(e => {
-    console.error("Seed failed", e)
-    process.exit(1)
-  })
+seed().catch(e => {
+  console.error("Seed failed", e)
+  process.exit(1)
+})

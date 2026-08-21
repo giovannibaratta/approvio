@@ -32,10 +32,7 @@ type KeyGenerationError = PrefixUnion<"agent", "key_generation_failed">
 type OccValidationError = PrefixUnion<"agent", "invalid_occ">
 
 export type AgentValidationError =
-  | IdValidationError
-  | AgentNameValidationError
-  | OccValidationError
-  | PrefixUnion<"agent", RoleValidationError>
+  IdValidationError | AgentNameValidationError | OccValidationError | PrefixUnion<"agent", RoleValidationError>
 export type AgentCreateValidationError = AgentNameValidationError
 export type AgentCreationError = KeyGenerationError | AgentNameValidationError
 

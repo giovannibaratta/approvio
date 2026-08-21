@@ -61,17 +61,15 @@ export class PkceSessionDbRepository implements PkceSessionRepository {
       TE.chainW(session =>
         pipe(
           this.encryptionService.decrypt(session.codeVerifier),
-          TE.map(
-            (decryptedVerifier): PkceSessionData => ({
-              state: session.state,
-              codeVerifier: decryptedVerifier,
-              redirectUri: session.redirectUri,
-              oidcState: session.oidcState,
-              expiresAt: session.expiresAt,
-              occ: session.occ,
-              usedAt: session.usedAt || undefined
-            })
-          )
+          TE.map((decryptedVerifier): PkceSessionData => ({
+            state: session.state,
+            codeVerifier: decryptedVerifier,
+            redirectUri: session.redirectUri,
+            oidcState: session.oidcState,
+            expiresAt: session.expiresAt,
+            occ: session.occ,
+            usedAt: session.usedAt || undefined
+          }))
         )
       )
     )

@@ -7,9 +7,7 @@ import {FindVotesError} from "../vote/interfaces"
 
 export type QuotaGetError = PrefixUnion<"quota", "not_found" | UnknownError> | QuotaValidationError
 export type QuotaCreateError =
-  | PrefixUnion<"quota", UnknownError | "already_exists">
-  | QuotaValidationError
-  | AuthorizationError
+  PrefixUnion<"quota", UnknownError | "already_exists"> | QuotaValidationError | AuthorizationError
 export type QuotaUpdateError =
   | PrefixUnion<"quota", UnknownError | ConcurrentModificationError | "not_found">
   | QuotaValidationError

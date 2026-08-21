@@ -28,10 +28,7 @@ export interface RawUserInfoResponse {
  * UserInfo validation error types according to OpenID Connect specification.
  */
 export type UserInfoValidationError =
-  | "invalid_json_structure"
-  | "missing_required_sub_claim"
-  | "invalid_sub_claim_type"
-  | "invalid_claim_type"
+  "invalid_json_structure" | "missing_required_sub_claim" | "invalid_sub_claim_type" | "invalid_claim_type"
 
 /**
  * Validates UserInfo response according to OpenID Connect specification.

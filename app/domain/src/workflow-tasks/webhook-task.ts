@@ -44,9 +44,7 @@ export type DecoratedWorkflowActionWebhookErrorTask<T extends WorkflowActionTask
 >
 
 export type WorkflowActionWebhookTaskData =
-  | WorkflowActionWebhookPendingTaskData
-  | WorkflowActionWebhookCompletedTaskData
-  | WorkflowActionWebhookErrorTaskData
+  WorkflowActionWebhookPendingTaskData | WorkflowActionWebhookCompletedTaskData | WorkflowActionWebhookErrorTaskData
 
 type WorkflowActionWebhookBaseTaskData = WorkflowActionTaskData & {
   url: string

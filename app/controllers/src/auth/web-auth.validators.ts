@@ -3,10 +3,7 @@ import {hasOwnProperty} from "@utils"
 import {Either, left, right} from "fp-ts/Either"
 
 export type WebCallbackRequestValidationError =
-  | "request_missing_code"
-  | "request_invalid_code"
-  | "request_missing_state"
-  | "request_invalid_state"
+  "request_missing_code" | "request_invalid_code" | "request_missing_state" | "request_invalid_state"
 
 export type WebRefreshTokenRequestValidationError = "request_missing_refresh_token" | "request_invalid_refresh_token"
 

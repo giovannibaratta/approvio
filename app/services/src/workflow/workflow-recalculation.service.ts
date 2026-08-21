@@ -10,10 +10,7 @@ import {EnqueueRecalculationError, QUEUE_PROVIDER_TOKEN, QueueProvider} from "..
 import {UnknownError} from "../error"
 
 export type WorkflowRecalculationError =
-  | WorkflowGetError
-  | FindVotesError
-  | WorkflowUpdateError
-  | EnqueueRecalculationError
+  WorkflowGetError | FindVotesError | WorkflowUpdateError | EnqueueRecalculationError
 
 @Injectable()
 export class WorkflowRecalculationService {

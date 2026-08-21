@@ -4,11 +4,7 @@ import {PaginationError, UnknownError} from "@services/error"
 import {Versioned} from "@domain"
 
 export type CreateGroupRepoError =
-  | "group_already_exists"
-  | "user_not_found"
-  | "concurrency_error"
-  | GroupValidationError
-  | UnknownError
+  "group_already_exists" | "user_not_found" | "concurrency_error" | GroupValidationError | UnknownError
 
 export type GetGroupRepoError = "group_not_found" | GroupValidationError | UnknownError
 export type ListGroupsRepoError = PaginationError | GroupValidationError | UnknownError

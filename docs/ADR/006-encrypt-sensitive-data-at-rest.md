@@ -187,9 +187,7 @@ Provider selection is configuration-driven:
 ```typescript
 const kmsProvider = KmsProviderFactory.create({
   type: process.env.KMS_PROVIDER_TYPE ?? "env_var",
-  config: {
-    /* Provider-specific config from env vars */
-  }
+  config: {/* Provider-specific config from env vars */}
 })
 ```
 

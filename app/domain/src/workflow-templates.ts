@@ -57,9 +57,7 @@ export type WorkflowTemplateSummary = Pick<
 >
 
 export type WorkflowTemplateCantVoteReason =
-  | "entity_not_in_required_group"
-  | "workflow_template_not_active"
-  | "entity_not_eligible_to_vote"
+  "entity_not_in_required_group" | "workflow_template_not_active" | "entity_not_eligible_to_vote"
 
 interface WorkflowTemplateLogic {
   /**
@@ -96,8 +94,7 @@ type UnprefixedWorkflowTemplateValidationError =
   | "space_id_invalid_uuid"
 
 export type WorkflowTemplateDeprecationError =
-  | "workflow_template_not_active"
-  | "workflow_template_not_pending_deprecation"
+  "workflow_template_not_active" | "workflow_template_not_pending_deprecation"
 
 type UserModifiableAttributes = Pick<WorkflowTemplate, "defaultExpiresInHours" | "description"> & {
   actions?: unknown
