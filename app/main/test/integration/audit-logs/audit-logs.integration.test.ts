@@ -7,12 +7,12 @@ import {AUDIT_LOGS_ENDPOINT_ROOT} from "../../../../controllers/src/audit-logs/a
 import {PrismaClient} from "@prisma/client"
 
 import {cleanDatabase, prepareDatabase} from "@test/database"
-import {createDomainMockUserInDb, MockConfigProvider} from "@test/mock-data"
+import {MockConfigProvider} from "@test/mock-data"
+import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
 import {get} from "@test/requests"
 import {UserWithToken} from "@test/types"
-import {TokenPayloadBuilder} from "@services"
 import {SystemRole} from "@domain"
 import {v7 as uuidv7} from "uuid"
 
@@ -53,34 +53,8 @@ describe("Audit Logs API", () => {
   beforeEach(async () => {
     await cleanDatabase(prisma)
 
-    const domainMemberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
-    const domainAdminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
-
-    orgMemberUser = {
-      user: domainMemberUser,
-      token: await jwtService.signAsync(
-        TokenPayloadBuilder.fromUser(domainMemberUser, {
-          issuer: configProvider.jwtConfig.issuer,
-          audience: [configProvider.jwtConfig.audience]
-        }),
-        {
-          secret: configProvider.jwtConfig.secret
-        }
-      )
-    }
-
-    orgAdminUser = {
-      user: domainAdminUser,
-      token: await jwtService.signAsync(
-        TokenPayloadBuilder.fromUser(domainAdminUser, {
-          issuer: configProvider.jwtConfig.issuer,
-          audience: [configProvider.jwtConfig.audience]
-        }),
-        {
-          secret: configProvider.jwtConfig.secret
-        }
-      )
-    }
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
 
     // Insert mock audit logs
     await prisma.auditLog.createMany({
@@ -138,20 +112,10 @@ describe("Audit Logs API", () => {
     it("should return 200 OK for a non-org admin user who has the AuditorViewer role", async () => {
       // Given
       const auditorViewerRole = SystemRole.createAuditViewerRole({type: "org"})
-      const domainAuditorUser = await createDomainMockUserInDb(prisma, {
+      const {token: auditorToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
         orgAdmin: false,
         roles: [auditorViewerRole]
       })
-
-      const auditorToken = await jwtService.signAsync(
-        TokenPayloadBuilder.fromUser(domainAuditorUser, {
-          issuer: configProvider.jwtConfig.issuer,
-          audience: [configProvider.jwtConfig.audience]
-        }),
-        {
-          secret: configProvider.jwtConfig.secret
-        }
-      )
 
       // When
       const response = await get(app, endpoint).withToken(auditorToken).build()

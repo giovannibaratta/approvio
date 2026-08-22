@@ -1,5 +1,6 @@
 import {PrismaClient, WorkflowTemplate as PrismaWorkflowTemplate} from "@prisma/client"
-import {createDomainMockUserInDb, createMockWorkflowTemplateInDb, MockConfigProvider} from "@test/mock-data"
+import {createMockWorkflowTemplateInDb, MockConfigProvider} from "@test/mock-data"
+import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {HttpStatus} from "@nestjs/common"
 import {post} from "@test/requests"
 import "expect-more-jest"
@@ -13,7 +14,6 @@ import {JwtService} from "@nestjs/jwt"
 import {TestingModule, Test} from "@nestjs/testing"
 import {prepareDatabase, cleanDatabase} from "@test/database"
 import {UserWithToken} from "@test/types"
-import {TokenPayloadBuilder} from "@services"
 
 describe("Workflow Templates internal API", () => {
   let app: NestApplication
@@ -32,7 +32,7 @@ describe("Workflow Templates internal API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -42,15 +42,9 @@ describe("Workflow Templates internal API", () => {
     app = module.createNestApplication({logger: false})
     prisma = module.get(DatabaseClient).prisma
     jwtService = module.get(JwtService)
-
-    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
     const configProvider = module.get(ConfigProvider)
-    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
 
-    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
 
     await app.init()
   }, 30000)

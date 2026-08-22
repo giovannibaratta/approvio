@@ -10,16 +10,11 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient} from "@prisma/client"
 
 import {cleanDatabase, prepareDatabase} from "@test/database"
-import {createDomainMockUserInDb, MockConfigProvider, createMockSpaceInDb} from "@test/mock-data"
+import {MockConfigProvider, createMockSpaceInDb} from "@test/mock-data"
+import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
-import {
-  TokenPayloadBuilder,
-  USER_REPOSITORY_TOKEN,
-  UserRepository,
-  AUDIT_LOG_REPOSITORY_TOKEN,
-  AuditLogRepository
-} from "@services"
+import {USER_REPOSITORY_TOKEN, UserRepository, AUDIT_LOG_REPOSITORY_TOKEN, AuditLogRepository} from "@services"
 import {wrapTaskEitherWithSideEffect} from "@test/injectors"
 import {failTaskEither} from "@test/injectors"
 import {v7 as uuidv7} from "uuid"
@@ -61,19 +56,8 @@ describe("Spaces API", () => {
   }, 30000)
 
   beforeEach(async () => {
-    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
-    const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
-    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-    const memberTokenPayload = TokenPayloadBuilder.fromUser(memberUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-
-    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
-    orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
   })
 
   afterAll(async () => {
@@ -418,7 +402,7 @@ describe("Spaces API", () => {
         const createdSpace = await createMockSpaceInDb(prisma, {name: "read-accessible-space"})
 
         // Create user with read permission on this specific space
-        const userWithReadPermission = await createDomainMockUserInDb(prisma, {
+        const {token: userToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
           orgAdmin: false,
           roles: [
             {
@@ -430,16 +414,6 @@ describe("Spaces API", () => {
             }
           ]
         })
-
-        const tokenPayload = TokenPayloadBuilder.from({
-          sub: userWithReadPermission.id,
-          entityType: "user",
-          displayName: userWithReadPermission.displayName,
-          email: userWithReadPermission.email,
-          issuer: configProvider.jwtConfig.issuer,
-          audience: [configProvider.jwtConfig.audience]
-        })
-        const userToken = jwtService.sign(tokenPayload)
 
         // When
         const response = await get(app, `${endpoint}/${createdSpace.id}`).withToken(userToken).build()
@@ -516,7 +490,7 @@ describe("Spaces API", () => {
         const createdSpace = await createMockSpaceInDb(prisma, {name: "manageable-space"})
 
         // Create user with manage permission on this specific space
-        const userWithManagePermission = await createDomainMockUserInDb(prisma, {
+        const {token: userToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
           orgAdmin: false,
           roles: [
             {
@@ -528,16 +502,6 @@ describe("Spaces API", () => {
             }
           ]
         })
-
-        const tokenPayload = TokenPayloadBuilder.from({
-          sub: userWithManagePermission.id,
-          entityType: "user",
-          displayName: userWithManagePermission.displayName,
-          email: userWithManagePermission.email,
-          issuer: configProvider.jwtConfig.issuer,
-          audience: [configProvider.jwtConfig.audience]
-        })
-        const userToken = jwtService.sign(tokenPayload)
 
         // When
         const response = await del(app, `${endpoint}/${createdSpace.id}`).withToken(userToken).build()

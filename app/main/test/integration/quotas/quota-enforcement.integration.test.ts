@@ -13,19 +13,20 @@ import {
   createMockWorkflowTemplateInDb,
   MockConfigProvider
 } from "@test/mock-data"
+import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
 import {post, put} from "@test/requests"
 import {UserWithToken} from "@test/types"
-import {TokenPayloadBuilder, DEFAULT_ORG_ID} from "@services"
+import {DEFAULT_ORG_ID} from "@services"
 import {v7 as uuidv7} from "uuid"
 
 describe("Quota Enforcement API Integration", () => {
   let app: NestApplication
   let prisma: PrismaClient
+  let orgAdminUser: UserWithToken
   let jwtService: JwtService
   let configProvider: ConfigProvider
-  let orgAdminUser: UserWithToken
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -36,7 +37,7 @@ describe("Quota Enforcement API Integration", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -51,18 +52,7 @@ describe("Quota Enforcement API Integration", () => {
   }, 30000)
 
   beforeEach(async () => {
-    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
-
-    const tokenPayload = TokenPayloadBuilder.from({
-      sub: adminUser.id,
-      entityType: "user",
-      displayName: adminUser.displayName,
-      email: adminUser.email,
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-
-    orgAdminUser = {user: adminUser, token: jwtService.sign(tokenPayload)}
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
   })
 
   afterAll(async () => {

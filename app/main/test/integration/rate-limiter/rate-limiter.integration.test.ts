@@ -7,10 +7,10 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient} from "@prisma/client"
 import {DatabaseClient} from "@external"
 import {cleanDatabase, cleanRedisByPrefix, prepareDatabase, prepareRedisPrefix} from "@test/database"
-import {createDomainMockUserInDb, MockConfigProvider} from "@test/mock-data"
+import {MockConfigProvider} from "@test/mock-data"
+import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {get} from "@test/requests"
 import {UserWithToken} from "@test/types"
-import {TokenPayloadBuilder} from "@services"
 
 const RATE_LIMIT_POINTS = 3
 // Use 10 minutes to avoid test flakiness
@@ -71,13 +71,7 @@ describe("Rate Limiter Integration", () => {
   }, 30000)
 
   beforeEach(async () => {
-    const user = await createDomainMockUserInDb(prisma)
-    const tokenPayload = TokenPayloadBuilder.fromUser(user, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-
-    authenticatedUser = {user, token: jwtService.sign(tokenPayload)}
+    authenticatedUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider)
   })
 
   afterAll(async () => {
@@ -128,12 +122,8 @@ describe("Rate Limiter Integration", () => {
 
   it("should enforce rate limits per entity (different users have independent quotas)", async () => {
     // Given: A second user with an independent quota
-    const secondUser = await createDomainMockUserInDb(prisma)
-    const secondTokenPayload = TokenPayloadBuilder.fromUser(secondUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-    const secondUserToken = jwtService.sign(secondTokenPayload)
+    const secondUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider)
+    const secondUserToken = secondUser.token
 
     // When: Exhaust the first user's quota
     for (let i = 0; i < RATE_LIMIT_POINTS; i++)

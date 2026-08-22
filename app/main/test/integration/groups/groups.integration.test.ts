@@ -9,17 +9,18 @@ import {
 } from "@approvio/api"
 import {AppModule} from "@app/app.module"
 import {GROUPS_ENDPOINT_ROOT} from "@controllers"
-import {DESCRIPTION_MAX_LENGTH} from "@domain"
+import {DESCRIPTION_MAX_LENGTH, User} from "@domain"
 import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
 import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
-import {PrismaClient, Group as PrismaGroup, User as PrismaUser} from "@prisma/client"
+import {PrismaClient, Group as PrismaGroup} from "@prisma/client"
 
 import {cleanDatabase, prepareDatabase} from "@test/database"
-import {createDomainMockUserInDb, createMockUserInDb, MockConfigProvider} from "@test/mock-data"
+import {createDomainMockUserInDb, MockConfigProvider} from "@test/mock-data"
+import {createAuthenticatedUserInDb, TestTokenBuilder} from "@test/token-helpers"
 import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
 
@@ -29,7 +30,6 @@ import {
   AUDIT_LOG_REPOSITORY_TOKEN,
   AuditLogRepository,
   MAX_LIMIT,
-  TokenPayloadBuilder,
   USER_REPOSITORY_TOKEN,
   UserRepository
 } from "@services"
@@ -98,19 +98,8 @@ describe("Groups API", () => {
   })
 
   beforeEach(async () => {
-    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
-    const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
-    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-    const memberTokenPayload = TokenPayloadBuilder.fromUser(memberUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-
-    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
-    orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
   })
 
   it("should be defined", () => {
@@ -574,7 +563,7 @@ describe("Groups API", () => {
         const createdGroup = await createTestGroup(prisma, "Read-Accessible-Group")
 
         // Create user with read permission on this specific group
-        const userWithReadPermission = await createDomainMockUserInDb(prisma, {
+        const {token: userToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
           orgAdmin: false,
           roles: [
             {
@@ -586,16 +575,6 @@ describe("Groups API", () => {
             }
           ]
         })
-
-        const tokenPayload = TokenPayloadBuilder.from({
-          sub: userWithReadPermission.id,
-          entityType: "user",
-          displayName: userWithReadPermission.displayName,
-          email: userWithReadPermission.email,
-          issuer: configProvider.jwtConfig.issuer,
-          audience: [configProvider.jwtConfig.audience]
-        })
-        const userToken = jwtService.sign(tokenPayload)
 
         // When
         const response = await get(app, `${endpoint}/${createdGroup.id}`).withToken(userToken).build()
@@ -613,7 +592,7 @@ describe("Groups API", () => {
         const createdGroup = await createTestGroup(prisma, groupName)
 
         // Create user with read permission on this specific group
-        const userWithReadPermission = await createDomainMockUserInDb(prisma, {
+        const {token: userToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
           orgAdmin: false,
           roles: [
             {
@@ -625,16 +604,6 @@ describe("Groups API", () => {
             }
           ]
         })
-
-        const tokenPayload = TokenPayloadBuilder.from({
-          sub: userWithReadPermission.id,
-          entityType: "user",
-          displayName: userWithReadPermission.displayName,
-          email: userWithReadPermission.email,
-          issuer: configProvider.jwtConfig.issuer,
-          audience: [configProvider.jwtConfig.audience]
-        })
-        const userToken = jwtService.sign(tokenPayload)
 
         // When
         const response = await get(app, `${endpoint}/${groupName}`).withToken(userToken).build()
@@ -693,16 +662,16 @@ describe("Groups API", () => {
 
   describe("Group Membership Endpoints (/groups/:groupId/entities)", () => {
     let group: PrismaGroup
-    let user1: PrismaUser
-    let user2: PrismaUser
+    let user1: User
+    let user2: User
     const entitiesEndpoint = (groupId: string) => `${endpoint}/${groupId}/entities`
 
     beforeEach(async () => {
       // Create common resources for membership tests
       group = await createTestGroup(prisma, "Membership-Test-Group")
       // User1 is admin, User2 is member for auth tests
-      user1 = await createMockUserInDb(prisma, {orgAdmin: true})
-      user2 = await createMockUserInDb(prisma, {orgAdmin: false})
+      user1 = await createDomainMockUserInDb(prisma, {orgAdmin: true})
+      user2 = await createDomainMockUserInDb(prisma, {orgAdmin: false})
 
       await prisma.groupMembership.create({
         data: {
@@ -755,15 +724,7 @@ describe("Groups API", () => {
 
         it("should allow a Group Admin (user1) to add members", async () => {
           // Given
-          const groupAdminTokenPayload = TokenPayloadBuilder.from({
-            sub: user1.id,
-            entityType: "user",
-            displayName: user1.displayName,
-            email: user1.email,
-            issuer: configProvider.jwtConfig.issuer,
-            audience: [configProvider.jwtConfig.audience]
-          })
-          const groupAdminToken = jwtService.sign(groupAdminTokenPayload)
+          const groupAdminToken = TestTokenBuilder.signUserToken(jwtService, configProvider, user1)
           const requestBody: AddGroupEntitiesRequest = {
             entities: [{entity: {entityId: user2.id, entityType: EntityType.HUMAN}}]
           }
@@ -1076,15 +1037,7 @@ describe("Groups API", () => {
 
         it("should allow Group Admin (user1) to remove members (user2)", async () => {
           // Given
-          const groupAdminTokenPayload = TokenPayloadBuilder.from({
-            sub: user1.id,
-            entityType: "user",
-            displayName: user1.displayName,
-            email: user1.email,
-            issuer: configProvider.jwtConfig.issuer,
-            audience: [configProvider.jwtConfig.audience]
-          })
-          const groupAdminToken = jwtService.sign(groupAdminTokenPayload)
+          const groupAdminToken = TestTokenBuilder.signUserToken(jwtService, configProvider, user1)
           const requestBody: RemoveGroupEntitiesRequest = {
             entities: [{entity: {entityId: orgMemberUser.user.id, entityType: EntityType.HUMAN}}]
           }

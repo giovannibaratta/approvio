@@ -15,10 +15,10 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient} from "@prisma/client"
 
 import {cleanDatabase, prepareDatabase} from "@test/database"
-import {createDomainMockUserInDb, createMockUserInDb, MockConfigProvider} from "@test/mock-data"
+import {createMockUserInDb, MockConfigProvider} from "@test/mock-data"
+import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
-import {TokenPayloadBuilder} from "@services"
 import "expect-more-jest"
 import "@utils/matchers"
 import {v7 as uuidv7} from "uuid"
@@ -43,7 +43,7 @@ describe("Organization Admin API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -60,19 +60,8 @@ describe("Organization Admin API", () => {
   }, 30000)
 
   beforeEach(async () => {
-    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
-    const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
-    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-    const memberTokenPayload = TokenPayloadBuilder.fromUser(memberUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-
-    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
-    orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
   })
 
   afterAll(async () => {

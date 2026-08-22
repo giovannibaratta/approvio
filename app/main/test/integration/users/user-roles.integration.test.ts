@@ -7,26 +7,15 @@ import {USERS_ENDPOINT_ROOT} from "@controllers"
 import {PrismaClient} from "@prisma/client"
 
 import {cleanDatabase, prepareDatabase} from "@test/database"
-import {
-  createDomainMockUserInDb,
-  createTestGroup,
-  createMockSpaceInDb,
-  createMockWorkflowTemplateInDb,
-  MockConfigProvider
-} from "@test/mock-data"
+import {createTestGroup, createMockSpaceInDb, createMockWorkflowTemplateInDb, MockConfigProvider} from "@test/mock-data"
+import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
 import {put, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import "expect-more-jest"
 import "@utils/matchers"
-import {
-  TokenPayloadBuilder,
-  USER_REPOSITORY_TOKEN,
-  UserRepository,
-  AUDIT_LOG_REPOSITORY_TOKEN,
-  AuditLogRepository
-} from "@services"
+import {USER_REPOSITORY_TOKEN, UserRepository, AUDIT_LOG_REPOSITORY_TOKEN, AuditLogRepository} from "@services"
 import {RoleAssignmentRequest} from "@approvio/api"
 import {MAX_ROLES_PER_ENTITY} from "@domain"
 import {wrapTaskEitherWithSideEffect, failTaskEither} from "@test/injectors"
@@ -65,23 +54,8 @@ describe("User Roles API", () => {
   }, 30000)
 
   beforeEach(async () => {
-    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
-    const userToAssignRoles = await createDomainMockUserInDb(prisma, {orgAdmin: false})
-
-    const createUserToken = (user: typeof adminUser) => {
-      const tokenPayload = TokenPayloadBuilder.from({
-        sub: user.id,
-        entityType: "user",
-        displayName: user.displayName,
-        email: user.email,
-        issuer: configProvider.jwtConfig.issuer,
-        audience: [configProvider.jwtConfig.audience]
-      })
-      return jwtService.sign(tokenPayload)
-    }
-
-    orgAdminUser = {user: adminUser, token: createUserToken(adminUser)}
-    targetUser = {user: userToAssignRoles, token: createUserToken(userToAssignRoles)}
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
+    targetUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
   })
 
   afterAll(async () => {})
@@ -898,39 +872,19 @@ describe("User Roles API", () => {
         workflowTemplateInOtherSpace = templateInOther.name
 
         // Given: Create users
-        const managerUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
-        const normalUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
-
-        const createUserToken = (user: typeof managerUser) => {
-          const tokenPayload = TokenPayloadBuilder.from({
-            sub: user.id,
-            entityType: "user",
-            displayName: user.displayName,
-            email: user.email,
-            issuer: configProvider.jwtConfig.issuer,
-            audience: [configProvider.jwtConfig.audience]
-          })
-          return jwtService.sign(tokenPayload)
-        }
-
-        spaceManagerUser = {user: managerUser, token: createUserToken(managerUser)}
-        regularUser = {user: normalUser, token: createUserToken(normalUser)}
-
-        // Given: Assign space manager role to managerUser for Main Space
-        await prisma.user.update({
-          where: {id: managerUser.id},
-          data: {
-            roles: [
-              {
-                name: "SpaceManager",
-                resourceType: "space",
-                scopeType: "space",
-                scope: {type: "space", spaceId: spaceId},
-                permissions: ["read", "manage"]
-              }
-            ]
-          }
+        spaceManagerUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+          orgAdmin: false,
+          roles: [
+            {
+              name: "SpaceManager",
+              resourceType: "space",
+              scopeType: "space",
+              scope: {type: "space", spaceId: spaceId},
+              permissions: ["read", "manage"]
+            }
+          ]
         })
+        regularUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
       })
 
       it("should allow org admin to assign workflow template role", async () => {
@@ -1009,31 +963,18 @@ describe("User Roles API", () => {
 
       it("should allow user with org-wide space manage permission to assign workflow template role", async () => {
         // Given: User with org-wide space manage permission
-        const orgWideManagerUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
-        await prisma.user.update({
-          where: {id: orgWideManagerUser.id},
-          data: {
-            roles: [
-              {
-                name: "OrgWideSpaceManager",
-                resourceType: "space",
-                scopeType: "org",
-                scope: {type: "org"},
-                permissions: ["read", "manage"]
-              }
-            ]
-          }
+        const {token: orgWideManagerToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+          orgAdmin: false,
+          roles: [
+            {
+              name: "OrgWideSpaceManager",
+              resourceType: "space",
+              scopeType: "org",
+              scope: {type: "org"},
+              permissions: ["read", "manage"]
+            }
+          ]
         })
-        const orgWideManagerToken = jwtService.sign(
-          TokenPayloadBuilder.from({
-            sub: orgWideManagerUser.id,
-            entityType: "user",
-            displayName: orgWideManagerUser.displayName,
-            email: orgWideManagerUser.email,
-            issuer: configProvider.jwtConfig.issuer,
-            audience: [configProvider.jwtConfig.audience]
-          })
-        )
 
         const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.user.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {

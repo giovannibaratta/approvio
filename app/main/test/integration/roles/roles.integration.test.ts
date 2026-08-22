@@ -3,9 +3,9 @@ import {NestApplication} from "@nestjs/core"
 import {HttpStatus} from "@nestjs/common"
 import request from "supertest"
 import {AppModule} from "@app/app.module"
-import {createDomainMockUserInDb, MockConfigProvider} from "@test/mock-data"
+import {MockConfigProvider} from "@test/mock-data"
+import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {cleanDatabase, prepareDatabase} from "@test/database"
-import {TokenPayloadBuilder} from "@services"
 import {PrismaClient} from "@prisma/client"
 import {ConfigProvider} from "@external/config"
 import {JwtService} from "@nestjs/jwt"
@@ -25,7 +25,7 @@ describe("Roles Integration Tests", () => {
       imports: [AppModule]
     })
       .overrideProvider(ConfigProvider)
-      .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+      .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
       .compile()
 
     app = moduleRef.createNestApplication({logger: false})
@@ -49,17 +49,10 @@ describe("Roles Integration Tests", () => {
     describe("good cases", () => {
       it("should return list of role templates for authenticated user", async () => {
         // Given: A valid user exists in the database
-        const user = await createDomainMockUserInDb(prisma, {orgAdmin: false, roles: []})
-
-        const tokenPayload = TokenPayloadBuilder.from({
-          sub: user.id,
-          entityType: "user",
-          displayName: user.displayName,
-          email: user.email,
-          issuer: configProvider.jwtConfig.issuer,
-          audience: [configProvider.jwtConfig.audience]
+        const {token: userToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+          orgAdmin: false,
+          roles: []
         })
-        const userToken = jwtService.sign(tokenPayload)
 
         // When: Making a request to list roles
         const response = await request(app.getHttpServer())

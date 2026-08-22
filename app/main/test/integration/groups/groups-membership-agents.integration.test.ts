@@ -10,10 +10,11 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient, Group as PrismaGroup, Agent as PrismaAgent} from "@prisma/client"
 
 import {cleanDatabase, prepareDatabase} from "@test/database"
-import {createDomainMockUserInDb, createMockAgentInDb, createTestGroup, MockConfigProvider} from "@test/mock-data"
+import {createMockAgentInDb, createTestGroup, MockConfigProvider} from "@test/mock-data"
+import {createAuthenticatedUserInDb, TestTokenBuilder} from "@test/token-helpers"
 import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
-import {AGENT_REPOSITORY_TOKEN, AgentRepository, TokenPayloadBuilder, QuotaService} from "@services"
+import {AGENT_REPOSITORY_TOKEN, AgentRepository, QuotaService} from "@services"
 import {mapAgentToDomain} from "@external/database/shared"
 import {EntityType} from "@controllers/groups/groups.mappers"
 import {wrapTaskEitherWithSideEffect} from "@test/injectors"
@@ -45,7 +46,7 @@ describe("Groups API - Agent Membership", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -61,29 +62,13 @@ describe("Groups API - Agent Membership", () => {
   }, 30000)
 
   beforeEach(async () => {
-    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
-    const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
     const agent = await createMockAgentInDb(prisma, {agentName: "test-group-agent"})
     const domainAgent = unwrapRight(mapAgentToDomain(agent))
+    const token = TestTokenBuilder.signAgentToken(jwtService, configProvider, domainAgent)
 
-    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-    const memberTokenPayload = TokenPayloadBuilder.fromUser(memberUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-
-    // Create agent token payload - agents should have entityType: "agent"
-    const agentTokenPayload = TokenPayloadBuilder.fromAgent(domainAgent, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-
-    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
-    orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
-    testAgent = {agent, token: jwtService.sign(agentTokenPayload)}
+    testAgent = {agent, token}
   })
 
   afterAll(async () => {
