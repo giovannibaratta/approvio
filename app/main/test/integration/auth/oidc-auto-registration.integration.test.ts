@@ -91,11 +91,11 @@ describe("OIDC Auto-Registration Integration", () => {
 
       // When: User completes OIDC authentication flow
       const loginResponse = await request(app.getHttpServer()).get("/auth/web/login").expect(302)
-      const redirectLocation = loginResponse.headers.location
-      const urlParams = new URLSearchParams(redirectLocation!.split("?")[1])
+      const redirectLocation = loginResponse.headers.location ?? ""
+      const urlParams = new URLSearchParams(redirectLocation.split("?")[1] ?? "")
       const state = urlParams.get("state") ?? ""
 
-      const authCode = await simulateOidcAuthorization(redirectLocation!, testUser, configProvider)
+      const authCode = await simulateOidcAuthorization(redirectLocation, testUser, configProvider)
 
       const tokenResponse = await request(app.getHttpServer()).post("/auth/cli/token").send({
         code: authCode,
@@ -168,11 +168,11 @@ describe("OIDC Auto-Registration Integration", () => {
 
       // When: Second user completes OIDC authentication flow
       const loginResponse = await request(app.getHttpServer()).get("/auth/web/login").expect(302)
-      const redirectLocation = loginResponse.headers.location
-      const urlParams = new URLSearchParams(redirectLocation!.split("?")[1])
+      const redirectLocation = loginResponse.headers.location ?? ""
+      const urlParams = new URLSearchParams(redirectLocation.split("?")[1] ?? "")
       const state = urlParams.get("state") ?? ""
 
-      const authCode = await simulateOidcAuthorization(redirectLocation!, testUser, configProvider)
+      const authCode = await simulateOidcAuthorization(redirectLocation, testUser, configProvider)
 
       const tokenResponse = await request(app.getHttpServer()).post("/auth/cli/token").send({
         code: authCode,
@@ -213,6 +213,7 @@ describe("OIDC Auto-Registration Integration", () => {
       // Given: User already exists in the database
       const userEmail = "existing-user@example.com"
       const displayName = "Existing User"
+      const uuid = uuidv7()
 
       const existingUser = await prisma.user.create({
         data: {
@@ -224,9 +225,19 @@ describe("OIDC Auto-Registration Integration", () => {
         }
       })
 
+      await prisma.userIdentity.create({
+        data: {
+          id: uuidv7(),
+          userId: existingUser.id,
+          providerId: "custom",
+          subjectId: uuid,
+          email: userEmail,
+          createdAt: new Date()
+        }
+      })
+
       // Given: OIDC mock user with same email as existing user
       const uniqueId = Date.now().toString()
-      const uuid = uuidv7()
 
       const testUser: OidcMockUser = {
         SubjectId: uuid,
@@ -240,11 +251,11 @@ describe("OIDC Auto-Registration Integration", () => {
 
       // When: Existing user completes OIDC authentication flow
       const loginResponse = await request(app.getHttpServer()).get("/auth/web/login").expect(302)
-      const redirectLocation = loginResponse.headers.location
-      const urlParams = new URLSearchParams(redirectLocation!.split("?")[1])
+      const redirectLocation = loginResponse.headers.location ?? ""
+      const urlParams = new URLSearchParams(redirectLocation.split("?")[1] ?? "")
       const state = urlParams.get("state") ?? ""
 
-      const authCode = await simulateOidcAuthorization(redirectLocation!, testUser, configProvider)
+      const authCode = await simulateOidcAuthorization(redirectLocation, testUser, configProvider)
 
       const tokenResponse = await request(app.getHttpServer()).post("/auth/cli/token").send({
         code: authCode,
@@ -271,6 +282,93 @@ describe("OIDC Auto-Registration Integration", () => {
 
       expect(infoResponse).toHaveStatusCode(200)
       expect(infoResponse.body).toMatchObject({entityType: "user"})
+    }, 20000)
+
+    it("should reject login with IDENTITY_CONFLICT when email matches existing user but identity is not linked", async () => {
+      // Given: User already exists in the database without an identity link
+      const userEmail = "conflict-user@example.com"
+      const displayName = "Conflict User"
+
+      await prisma.user.create({
+        data: {
+          id: uuidv7(),
+          email: userEmail,
+          displayName: displayName,
+          createdAt: new Date(),
+          occ: 0
+        }
+      })
+
+      // Given: OIDC user arrives with matching email but new/unlinked subject ID
+      const uniqueId = Date.now().toString()
+      const uuid = uuidv7()
+
+      const testUser: OidcMockUser = {
+        SubjectId: uuid,
+        Username: `conflictuser-${uniqueId}`,
+        Password: "testpassword123",
+        Claims: [
+          {Type: "name", Value: displayName},
+          {Type: "email", Value: userEmail}
+        ]
+      }
+
+      // When: User attempts OIDC login
+      const loginResponse = await request(app.getHttpServer()).get("/auth/web/login").expect(302)
+      const redirectLocation = loginResponse.headers.location ?? ""
+      const urlParams = new URLSearchParams(redirectLocation.split("?")[1] ?? "")
+      const state = urlParams.get("state") ?? ""
+
+      const authCode = await simulateOidcAuthorization(redirectLocation, testUser, configProvider)
+
+      const tokenResponse = await request(app.getHttpServer()).post("/auth/cli/token").send({
+        code: authCode,
+        state: state
+      })
+
+      // Expect: Login is rejected with IDENTITY_CONFLICT
+      expect(tokenResponse).toHaveStatusCode(400)
+      expect(tokenResponse.body).toMatchObject({
+        code: "AUTH_IDENTITY_CONFLICT"
+      })
+    }, 20000)
+
+    it("should reject login when OIDC provider returns email_verified as false", async () => {
+      // Given: OIDC user with unverified email
+      const uniqueId = Date.now().toString()
+      const uuid = uuidv7()
+      const userEmail = `unverified-${uniqueId}@example.com`
+      const displayName = "Unverified User"
+
+      const testUser: OidcMockUser = {
+        SubjectId: uuid,
+        Username: `unverified-${uniqueId}`,
+        Password: "testpassword123",
+        Claims: [
+          {Type: "name", Value: displayName},
+          {Type: "email", Value: userEmail},
+          {Type: "email_verified", Value: "false"}
+        ]
+      }
+
+      // When: User attempts OIDC login
+      const loginResponse = await request(app.getHttpServer()).get("/auth/web/login").expect(302)
+      const redirectLocation = loginResponse.headers.location ?? ""
+      const urlParams = new URLSearchParams(redirectLocation.split("?")[1] ?? "")
+      const state = urlParams.get("state") ?? ""
+
+      const authCode = await simulateOidcAuthorization(redirectLocation, testUser, configProvider)
+
+      const tokenResponse = await request(app.getHttpServer()).post("/auth/cli/token").send({
+        code: authCode,
+        state: state
+      })
+
+      // Expect: Login is rejected because email is unverified
+      expect(tokenResponse).toHaveStatusCode(400)
+      expect(tokenResponse.body).toMatchObject({
+        code: "AUTH_MISSING_EMAIL_FROM_OIDC_PROVIDER"
+      })
     }, 20000)
   })
 })

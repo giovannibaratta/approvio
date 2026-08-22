@@ -174,7 +174,8 @@ function mapDomainTokenToPrismaForUpdate(token: RefreshToken): Prisma.RefreshTok
     usedAt,
     nextTokenId,
     expiresAt: token.expiresAt,
-    createdAt: token.createdAt
+    createdAt: token.createdAt,
+    providerId: token.entityType === EntityType.USER ? token.providerId : null
   }
 
   let userRef: Prisma.UserCreateNestedOneWithoutRefreshTokensInput | undefined = undefined
@@ -208,7 +209,8 @@ function mapDomainTokenToPrismaForCreate(token: DecoratedRefreshToken<{occ: true
     nextTokenId,
     expiresAt: token.expiresAt,
     createdAt: token.createdAt,
-    occ: token.occ
+    occ: token.occ,
+    providerId: token.entityType === EntityType.USER ? token.providerId : null
   }
 
   let userRef: Prisma.UserCreateNestedOneWithoutRefreshTokensInput | undefined = undefined
@@ -246,6 +248,7 @@ function mapPrismaTokenToDomain<T extends RefreshTokenDecoratorSelector>(
     entityType: prismaToken.userId ? "user" : "agent",
     userId: prismaToken.userId || undefined,
     agentId: prismaToken.agentId || undefined,
+    providerId: prismaToken.providerId || undefined,
     occ: prismaToken.occ
   }
 

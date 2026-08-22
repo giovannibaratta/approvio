@@ -61,6 +61,10 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
     case "auth_token_generation_failed":
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
+    case "auth_identity_conflict":
+    case "auth_invalid_oidc_provider":
+    case "auth_missing_oidc_provider":
+    case "user_identity_already_exists":
     case "user_not_found":
     case "request_invalid_user_identifier":
     case "auth_invalid_redirect_uri":
@@ -155,6 +159,7 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
     case "organization_admin_email_too_long":
     case "organization_admin_email_invalid":
     case "oidc_unknown_error":
+    case "oidc_provider_not_found":
     case "oidc_token_exchange_failed":
     case "oidc_userinfo_fetch_failed":
     case "oidc_invalid_provider_response":
@@ -184,6 +189,7 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
     case "refresh_token_invalid_user_id":
     case "refresh_token_missing_entity_id":
     case "refresh_token_missing_entity_type":
+    case "refresh_token_missing_provider_id":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_name_cannot_be_uuid":
@@ -218,6 +224,10 @@ export function generateErrorResponseForExchangePrivilegeToken(
     case "auth_token_generation_failed":
     case "unknown_error":
     case "auth_missing_email_from_oidc_provider":
+    case "auth_identity_conflict":
+    case "auth_invalid_oidc_provider":
+    case "auth_missing_oidc_provider":
+    case "user_identity_already_exists":
     case "auth_authorization_url_generation_failed":
     case "pkce_code_generation_failed":
     case "pkce_code_storage_failed":
@@ -225,6 +235,7 @@ export function generateErrorResponseForExchangePrivilegeToken(
     case "pkce_code_not_found":
     case "pkce_code_expired":
     case "pkce_code_already_used":
+    case "oidc_provider_not_found":
     case "oidc_token_exchange_failed":
     case "oidc_userinfo_fetch_failed":
     case "oidc_invalid_provider_response":
@@ -324,6 +335,10 @@ export function generateErrorResponseForRefreshAgentToken(
     case "auth_token_generation_failed":
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
+    case "auth_identity_conflict":
+    case "auth_invalid_oidc_provider":
+    case "auth_missing_oidc_provider":
+    case "user_identity_already_exists":
     case "user_not_found":
     case "request_invalid_user_identifier":
     case "request_invalid_dpop_jkt":
@@ -420,6 +435,7 @@ export function generateErrorResponseForRefreshAgentToken(
     case "organization_admin_email_empty":
     case "organization_admin_email_too_long":
     case "organization_admin_email_invalid":
+    case "oidc_provider_not_found":
     case "oidc_token_exchange_failed":
     case "oidc_userinfo_fetch_failed":
     case "oidc_invalid_provider_response":
@@ -449,6 +465,7 @@ export function generateErrorResponseForRefreshAgentToken(
     case "refresh_token_invalid_user_id":
     case "refresh_token_missing_entity_id":
     case "refresh_token_missing_entity_type":
+    case "refresh_token_missing_provider_id":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_name_cannot_be_uuid":
@@ -483,6 +500,7 @@ export function generateErrorResponseForGenerateToken(error: GenerateTokenError,
     case "refresh_token_invalid_user_id":
     case "refresh_token_missing_entity_id":
     case "refresh_token_missing_entity_type":
+    case "refresh_token_missing_provider_id":
     case "refresh_token_used_before_create":
     case "request_invalid_user_identifier":
     case "user_invalid_uuid":
@@ -524,6 +542,7 @@ export function generateErrorResponseForGenerateToken(error: GenerateTokenError,
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
     case "oidc_network_error":
+    case "oidc_provider_not_found":
     case "oidc_invalid_provider_response":
     case "oidc_invalid_token_response":
     case "oidc_invalid_userinfo_response":
@@ -534,6 +553,10 @@ export function generateErrorResponseForGenerateToken(error: GenerateTokenError,
     case "auth_token_generation_failed":
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
+    case "auth_identity_conflict":
+    case "auth_invalid_oidc_provider":
+    case "auth_missing_oidc_provider":
+    case "user_identity_already_exists":
     case "oidc_unknown_error":
     case "unknown_error":
     case "auth_invalid_redirect_uri":

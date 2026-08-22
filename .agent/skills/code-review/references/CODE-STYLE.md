@@ -17,3 +17,4 @@ Guidelines for writing clean, maintainable, and idiomatic Approvio code.
 - **Switch Exhaustiveness**: Use exhaustiveness checks to ensure all cases are handled. If you get stuck with complex type unions, use a `default` case and leave a `TODO` for humans.
 - **Interfaces**: Place interfaces at the end of the file if they are primarily used to define implementation details of the classes in that same file.
 - **Casting**: Never cast to `unknown`. Avoid `any`. Use proper types or `TODO` for humans if the types are too complex.
+- **Discriminated Unions**: In discriminated union variants, omit non-applicable properties instead of typing them as optional `never` (e.g. avoid `prop?: never`). Enforce explicit type-narrowing through domain type guards (e.g., `isUserToken(token)`) or discriminator checks (`entityType === EntityType.USER`) rather than allowing nullable property probing.

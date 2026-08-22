@@ -228,6 +228,7 @@ export const generateErrorResponseForAgentTokenExchange = (
     case "refresh_token_invalid_user_id":
     case "refresh_token_missing_entity_id":
     case "refresh_token_missing_entity_type":
+    case "refresh_token_missing_provider_id":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_name_cannot_be_uuid":

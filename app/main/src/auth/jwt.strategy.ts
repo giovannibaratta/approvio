@@ -60,13 +60,14 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
    * @returns Promise<AuthenticatedUser> - User entity wrapped in AuthenticatedEntity
    * @throws UnauthorizedException - When user is not found or other errors occur
    */
-  private async validateUserEntity(userIdentifier: string): Promise<AuthenticatedUser> {
+  private async validateUserEntity(userIdentifier: string, providerId: string): Promise<AuthenticatedUser> {
     const userResult = await this.userService.getUserByIdentifier(userIdentifier)()
 
     if (isRight(userResult))
       return {
         entityType: "user",
-        user: userResult.right
+        user: userResult.right,
+        providerId
       }
 
     if (userResult.left === "user_not_found")
@@ -131,7 +132,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
     let authenticatedEntity: AuthenticatedEntity
 
     if (payload.entityType === "user") {
-      authenticatedEntity = await this.validateUserEntity(payload.sub)
+      authenticatedEntity = await this.validateUserEntity(payload.sub, payload.providerId)
 
       if (payload.jti && payload.operation) {
         if (!isStepUpOperation(payload.operation))

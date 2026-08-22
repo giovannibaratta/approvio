@@ -14,7 +14,8 @@ import {
   PkceSessionDbRepository,
   PrismaTaskRepository,
   RefreshTokenDbRepository,
-  PrismaHealthRepository
+  PrismaHealthRepository,
+  UserIdentityDbRepository
 } from "./database/"
 import {GroupDbRepository, QuotaDbRepository, PrismaTransactionManager} from "./database"
 import {
@@ -32,7 +33,8 @@ import {
   WORKFLOW_REPOSITORY_TOKEN,
   WORKFLOW_TEMPLATE_REPOSITORY_TOKEN,
   QUEUE_PROVIDER_TOKEN,
-  HEALTH_REPOSITORY_TOKEN
+  HEALTH_REPOSITORY_TOKEN,
+  USER_IDENTITY_REPOSITORY_TOKEN
 } from "@services"
 import {TASK_REPOSITORY_TOKEN} from "@services/task/interfaces"
 import {
@@ -149,6 +151,11 @@ const auditLogRepository = {
   useClass: PostgresAuditLogRepository
 }
 
+const userIdentityRepository = {
+  provide: USER_IDENTITY_REPOSITORY_TOKEN,
+  useClass: UserIdentityDbRepository
+}
+
 const repositories = [
   auditLogRepository,
   agentRepository,
@@ -168,7 +175,8 @@ const repositories = [
   quotaRepository,
   stepUpTokenRepository,
   dpopTokenRepository,
-  transactionManager
+  transactionManager,
+  userIdentityRepository
 ]
 
 @Module({

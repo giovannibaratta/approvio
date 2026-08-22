@@ -21,6 +21,7 @@ import {AgentGetError} from "../agent/interfaces"
 import {AutoRegisterError} from "../user/user.service"
 import {UserGetError} from "../user/interfaces"
 import {OrganizationAdminCreateError} from "../organization-admin/interfaces"
+import {UserIdentityCreateError} from "../user-identity/interfaces"
 import {UnknownError, EncryptionError} from "../error"
 import {PrefixUnion} from "@utils/types"
 import {TaskEither} from "fp-ts/TaskEither"
@@ -41,12 +42,16 @@ export type AuthError =
       | "authorization_url_generation_failed"
       | "missing_email_from_oidc_provider"
       | "invalid_redirect_uri"
+      | "identity_conflict"
+      | "invalid_oidc_provider"
+      | "missing_oidc_provider"
     >
   | UserGetError
   | AutoRegisterError
   | OrganizationAdminCreateError
   | OidcError
   | PkceError
+  | UserIdentityCreateError
 
 export type HighPrivilegeAuthError = AuthError | PrefixUnion<"auth", "invalid_entity" | "high_privilege_flow_disabled">
 
@@ -81,6 +86,7 @@ export interface PkceData {
   codeVerifier: string
   redirectUri: string
   oidcState: string
+  providerId: string
 }
 
 export interface PkceStorageData extends PkceData {
@@ -108,6 +114,7 @@ export type OidcError = PrefixUnion<
   | "network_error"
   | "invalid_token_response"
   | "invalid_userinfo_response"
+  | "provider_not_found"
   | UnknownError
 >
 
@@ -144,6 +151,7 @@ export interface OidcTokenRequest {
   code: string
   redirectUri: string
   codeVerifier: string
+  providerId: string
 }
 
 export type AgentChallengeGetError = "agent_challenge_not_found" | UnknownError
@@ -175,19 +183,20 @@ export enum AssuranceLevel {
 
 export interface OidcProvider {
   exchangeCodeForTokens(request: OidcTokenRequest): TaskEither<OidcError, OidcTokenResponse>
-  getUserInfo(accessToken: string, expectedSubject: string): TaskEither<OidcError, OidcUserInfo>
+  getUserInfo(accessToken: string, expectedSubject: string, providerId: string): TaskEither<OidcError, OidcUserInfo>
   /**
    * Generate a redirect URL to the IDP provider to obtain a token with the requested level of assurance
    */
   getAuthorizationUrl(
     pkce: PkceChallenge,
     assuranceLevel: AssuranceLevel,
-    redirectUri: string
+    redirectUri: string,
+    providerId: string
   ): Either<OidcError, string>
   /**
    * Validates the assurance level of the provided token
    */
-  verifyAssuranceLevel(idToken: string, assuranceLevel: AssuranceLevel): Either<OidcError, void>
+  verifyAssuranceLevel(idToken: string, assuranceLevel: AssuranceLevel, providerId: string): Either<OidcError, void>
 }
 
 export type GetChallengeByNonceError =

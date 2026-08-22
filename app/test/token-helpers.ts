@@ -15,12 +15,15 @@ export class TestTokenBuilder {
     user: User,
     configProvider: ConfigProvider,
     options?: {
+      providerId?: string
       stepUpContext?: StepUpContext
     }
   ): TokenPayloadForSigning {
+    const defaultProviderId = configProvider.oidcProviders.keys().next().value ?? "custom"
     return TokenPayloadBuilder.fromUser(user, {
       issuer: configProvider.jwtConfig.issuer,
       audience: [configProvider.jwtConfig.audience],
+      providerId: options?.providerId ?? defaultProviderId,
       stepUpContext: options?.stepUpContext
     })
   }
@@ -37,6 +40,7 @@ export class TestTokenBuilder {
     configProvider: ConfigProvider,
     user: User,
     options?: {
+      providerId?: string
       stepUpContext?: StepUpContext
       expiresIn?: number
     }
@@ -66,6 +70,7 @@ export async function createAuthenticatedUserInDb(
   jwtService: JwtService,
   configProvider: ConfigProvider,
   overrides?: Parameters<typeof createDomainMockUserInDb>[1] & {
+    providerId?: string
     stepUpContext?: StepUpContext
     expiresIn?: number
   }

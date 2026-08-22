@@ -124,8 +124,14 @@ export class UserService {
    */
   autoRegisterOidcUser(request: AutoRegisterOidcUserRequest): TaskEither<AutoRegisterError, User> {
     const persistUser = (user: User) => {
-      if (user.orgRole === OrgRole.ADMIN) return this.userRepo.createUserWithOrgAdmin(user)
-      return this.userRepo.createUser(user)
+      const identity = {
+        userId: user.id,
+        providerId: request.providerId,
+        subjectId: request.subjectId,
+        email: request.email
+      }
+      if (user.orgRole === OrgRole.ADMIN) return this.userRepo.createUserWithOrgAdminAndIdentity(user, identity)
+      return this.userRepo.createUserWithIdentity(user, identity)
     }
 
     const createUserFromOidcClaims = (isFirstUser: boolean) => {
@@ -162,6 +168,8 @@ export interface ListUsersRequest {
 export interface AutoRegisterOidcUserRequest {
   readonly email: string
   readonly displayName: string
+  readonly providerId: string
+  readonly subjectId: string
 }
 
 export type AutoRegisterError = UserCreateError | UnknownError

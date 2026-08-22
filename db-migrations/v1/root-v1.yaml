@@ -37,3 +37,9 @@ databaseChangeLog:
       file: v1/20260509143200-create-audit-logs-table.yaml
   - include:
       file: v1/20260530120000-create-workflow-actions-slack-tasks-table.yaml
+  - include:
+      file: v1/20260616120000-add-provider-to-pkce-sessions-table.yaml
+  - include:
+      file: v1/20260616120001-create-user-identities-table.yaml
+  - include:
+      file: v1/20260616120002-add-provider-to-refresh-tokens-table.yaml

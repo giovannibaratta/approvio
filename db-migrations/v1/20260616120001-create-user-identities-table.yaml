@@ -1,0 +1,64 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260616120001-create-user-identities-table
+      author: ai-agent
+      changes:
+        - createTable:
+            tableName: user_identities
+            columns:
+              - column:
+                  name: id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: provider_id
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: subject_id
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: email
+                  type: VARCHAR(512)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: TIMESTAMP
+                  defaultValueComputed: CURRENT_TIMESTAMP
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: BIGINT
+                  defaultValueNumeric: 1
+                  constraints:
+                    nullable: false
+
+        - addForeignKeyConstraint:
+            baseTableName: user_identities
+            baseColumnNames: user_id
+            constraintName: fk_user_identities_user
+            referencedTableName: users
+            referencedColumnNames: id
+            onDelete: CASCADE
+
+        - addUniqueConstraint:
+            tableName: user_identities
+            columnNames: provider_id, subject_id
+            constraintName: user_identities_provider_subject_unique
+
+        - addUniqueConstraint:
+            tableName: user_identities
+            columnNames: user_id, provider_id
+            constraintName: user_identities_user_provider_unique

@@ -114,7 +114,8 @@ export class PkceService {
     const extractPkceData = (sessionData: PkceSessionData): PkceData => ({
       codeVerifier: sessionData.codeVerifier,
       redirectUri: sessionData.redirectUri,
-      oidcState: sessionData.oidcState
+      oidcState: sessionData.oidcState,
+      providerId: sessionData.providerId
     })
 
     return pipe(

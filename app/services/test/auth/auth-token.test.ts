@@ -6,10 +6,11 @@ describe("TokenPayloadBuilder", () => {
     const user = createMockUserDomain()
     const issuer = "https://idp.example.com"
     const audience = ["https://api.example.com"]
+    const providerId = "custom-idp"
 
     it("should include standard user claims", () => {
       // When: Creating a payload from a user
-      const payload = TokenPayloadBuilder.fromUser(user, {issuer, audience})
+      const payload = TokenPayloadBuilder.fromUser(user, {issuer, audience, providerId})
 
       // Expect: Payload contains the correct basic information
       expect(payload).toMatchObject({
@@ -19,7 +20,8 @@ describe("TokenPayloadBuilder", () => {
         email: user.email,
         name: user.displayName,
         entityType: "user",
-        orgRole: user.orgRole
+        orgRole: user.orgRole,
+        providerId
       })
     })
 
@@ -35,6 +37,7 @@ describe("TokenPayloadBuilder", () => {
       const payload = TokenPayloadBuilder.fromUser(user, {
         issuer,
         audience,
+        providerId,
         stepUpContext
       })
 
@@ -42,18 +45,20 @@ describe("TokenPayloadBuilder", () => {
       expect(payload).toMatchObject({
         jti: stepUpContext.jti,
         operation: stepUpContext.operation,
-        resource: stepUpContext.resource
+        resource: stepUpContext.resource,
+        providerId
       })
     })
 
     it("should not include step-up context when not provided", () => {
       // When: Creating a payload without step-up context
-      const payload = TokenPayloadBuilder.fromUser(user, {issuer, audience})
+      const payload = TokenPayloadBuilder.fromUser(user, {issuer, audience, providerId})
 
       // Expect: Optional context fields are undefined
       expect(payload.jti).toBeUndefined()
       expect(payload.operation).toBeUndefined()
       expect(payload.resource).toBeUndefined()
+      expect(payload.providerId).toBe(providerId)
     })
   })
 })

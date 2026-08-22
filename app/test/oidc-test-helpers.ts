@@ -28,10 +28,14 @@ export interface OidcMockUser {
 export async function simulateOidcAuthorization(
   redirectLocation: string,
   testUser: OidcMockUser,
-  configProvider: ConfigProvider
+  configProvider: ConfigProvider,
+  providerId: string = "custom"
 ): Promise<string> {
   // Step 1: Create user on OIDC server via API
-  const oidcApiUrl = `${configProvider.oidcConfig.issuerUrl}/api/v1/user`
+  const providerConfig = configProvider.oidcProviders.get(providerId)
+  if (!providerConfig) throw new Error(`OIDC provider with id "${providerId}" not found in test configuration`)
+
+  const oidcApiUrl = `${providerConfig.issuerUrl}/api/v1/user`
   const createUserResponse = await axios.post(oidcApiUrl, testUser, {
     headers: {"Content-Type": "application/json"}
   })
@@ -75,7 +79,7 @@ export async function simulateOidcAuthorization(
     __RequestVerificationToken: verificationToken
   })
 
-  const loginResponse = await axios.post("http://localhost:4011/Account/Login", loginFormData.toString(), {
+  const loginResponse = await axios.post(`${providerConfig.issuerUrl}/Account/Login`, loginFormData.toString(), {
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",
       Cookie: cookieHeader,
@@ -97,7 +101,7 @@ export async function simulateOidcAuthorization(
   const updatedCookieHeader = allCookies.map(cookie => cookie.split(";")[0]).join("; ")
 
   // Follow the authorization callback redirect to get the actual authorization code
-  const callbackResponse = await axios.get(`http://localhost:4011${location}`, {
+  const callbackResponse = await axios.get(`${providerConfig.issuerUrl}${location}`, {
     maxRedirects: 0,
     validateStatus: status => status === 302,
     headers: {

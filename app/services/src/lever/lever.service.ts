@@ -22,6 +22,14 @@ export type LeverName =
    * Disables the background worker responsible for sweeping expired workflows.
    */
   | "disable_workflow_expiration_sweep"
+  // TODO(long-term): "disable_auth_provider" currently uses context targeting ({ providerId }).
+  // Consider dynamic lever names (e.g. `disable_auth_provider_${string}`) or a dedicated
+  // multi-variant lever structure to prevent accidental global enable if context is omitted in Feature Flag management software.
+  /**
+   * Specifically disables an authentication provider.
+   * Target specific providers in OpenFeature via `providerId` (or `targetingKey`) context attribute.
+   */
+  | "disable_auth_provider"
 
 /**
  * Centralized default values for each lever.
@@ -29,7 +37,8 @@ export type LeverName =
 const LEVER_DEFAULTS: Record<LeverName, boolean> = {
   read_only_mode: false,
   disable_workflow_creation: false,
-  disable_workflow_expiration_sweep: false
+  disable_workflow_expiration_sweep: false,
+  disable_auth_provider: false
 }
 
 /**
@@ -45,6 +54,19 @@ export class LeverService {
     @Inject(LEVER_PROVIDER_TOKEN)
     private readonly provider: LeverProvider
   ) {}
+
+  /**
+   * Evaluates if a specific authentication provider is disabled via feature flags.
+   *
+   * @param providerId The unique identifier of the authentication provider (e.g. "okta", "auth0")
+   * @returns A Task resolving to `true` if the provider is disabled, `false` otherwise.
+   */
+  isAuthProviderDisabled(providerId: string): Task<boolean> {
+    return this.isLeverActive("disable_auth_provider", {
+      targetingKey: providerId,
+      providerId
+    })
+  }
 
   /**
    * Evaluates if a boolean lever is active.

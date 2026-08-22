@@ -29,22 +29,27 @@ export class OidcClient implements OidcProvider {
     private readonly configProvider: ConfigProvider
   ) {}
 
-  private getAuthorizationEndpoint(): Either<OidcError, string> {
-    return E.right(this.oidcBootstrapService.getConfiguration().authorization_endpoint)
+  private getAuthorizationEndpoint(providerId: string): Either<OidcError, string> {
+    return pipe(
+      this.oidcBootstrapService.getConfiguration(providerId),
+      E.map(config => config.authorization_endpoint)
+    )
   }
 
   getAuthorizationUrl(
     pkce: PkceChallenge,
     assuranceLevel: AssuranceLevel,
-    redirectUri: string
+    redirectUri: string,
+    providerId: string
   ): Either<OidcError, string> {
+    const oidcConfig = this.configProvider.oidcProviders.get(providerId)
+    if (!oidcConfig) return E.left("oidc_provider_not_found" as const)
+
     return pipe(
-      this.getAuthorizationEndpoint(),
+      this.getAuthorizationEndpoint(providerId),
       E.chainW(authorizationEndpoint =>
         E.tryCatch(
           () => {
-            const oidcConfig = this.configProvider.oidcConfig
-
             const authUrl = new URL(authorizationEndpoint)
             authUrl.searchParams.append("response_type", "code")
             authUrl.searchParams.append("client_id", oidcConfig.clientId)
@@ -75,61 +80,67 @@ export class OidcClient implements OidcProvider {
   }
 
   exchangeCodeForTokens(request: OidcTokenRequest): TaskEither<OidcError, OidcTokenResponse> {
-    return TE.tryCatch(
-      async () => {
-        Logger.log("Exchanging authorization code for tokens")
+    return pipe(
+      TE.fromEither(this.oidcBootstrapService.getRawClientConfiguration(request.providerId)),
+      TE.chainW(rawConfiguration =>
+        TE.tryCatch(
+          async () => {
+            Logger.log(`Exchanging authorization code for tokens with provider ${request.providerId}`)
 
-        const rawConfiguration = this.oidcBootstrapService.getRawClientConfiguration()
-        const tokens = await client.genericGrantRequest(rawConfiguration, "authorization_code", {
-          code: request.code,
-          redirect_uri: request.redirectUri,
-          code_verifier: request.codeVerifier
-        })
+            const tokens = await client.genericGrantRequest(rawConfiguration, "authorization_code", {
+              code: request.code,
+              redirect_uri: request.redirectUri,
+              code_verifier: request.codeVerifier
+            })
 
-        const tokenResponse: OidcTokenResponse = {
-          accessToken: tokens.access_token,
-          tokenType: tokens.token_type || "Bearer",
-          expiresIn: tokens.expires_in,
-          refreshToken: tokens.refresh_token,
-          scope: tokens.scope,
-          idToken: tokens.id_token
-        }
+            const tokenResponse: OidcTokenResponse = {
+              accessToken: tokens.access_token,
+              tokenType: tokens.token_type || "Bearer",
+              expiresIn: tokens.expires_in,
+              refreshToken: tokens.refresh_token,
+              scope: tokens.scope,
+              idToken: tokens.id_token
+            }
 
-        Logger.log("Token exchange completed successfully")
-        return tokenResponse
-      },
-      error => {
-        Logger.error("Token exchange failed", error)
-        if (error instanceof Error) {
-          if (error.message.includes("invalid_grant") || error.message.includes("authorization code"))
+            Logger.log("Token exchange completed successfully")
+            return tokenResponse
+          },
+          error => {
+            Logger.error("Token exchange failed", error)
+            if (error instanceof Error) {
+              if (error.message.includes("invalid_grant") || error.message.includes("authorization code"))
+                return "oidc_token_exchange_failed" as const
+
+              if (error.message.includes("network") || error.message.includes("timeout"))
+                return "oidc_network_error" as const
+            }
             return "oidc_token_exchange_failed" as const
-
-          if (error.message.includes("network") || error.message.includes("timeout"))
-            return "oidc_network_error" as const
-        }
-        return "oidc_token_exchange_failed" as const
-      }
+          }
+        )
+      )
     )
   }
 
-  getUserInfo(accessToken: string, expectedSubject: string): TaskEither<OidcError, OidcUserInfo> {
+  getUserInfo(accessToken: string, expectedSubject: string, providerId: string): TaskEither<OidcError, OidcUserInfo> {
     return pipe(
-      TE.tryCatch(
-        async () => {
-          Logger.log("Fetching user info from OIDC provider")
+      TE.fromEither(this.oidcBootstrapService.getRawClientConfiguration(providerId)),
+      TE.chainW(rawConfiguration =>
+        TE.tryCatch(
+          async () => {
+            Logger.log(`Fetching user info from OIDC provider ${providerId}`)
 
-          const rawConfiguration = this.oidcBootstrapService.getRawClientConfiguration()
-          const userInfoResponse: RawUserInfoResponse = await client.fetchUserInfo(
-            rawConfiguration,
-            accessToken,
-            expectedSubject
-          )
-          return userInfoResponse
-        },
-        error => {
-          Logger.error("Error while fetching user info", error)
-          return "oidc_userinfo_fetch_failed" as const
-        }
+            const userInfoResponse: RawUserInfoResponse = await client.fetchUserInfo(
+              rawConfiguration,
+              accessToken,
+              expectedSubject
+            )
+            return userInfoResponse
+          },
+          error => {
+            Logger.error("Error while fetching user info", error)
+            return "oidc_userinfo_fetch_failed" as const
+          }
+        )
       ),
       TE.chainEitherKW(validateUserInfoResponse),
       TE.map(validatedUserInfo => {
@@ -159,10 +170,13 @@ export class OidcClient implements OidcProvider {
     )
   }
 
-  verifyAssuranceLevel(idToken: string, assuranceLevel: AssuranceLevel): Either<OidcError, void> {
+  verifyAssuranceLevel(idToken: string, assuranceLevel: AssuranceLevel, providerId: string): Either<OidcError, void> {
     if (assuranceLevel !== AssuranceLevel.FORCE_LOGIN) return E.right(undefined)
 
-    const provider = this.configProvider.oidcConfig.provider
+    const oidcConfig = this.configProvider.oidcProviders.get(providerId)
+    if (!oidcConfig) return E.left("oidc_provider_not_found" as const)
+
+    const provider = oidcConfig.provider
 
     if (provider !== "auth0" && provider !== "zitadel" && provider !== "keycloak") {
       Logger.warn(`Assurance level verification is not supported for provider: ${provider}`)

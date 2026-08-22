@@ -1,0 +1,13 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260616120000-add-provider-to-pkce-sessions-table
+      author: ai-agent
+      changes:
+        - addColumn:
+            tableName: pkce_sessions
+            columns:
+              - column:
+                  name: provider_id
+                  type: VARCHAR(255)
+                  constraints:
+                    nullable: false

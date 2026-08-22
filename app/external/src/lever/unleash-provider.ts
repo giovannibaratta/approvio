@@ -163,9 +163,58 @@ export class UnleashProvider implements Provider {
     throw new Error("resolveObjectEvaluation is not supported by this provider")
   }
 
-  private mapContext(_: EvaluationContext): Context {
-    // As of now, no context is supported
-    return {}
+  /**
+   * Translates an OpenFeature EvaluationContext into the Unleash Context format.
+   *
+   * Unleash Context Model:
+   * - Top-Level Well-Known Fields: Unleash defines first-class standard fields (userId, sessionId,
+   *   remoteAddress, environment, appName, currentTime).
+   * - Custom Attributes: Any additional domain attributes (e.g. `providerId`, `tenantId`, `tier`, `targetingKey`)
+   *   are placed into `context.properties` and mirrored at the root index signature `context[key]`.
+   *   This ensures seamless compatibility with both Unleash built-in strategy constraint evaluators
+   *   (which check `context[key]` and `context.properties[key]`) and custom strategy implementations.
+   *
+   * Note on targetingKey:
+   *   OpenFeature's `targetingKey` is a generic targeting identifier (not necessarily a human user ID).
+   *   It is mapped as a custom property rather than forcibly overriding `context.userId`.
+   */
+  private mapContext(evalContext?: EvaluationContext): Context {
+    if (!evalContext) return {}
+
+    const properties: Record<string, string | number | undefined> = {}
+    const context: Context = {properties}
+
+    for (const [key, value] of Object.entries(evalContext))
+      if (
+        key === "userId" ||
+        key === "sessionId" ||
+        key === "remoteAddress" ||
+        key === "environment" ||
+        key === "appName"
+      )
+        if (typeof value === "string") context[key] = value
+        else
+          Logger.warn(
+            `Unsupported type "${typeof value}" for standard Unleash context field "${key}". Expected string.`,
+            "UnleashProvider"
+          )
+      else if (key === "currentTime")
+        if (value instanceof Date) context.currentTime = value
+        else if (typeof value === "string" || typeof value === "number") {
+          const date = new Date(value)
+          if (!isNaN(date.getTime())) context.currentTime = date
+          else Logger.warn('Invalid date format for "currentTime" context field.', "UnleashProvider")
+        } else Logger.warn(`Unsupported type "${typeof value}" for "currentTime" context field.`, "UnleashProvider")
+      else if (typeof value === "string" || typeof value === "number") {
+        properties[key] = value
+        context[key] = value
+      } else
+        Logger.warn(
+          `Unsupported attribute type "${typeof value}" for context key "${key}". Only string and number attributes are supported for Unleash evaluation.`,
+          "UnleashProvider"
+        )
+
+    return context
   }
 
   private isStale(): boolean {

@@ -47,6 +47,7 @@ export type RefreshTokenValidationError = PrefixUnion<
   | "invalid_user_id"
   | "missing_entity_id"
   | "missing_entity_type"
+  | "missing_provider_id"
   | "used_before_create"
   | "missing_occ"
 >
@@ -83,6 +84,7 @@ interface RefreshTokenBase {
 interface UserProps {
   readonly entityType: EntityType.USER
   readonly userId: string
+  readonly providerId: string
 }
 
 interface AgentProps {
@@ -153,6 +155,7 @@ export class RefreshTokenFactory {
    */
   static createForUser(
     user: User,
+    providerId: string,
     familyId?: string
   ): E.Either<RefreshTokenValidationError, DecoratedActiveUserRefreshToken<{occ: true}> & {tokenValue: string}> {
     const {tokenValue, ...tokenBaseProps} = RefreshTokenFactory.generateTokenBaseProps(familyId)
@@ -161,6 +164,7 @@ export class RefreshTokenFactory {
       ...tokenBaseProps,
       entityType: EntityType.USER,
       userId: user.id,
+      providerId,
       status: RefreshTokenStatus.ACTIVE
     }
 
@@ -433,9 +437,13 @@ export class RefreshTokenFactory {
     if (!hasOwnProperty(data, "userId") || typeof data.userId !== "string" || !isUUIDv7(data.userId))
       return E.left("refresh_token_invalid_user_id")
 
+    if (!hasOwnProperty(data, "providerId") || typeof data.providerId !== "string" || data.providerId.length === 0)
+      return E.left("refresh_token_missing_provider_id")
+
     return E.right({
       entityType: EntityType.USER,
-      userId: data.userId
+      userId: data.userId,
+      providerId: data.providerId
     })
   }
 

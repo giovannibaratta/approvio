@@ -10,6 +10,7 @@ databaseChangeLog:
               -- Convert all application tables to UNLOGGED for test performance
               -- UNLOGGED tables skip WAL writes and are much faster for tests
               -- Order is important: convert child tables (with FKs) first, then parent tables
+              ALTER TABLE user_identities SET UNLOGGED;
               ALTER TABLE refresh_tokens SET UNLOGGED;
               ALTER TABLE pkce_sessions SET UNLOGGED;
               ALTER TABLE agent_challenges SET UNLOGGED;
@@ -22,6 +23,8 @@ databaseChangeLog:
               ALTER TABLE organization_admins SET UNLOGGED;
               ALTER TABLE agent_group_memberships SET UNLOGGED;
               ALTER TABLE group_memberships SET UNLOGGED;
+              ALTER TABLE quotas SET UNLOGGED;
+              ALTER TABLE audit_logs SET UNLOGGED;
               ALTER TABLE users SET UNLOGGED;
               ALTER TABLE groups SET UNLOGGED;
               ALTER TABLE agents SET UNLOGGED;

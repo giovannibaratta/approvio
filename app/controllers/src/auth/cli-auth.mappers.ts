@@ -55,11 +55,16 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
     case "auth_token_generation_failed":
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
+    case "auth_identity_conflict":
+    case "auth_invalid_oidc_provider":
+    case "auth_missing_oidc_provider":
+    case "user_identity_already_exists":
     case "user_not_found":
     case "request_invalid_user_identifier":
     case "auth_invalid_redirect_uri":
     case "request_missing_redirect_uri":
     case "request_invalid_redirect_uri":
+    case "request_invalid_provider":
     case "request_missing_code":
     case "request_invalid_code":
     case "request_missing_state":
@@ -127,6 +132,7 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
     case "quota_check_error":
     case "agent_token_generation_failed":
     case "oidc_unknown_error":
+    case "oidc_provider_not_found":
     case "oidc_network_error":
     case "oidc_invalid_provider_response":
     case "oidc_invalid_token_response":
@@ -154,6 +160,7 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
     case "refresh_token_invalid_user_id":
     case "refresh_token_missing_entity_id":
     case "refresh_token_missing_entity_type":
+    case "refresh_token_missing_provider_id":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_key_decode_error":
@@ -238,11 +245,16 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
     case "auth_token_generation_failed":
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
+    case "auth_identity_conflict":
+    case "auth_invalid_oidc_provider":
+    case "auth_missing_oidc_provider":
+    case "user_identity_already_exists":
     case "user_not_found":
     case "request_invalid_user_identifier":
     case "auth_invalid_redirect_uri":
     case "request_missing_redirect_uri":
     case "request_invalid_redirect_uri":
+    case "request_invalid_provider":
     case "request_missing_code":
     case "request_invalid_code":
     case "request_missing_state":
@@ -310,6 +322,7 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
     case "quota_check_error":
     case "agent_token_generation_failed":
     case "oidc_unknown_error":
+    case "oidc_provider_not_found":
     case "oidc_network_error":
     case "oidc_invalid_provider_response":
     case "oidc_invalid_token_response":
@@ -337,6 +350,7 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
     case "refresh_token_invalid_user_id":
     case "refresh_token_missing_entity_id":
     case "refresh_token_missing_entity_type":
+    case "refresh_token_missing_provider_id":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_key_decode_error":
@@ -421,11 +435,16 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
     case "auth_token_generation_failed":
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
+    case "auth_identity_conflict":
+    case "auth_invalid_oidc_provider":
+    case "auth_missing_oidc_provider":
+    case "user_identity_already_exists":
     case "user_not_found":
     case "request_invalid_user_identifier":
     case "auth_invalid_redirect_uri":
     case "request_missing_redirect_uri":
     case "request_invalid_redirect_uri":
+    case "request_invalid_provider":
     case "request_missing_code":
     case "request_invalid_code":
     case "request_missing_state":
@@ -493,6 +512,7 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
     case "quota_check_error":
     case "agent_token_generation_failed":
     case "oidc_unknown_error":
+    case "oidc_provider_not_found":
     case "oidc_network_error":
     case "oidc_invalid_provider_response":
     case "oidc_invalid_token_response":
@@ -520,6 +540,7 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
     case "refresh_token_invalid_user_id":
     case "refresh_token_missing_entity_id":
     case "refresh_token_missing_entity_type":
+    case "refresh_token_missing_provider_id":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_key_decode_error":
@@ -604,11 +625,16 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "auth_token_generation_failed":
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
+    case "auth_identity_conflict":
+    case "auth_invalid_oidc_provider":
+    case "auth_missing_oidc_provider":
+    case "user_identity_already_exists":
     case "user_not_found":
     case "request_invalid_user_identifier":
     case "auth_invalid_redirect_uri":
     case "request_missing_redirect_uri":
     case "request_invalid_redirect_uri":
+    case "request_invalid_provider":
     case "request_missing_code":
     case "request_invalid_code":
     case "request_missing_state":
@@ -675,6 +701,7 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "quota_check_error":
     case "agent_token_generation_failed":
     case "oidc_unknown_error":
+    case "oidc_provider_not_found":
     case "oidc_network_error":
     case "oidc_invalid_provider_response":
     case "oidc_invalid_token_response":
@@ -702,6 +729,7 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "refresh_token_invalid_user_id":
     case "refresh_token_missing_entity_id":
     case "refresh_token_missing_entity_type":
+    case "refresh_token_missing_provider_id":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_key_decode_error":

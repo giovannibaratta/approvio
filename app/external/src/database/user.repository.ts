@@ -9,7 +9,8 @@ import {
   UserListError,
   PaginatedUsersList,
   ListUsersRepoRequest,
-  UserUpdateError
+  UserUpdateError,
+  UserIdentityCreate
 } from "@services"
 import {Versioned} from "@domain"
 import * as TE from "fp-ts/TaskEither"
@@ -43,6 +44,24 @@ export class UserDbRepository implements UserRepository {
 
   createUserWithOrgAdmin(user: User): TaskEither<UserCreateError, User> {
     return pipe(user, TE.right, TE.chainW(this.persistUserWithOrgAdminTask()), TE.chainEitherKW(mapUserToDomain))
+  }
+
+  createUserWithIdentity(user: User, identity: UserIdentityCreate): TaskEither<UserCreateError, User> {
+    return pipe(
+      user,
+      TE.right,
+      TE.chainW(this.persistUserWithIdentityTask(identity)),
+      TE.chainEitherKW(mapUserToDomain)
+    )
+  }
+
+  createUserWithOrgAdminAndIdentity(user: User, identity: UserIdentityCreate): TaskEither<UserCreateError, User> {
+    return pipe(
+      user,
+      TE.right,
+      TE.chainW(this.persistUserWithOrgAdminAndIdentityTask(identity)),
+      TE.chainEitherKW(mapUserToDomain)
+    )
   }
 
   getUserById(userId: string): TaskEither<UserGetError, Versioned<User>> {
@@ -191,6 +210,81 @@ export class UserDbRepository implements UserRepository {
           if (isPrismaUniqueConstraintError(error, ["email"])) return "user_already_exists"
 
           Logger.error("Error while creating user with organization admin. Unknown error", error)
+          return "unknown_error"
+        }
+      )()
+  }
+
+  private persistUserWithIdentityTask(
+    identity: UserIdentityCreate
+  ): (user: User) => TaskEither<UserCreateError, PrismaUserWithOrgAdmin> {
+    return user =>
+      TE.tryCatchK(
+        () =>
+          this.dbClient.transactional(async tx => {
+            const createdUser = await this.createUserInDb(tx, user)
+
+            await tx.userIdentity.create({
+              data: {
+                id: uuidv7(),
+                userId: createdUser.id,
+                providerId: identity.providerId,
+                subjectId: identity.subjectId,
+                email: identity.email
+              }
+            })
+
+            return createdUser
+          }),
+        error => {
+          if (isPrismaUniqueConstraintError(error, ["email"])) return "user_already_exists"
+          if (isPrismaUniqueConstraintError(error, ["id"])) return "user_already_exists"
+          if (isPrismaUniqueConstraintError(error, ["provider_id", "subject_id"])) return "user_already_exists"
+
+          Logger.error("Error while creating user with identity. Unknown error", error)
+          return "unknown_error"
+        }
+      )()
+  }
+
+  private persistUserWithOrgAdminAndIdentityTask(
+    identity: UserIdentityCreate
+  ): (user: User) => TaskEither<UserCreateError, PrismaUserWithOrgAdmin> {
+    return user =>
+      TE.tryCatchK(
+        () =>
+          this.dbClient.transactional(async tx => {
+            const createdUser = await this.createUserInDb(tx, user)
+
+            const orgAdmin = await tx.organizationAdmin.create({
+              data: {
+                id: uuidv7(),
+                email: user.email,
+                createdAt: new Date()
+              }
+            })
+
+            await tx.userIdentity.create({
+              data: {
+                id: uuidv7(),
+                userId: createdUser.id,
+                providerId: identity.providerId,
+                subjectId: identity.subjectId,
+                email: identity.email
+              }
+            })
+
+            return {
+              ...createdUser,
+              organizationAdmins: orgAdmin
+            }
+          }),
+        error => {
+          if (isPrismaUniqueConstraintError(error, ["email"])) return "user_already_exists"
+          if (isPrismaUniqueConstraintError(error, ["id"])) return "user_already_exists"
+          if (isPrismaUniqueConstraintError(error, ["provider_id", "subject_id"])) return "user_already_exists"
+
+          Logger.error("Error while creating user with organization admin and identity. Unknown error", error)
           return "unknown_error"
         }
       )()
