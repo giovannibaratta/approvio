@@ -24,8 +24,8 @@ import {
   createTestGroup,
   MockConfigProvider
 } from "@test/mock-data"
+import {TestTokenBuilder} from "@test/token-helpers"
 import {get, post} from "@test/requests"
-import {TokenPayloadBuilder} from "@services"
 import {mapAgentToDomain} from "@external/database/shared"
 import {getQueueToken} from "@nestjs/bull"
 import {WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"
@@ -147,23 +147,15 @@ describe("Agent Workflow Voting API", () => {
     await addAgentToGroup(prisma, mockGroupId, agent.id)
     await addAgentToGroup(prisma, mockGroupId, agentWithRole.id)
 
-    // Create agent token payloads
-    const agentTokenPayload = TokenPayloadBuilder.fromAgent(domainAgent, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-    const agentNotInGroupTokenPayload = TokenPayloadBuilder.fromAgent(domainAgentNotInGroup, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-    const agentWithRoleTokenPayload = TokenPayloadBuilder.fromAgent(domainAgentWithRole, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-
-    testAgent = {agent, token: jwtService.sign(agentTokenPayload)}
-    testAgentNotInGroup = {agent: agentNotInGroup, token: jwtService.sign(agentNotInGroupTokenPayload)}
-    testAgentWithRole = {agent: agentWithRole, token: jwtService.sign(agentWithRoleTokenPayload)}
+    testAgent = {agent, token: TestTokenBuilder.signAgentToken(jwtService, configProvider, domainAgent)}
+    testAgentNotInGroup = {
+      agent: agentNotInGroup,
+      token: TestTokenBuilder.signAgentToken(jwtService, configProvider, domainAgentNotInGroup)
+    }
+    testAgentWithRole = {
+      agent: agentWithRole,
+      token: TestTokenBuilder.signAgentToken(jwtService, configProvider, domainAgentWithRole)
+    }
   })
 
   afterAll(async () => {

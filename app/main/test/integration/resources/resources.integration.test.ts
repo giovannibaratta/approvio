@@ -7,16 +7,10 @@ import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient} from "@prisma/client"
 import {cleanDatabase, prepareDatabase} from "@test/database"
-import {
-  createDomainMockUserInDb,
-  MockConfigProvider,
-  createMockSpaceInDb,
-  createMockGroupInDb,
-  createMockAgentInDb
-} from "@test/mock-data"
+import {MockConfigProvider, createMockSpaceInDb, createMockGroupInDb, createMockAgentInDb} from "@test/mock-data"
+import {createAuthenticatedUserInDb, TestTokenBuilder} from "@test/token-helpers"
 import {post} from "@test/requests"
 import {UserWithToken} from "@test/types"
-import {TokenPayloadBuilder} from "@services"
 import {v7 as uuidv7} from "uuid"
 import {ResourceResolveResponse} from "@approvio/api"
 import {mapAgentToDomain} from "@external/database/shared"
@@ -56,14 +50,7 @@ describe("Resources Resolve API", () => {
   }, 30000)
 
   beforeEach(async () => {
-    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
-
-    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-
-    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
   })
 
   afterAll(async () => {
@@ -116,8 +103,8 @@ describe("Resources Resolve API", () => {
       const groupAllowed = await createMockGroupInDb(prisma, {name: "Allowed Group"})
       const groupDenied = await createMockGroupInDb(prisma, {name: "Denied Group"})
 
-      // Create member user with read permissions on allowed resources
-      const user = await createDomainMockUserInDb(prisma, {
+      // Given: user with access to spaceAllowed and groupAllowed
+      const {token: userToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
         orgAdmin: false,
         roles: [
           {
@@ -136,12 +123,6 @@ describe("Resources Resolve API", () => {
           }
         ]
       })
-
-      const tokenPayload = TokenPayloadBuilder.fromUser(user, {
-        issuer: configProvider.jwtConfig.issuer,
-        audience: [configProvider.jwtConfig.audience]
-      })
-      const userToken = jwtService.sign(tokenPayload)
 
       const requestBody = {
         resources: [
@@ -239,11 +220,7 @@ describe("Resources Resolve API", () => {
       // Given
       const agent = await createMockAgentInDb(prisma)
       const domainAgent = unwrapRight(mapAgentToDomain(agent))
-      const agentTokenPayload = TokenPayloadBuilder.fromAgent(domainAgent, {
-        issuer: configProvider.jwtConfig.issuer,
-        audience: [configProvider.jwtConfig.audience]
-      })
-      const agentToken = jwtService.sign(agentTokenPayload)
+      const agentToken = TestTokenBuilder.signAgentToken(jwtService, configProvider, domainAgent)
 
       const requestBody = {
         resources: [{type: "space", id: uuidv7()}]

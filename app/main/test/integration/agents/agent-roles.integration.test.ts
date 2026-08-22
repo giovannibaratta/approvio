@@ -7,34 +7,30 @@ import {AGENTS_ENDPOINT_ROOT} from "@controllers"
 import {PrismaClient} from "@prisma/client"
 
 import {cleanDatabase, prepareDatabase} from "@test/database"
-import {
-  createDomainMockUserInDb,
-  createMockAgentInDb,
-  createTestGroup,
-  createMockWorkflowTemplateInDb,
-  MockConfigProvider
-} from "@test/mock-data"
+import {createMockAgentInDb, createTestGroup, createMockWorkflowTemplateInDb, MockConfigProvider} from "@test/mock-data"
+import {createAuthenticatedUserInDb, TestTokenBuilder} from "@test/token-helpers"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
 import {put, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import "expect-more-jest"
 import "@utils/matchers"
-import {TokenPayloadBuilder} from "@services"
 import {AGENT_REPOSITORY_TOKEN, AgentRepository} from "@services"
 import {wrapTaskEitherWithSideEffect} from "@test/injectors"
 import {RoleAssignmentRequest, RoleRemovalRequest} from "@approvio/api"
 import {MAX_ROLES_PER_ENTITY} from "@domain"
+import {mapAgentToDomain} from "@external/database/shared"
+import {unwrapRight} from "@utils/either"
 import {v7 as uuidv7} from "uuid"
 
 describe("Agent Roles API", () => {
   let app: NestApplication
   let prisma: PrismaClient
-  let jwtService: JwtService
-  let configProvider: ConfigProvider
   let orgAdminUser: UserWithToken
   let targetAgent: {id: string; agentName: string}
   let agentToken: string
+  let jwtService: JwtService
+  let configProvider: ConfigProvider
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -45,7 +41,7 @@ describe("Agent Roles API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -61,35 +57,12 @@ describe("Agent Roles API", () => {
   }, 30000)
 
   beforeEach(async () => {
-    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
     const agent = await createMockAgentInDb(prisma, {agentName: "test-agent"})
+    const domainAgent = unwrapRight(mapAgentToDomain(agent))
 
-    const createUserToken = (user: typeof adminUser) => {
-      const tokenPayload = TokenPayloadBuilder.from({
-        sub: user.id,
-        entityType: "user",
-        displayName: user.displayName,
-        email: user.email,
-        issuer: configProvider.jwtConfig.issuer,
-        audience: [configProvider.jwtConfig.audience]
-      })
-      return jwtService.sign(tokenPayload)
-    }
-
-    const createAgentToken = (agent: typeof targetAgent) => {
-      const tokenPayload = TokenPayloadBuilder.from({
-        sub: agent.agentName,
-        entityType: "agent",
-        displayName: agent.agentName,
-        issuer: configProvider.jwtConfig.issuer,
-        audience: [configProvider.jwtConfig.audience]
-      })
-      return jwtService.sign(tokenPayload)
-    }
-
-    orgAdminUser = {user: adminUser, token: createUserToken(adminUser)}
     targetAgent = {id: agent.id, agentName: agent.agentName}
-    agentToken = createAgentToken(targetAgent)
+    agentToken = TestTokenBuilder.signAgentToken(jwtService, configProvider, domainAgent)
   })
 
   afterAll(async () => {})

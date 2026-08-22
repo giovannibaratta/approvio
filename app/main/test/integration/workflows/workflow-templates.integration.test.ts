@@ -13,12 +13,8 @@ import {
 } from "@approvio/api"
 
 import {cleanDatabase, prepareDatabase} from "@test/database"
-import {
-  createDomainMockUserInDb,
-  createMockWorkflowTemplateInDb,
-  MockConfigProvider,
-  createMockSpaceInDb
-} from "@test/mock-data"
+import {createMockWorkflowTemplateInDb, MockConfigProvider, createMockSpaceInDb} from "@test/mock-data"
+import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
 import {ApprovalRuleType} from "@domain"
@@ -26,7 +22,7 @@ import {get, post, put} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import "expect-more-jest"
 import "@utils/matchers"
-import {TokenPayloadBuilder, WORKFLOW_TEMPLATE_REPOSITORY_TOKEN, WorkflowTemplateRepository} from "@services"
+import {WORKFLOW_TEMPLATE_REPOSITORY_TOKEN, WorkflowTemplateRepository} from "@services"
 import {wrapTaskEitherWithSideEffect} from "@test/injectors"
 import {v7 as uuidv7} from "uuid"
 
@@ -71,8 +67,8 @@ describe("Workflow Templates API", () => {
   let orgAdminUser: UserWithToken
   let orgMemberUser: UserWithToken
   let jwtService: JwtService
-  let testSpace: PrismaSpace
   let configProvider: ConfigProvider
+  let testSpace: PrismaSpace
 
   const endpoint = `/${WORKFLOW_TEMPLATES_ENDPOINT_ROOT}`
 
@@ -85,7 +81,7 @@ describe("Workflow Templates API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -101,19 +97,8 @@ describe("Workflow Templates API", () => {
   }, 30000)
 
   beforeEach(async () => {
-    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
-    const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
-    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-    const memberTokenPayload = TokenPayloadBuilder.fromUser(memberUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-
-    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
-    orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
 
     testSpace = await createMockSpaceInDb(prisma)
   })

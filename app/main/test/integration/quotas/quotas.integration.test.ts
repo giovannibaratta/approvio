@@ -3,9 +3,10 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {NestApplication} from "@nestjs/core"
 import {HttpStatus} from "@nestjs/common"
 import {AppModule} from "@app/app.module"
-import {createDomainMockUserInDb, createMockQuotaInDb, MockConfigProvider} from "@test/mock-data"
+import {createMockQuotaInDb, MockConfigProvider} from "@test/mock-data"
+import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {cleanDatabase, prepareDatabase} from "@test/database"
-import {DEFAULT_ORG_ID, TokenPayloadBuilder} from "@services"
+import {DEFAULT_ORG_ID} from "@services"
 import {PrismaClient} from "@prisma/client"
 import {ConfigProvider} from "@external/config"
 import {JwtService} from "@nestjs/jwt"
@@ -33,7 +34,7 @@ describe("Quotas Integration Tests", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -50,30 +51,11 @@ describe("Quotas Integration Tests", () => {
 
   beforeEach(async () => {
     // Setup users and tokens
-    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
-    const regularUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
+    const adminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
+    const regularUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
 
-    adminToken = jwtService.sign(
-      TokenPayloadBuilder.from({
-        sub: adminUser.id,
-        entityType: "user",
-        displayName: adminUser.displayName,
-        email: adminUser.email,
-        issuer: configProvider.jwtConfig.issuer,
-        audience: [configProvider.jwtConfig.audience]
-      })
-    )
-
-    userToken = jwtService.sign(
-      TokenPayloadBuilder.from({
-        sub: regularUser.id,
-        entityType: "user",
-        displayName: regularUser.displayName,
-        email: regularUser.email,
-        issuer: configProvider.jwtConfig.issuer,
-        audience: [configProvider.jwtConfig.audience]
-      })
-    )
+    adminToken = adminUser.token
+    userToken = regularUser.token
   })
 
   afterAll(async () => {

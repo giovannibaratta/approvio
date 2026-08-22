@@ -8,14 +8,14 @@ import {AGENTS_ENDPOINT_ROOT} from "@controllers"
 import {PrismaClient} from "@prisma/client"
 import {AgentRegistrationRequest} from "@approvio/api"
 import {cleanDatabase, prepareDatabase} from "@test/database"
-import {createDomainMockUserInDb, MockConfigProvider} from "@test/mock-data"
+import {MockConfigProvider} from "@test/mock-data"
+import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
 import {get, post} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import "expect-more-jest"
 import "@utils/matchers"
-import {TokenPayloadBuilder} from "@services"
 import {Chance} from "chance"
 
 // Mock crypto.generateKeyPairSync to avoid slow 4096-bit RSA key generation (1-2s per call) during tests.
@@ -57,7 +57,7 @@ describe("Agents API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -73,20 +73,8 @@ describe("Agents API", () => {
   }, 30000)
 
   beforeEach(async () => {
-    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
-    const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
-
-    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-    const memberTokenPayload = TokenPayloadBuilder.fromUser(memberUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-
-    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
-    orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
   })
 
   afterAll(async () => {

@@ -20,15 +20,15 @@ import {PrismaClient, Workflow as PrismaWorkflow, WorkflowTemplate as PrismaWork
 
 import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "@test/database"
 import {
-  createDomainMockUserInDb,
   createMockWorkflowInDb,
   createMockWorkflowTemplateInDb,
   MockConfigProvider,
   createUserWithRefreshToken
 } from "@test/mock-data"
+import {createAuthenticatedUserInDb, TestTokenBuilder} from "@test/token-helpers"
 import {get, post} from "@test/requests"
 import {UserWithToken} from "@test/types"
-import {TokenPayloadBuilder, WORKFLOW_REPOSITORY_TOKEN, WorkflowRepository} from "@services"
+import {WORKFLOW_REPOSITORY_TOKEN, WorkflowRepository} from "@services"
 import {LeverService} from "@services/lever"
 import {wrapTaskEitherWithSideEffect} from "@test/injectors"
 import {getQueueToken} from "@nestjs/bull"
@@ -137,22 +137,11 @@ describe("Workflows API", () => {
   }, 30000)
 
   beforeEach(async () => {
-    const adminUser = await createDomainMockUserInDb(prisma, {orgAdmin: true})
-    const memberUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
     const testGroup1 = await createTestGroup(prisma, "Test-Approver-Group-1")
     const testGroup2 = await createTestGroup(prisma, "Test-Approver-Group-2")
 
-    const adminTokenPayload = TokenPayloadBuilder.fromUser(adminUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-    const memberTokenPayload = TokenPayloadBuilder.fromUser(memberUser, {
-      issuer: configProvider.jwtConfig.issuer,
-      audience: [configProvider.jwtConfig.audience]
-    })
-
-    orgAdminUser = {user: adminUser, token: jwtService.sign(adminTokenPayload)}
-    orgMemberUser = {user: memberUser, token: jwtService.sign(memberTokenPayload)}
     mockGroupId1 = testGroup1.id
     mockGroupId2 = testGroup2.id
 
@@ -619,11 +608,7 @@ describe("Workflows API", () => {
           },
           tokenOverrides: {createdAt: new Date()}
         })
-        const member2TokenPayload = TokenPayloadBuilder.fromUser(orgMember2User.user, {
-          issuer: configProvider.jwtConfig.issuer,
-          audience: [configProvider.jwtConfig.audience]
-        })
-        const member2Token = jwtService.sign(member2TokenPayload)
+        const member2Token = TestTokenBuilder.signUserToken(jwtService, configProvider, orgMember2User.user)
 
         await addUserToGroup(prisma, mockGroupId2, orgMember2User.user.id)
 
@@ -658,15 +643,10 @@ describe("Workflows API", () => {
           type: "workflow_template",
           templateName: template.name
         })
-        const nonMemberUser = await createDomainMockUserInDb(prisma, {
+        const {token: nonMemberToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
           orgAdmin: false,
           roles: [voterRole]
         })
-        const nonMemberTokenPayload = TokenPayloadBuilder.fromUser(nonMemberUser, {
-          issuer: configProvider.jwtConfig.issuer,
-          audience: [configProvider.jwtConfig.audience]
-        })
-        const nonMemberToken = jwtService.sign(nonMemberTokenPayload)
 
         // When: a request is sent to check voting eligibility with the non-member user's token
         const response = await get(app, `${endpoint}/${workflowRequiringGroup1.id}/canVote`)
@@ -915,11 +895,7 @@ describe("Workflows API", () => {
           tokenOverrides: {createdAt: new Date()}
         })
 
-        const member2TokenPayload = TokenPayloadBuilder.fromUser(orgMember2User.user, {
-          issuer: configProvider.jwtConfig.issuer,
-          audience: [configProvider.jwtConfig.audience]
-        })
-        const member2Token = jwtService.sign(member2TokenPayload)
+        const member2Token = TestTokenBuilder.signUserToken(jwtService, configProvider, orgMember2User.user)
 
         await addUserToGroup(prisma, mockGroupId2, orgMember2User.user.id)
 
@@ -992,15 +968,10 @@ describe("Workflows API", () => {
           type: "workflow_template",
           templateName: workflowTemplate.name
         })
-        const nonVoter = await createDomainMockUserInDb(prisma, {
+        const {token: nonVoterToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
           orgAdmin: false,
           roles: [voterRole]
         })
-        const nonVoterTokenPayload = TokenPayloadBuilder.fromUser(nonVoter, {
-          issuer: configProvider.jwtConfig.issuer,
-          audience: [configProvider.jwtConfig.audience]
-        })
-        const nonVoterToken = jwtService.sign(nonVoterTokenPayload)
         const requestBody: WorkflowVoteRequestApi = {
           voteType: {
             type: "APPROVE",
