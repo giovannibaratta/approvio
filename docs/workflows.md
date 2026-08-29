@@ -40,10 +40,11 @@ Both **users** and **agents** can vote on workflows if they meet the requirement
 
 Both users and agents can cast two types of votes:
 
-| Vote Type   | Description                                         |
-| :---------- | :-------------------------------------------------- |
-| **APPROVE** | Positive vote contributing to approval requirements |
-| **VETO**    | Negative vote that immediately rejects the workflow |
+| Vote Type    | Description                                                                                                 |
+| :----------- | :---------------------------------------------------------------------------------------------------------- |
+| **APPROVE**  | Positive vote contributing to approval requirements                                                         |
+| **VETO**     | Negative vote that immediately rejects the workflow                                                         |
+| **WITHDRAW** | Retracts a previously cast vote. A WITHDRAW vote can revert a REJECTED state back to EVALUATION_IN_PROGRESS |
 
 ### Approval Logic
 
