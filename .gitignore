@@ -59,3 +59,5 @@ manual-tests
 load-tests/seed-data.json
 load-tests/report.html
 load-tests/summary.json
+.agent/skills/caveman/*
+.agent/skills/no-ai-slop/*
