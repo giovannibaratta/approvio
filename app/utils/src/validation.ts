@@ -1,7 +1,7 @@
 import {Either, left, right} from "fp-ts/Either"
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const EMAIL_REGEX = /^[^\s@]+@[^\s@\.]+(\.[^\s@\.]+)+$/
+const EMAIL_REGEX = /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/
 
 export const isUUIDv7 = (value: string): boolean => value.match(UUID_REGEX) !== null
 
