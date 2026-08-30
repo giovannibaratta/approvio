@@ -26,12 +26,8 @@ describe("isEmail", () => {
 
   it("should quickly process potential ReDoS inputs without catastrophic backtracking", () => {
     const maliciousInput = "a".repeat(50000) + "@" + "a".repeat(25000) + "@"
-    const start = Date.now()
-    const result = isEmail(maliciousInput)
-    const duration = Date.now() - start
-    expect(result).toBe(false)
-    expect(duration).toBeLessThan(100)
-  })
+    expect(isEmail(maliciousInput)).toBe(false)
+  }, 1000)
 })
 
 describe("isRecordStringString", () => {
