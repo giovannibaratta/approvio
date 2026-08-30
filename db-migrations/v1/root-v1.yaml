@@ -43,3 +43,5 @@ databaseChangeLog:
       file: v1/20260616120001-create-user-identities-table.yaml
   - include:
       file: v1/20260616120002-add-provider-to-refresh-tokens-table.yaml
+  - include:
+      file: v1/20260830120003-create-usage-events-table.yaml
