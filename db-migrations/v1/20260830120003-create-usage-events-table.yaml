@@ -1,0 +1,79 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260830120003-create-usage-events-table
+      author: ai-agent
+      changes:
+        - createTable:
+            tableName: usage_events
+            columns:
+              - column:
+                  name: event_id
+                  type: UUID
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: entity_type
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: entity_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actor_type
+                  type: VARCHAR(32)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actor_id
+                  type: UUID
+                  constraints:
+                    nullable: false
+              - column:
+                  name: metric
+                  type: VARCHAR(64)
+                  constraints:
+                    nullable: false
+              - column:
+                  name: quantity
+                  type: BIGINT
+                  constraints:
+                    nullable: false
+              - column:
+                  name: is_billable
+                  type: BOOLEAN
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occurred_at
+                  type: TIMESTAMPTZ
+                  constraints:
+                    nullable: false
+              - column:
+                  name: metadata
+                  type: JSONB
+                  constraints:
+                    nullable: true
+        - createIndex:
+            tableName: usage_events
+            indexName: idx_usage_events_entity
+            columns:
+              - column:
+                  name: entity_type
+              - column:
+                  name: entity_id
+              - column:
+                  name: occurred_at
+        - createIndex:
+            tableName: usage_events
+            indexName: idx_usage_events_actor
+            columns:
+              - column:
+                  name: actor_type
+              - column:
+                  name: actor_id
+              - column:
+                  name: occurred_at

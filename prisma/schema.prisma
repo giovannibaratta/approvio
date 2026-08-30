@@ -344,3 +344,20 @@ model AuditLog {
   @@index([createdAt], map: "idx_audit_logs_created_at_brin", type: Brin)
   @@map("audit_logs")
 }
+
+model UsageEvent {
+  id         String   @id @map("event_id") @db.Uuid
+  entityType String   @map("entity_type") @db.VarChar(64)
+  entityId   String   @map("entity_id") @db.Uuid
+  actorType  String   @map("actor_type") @db.VarChar(32)
+  actorId    String   @map("actor_id") @db.Uuid
+  metric     String   @db.VarChar(64)
+  quantity   BigInt
+  isBillable Boolean  @map("is_billable")
+  occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
+  metadata   Json?
+
+  @@index([entityType, entityId, occurredAt], map: "idx_usage_events_entity")
+  @@index([actorType, actorId, occurredAt], map: "idx_usage_events_actor")
+  @@map("usage_events")
+}
