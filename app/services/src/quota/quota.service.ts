@@ -173,6 +173,11 @@ export class QuotaService {
           this.voteRepo.getVotesByWorkflowId(target.identifier),
           TE.map(votes => votes.length)
         )
+      case "MAX_LLM_TOKENS_PER_MONTH":
+      case "MAX_EVALUATIONS_PER_MONTH":
+      case "MAX_CREDITS_PER_MONTH":
+        // Metered quotas are aggregated separately; default usage to 0 for initial quota availability check
+        return TE.right(0)
     }
   }
 
