@@ -49,7 +49,8 @@ import {KmsModule} from "./kms/kms.module"
 import {BullQueueProvider} from "./queue/queue.provider"
 import {RedisStepUpTokenRepository} from "./auth/step-up-token.provider"
 import {RedisDpopTokenRepository} from "./auth/dpop-token.provider"
-import {RedisClient} from "./redis"
+import {QUOTA_ADMISSION_CLIENT_TOKEN} from "@services/usage-metering"
+import {RedisQuotaAdmissionClient, RedisClient} from "./redis"
 
 const agentRepository = {
   provide: AGENT_REPOSITORY_TOKEN,
@@ -156,6 +157,11 @@ const userIdentityRepository = {
   useClass: UserIdentityDbRepository
 }
 
+const redisQuotaAdmissionClient = {
+  provide: QUOTA_ADMISSION_CLIENT_TOKEN,
+  useClass: RedisQuotaAdmissionClient
+}
+
 const repositories = [
   auditLogRepository,
   agentRepository,
@@ -176,7 +182,8 @@ const repositories = [
   stepUpTokenRepository,
   dpopTokenRepository,
   transactionManager,
-  userIdentityRepository
+  userIdentityRepository,
+  redisQuotaAdmissionClient
 ]
 
 @Module({
