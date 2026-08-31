@@ -56,6 +56,7 @@ export function generateErrorResponseForGetQuota(error: QuotaGetError): HttpExce
     case "quota_invalid_limit":
     case "quota_missing_target_id":
     case "quota_invalid_target_id":
+    case "quota_missing_configuration":
       return new BadRequestException(generateErrorPayload(errorCode, "Invalid parameters"))
   }
 }
@@ -76,6 +77,7 @@ export function generateErrorResponseForCreateQuota(error: QuotaValidationError 
     case "quota_invalid_limit":
     case "quota_missing_target_id":
     case "quota_invalid_target_id":
+    case "quota_missing_configuration":
     case "malformed_object":
     case "missing_limit":
     case "invalid_limit":
@@ -113,6 +115,7 @@ export function generateErrorResponseForUpdateQuota(error: QuotaValidationError 
     case "quota_invalid_limit":
     case "quota_missing_target_id":
     case "quota_invalid_target_id":
+    case "quota_missing_configuration":
     case "malformed_object":
     case "missing_limit":
     case "invalid_limit":
@@ -160,6 +163,7 @@ export function generateErrorResponseForListQuotas(
     case "quota_invalid_quota_type":
     case "quota_missing_target_id":
     case "quota_invalid_target_id":
+    case "quota_missing_configuration":
       return new BadRequestException(generateErrorPayload(errorCode, "Invalid parameters"))
     case "quota_unknown_error":
     case "quota_unsupported_node_type":

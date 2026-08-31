@@ -1,20 +1,51 @@
-import {QuotaFactory, QuotaIdentifierFactory, isQuotaTypeApplicableTo} from "../src/quota"
+import {
+  QuotaFactory,
+  QuotaIdentifierFactory,
+  isQuotaTypeApplicableTo,
+  resolveEffectiveLimit,
+  SupportedQuotaType
+} from "../src/quota"
 import {Chance} from "chance"
 import {v7 as uuidv7} from "uuid"
+import {unwrapRight} from "@utils/either"
 
 const chance = Chance()
 
 describe("isMetricApplicableTo", () => {
   it("should return true if metric is exactly for the node type", () => {
-    expect(isQuotaTypeApplicableTo("MAX_WORKFLOW_TEMPLATES_PER_SPACE", "Space")).toBe(true)
+    // Given
+    const quotaType = "MAX_WORKFLOW_TEMPLATES_PER_SPACE"
+    const nodeType = "Space"
+
+    // When
+    const isApplicable = isQuotaTypeApplicableTo(quotaType, nodeType)
+
+    // Then
+    expect(isApplicable).toBe(true)
   })
 
   it("should return false if node type is a parent", () => {
-    expect(isQuotaTypeApplicableTo("MAX_WORKFLOW_TEMPLATES_PER_SPACE", "Org")).toBe(false)
+    // Given
+    const quotaType = "MAX_WORKFLOW_TEMPLATES_PER_SPACE"
+    const nodeType = "Org"
+
+    // When
+    const isApplicable = isQuotaTypeApplicableTo(quotaType, nodeType)
+
+    // Then
+    expect(isApplicable).toBe(false)
   })
 
   it("should return false if node type is a descendant", () => {
-    expect(isQuotaTypeApplicableTo("MAX_WORKFLOW_TEMPLATES_PER_SPACE", "WorkflowTemplate")).toBe(false)
+    // Given
+    const quotaType = "MAX_WORKFLOW_TEMPLATES_PER_SPACE"
+    const nodeType = "WorkflowTemplate"
+
+    // When
+    const isApplicable = isQuotaTypeApplicableTo(quotaType, nodeType)
+
+    // Then
+    expect(isApplicable).toBe(false)
   })
 })
 
@@ -40,7 +71,6 @@ describe("QuotaIdentifierFactory", () => {
         // Given
         const data = {
           node: {type: "Org", identifier: uuidv7()},
-          // MAX_WORKFLOW_TEMPLATES_PER_SPACE is a metric defined for Space, Org is parent of Space
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE"
         }
 
@@ -49,6 +79,25 @@ describe("QuotaIdentifierFactory", () => {
 
         // Then
         expect(result).toBeRight()
+      })
+
+      it("should validate metered quota types for Org node", () => {
+        // Given
+        const meteredMetrics = [
+          "MAX_LLM_TOKENS_PER_MONTH",
+          "MAX_EVALUATIONS_PER_MONTH",
+          "MAX_CREDITS_PER_MONTH"
+        ] as const
+
+        // When & Then
+        meteredMetrics.forEach(metric => {
+          const data = {
+            node: {type: "Org", identifier: uuidv7()},
+            quotaType: metric
+          }
+          const result = QuotaIdentifierFactory.validate(data)
+          expect(result).toBeRight()
+        })
       })
     })
 
@@ -127,7 +176,6 @@ describe("QuotaIdentifierFactory", () => {
         // Given
         const data = {
           node: {type: "User", identifier: uuidv7()},
-          // MAX_WORKFLOW_TEMPLATES_PER_SPACE is for Space, User is NOT parent of Space
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE"
         }
 
@@ -213,7 +261,7 @@ describe("QuotaFactory", () => {
         const data = {
           id: validId,
           node: {type: "User", identifier: uuidv7()},
-          quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE", // Unsupported
+          quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE",
           limit: 10,
           createdAt: now,
           updatedAt: now
@@ -298,5 +346,100 @@ describe("QuotaFactory", () => {
       // Then
       expect(result).toBeRight()
     })
+  })
+})
+
+describe("resolveEffectiveLimit", () => {
+  it("should prioritize specific resource override over org override and tier baseline", () => {
+    // Given
+    const params = {
+      metric: "MAX_WORKFLOW_TEMPLATES_PER_SPACE" as const,
+      tier: "FREE" as const,
+      specificResourceOverride: 25,
+      orgOverride: 15
+    }
+
+    // When
+    const res = resolveEffectiveLimit(params)
+
+    // Expect
+    expect(res).toBeRight()
+    expect(unwrapRight(res)).toEqual({isUnlimited: false, limit: 25})
+  })
+
+  it("should prioritize org override over tier baseline when specific resource override is undefined", () => {
+    // Given
+    const params = {
+      metric: "MAX_WORKFLOW_TEMPLATES_PER_SPACE" as const,
+      tier: "FREE" as const,
+      orgOverride: 15
+    }
+
+    // When
+    const res = resolveEffectiveLimit(params)
+
+    // Expect
+    expect(res).toBeRight()
+    expect(unwrapRight(res)).toEqual({isUnlimited: false, limit: 15})
+  })
+
+  it("should fallback to tier baseline default when no overrides are provided", () => {
+    // Given
+    const params = {
+      metric: "MAX_WORKFLOW_TEMPLATES_PER_SPACE" as const,
+      tier: "FREE" as const
+    }
+
+    // When
+    const res = resolveEffectiveLimit(params)
+
+    // Expect
+    expect(res).toBeRight()
+    expect(unwrapRight(res)).toEqual({isUnlimited: false, limit: 10})
+  })
+
+  it("should return explicit unlimited when effective limit is null in tier baseline", () => {
+    // Given
+    const params = {
+      metric: "MAX_WORKFLOW_TEMPLATES_PER_SPACE" as const,
+      tier: "SELF_HOSTED_UNLIMITED" as const
+    }
+
+    // When
+    const res = resolveEffectiveLimit(params)
+
+    // Expect
+    expect(res).toBeRight()
+    expect(unwrapRight(res)).toEqual({isUnlimited: true})
+  })
+
+  it("should return explicit unlimited when an override explicitly passes 'UNLIMITED'", () => {
+    // Given
+    const params = {
+      metric: "MAX_WORKFLOW_TEMPLATES_PER_SPACE" as const,
+      tier: "FREE" as const,
+      specificResourceOverride: "UNLIMITED" as const
+    }
+
+    // When
+    const res = resolveEffectiveLimit(params)
+
+    // Expect
+    expect(res).toBeRight()
+    expect(unwrapRight(res)).toEqual({isUnlimited: true})
+  })
+
+  it("should fail closed returning quota_missing_configuration when quota metric/tier config is missing or invalid", () => {
+    // Given
+    const params = {
+      metric: "UNKNOWN_METRIC" as unknown as SupportedQuotaType,
+      tier: "FREE" as const
+    }
+
+    // When
+    const res = resolveEffectiveLimit(params)
+
+    // Expect
+    expect(res).toBeLeftOf("quota_missing_configuration")
   })
 })

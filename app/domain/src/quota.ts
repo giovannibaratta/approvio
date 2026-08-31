@@ -23,6 +23,7 @@ import {v7 as uuid} from "uuid"
 import {isObject, isUUIDv7} from "@utils/validation"
 import * as E from "fp-ts/Either"
 import {DescendantsOf, getParentsOfType, isNodeType, Node, NodeAtOrAbove, NodeType} from "./hierarchy"
+import {PlanTier, TIER_DEFAULTS} from "./tier"
 
 /**
  * Defines the base {@link NodeType} for each {@link SupportedQuotaType}.
@@ -43,7 +44,10 @@ const QUOTA_TYPE_NODE_MAPPING = {
   MAX_GROUPS: "Org",
   MAX_ROLES_PER_USER: "User",
   MAX_SPACES: "Org",
-  MAX_VOTES_PER_WORKFLOW: "Workflow"
+  MAX_VOTES_PER_WORKFLOW: "Workflow",
+  MAX_LLM_TOKENS_PER_MONTH: "Org",
+  MAX_EVALUATIONS_PER_MONTH: "Org",
+  MAX_CREDITS_PER_MONTH: "Org"
 } as const satisfies Record<string, NodeType>
 
 export type SupportedQuotaType = keyof typeof QUOTA_TYPE_NODE_MAPPING
@@ -90,6 +94,7 @@ export type QuotaValidationError = PrefixUnion<
   | "invalid_limit"
   | "missing_target_id"
   | "invalid_target_id"
+  | "missing_configuration"
 >
 
 function isSupportedQuotaType(val: string): val is SupportedQuotaType {
@@ -195,4 +200,45 @@ export class QuotaFactory {
       createdAt: now
     })
   }
+}
+
+export type EffectiveLimitResult = {readonly isUnlimited: true} | {readonly isUnlimited: false; readonly limit: number}
+
+export type QuotaLimitOverride = number | "UNLIMITED"
+
+export type QuotaResolutionError = PrefixUnion<"quota", "missing_configuration">
+
+export interface ResolveQuotaLimitParams {
+  readonly metric: SupportedQuotaType
+  readonly tier: PlanTier
+  readonly specificResourceOverride?: QuotaLimitOverride
+  readonly orgOverride?: QuotaLimitOverride
+}
+
+/**
+ * Resolves the effective limit for a quota metric in hierarchical priority order:
+ * specific resource override > organization override > tier baseline default.
+ *
+ * Enforces fail-closed semantics by returning `quota_missing_configuration` if no
+ * valid configuration is found for the given metric and tier.
+ */
+export function resolveEffectiveLimit(
+  params: ResolveQuotaLimitParams
+): E.Either<QuotaResolutionError, EffectiveLimitResult> {
+  const {metric, tier, specificResourceOverride, orgOverride} = params
+
+  let limit: number | "UNLIMITED" | undefined
+
+  if (specificResourceOverride !== undefined) limit = specificResourceOverride
+  else if (orgOverride !== undefined) limit = orgOverride
+  else {
+    const tierConfig = TIER_DEFAULTS[tier]
+    if (tierConfig && isSupportedQuotaType(metric) && metric in tierConfig.quotas) limit = tierConfig.quotas[metric]
+  }
+
+  if (limit === "UNLIMITED") return E.right({isUnlimited: true})
+
+  if (typeof limit === "number" && Number.isFinite(limit) && limit >= 0) return E.right({isUnlimited: false, limit})
+
+  return E.left("quota_missing_configuration")
 }
