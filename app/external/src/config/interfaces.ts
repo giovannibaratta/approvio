@@ -1,3 +1,4 @@
+import {PlanTier} from "@domain"
 import {KmsProviderType} from "./types"
 import {Option} from "fp-ts/Option"
 import {OidcProvider} from "./types"
@@ -131,6 +132,10 @@ export interface ConfigProviderInterface {
   kmsConfig: KmsConfig
   ssrfProtectionConfig: SsrfProtectionConfig
   leverConfig: LeverConfig
+  /** Deployment edition ('self_hosted' or 'saas_cloud'). */
+  deploymentEdition: "self_hosted" | "saas_cloud"
+  /** Commercial plan tier ('FREE' or 'SELF_HOSTED_UNLIMITED'). */
+  planTier: PlanTier
   /** TTL for the health check result cache in milliseconds. */
   healthCacheTtlMs?: number
 }

@@ -23,7 +23,8 @@ import {
   UserFactory,
   WorkflowStatus,
   WorkflowTemplate,
-  WorkflowTemplateFactory
+  WorkflowTemplateFactory,
+  PlanTier
 } from "@domain"
 import {mapToDomainVersionedUser} from "@external/database/shared"
 import {isLeft} from "fp-ts/Either"
@@ -287,6 +288,8 @@ export class MockConfigProvider implements ConfigProviderInterface {
   kmsConfig: KmsConfig
   ssrfProtectionConfig: SsrfProtectionConfig
   leverConfig: LeverConfig
+  deploymentEdition: "self_hosted" | "saas_cloud"
+  planTier: PlanTier
   healthCacheTtlMs: number
 
   private constructor(
@@ -300,6 +303,8 @@ export class MockConfigProvider implements ConfigProviderInterface {
       emailRetryConfig?: EmailRetryConfig
       databaseRetryConfig?: DatabaseRetryConfig
       leverConfig?: LeverConfig
+      deploymentEdition?: "self_hosted" | "saas_cloud"
+      planTier?: PlanTier
     } = {}
   ) {
     const provider: ConfigProviderInterface = originalProvider ?? {
@@ -388,7 +393,9 @@ export class MockConfigProvider implements ConfigProviderInterface {
       },
       leverConfig: {
         enabled: false
-      }
+      },
+      deploymentEdition: "self_hosted",
+      planTier: "FREE"
     }
 
     this.isPrivilegeMode = provider.isPrivilegeMode
@@ -426,6 +433,8 @@ export class MockConfigProvider implements ConfigProviderInterface {
       getKeys: () => new Map([[1, Buffer.from("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=", "base64")]])
     }
     this.leverConfig = mocks.leverConfig || provider.leverConfig
+    this.deploymentEdition = mocks.deploymentEdition || provider.deploymentEdition || "self_hosted"
+    this.planTier = mocks.planTier || provider.planTier || "FREE"
     this.healthCacheTtlMs = provider.healthCacheTtlMs ?? 1000
   }
 
