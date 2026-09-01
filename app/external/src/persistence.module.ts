@@ -15,7 +15,8 @@ import {
   PrismaTaskRepository,
   RefreshTokenDbRepository,
   PrismaHealthRepository,
-  UserIdentityDbRepository
+  UserIdentityDbRepository,
+  PostgresUsageEventRepository
 } from "./database/"
 import {GroupDbRepository, QuotaDbRepository, PrismaTransactionManager} from "./database"
 import {
@@ -34,7 +35,8 @@ import {
   WORKFLOW_TEMPLATE_REPOSITORY_TOKEN,
   QUEUE_PROVIDER_TOKEN,
   HEALTH_REPOSITORY_TOKEN,
-  USER_IDENTITY_REPOSITORY_TOKEN
+  USER_IDENTITY_REPOSITORY_TOKEN,
+  USAGE_EVENT_REPOSITORY_TOKEN
 } from "@services"
 import {TASK_REPOSITORY_TOKEN} from "@services/task/interfaces"
 import {
@@ -162,6 +164,11 @@ const redisQuotaAdmissionClient = {
   useClass: RedisQuotaAdmissionClient
 }
 
+const usageEventRepository = {
+  provide: USAGE_EVENT_REPOSITORY_TOKEN,
+  useClass: PostgresUsageEventRepository
+}
+
 const repositories = [
   auditLogRepository,
   agentRepository,
@@ -183,7 +190,8 @@ const repositories = [
   dpopTokenRepository,
   transactionManager,
   userIdentityRepository,
-  redisQuotaAdmissionClient
+  redisQuotaAdmissionClient,
+  usageEventRepository
 ]
 
 @Module({
