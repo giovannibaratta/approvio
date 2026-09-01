@@ -21,6 +21,7 @@ import {
 } from "./interfaces"
 import {isOidcProvider, isKmsProviderType} from "./types"
 import {isEmail, isNonEmptyArray} from "@utils"
+import {PlanTier} from "@domain"
 import {mapToUnleashFeatures, ApprovioLeverBootstrap} from "./lever-bootstrap.utils"
 
 const IS_PRIVILEGE_MODE_DEFAULT = true
@@ -50,6 +51,8 @@ export class ConfigProvider implements ConfigProviderInterface {
   readonly kmsConfig: KmsConfig
   readonly ssrfProtectionConfig: SsrfProtectionConfig
   readonly leverConfig: LeverConfig
+  readonly deploymentEdition: "self_hosted" | "saas_cloud"
+  readonly planTier: PlanTier
   readonly healthCacheTtlMs?: number
 
   constructor() {
@@ -70,7 +73,31 @@ export class ConfigProvider implements ConfigProviderInterface {
     this.kmsConfig = this.validateKmsConfig()
     this.ssrfProtectionConfig = this.validateSsrfProtectionConfig()
     this.leverConfig = this.validateLeverConfig()
+    this.deploymentEdition = this.validateDeploymentEdition()
+    this.planTier = this.validatePlanTier()
     this.healthCacheTtlMs = this.validateHealthCacheTtlMs()
+  }
+
+  private validateDeploymentEdition(): "self_hosted" | "saas_cloud" {
+    const raw = process.env.DEPLOYMENT_EDITION?.toLowerCase()
+    if (!raw) {
+      throw new Error(
+        "Missing required environment variable: DEPLOYMENT_EDITION. Allowed values: self_hosted, saas_cloud."
+      )
+    }
+    if (raw !== "self_hosted" && raw !== "saas_cloud")
+      throw new Error(`Invalid DEPLOYMENT_EDITION: "${raw}". Allowed values: self_hosted, saas_cloud.`)
+    return raw
+  }
+
+  private validatePlanTier(): PlanTier {
+    // TODO(long-term): [multi-org] Plan tier will be stored in and resolved from the database per organization
+    // once multi-org tenant management is implemented. For now, self-hosted instances receive
+    // SELF_HOSTED_UNLIMITED while saas_cloud instances default to FREE tier.
+    if (this.deploymentEdition === "self_hosted") {
+      return "SELF_HOSTED_UNLIMITED"
+    }
+    return "FREE"
   }
 
   private validateHealthCacheTtlMs(): number {
