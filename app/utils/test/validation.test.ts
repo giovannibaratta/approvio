@@ -1,9 +1,34 @@
 import {
   eitherParseInt,
   eitherParseOptionalBoolean,
+  isEmail,
   isValidHttpOrHttpsUrl,
   isRecordStringString
 } from "@utils/validation"
+
+describe("isEmail", () => {
+  it("should return true for valid email addresses", () => {
+    expect(isEmail("user@example.com")).toBe(true)
+    expect(isEmail("user.name+tag@example.co.uk")).toBe(true)
+    expect(isEmail("user@subdomain.example.com")).toBe(true)
+  })
+
+  it("should return false for invalid email addresses", () => {
+    expect(isEmail("invalid")).toBe(false)
+    expect(isEmail("invalid@")).toBe(false)
+    expect(isEmail("@invalid.com")).toBe(false)
+    expect(isEmail("invalid@.com")).toBe(false)
+    expect(isEmail("invalid@domain")).toBe(false)
+    expect(isEmail("user@domain..com")).toBe(false)
+    expect(isEmail(" user@example.com")).toBe(false)
+    expect(isEmail("user@example.com ")).toBe(false)
+  })
+
+  it("should quickly process potential ReDoS inputs without catastrophic backtracking", () => {
+    const maliciousInput = "a".repeat(50000) + "@" + "a".repeat(25000) + "@"
+    expect(isEmail(maliciousInput)).toBe(false)
+  }, 1000)
+})
 
 describe("isRecordStringString", () => {
   it("should return true for an empty object", () => {
