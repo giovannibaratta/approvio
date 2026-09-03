@@ -76,4 +76,5 @@ export async function cleanDatabase(client: PrismaClient): Promise<void> {
   await client.user.deleteMany()
   await client.agent.deleteMany()
   await client.quota.deleteMany()
+  await client.usageEvent.deleteMany()
 }

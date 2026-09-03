@@ -28,6 +28,7 @@ import {AuditLogService} from "./audit-log"
 import {LeverService} from "./lever"
 import {ResourcesService} from "./resources"
 import {FeatureGateService} from "./feature-gate"
+import {UsageMeteringService} from "./usage-metering"
 
 const services = [
   AgentService,
@@ -55,7 +56,8 @@ const services = [
   HierarchyService,
   LeverService,
   ResourcesService,
-  FeatureGateService
+  FeatureGateService,
+  UsageMeteringService
 ]
 
 const internalServices = [PkceService]

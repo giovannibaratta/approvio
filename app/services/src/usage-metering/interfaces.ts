@@ -1,4 +1,4 @@
-import {Actor, CreateUsageEvent, UsageMetric} from "@domain"
+import {Actor, CreateUsageEvent, TierQuotaLimit, UsageEntity, UsageMetric} from "@domain"
 import * as TE from "fp-ts/TaskEither"
 import {UnknownError} from "../error"
 
@@ -8,8 +8,9 @@ export interface ReservationResult {
   readonly reserved: number
 }
 
-export type RedisError =
-  {readonly type: "redis_error"; readonly error: unknown} | {readonly type: "invalid_response"; readonly error: unknown}
+export type QuotaAdmissionError =
+  | {readonly type: "admission_error"; readonly error: unknown}
+  | {readonly type: "invalid_response"; readonly error: unknown}
 
 export interface QuotaAdmissionClient {
   reserve(
@@ -17,13 +18,13 @@ export interface QuotaAdmissionClient {
     limit: number,
     estimate: number,
     ttlSeconds?: number
-  ): TE.TaskEither<RedisError, ReservationResult>
+  ): TE.TaskEither<QuotaAdmissionError, ReservationResult>
 
-  settle(key: string, estimate: number, actual: number): TE.TaskEither<RedisError, number>
+  settle(key: string, estimate: number, actual: number): TE.TaskEither<QuotaAdmissionError, number>
 
-  release(key: string, estimate: number): TE.TaskEither<RedisError, void>
+  release(key: string, estimate: number): TE.TaskEither<QuotaAdmissionError, void>
 
-  getUsage(key: string): TE.TaskEither<RedisError, {consumed: number; reserved: number}>
+  getUsage(key: string): TE.TaskEither<QuotaAdmissionError, {consumed: number; reserved: number}>
 }
 
 /**
@@ -77,3 +78,72 @@ export interface UsageEventRepository {
 
 export const USAGE_EVENT_REPOSITORY_TOKEN = Symbol("USAGE_EVENT_REPOSITORY_TOKEN")
 export const QUOTA_ADMISSION_CLIENT_TOKEN = Symbol("QUOTA_ADMISSION_CLIENT_TOKEN")
+
+/**
+ * Parameters for pre-flight quota reservation.
+ */
+export interface AdmitAndReserveParams {
+  readonly orgId: string
+  readonly entity: UsageEntity
+  readonly actor: Actor
+  readonly metric: UsageMetric
+  readonly estimatedUnits: number
+  readonly period: string
+  readonly isBillable?: boolean
+}
+
+/**
+ * Parameters for post-operation quota settlement and immutable ledger entry.
+ */
+export interface SettleUsageParams {
+  readonly orgId: string
+  readonly entity: UsageEntity
+  readonly actor: Actor
+  readonly metric: UsageMetric
+  readonly estimatedUnits: number
+  readonly actualUnits: number
+  readonly period: string
+  readonly isBillable?: boolean
+  readonly metadata?: Record<string, unknown>
+}
+
+/**
+ * Parameters for releasing an inflight reservation.
+ */
+export interface CancelReservationParams {
+  readonly orgId: string
+  readonly metric: UsageMetric
+  readonly estimatedUnits: number
+  readonly period: string
+}
+
+/**
+ * Breakdown of consumption, active reservations, and remaining units for a single metric.
+ */
+export interface MetricUsageSummary {
+  readonly metric: UsageMetric
+  readonly limit: TierQuotaLimit
+  readonly consumed: number
+  readonly reserved: number
+  readonly remaining: TierQuotaLimit
+  readonly unit: string
+}
+
+/**
+ * Organization-wide usage summary for a specific billing period.
+ */
+export interface OrganizationUsageSummary {
+  readonly orgId: string
+  readonly period: string
+  readonly periodStartsAt: Date
+  readonly periodEndsAt: Date
+  readonly metrics: MetricUsageSummary[]
+}
+
+export type UsageMeteringError =
+  | "quota_exceeded"
+  | "quota_missing_configuration"
+  | "billing_period_invalid_format"
+  | "billing_period_invalid_month"
+  | "billing_period_invalid_year"
+  | UnknownError

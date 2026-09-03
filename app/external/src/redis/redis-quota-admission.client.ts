@@ -1,10 +1,8 @@
 import {Inject, Injectable} from "@nestjs/common"
-import {QuotaAdmissionClient, RedisError, ReservationResult} from "@services/usage-metering"
+import {QuotaAdmissionClient, QuotaAdmissionError, ReservationResult} from "@services/usage-metering"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {RedisClient} from "./redis-client"
-
-export {QuotaAdmissionClient, RedisError, ReservationResult}
 
 interface QuotaAdmissionCommands {
   reserveQuota(key: string, limit: number, estimate: number, ttl: number): Promise<unknown>
@@ -128,17 +126,18 @@ export class RedisQuotaAdmissionClient implements QuotaAdmissionClient {
     limit: number,
     estimate: number,
     ttlSeconds: number = DEFAULT_TTL_SECONDS
-  ): TE.TaskEither<RedisError, ReservationResult> {
+  ): TE.TaskEither<QuotaAdmissionError, ReservationResult> {
     return pipe(
       TE.tryCatch(
         async () => {
           const res = await this.redis.reserveQuota(key, limit, estimate, ttlSeconds)
           return res
         },
-        (error): RedisError => ({type: "redis_error", error})
+        (error): QuotaAdmissionError => ({type: "admission_error", error})
       ),
       TE.chain(res => {
-        if (!Array.isArray(res) || res.length < 3) return TE.left<RedisError>({type: "invalid_response", error: res})
+        if (!Array.isArray(res) || res.length < 3)
+          return TE.left<QuotaAdmissionError>({type: "invalid_response", error: res})
         return TE.right({
           allowed: Number(res[0]) === 1,
           consumed: Number(res[1]),
@@ -148,26 +147,26 @@ export class RedisQuotaAdmissionClient implements QuotaAdmissionClient {
     )
   }
 
-  settle(key: string, estimate: number, actual: number): TE.TaskEither<RedisError, number> {
+  settle(key: string, estimate: number, actual: number): TE.TaskEither<QuotaAdmissionError, number> {
     return TE.tryCatch(
       async () => {
         const res = await this.redis.settleQuota(key, estimate, actual)
         return Number(res)
       },
-      (error): RedisError => ({type: "redis_error", error})
+      (error): QuotaAdmissionError => ({type: "admission_error", error})
     )
   }
 
-  release(key: string, estimate: number): TE.TaskEither<RedisError, void> {
+  release(key: string, estimate: number): TE.TaskEither<QuotaAdmissionError, void> {
     return TE.tryCatch(
       async () => {
         await this.redis.releaseQuota(key, estimate)
       },
-      (error): RedisError => ({type: "redis_error", error})
+      (error): QuotaAdmissionError => ({type: "admission_error", error})
     )
   }
 
-  getUsage(key: string): TE.TaskEither<RedisError, {consumed: number; reserved: number}> {
+  getUsage(key: string): TE.TaskEither<QuotaAdmissionError, {consumed: number; reserved: number}> {
     return TE.tryCatch(
       async () => {
         const [consumedStr, reservedStr] = await this.redis.hmget(key, "consumed", "reserved")
@@ -176,7 +175,7 @@ export class RedisQuotaAdmissionClient implements QuotaAdmissionClient {
           reserved: parseInt(reservedStr ?? "0", 10) || 0
         }
       },
-      (error): RedisError => ({type: "redis_error", error})
+      (error): QuotaAdmissionError => ({type: "admission_error", error})
     )
   }
 }
