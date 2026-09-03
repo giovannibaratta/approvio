@@ -1,6 +1,6 @@
-import {Actor, CreateUsageEvent, TierQuotaLimit, UsageEntity, UsageMetric} from "@domain"
+import {Actor, CreateUsageEvent, MetricUnit, TierQuotaLimit, UsageEntity, UsageMetric} from "@domain"
 import * as TE from "fp-ts/TaskEither"
-import {UnknownError} from "../error"
+import {AuthorizationError, UnknownError} from "../error"
 
 export interface ReservationResult {
   readonly allowed: boolean
@@ -126,7 +126,7 @@ export interface MetricUsageSummary {
   readonly consumed: number
   readonly reserved: number
   readonly remaining: TierQuotaLimit
-  readonly unit: string
+  readonly unit: MetricUnit
 }
 
 /**
@@ -146,4 +146,6 @@ export type UsageMeteringError =
   | "billing_period_invalid_format"
   | "billing_period_invalid_month"
   | "billing_period_invalid_year"
+  | "organization_not_found"
+  | AuthorizationError
   | UnknownError

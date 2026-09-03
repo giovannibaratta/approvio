@@ -52,6 +52,19 @@ const QUOTA_TYPE_NODE_MAPPING = {
 
 export type SupportedQuotaType = keyof typeof QUOTA_TYPE_NODE_MAPPING
 
+export const ALL_SUPPORTED_QUOTA_TYPES: readonly SupportedQuotaType[] = [
+  "MAX_CONCURRENT_WORKFLOWS",
+  "MAX_ENTITIES_PER_GROUP",
+  "MAX_WORKFLOW_TEMPLATES_PER_SPACE",
+  "MAX_GROUPS",
+  "MAX_ROLES_PER_USER",
+  "MAX_SPACES",
+  "MAX_VOTES_PER_WORKFLOW",
+  "MAX_LLM_TOKENS_PER_MONTH",
+  "MAX_EVALUATIONS_PER_MONTH",
+  "MAX_CREDITS_PER_MONTH"
+]
+
 /**
  * Derive all quotaType associated with a NodeType and its descendants.
  * A quotaType can be defined at NodeType T if it's supported by T or any of its descendants.

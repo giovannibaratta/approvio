@@ -1,4 +1,4 @@
-import {PlanTier, UsageEntity, UsageMetric} from "@domain"
+import {OrgRole, PlanTier, UsageEntity, UsageMetric, UserFactory} from "@domain"
 import {DatabaseClient, RedisClient} from "@external"
 import {ConfigProvider} from "@external/config"
 import {ConfigModule} from "@external/config.module"
@@ -36,6 +36,32 @@ describe("UsageMeteringService Integration Tests", () => {
     id: uuidv7()
   }
   const period = "2026-08"
+
+  const adminUser = unwrapRight(
+    UserFactory.newUser({
+      email: "admin@approvio.test",
+      displayName: "Admin",
+      orgRole: OrgRole.ADMIN
+    })
+  )
+  const memberUser = unwrapRight(
+    UserFactory.newUser({
+      email: "member@approvio.test",
+      displayName: "Member",
+      orgRole: OrgRole.MEMBER
+    })
+  )
+
+  const adminRequestor = {
+    entityType: "user" as const,
+    providerId: "test",
+    user: {...adminUser, occ: 1n}
+  }
+  const memberRequestor = {
+    entityType: "user" as const,
+    providerId: "test",
+    user: {...memberUser, occ: 1n}
+  }
 
   const createModuleWithTier = async (planTier: PlanTier): Promise<TestingModule> => {
     const testModule = await Test.createTestingModule({
@@ -97,7 +123,7 @@ describe("UsageMeteringService Integration Tests", () => {
       expect(result).toBeRight()
 
       // Verify in Redis
-      const usage = await service.getOrganizationUsage(orgId, period, "MAX_LLM_TOKENS_PER_MONTH")()
+      const usage = await service.getOrganizationUsage(adminRequestor, orgId, period, "MAX_LLM_TOKENS_PER_MONTH")()
       const summary = unwrapRight(usage)
       const firstMetric = summary.metrics[0]
       expect(firstMetric?.limit).toBe("UNLIMITED")
@@ -182,7 +208,7 @@ describe("UsageMeteringService Integration Tests", () => {
       expect(result).toBeRight()
 
       // 1. Verify Redis balances: reservation released, actual consumed recorded
-      const usage = await service.getOrganizationUsage(orgId, period, metric)()
+      const usage = await service.getOrganizationUsage(adminRequestor, orgId, period, metric)()
       const summary = unwrapRight(usage)
       const firstMetric = summary.metrics[0]
       expect(firstMetric?.reserved).toBe(0)
@@ -253,7 +279,7 @@ describe("UsageMeteringService Integration Tests", () => {
       expect(result).toBeRight()
 
       // Verify in Redis
-      const usage = await service.getOrganizationUsage(orgId, period, metric)()
+      const usage = await service.getOrganizationUsage(adminRequestor, orgId, period, metric)()
       const summary = unwrapRight(usage)
       const firstMetric = summary.metrics[0]
       expect(firstMetric?.reserved).toBe(0)
@@ -299,7 +325,7 @@ describe("UsageMeteringService Integration Tests", () => {
       })()
 
       // When
-      const result = await service.getOrganizationUsage(orgId, period)()
+      const result = await service.getOrganizationUsage(adminRequestor, orgId, period)()
 
       // Expect
       expect(result).toBeRight()
@@ -324,10 +350,18 @@ describe("UsageMeteringService Integration Tests", () => {
 
     it("should return billing_period_invalid_format on malformed period strings", async () => {
       // When
-      const result = await service.getOrganizationUsage(orgId, "invalid-period")()
+      const result = await service.getOrganizationUsage(adminRequestor, orgId, "invalid-period")()
 
       // Expect
       expect(result).toBeLeftOf("billing_period_invalid_format")
+    })
+
+    it("should return requestor_not_authorized when caller is not an Org Admin", async () => {
+      // When
+      const result = await service.getOrganizationUsage(memberRequestor, orgId, period)()
+
+      // Expect
+      expect(result).toBeLeftOf("requestor_not_authorized")
     })
   })
 })

@@ -13,6 +13,12 @@ export interface UsageEntity {
 
 export type UsageMetric = "MAX_LLM_TOKENS_PER_MONTH" | "MAX_EVALUATIONS_PER_MONTH" | "MAX_CREDITS_PER_MONTH"
 
+export const ALL_METERED_METRICS: readonly UsageMetric[] = [
+  "MAX_LLM_TOKENS_PER_MONTH",
+  "MAX_EVALUATIONS_PER_MONTH",
+  "MAX_CREDITS_PER_MONTH"
+]
+
 export function isUsageMetric(metric: unknown): metric is UsageMetric {
   return (
     metric === "MAX_LLM_TOKENS_PER_MONTH" ||
@@ -21,10 +27,12 @@ export function isUsageMetric(metric: unknown): metric is UsageMetric {
   )
 }
 
+export type MetricUnit = "tokens" | "evaluations" | "credits"
+
 /**
  * Returns the unit of measure label associated with a specific usage metric.
  */
-export function getMetricUnit(metric: UsageMetric): string {
+export function getMetricUnit(metric: UsageMetric): MetricUnit {
   switch (metric) {
     case "MAX_LLM_TOKENS_PER_MONTH":
       return "tokens"
@@ -38,11 +46,7 @@ export function getMetricUnit(metric: UsageMetric): string {
 /**
  * Calculates the remaining quota capacity given a limit, total consumed, and active reservations.
  */
-export function calculateRemainingQuota(
-  limit: TierQuotaLimit,
-  consumed: number,
-  reserved: number
-): TierQuotaLimit {
+export function calculateRemainingQuota(limit: TierQuotaLimit, consumed: number, reserved: number): TierQuotaLimit {
   if (limit === "UNLIMITED") return "UNLIMITED"
   return Math.max(0, limit - consumed - reserved)
 }
