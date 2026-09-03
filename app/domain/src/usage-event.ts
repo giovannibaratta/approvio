@@ -2,6 +2,14 @@ import {Either, left, right, isLeft} from "fp-ts/Either"
 import {DistributiveOmit, PrefixUnion, isObject, hasOwnProperty, isDate} from "@utils"
 import {v7 as uuidv7} from "uuid"
 import {Actor, ActorType} from "./audit-log"
+import {TierQuotaLimit} from "./tier"
+
+export const UNLIMITED_QUOTA_SENTINEL = -1
+
+export interface UsageEntity {
+  readonly id: string
+  readonly type: string
+}
 
 export type UsageMetric = "MAX_LLM_TOKENS_PER_MONTH" | "MAX_EVALUATIONS_PER_MONTH" | "MAX_CREDITS_PER_MONTH"
 
@@ -11,6 +19,32 @@ export function isUsageMetric(metric: unknown): metric is UsageMetric {
     metric === "MAX_EVALUATIONS_PER_MONTH" ||
     metric === "MAX_CREDITS_PER_MONTH"
   )
+}
+
+/**
+ * Returns the unit of measure label associated with a specific usage metric.
+ */
+export function getMetricUnit(metric: UsageMetric): string {
+  switch (metric) {
+    case "MAX_LLM_TOKENS_PER_MONTH":
+      return "tokens"
+    case "MAX_EVALUATIONS_PER_MONTH":
+      return "evaluations"
+    case "MAX_CREDITS_PER_MONTH":
+      return "credits"
+  }
+}
+
+/**
+ * Calculates the remaining quota capacity given a limit, total consumed, and active reservations.
+ */
+export function calculateRemainingQuota(
+  limit: TierQuotaLimit,
+  consumed: number,
+  reserved: number
+): TierQuotaLimit {
+  if (limit === "UNLIMITED") return "UNLIMITED"
+  return Math.max(0, limit - consumed - reserved)
 }
 
 export interface UsageEvent {

@@ -490,6 +490,9 @@ export class MockConfigProvider implements ConfigProviderInterface {
       webhookRetryConfig?: WebhookRetryConfig
       emailRetryConfig?: EmailRetryConfig
       databaseRetryConfig?: DatabaseRetryConfig
+      leverConfig?: LeverConfig
+      deploymentEdition?: "self_hosted" | "saas_cloud"
+      planTier?: PlanTier
     } = {}
   ): MockConfigProvider {
     const provider = this.getCachedRealProvider()
