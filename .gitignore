@@ -61,3 +61,4 @@ load-tests/report.html
 load-tests/summary.json
 .agent/skills/caveman/*
 .agent/skills/no-ai-slop/*
+plans/*

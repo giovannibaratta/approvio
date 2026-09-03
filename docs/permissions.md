@@ -91,18 +91,20 @@ User "alice@company.com" can vote on a workflow if:
 
 ### Resource Permissions
 
-| Resource     | Permission        | Description                         |
-| :----------- | :---------------- | :---------------------------------- |
-| **Space**    | `read`            | View space information              |
-| **Space**    | `manage`          | Modify and delete spaces            |
-| **Template** | `read`            | View template details               |
-| **Template** | `write`           | Modify template definitions         |
-| **Template** | `instantiate`     | Create workflow instances           |
-| **Template** | `vote`            | Vote on workflows from the template |
-| **Workflow** | `workflow_read`   | View workflow details               |
-| **Workflow** | `workflow_list`   | List workflows                      |
-| **Workflow** | `workflow_cancel` | Cancel workflows                    |
-| **Audit**    | `read`            | View system-wide audit logs         |
+| Resource | Permission | Description |
+| :--- | :--- | :--- |
+| **Space** | `read` | View space information |
+| **Space** | `manage` | Modify and delete spaces |
+| **Template** | `read` | View template details |
+| **Template** | `write` | Modify template definitions |
+| **Template** | `instantiate` | Create workflow instances |
+| **Template** | `vote` | Vote on workflows from the template |
+| **Workflow** | `workflow_read` | View workflow details |
+| **Workflow** | `workflow_list` | List workflows |
+| **Workflow** | `workflow_cancel` | Cancel workflows |
+| **Audit** | `read` | View system-wide audit logs |
+| **Organization** | `entitlements_read` | Inspect active plan tier, feature flags, and resolved quota limits (Admins and Members) |
+| **Organization** | `usage_read` | Inspect monthly metered consumption, token usage, and credit balances (Org Admins only) |
 
 ## Security Considerations
 
@@ -110,9 +112,17 @@ User "alice@company.com" can vote on a workflow if:
 
 The system ensures vote integrity by validating voting permissions dynamically at the time a vote is cast, rather than at the time the workflow is created. Furthermore, if a template is changed after a workflow has been instantiated, those modifications do not retroactively alter the voting permissions for the existing workflows.
 
+### Organization Usage and Entitlements
+
+Any member of an organization can view its active feature flags and quota limits (`GET /organizations/:orgId/entitlements`).
+
+Monthly consumption metrics, token counts, and billing data (`GET /organizations/:orgId/usage`) are restricted to Organization Admins. Automated agents cannot access either endpoint.
+
 ## Related Documentation
 
 - **[Roles](./roles.md)**: Complete guide to the RBAC system, role types, and management
+- **[Quotas](./quotas.md)**: Understanding quota families, tier baselines, and metered consumption
 - **[Spaces](./spaces.md)**: Understanding spaces and space-level permissions
 - **[Workflow Templates](./workflow-templates.md)**: Template permissions and voting configuration
 - **[Agents](./agents.md)**: How agents fit into the permission model
+- **[Deployment Editions](./deployment-editions.md)**: Differences between self-hosted and cloud editions
