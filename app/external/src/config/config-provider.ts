@@ -80,11 +80,11 @@ export class ConfigProvider implements ConfigProviderInterface {
 
   private validateDeploymentEdition(): "self_hosted" | "saas_cloud" {
     const raw = process.env.DEPLOYMENT_EDITION?.toLowerCase()
-    if (!raw) {
+    if (!raw)
       throw new Error(
         "Missing required environment variable: DEPLOYMENT_EDITION. Allowed values: self_hosted, saas_cloud."
       )
-    }
+
     if (raw !== "self_hosted" && raw !== "saas_cloud")
       throw new Error(`Invalid DEPLOYMENT_EDITION: "${raw}". Allowed values: self_hosted, saas_cloud.`)
     return raw
@@ -94,9 +94,8 @@ export class ConfigProvider implements ConfigProviderInterface {
     // TODO(long-term): [multi-org] Plan tier will be stored in and resolved from the database per organization
     // once multi-org tenant management is implemented. For now, self-hosted instances receive
     // SELF_HOSTED_UNLIMITED while saas_cloud instances default to FREE tier.
-    if (this.deploymentEdition === "self_hosted") {
-      return "SELF_HOSTED_UNLIMITED"
-    }
+    if (this.deploymentEdition === "self_hosted") return "SELF_HOSTED_UNLIMITED"
+
     return "FREE"
   }
 

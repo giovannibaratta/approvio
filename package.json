@@ -49,7 +49,7 @@
   },
   "packageManager": "yarn@4.7.0",
   "dependencies": {
-    "@approvio/api": "0.0.57",
+    "@approvio/api": "0.0.58",
     "@aws-crypto/client-node": "^5.0.2",
     "@nestjs/bull": "11.0.5",
     "@nestjs/common": "11.2.1",

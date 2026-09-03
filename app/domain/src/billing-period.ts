@@ -25,20 +25,14 @@ export function parseBillingPeriod(period: string): E.Either<InvalidBillingPerio
   const yearStr = match[1]
   const monthStr = match[2]
 
-  if (typeof yearStr !== "string" || typeof monthStr !== "string") {
-    return E.left("billing_period_invalid_format")
-  }
+  if (typeof yearStr !== "string" || typeof monthStr !== "string") return E.left("billing_period_invalid_format")
 
   const year = parseInt(yearStr, 10)
   const month = parseInt(monthStr, 10)
 
-  if (isNaN(year) || year < 2000 || year > 2200) {
-    return E.left("billing_period_invalid_year")
-  }
+  if (isNaN(year) || year < 2000 || year > 2200) return E.left("billing_period_invalid_year")
 
-  if (isNaN(month) || month < 1 || month > 12) {
-    return E.left("billing_period_invalid_month")
-  }
+  if (isNaN(month) || month < 1 || month > 12) return E.left("billing_period_invalid_month")
 
   const periodStartsAt = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0, 0))
   const periodEndsAt = new Date(Date.UTC(year, month, 0, 23, 59, 59, 999))

@@ -16,6 +16,7 @@ export type QuotaListError = PaginationError | PrefixUnion<"quota", UnknownError
 export type QuotaDeleteError = PrefixUnion<"quota", "not_found" | UnknownError> | AuthorizationError
 export type QuotaUsageError = UnknownError | UserGetError | FindVotesError
 export type QuotaCheckError = QuotaGetError | QuotaUsageError | "quota_unsupported_quota_type_for_node"
+export type EffectiveQuotasError = QuotaListError | AuthorizationError | "quota_not_found"
 
 export type ListQuotasFilter = {
   readonly nodeType?: NodeType

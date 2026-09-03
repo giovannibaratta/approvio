@@ -16,6 +16,7 @@ import {PingController} from "./ping"
 import {QuotasController} from "./quotas"
 import {AuditLogsController} from "./audit-logs"
 import {ResourcesController} from "./resources"
+import {OrganizationController} from "./organizations"
 
 import {ConfigModule} from "@external/config.module"
 
@@ -27,6 +28,7 @@ const internalControllers = [WorkflowTemplateInternalController, HealthControlle
     AgentsController,
     GroupsController,
     OrganizationAdminController,
+    OrganizationController,
     SpacesController,
     UsersController,
     WorkflowsController,

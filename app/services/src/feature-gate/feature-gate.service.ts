@@ -28,17 +28,19 @@ export class FeatureGateService {
   /**
    * Retrieves the effective entitlements (deployment edition, active plan tier, and feature map).
    *
+   * @param _orgId - Optional organization UUID.
    * @returns TaskEither resolving to the EffectiveEntitlements.
    */
-  public getEffectiveEntitlements(): TE.TaskEither<FeatureGateError, EffectiveEntitlements> {
-    if (this.configProvider.deploymentEdition === "self_hosted") {
+  public getEffectiveEntitlements(_orgId?: string): TE.TaskEither<FeatureGateError, EffectiveEntitlements> {
+    if (this.configProvider.deploymentEdition === "self_hosted")
       return TE.right({
         edition: "self_hosted",
         planTier: "SELF_HOSTED_UNLIMITED",
         features: TIER_DEFAULTS.SELF_HOSTED_UNLIMITED.features
       })
-    }
 
+    // TODO(long-term): once multi-org support is implemented, the org id should be use to fetch
+    // the actual tier for the org from the DB.
     const planTier = this.configProvider.planTier
     const tierConfig = TIER_DEFAULTS[planTier]
     return TE.right({

@@ -1,6 +1,10 @@
 import {
+  ALL_METERED_METRICS,
+  AuthenticatedEntity,
   calculateRemainingQuota,
+  formatBillingPeriod,
   getMetricUnit,
+  OrgRole,
   parseBillingPeriod,
   resolveEffectiveLimit,
   UNLIMITED_QUOTA_SENTINEL,
@@ -9,7 +13,10 @@ import {
 import {ConfigProvider} from "@external/config"
 import {Inject, Injectable, Logger} from "@nestjs/common"
 import {pipe} from "fp-ts/function"
+import * as E from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
+import {DEFAULT_ORG_ID} from "../constants"
+import {validateUserEntity} from "../shared/types"
 import {
   AdmitAndReserveParams,
   CancelReservationParams,
@@ -22,12 +29,6 @@ import {
   UsageEventRepository,
   UsageMeteringError
 } from "./interfaces"
-
-const SUPPORTED_METERED_METRICS: readonly UsageMetric[] = [
-  "MAX_LLM_TOKENS_PER_MONTH",
-  "MAX_EVALUATIONS_PER_MONTH",
-  "MAX_CREDITS_PER_MONTH"
-]
 
 @Injectable()
 export class UsageMeteringService {
@@ -66,9 +67,8 @@ export class UsageMeteringService {
       TE.chainW(limitResult => {
         const limitNumber = limitResult.isUnlimited ? UNLIMITED_QUOTA_SENTINEL : limitResult.limit
 
-        if (limitNumber !== UNLIMITED_QUOTA_SENTINEL && params.estimatedUnits > limitNumber) {
+        if (limitNumber !== UNLIMITED_QUOTA_SENTINEL && params.estimatedUnits > limitNumber)
           return TE.left<UsageMeteringError, number>("quota_exceeded")
-        }
 
         return TE.right<UsageMeteringError, number>(limitNumber)
       }),
@@ -189,27 +189,37 @@ export class UsageMeteringService {
   /**
    * Inspects billing period consumption, active reservations, and remaining quota balances for an organization.
    *
+   * @param requestor - Authenticated entity performing the request.
    * @param orgId - Organization UUID.
-   * @param period - Billing period (YYYY-MM).
+   * @param period - Billing period (YYYY-MM). Defaults to current active period if omitted.
    * @param metricFilter - Optional single metric filter.
    * @returns TaskEither resolving to the complete OrganizationUsageSummary.
    */
   public getOrganizationUsage(
+    requestor: AuthenticatedEntity,
     orgId: string,
-    period: string,
+    period?: string,
     metricFilter?: UsageMetric
   ): TE.TaskEither<UsageMeteringError, OrganizationUsageSummary> {
-    const metricsToQuery = metricFilter ? [metricFilter] : SUPPORTED_METERED_METRICS
+    const userResult = validateUserEntity(requestor)
+    if (E.isLeft(userResult) || userResult.right.orgRole !== OrgRole.ADMIN)
+      return TE.left("requestor_not_authorized" as const)
+
+    // TODO(long-term): once multi-org support is implemented, orgId should be looked up dynamically
+    if (orgId !== DEFAULT_ORG_ID) return TE.left("organization_not_found" as const)
+
+    const activePeriod = period ?? formatBillingPeriod(new Date())
+    const metricsToQuery = metricFilter ? [metricFilter] : ALL_METERED_METRICS
 
     return pipe(
-      TE.fromEither(parseBillingPeriod(period)),
+      TE.fromEither(parseBillingPeriod(activePeriod)),
       TE.chainW(({periodStartsAt, periodEndsAt}) =>
         pipe(
-          metricsToQuery.map(metric => this.getMetricUsage(orgId, metric, period)),
+          metricsToQuery.map(metric => this.getMetricUsage(orgId, metric, activePeriod)),
           TE.sequenceArray,
           TE.map(metrics => ({
             orgId,
-            period,
+            period: activePeriod,
             periodStartsAt,
             periodEndsAt,
             metrics: Array.from(metrics)

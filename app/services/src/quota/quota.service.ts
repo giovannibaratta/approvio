@@ -7,10 +7,15 @@ import {
   QuotaIdentifierFactory,
   Quota,
   SupportedQuotaType,
+  ALL_SUPPORTED_QUOTA_TYPES,
+  TierQuotaLimit,
   Node,
-  isQuotaTypeApplicableTo
+  isQuotaTypeApplicableTo,
+  TIER_DEFAULTS
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
+import {ConfigProvider} from "@external/config"
+import {DEFAULT_ORG_ID} from "../constants"
 import {
   QuotaRepository,
   QUOTA_REPOSITORY_TOKEN,
@@ -22,7 +27,8 @@ import {
   ListQuotasFilter,
   ListQuotasResult,
   QuotaCheckError,
-  QuotaUsageError
+  QuotaUsageError,
+  EffectiveQuotasError
 } from "./interfaces"
 import {GROUP_REPOSITORY_TOKEN, GroupRepository} from "../group/interfaces"
 import {SPACE_REPOSITORY_TOKEN, SpaceRepository} from "../space/interfaces"
@@ -50,7 +56,8 @@ export class QuotaService {
     @Inject(GROUP_MEMBERSHIP_REPOSITORY_TOKEN) private readonly groupMembershipRepo: GroupMembershipRepository,
     @Inject(USER_REPOSITORY_TOKEN) private readonly userRepo: UserRepository,
     @Inject(VOTE_REPOSITORY_TOKEN) private readonly voteRepo: VoteRepository,
-    private readonly hierarchyService: HierarchyService
+    private readonly hierarchyService: HierarchyService,
+    private readonly configProvider: ConfigProvider
   ) {}
 
   /**
@@ -239,6 +246,37 @@ export class QuotaService {
 
   listQuotas(page: number, limit: number, filter?: ListQuotasFilter): TE.TaskEither<QuotaListError, ListQuotasResult> {
     return this.quotaRepo.listQuotas(page, limit, filter)
+  }
+
+  getAllEffectiveQuotas(
+    requestor: AuthenticatedEntity,
+    orgId: string
+  ): TE.TaskEither<EffectiveQuotasError, Record<SupportedQuotaType, TierQuotaLimit>> {
+    const userResult = validateUserEntity(requestor)
+    if (E.isLeft(userResult)) return TE.left("requestor_not_authorized" as const)
+
+    // TODO(long-term): once multi-org support is implemented, orgId should be looked up dynamically
+    if (orgId !== DEFAULT_ORG_ID) return TE.left("quota_not_found" as const)
+
+    return pipe(
+      this.quotaRepo.listQuotas(1, ALL_SUPPORTED_QUOTA_TYPES.length, {nodeType: "Org", nodeIdentifier: orgId}),
+      TE.map(result => {
+        const overrides = new Map<string, number>()
+        for (const item of result.items) overrides.set(item.quotaType, item.limit)
+
+        const tier = this.configProvider.planTier
+        const tierQuotas = TIER_DEFAULTS[tier].quotas
+
+        const effectiveQuotas = {} as Record<SupportedQuotaType, TierQuotaLimit>
+
+        for (const quotaType of ALL_SUPPORTED_QUOTA_TYPES) {
+          const override = overrides.get(quotaType)
+          effectiveQuotas[quotaType] = override !== undefined ? override : tierQuotas[quotaType]
+        }
+
+        return effectiveQuotas
+      })
+    )
   }
 
   private checkAdmin(requestor: AuthenticatedEntity): E.Either<AuthorizationError, User> {
