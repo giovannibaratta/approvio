@@ -16,6 +16,12 @@ Ensure your upstream proxy or load balancer is configured to inject/preserve the
 | `X-Forwarded-Proto` | Identifies the protocol (HTTP or HTTPS) used by the client. | Should match the protocol used at the edge.                          |
 | `X-Forwarded-Host`  | Identifies the original host requested by the client.       | Should match the original `Host` header.                             |
 
+### Trusting Proxies
+
+The Approvio backend must be configured to trust the proxy headers (such as `X-Forwarded-For`) so that client IP addresses are resolved correctly for rate limiting and auditing.
+
+Configure this by setting the `TRUST_PROXY` environment variable on the application container. The value can be the IP address/CIDR of your trusted proxy, or a comma-separated list. Note that setting this to an empty string is treated as an invalid configuration and will cause the application to fail to start.
+
 > [!CAUTION]
 > **WAF/Proxy Spoofing Prevention**:
 > Ensure that your edge reverse proxy strips or overrides any client-supplied `X-Forwarded-For` headers before forwarding the request. Clients must not be allowed to spoof their IP by sending custom forwarding headers.
