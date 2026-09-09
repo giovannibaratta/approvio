@@ -1,40 +1,21 @@
-import {Inject} from "@nestjs/common"
-import {
-  EnqueueRecalculationError,
-  EnqueueWorkflowActionError,
-  EnqueueWorkflowStatusChangedError,
-  QUEUE_PROVIDER_TOKEN,
-  QueueProvider
-} from "./interface"
+import {Injectable, Inject} from "@nestjs/common"
+import {TenantEvent} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
-import {
-  WorkflowActionEmailEvent,
-  WorkflowActionWebhookEvent,
-  WorkflowActionSlackEvent,
-  WorkflowStatusChangedEvent
-} from "@domain"
+import {EnqueueTenantEventError, QUEUE_PROVIDER_TOKEN, QueueProvider} from "./interface"
 
+/**
+ * The queue is a transport for already-durable tenant events. Callers must
+ * append an outbox record in their transaction before asking a relay to call
+ * this service; it is not a business-operation side effect.
+ */
+@Injectable()
 export class QueueService {
   constructor(
     @Inject(QUEUE_PROVIDER_TOKEN)
     private readonly queueProvider: QueueProvider
   ) {}
 
-  enqueueWorkflowStatusRecalculation(workflowId: string): TaskEither<EnqueueRecalculationError, void> {
-    return this.queueProvider.enqueueWorkflowStatusRecalculation(workflowId)
-  }
-
-  enqueueWorkflowStatusRecalculationBulk(workflowIds: string[]): TaskEither<EnqueueRecalculationError, void> {
-    return this.queueProvider.enqueueWorkflowStatusRecalculationBulk(workflowIds)
-  }
-
-  enqueueWorkflowStatusChanged(event: WorkflowStatusChangedEvent): TaskEither<EnqueueWorkflowStatusChangedError, void> {
-    return this.queueProvider.enqueueWorkflowStatusChanged(event)
-  }
-
-  enqueueWorkflowAction(
-    event: WorkflowActionEmailEvent | WorkflowActionWebhookEvent | WorkflowActionSlackEvent
-  ): TaskEither<EnqueueWorkflowActionError, void> {
-    return this.queueProvider.enqueueWorkflowAction(event)
+  enqueue(event: TenantEvent): TaskEither<EnqueueTenantEventError, void> {
+    return this.queueProvider.enqueue(event)
   }
 }

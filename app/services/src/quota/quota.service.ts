@@ -11,11 +11,12 @@ import {
   TierQuotaLimit,
   Node,
   isQuotaTypeApplicableTo,
-  TIER_DEFAULTS
+  TIER_DEFAULTS,
+  TenantContext,
+  createEntityReference
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {ConfigProvider} from "@external/config"
-import {DEFAULT_ORG_ID} from "../constants"
 import {
   QuotaRepository,
   QUOTA_REPOSITORY_TOKEN,
@@ -44,6 +45,7 @@ import {validateUserEntity} from "@services/shared/types"
 import {HierarchyService} from "../hierarchy/hierarchy.service"
 import {USER_REPOSITORY_TOKEN, UserRepository} from "../user/interfaces"
 import {VOTE_REPOSITORY_TOKEN, VoteRepository} from "../vote/interfaces"
+import {TRANSACTION_MANAGER_TOKEN, TransactionManager} from "../transaction/interfaces"
 
 @Injectable()
 export class QuotaService {
@@ -57,7 +59,8 @@ export class QuotaService {
     @Inject(USER_REPOSITORY_TOKEN) private readonly userRepo: UserRepository,
     @Inject(VOTE_REPOSITORY_TOKEN) private readonly voteRepo: VoteRepository,
     private readonly hierarchyService: HierarchyService,
-    private readonly configProvider: ConfigProvider
+    private readonly configProvider: ConfigProvider,
+    @Inject(TRANSACTION_MANAGER_TOKEN) private readonly txManager: TransactionManager
   ) {}
 
   /**
@@ -72,11 +75,12 @@ export class QuotaService {
    */
 
   private getQuota(
+    context: TenantContext,
     targetNode: Node,
     quotaType: SupportedQuotaType
   ): TE.TaskEither<QuotaGetError, Versioned<Quota> | undefined> {
     return pipe(
-      this.hierarchyService.getParents(targetNode),
+      this.hierarchyService.getParents(targetNode, context),
       // Build the entire chain for which a quota could be potentially returned
       TE.map(parents => [targetNode, ...parents]),
       TE.mapLeft(() => "quota_unknown_error" as const),
@@ -95,7 +99,7 @@ export class QuotaService {
                   TE.mapLeft(() => "quota_unknown_error" as const),
                   TE.chain(identifier =>
                     pipe(
-                      this.quotaRepo.getQuota(identifier),
+                      this.quotaRepo.getQuota(context, identifier),
                       TE.orElse(error => (error === "quota_not_found" ? TE.right(undefined) : TE.left(error)))
                     )
                   )
@@ -132,6 +136,7 @@ export class QuotaService {
     quotaType: SupportedQuotaType,
     amount: number = 1
   ): TE.TaskEither<QuotaCheckError, boolean> {
+    // TODO: If tenant context is required why the fuck the attribute is optional ?
     return pipe(
       quotaType,
       TE.fromPredicate(
@@ -150,34 +155,36 @@ export class QuotaService {
     )
   }
 
-  private getUsage(target: Node, quotaType: SupportedQuotaType): TE.TaskEither<QuotaUsageError, number> {
+  private getUsage(
+    context: TenantContext,
+    target: Node,
+    quotaType: SupportedQuotaType
+  ): TE.TaskEither<QuotaUsageError, number> {
     switch (quotaType) {
       case "MAX_GROUPS":
-        // TODO(long-term): Org quotaType do not use target because we don't have multi org support yet
-        return this.groupRepo.countGroups()
+        return this.groupRepo.countGroups(context)
       case "MAX_SPACES":
-        // TODO(long-term): Org quotaType do not use target because we don't have multi org support yet
-        return this.spaceRepo.countSpaces()
+        return this.spaceRepo.countSpaces(context)
       case "MAX_WORKFLOW_TEMPLATES_PER_SPACE":
-        return this.workflowTemplateRepo.countUniqueWorkflowTemplatesBySpaceId(target.identifier)
+        return this.workflowTemplateRepo.countUniqueWorkflowTemplatesBySpaceId(context, target.identifier)
       case "MAX_ENTITIES_PER_GROUP":
         return pipe(
           sequenceT(TE.ApplyPar)(
-            this.groupMembershipRepo.countUserMembersByGroupId(target.identifier),
-            this.groupMembershipRepo.countAgentMembersByGroupId(target.identifier)
+            this.groupMembershipRepo.countUserMembersByGroupId(context, target.identifier),
+            this.groupMembershipRepo.countAgentMembersByGroupId(context, target.identifier)
           ),
           TE.map(([users, agents]) => users + agents)
         )
       case "MAX_CONCURRENT_WORKFLOWS":
-        return this.workflowRepo.countActiveWorkflowsByTemplateId(target.identifier)
+        return this.workflowRepo.countActiveWorkflowsByTemplateId(context, target.identifier)
       case "MAX_ROLES_PER_USER":
         return pipe(
-          this.userRepo.getUserById(target.identifier),
+          this.userRepo.getUserById(context, target.identifier),
           TE.map(user => user.roles.length)
         )
       case "MAX_VOTES_PER_WORKFLOW":
         return pipe(
-          this.voteRepo.getVotesByWorkflowId(target.identifier),
+          this.voteRepo.getVotesByWorkflowId(context, target.identifier),
           TE.map(votes => votes.length)
         )
       case "MAX_LLM_TOKENS_PER_MONTH":
@@ -188,8 +195,7 @@ export class QuotaService {
     }
   }
 
-  getQuotaById(id: string): TE.TaskEither<QuotaGetError, Versioned<Quota>> {
-    return this.quotaRepo.getQuotaById(id)
+    // TODO: Why do we neex the txManager ?
   }
 
   createQuota(
@@ -255,11 +261,11 @@ export class QuotaService {
     const userResult = validateUserEntity(requestor)
     if (E.isLeft(userResult)) return TE.left("requestor_not_authorized" as const)
 
-    // TODO(long-term): once multi-org support is implemented, orgId should be looked up dynamically
-    if (orgId !== DEFAULT_ORG_ID) return TE.left("quota_not_found" as const)
-
     return pipe(
-      this.quotaRepo.listQuotas(1, ALL_SUPPORTED_QUOTA_TYPES.length, {nodeType: "Org", nodeIdentifier: orgId}),
+      this.quotaRepo.listQuotas({organizationId: orgId}, 1, ALL_SUPPORTED_QUOTA_TYPES.length, {
+        nodeType: "Org",
+        nodeIdentifier: orgId
+      }),
       TE.map(result => {
         const overrides = new Map<string, number>()
         for (const item of result.items) overrides.set(item.quotaType, item.limit)

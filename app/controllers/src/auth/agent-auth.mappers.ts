@@ -121,8 +121,6 @@ export const generateErrorResponseForChallengeRequest = (
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: agent not found`))
     case "agent_key_decode_error":
     case "agent_invalid_uuid":
-    case "agent_challenge_agent_name_empty":
-    case "agent_challenge_agent_name_invalid":
     case "agent_challenge_invalid_uuid":
     case "agent_challenge_nonce_empty":
     case "agent_challenge_nonce_invalid_length":
@@ -159,6 +157,9 @@ export const generateErrorResponseForChallengeRequest = (
     case "request_invalid_agent_name":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid agent name`))
   }
+
+  // TODO: No default case
+  return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
 }
 
 /**
@@ -185,8 +186,6 @@ export const generateErrorResponseForAgentTokenExchange = (
     case "agent_challenge_invalid_issuer":
     case "agent_challenge_invalid_agent_ownership":
     case "agent_challenge_invalid_uuid":
-    case "agent_challenge_agent_name_empty":
-    case "agent_challenge_agent_name_invalid":
     case "agent_challenge_nonce_empty":
     case "agent_challenge_nonce_invalid_length":
     case "agent_challenge_expire_before_creation":
@@ -216,8 +215,6 @@ export const generateErrorResponseForAgentTokenExchange = (
     case "refresh_token_expire_before_create":
     case "refresh_token_invalid_agent_id":
     case "refresh_token_invalid_created_at":
-    case "refresh_token_invalid_dpop_jkt":
-    case "refresh_token_invalid_entity_type":
     case "refresh_token_invalid_expires_at":
     case "refresh_token_invalid_family_id":
     case "refresh_token_invalid_id":
@@ -225,10 +222,6 @@ export const generateErrorResponseForAgentTokenExchange = (
     case "refresh_token_invalid_status":
     case "refresh_token_invalid_token_hash":
     case "refresh_token_invalid_used_at":
-    case "refresh_token_invalid_user_id":
-    case "refresh_token_missing_entity_id":
-    case "refresh_token_missing_entity_type":
-    case "refresh_token_missing_provider_id":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_name_cannot_be_uuid":
@@ -260,4 +253,7 @@ export const generateErrorResponseForAgentTokenExchange = (
     case "agent_challenge_jwt_not_yet_valid":
       return new UnprocessableEntityException(generateErrorPayload(errorCode, `${context}: JWT assertion time invalid`))
   }
+
+  // TODO: No default case
+  return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
 }

@@ -6,6 +6,7 @@ const EMAIL_REGEX = new RegExp(
 )
 
 export const isUUIDv7 = (value: string): boolean => value.match(UUID_REGEX) !== null
+// TODO: WTF does this mean ? We control the UUID generator, no ?
 
 export const isEmail = (value: string): boolean => EMAIL_REGEX.test(value)
 

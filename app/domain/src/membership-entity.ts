@@ -33,6 +33,10 @@ export function getMembershipEntityType(entity: MembershipEntity): MembershipEnt
   return entity.type
 }
 
+export function getMembershipEntityOrganizationId(entity: MembershipEntity): string {
+  return entity.type === "user" ? entity.user.organizationId : entity.agent.organizationId
+}
+
 /**
  * Returns a normalized unique identifier for the entity across all entity types.
  * Format: "type:id" where type is the entity type and id is the actual entity id.

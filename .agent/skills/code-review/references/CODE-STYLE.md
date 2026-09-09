@@ -18,3 +18,5 @@ Guidelines for writing clean, maintainable, and idiomatic Approvio code.
 - **Interfaces**: Place interfaces at the end of the file if they are primarily used to define implementation details of the classes in that same file.
 - **Casting**: Never cast to `unknown`. Avoid `any`. Use proper types or `TODO` for humans if the types are too complex.
 - **Discriminated Unions**: In discriminated union variants, omit non-applicable properties instead of typing them as optional `never` (e.g. avoid `prop?: never`). Enforce explicit type-narrowing through domain type guards (e.g., `isUserToken(token)`) or discriminator checks (`entityType === EntityType.USER`) rather than allowing nullable property probing.
+- **Domain Object Instantiation (Branded Types)**: To prevent direct instantiation of domain entities without validation, use nominal/branded types (via a private `unique symbol`). Only the domain factory should apply the brand tag upon successful validation, making it a compile-time error for other layers to instantiate the domain type directly from object literals.
+

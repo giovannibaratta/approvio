@@ -1,64 +1,40 @@
-import {
-  createSha256Hash,
-  DecorableEntity,
-  GeneratorSelector,
-  getStringAsEnum,
-  hasOwnProperty,
-  isDecoratedWith,
-  isObject,
-  isUUIDv7,
-  PrefixUnion
-} from "@utils"
+import {createSha256Hash, getStringAsEnum, hasOwnProperty, isObject, isUUIDv7, PrefixUnion} from "@utils"
+import {Either, left, right} from "fp-ts/Either"
 import * as E from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
-
-import {User} from "./user"
-import {Agent} from "./agent"
-import {EntityType} from "./entityType"
 import {v7 as uuidv7} from "uuid"
 
-/**
- * Refresh token status enum
- */
+import {Agent} from "./agent"
+import {TenantContext, Versioned} from "./shared"
+
 export enum RefreshTokenStatus {
   ACTIVE = "active",
   USED = "used",
   REVOKED = "revoked"
 }
 
-/**
- * Validation errors for refresh tokens
- */
 export type RefreshTokenValidationError = PrefixUnion<
   "refresh_token",
-  | "expire_before_create"
-  | "invalid_agent_id"
-  | "invalid_created_at"
-  | "invalid_dpop_jkt"
-  | "invalid_entity_type"
-  | "invalid_expires_at"
-  | "invalid_family_id"
-  | "invalid_id"
-  | "invalid_next_token_id"
-  | "invalid_status"
   | "invalid_structure"
+  | "invalid_id"
   | "invalid_token_hash"
+  | "invalid_family_id"
+  | "invalid_account_id"
+  | "invalid_session_id"
+  | "invalid_provider_connection_id"
+  | "invalid_organization_id"
+  | "invalid_agent_id"
+  | "invalid_status"
+  | "invalid_created_at"
+  | "invalid_expires_at"
+  | "expire_before_create"
   | "invalid_used_at"
-  | "invalid_user_id"
-  | "missing_entity_id"
-  | "missing_entity_type"
-  | "missing_provider_id"
   | "used_before_create"
+  | "invalid_next_token_id"
   | "missing_occ"
 >
 
-/**
- * Base refresh token interface with common fields
- */
 interface RefreshTokenBase {
-  /**
-   * Unique identifier for the token
-   */
   readonly id: string
   /**
    * Hash of the token value. The token value is not stored in the persistence layer,
@@ -71,71 +47,50 @@ interface RefreshTokenBase {
    * other sessions.
    */
   readonly familyId: string
-  /**
-   * Expiration date of the token
-   */
   readonly expiresAt: Date
-  /**
-   * Creation date of the token
-   */
   readonly createdAt: Date
 }
 
-interface UserProps {
-  readonly entityType: EntityType.USER
-  readonly userId: string
-  readonly providerId: string
+export interface AccountRefreshTokenIdentity {
+  readonly kind: "account"
+  readonly accountId: string
+  readonly sessionId: string
+  readonly providerConnectionId: string
 }
 
-interface AgentProps {
-  readonly entityType: EntityType.AGENT
+export interface AgentRefreshTokenIdentity extends TenantContext {
+  readonly kind: "agent"
   readonly agentId: string
 }
 
-export interface ActiveStatusProps {
+export interface ActiveRefreshTokenStatus {
   readonly status: RefreshTokenStatus.ACTIVE
 }
 
-export interface UsedStatusProps {
+export interface UsedRefreshTokenStatus {
   readonly status: RefreshTokenStatus.USED
   readonly usedAt: Date
   readonly nextTokenId: string
 }
 
-export interface RevokedStatusProps {
+export interface RevokedRefreshTokenStatus {
   readonly status: RefreshTokenStatus.REVOKED
 }
 
-export interface RefreshTokenDecorators {
-  occ: bigint
-}
+type RefreshTokenState = ActiveRefreshTokenStatus | UsedRefreshTokenStatus | RevokedRefreshTokenStatus
 
-export type RefreshTokenDecoratorSelector = GeneratorSelector<RefreshTokenDecorators>
+export type AccountRefreshToken = RefreshTokenBase & AccountRefreshTokenIdentity & RefreshTokenState
+export type AgentRefreshToken = RefreshTokenBase & AgentRefreshTokenIdentity & RefreshTokenState
+export type RefreshToken = AccountRefreshToken | AgentRefreshToken
 
-export type DecoratedRefreshToken<T extends RefreshTokenDecoratorSelector> = DecorableEntity<
-  RefreshToken,
-  RefreshTokenDecorators,
-  T
->
-
-export type DecoratedActiveUserRefreshToken<T extends RefreshTokenDecoratorSelector> = DecoratedRefreshToken<T> &
-  ActiveUserRefreshToken
-export type DecoratedActiveAgentRefreshToken<T extends RefreshTokenDecoratorSelector> = DecoratedRefreshToken<T> &
-  ActiveAgentRefreshToken
-
-export type RefreshToken = RefreshTokenBase & EntityProps & StatusProps
-
-type StatusProps = ActiveStatusProps | UsedStatusProps | RevokedStatusProps
-type EntityProps = UserProps | AgentProps
-
-type AgentRefreshToken = RefreshToken & AgentProps
-type UserRefreshToken = RefreshToken & UserProps
-type ActiveUserRefreshToken = UserRefreshToken & ActiveStatusProps
-type ActiveAgentRefreshToken = AgentRefreshToken & ActiveStatusProps
-type UsedRefreshToken = RefreshToken & UsedStatusProps
-type RevokedRefreshToken = RefreshToken & RevokedStatusProps
-export type UsedUserRefreshToken = UsedRefreshToken & UserProps
-export type UsedAgentRefreshToken = UsedRefreshToken & AgentProps
+export type ActiveAccountRefreshToken = AccountRefreshToken & ActiveRefreshTokenStatus
+export type ActiveAgentRefreshToken = AgentRefreshToken & ActiveRefreshTokenStatus
+export type UsedAccountRefreshToken = AccountRefreshToken & UsedRefreshTokenStatus
+export type UsedAgentRefreshToken = AgentRefreshToken & UsedRefreshTokenStatus
+export type VersionedAccountRefreshToken = Versioned<AccountRefreshToken>
+export type VersionedAgentRefreshToken = Versioned<AgentRefreshToken>
+export type VersionedActiveAccountRefreshToken = Versioned<ActiveAccountRefreshToken>
+export type VersionedActiveAgentRefreshToken = Versioned<ActiveAgentRefreshToken>
 
 /**
  * Grace period for token reuse detection after the expiration date.
@@ -146,436 +101,232 @@ export type UsedAgentRefreshToken = UsedRefreshToken & AgentProps
 export const GRACE_PERIOD_SECONDS = 30
 export const REFRESH_TOKEN_EXPIRY_DAYS = 30
 
-/**
- * Factory class for creating and validating refresh tokens
- */
-export class RefreshTokenFactory {
-  /**
-   * Create a new user refresh token
-   */
-  static createForUser(
-    user: User,
-    providerId: string,
+type GeneratedTokenBase = RefreshTokenBase & {readonly tokenValue: string}
+
+function generateTokenBase(familyIdOverride?: string): GeneratedTokenBase {
+  const now = new Date()
+  const tokenValue = uuidv7()
+
+  return {
+    id: uuidv7(),
+    tokenHash: createSha256Hash(tokenValue),
+    familyId: familyIdOverride ?? uuidv7(),
+    expiresAt: new Date(now.getTime() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000),
+    createdAt: now,
+    tokenValue
+  }
+}
+
+function validateBase(data: Record<string, unknown>): Either<RefreshTokenValidationError, RefreshTokenBase> {
+  if (!hasOwnProperty(data, "id") || typeof data.id !== "string" || !isUUIDv7(data.id))
+    return left("refresh_token_invalid_id")
+  if (!hasOwnProperty(data, "tokenHash") || typeof data.tokenHash !== "string" || data.tokenHash.length === 0)
+    return left("refresh_token_invalid_token_hash")
+  if (!hasOwnProperty(data, "familyId") || typeof data.familyId !== "string" || !isUUIDv7(data.familyId))
+    return left("refresh_token_invalid_family_id")
+  if (!hasOwnProperty(data, "createdAt") || !(data.createdAt instanceof Date))
+    return left("refresh_token_invalid_created_at")
+  if (!hasOwnProperty(data, "expiresAt") || !(data.expiresAt instanceof Date))
+    return left("refresh_token_invalid_expires_at")
+  if (data.expiresAt < data.createdAt) return left("refresh_token_expire_before_create")
+
+  return right({
+    id: data.id,
+    tokenHash: data.tokenHash,
+    familyId: data.familyId,
+    createdAt: data.createdAt,
+    expiresAt: data.expiresAt
+  })
+}
+
+function validateState(
+  data: Record<string, unknown>,
+  createdAt: Date
+): Either<RefreshTokenValidationError, RefreshTokenState> {
+  if (!hasOwnProperty(data, "status") || typeof data.status !== "string") return left("refresh_token_invalid_status")
+
+  const status = getStringAsEnum(data.status, RefreshTokenStatus)
+  if (status === undefined) return left("refresh_token_invalid_status")
+  if (status === RefreshTokenStatus.ACTIVE) return right({status: RefreshTokenStatus.ACTIVE})
+  if (status === RefreshTokenStatus.REVOKED) return right({status: RefreshTokenStatus.REVOKED})
+  if (!hasOwnProperty(data, "usedAt") || !(data.usedAt instanceof Date)) return left("refresh_token_invalid_used_at")
+  if (data.usedAt < createdAt) return left("refresh_token_used_before_create")
+  if (!hasOwnProperty(data, "nextTokenId") || typeof data.nextTokenId !== "string" || !isUUIDv7(data.nextTokenId))
+    return left("refresh_token_invalid_next_token_id")
+
+  return right({status: RefreshTokenStatus.USED, usedAt: data.usedAt, nextTokenId: data.nextTokenId})
+}
+
+function validateOcc(data: Record<string, unknown>): Either<RefreshTokenValidationError, bigint> {
+  return hasOwnProperty(data, "occ") && typeof data.occ === "bigint"
+    ? right(data.occ)
+    : left("refresh_token_missing_occ")
+}
+
+export class AccountRefreshTokenFactory {
+  static create(
+    accountId: string,
+    sessionId: string,
+    providerConnectionId: string,
     familyId?: string
-  ): E.Either<RefreshTokenValidationError, DecoratedActiveUserRefreshToken<{occ: true}> & {tokenValue: string}> {
-    const {tokenValue, ...tokenBaseProps} = RefreshTokenFactory.generateTokenBaseProps(familyId)
-
-    const token: ActiveUserRefreshToken = {
-      ...tokenBaseProps,
-      entityType: EntityType.USER,
-      userId: user.id,
-      providerId,
-      status: RefreshTokenStatus.ACTIVE
+  ): Either<RefreshTokenValidationError, VersionedActiveAccountRefreshToken & {readonly tokenValue: string}> {
+    const {tokenValue, ...base} = generateTokenBase(familyId)
+    const token: VersionedActiveAccountRefreshToken = {
+      ...base,
+      kind: "account",
+      accountId,
+      sessionId,
+      providerConnectionId,
+      status: RefreshTokenStatus.ACTIVE,
+      occ: 0n
     }
-
+    const validated = this.validateVersioned(token)
     return pipe(
-      {...token, occ: 0n},
-      t => RefreshTokenFactory.validate(t),
-      E.map((t): DecoratedActiveUserRefreshToken<{occ: true}> & {tokenValue: string} => {
-        return {
-          ...(t as DecoratedActiveUserRefreshToken<{occ: true}>),
-          tokenValue
-        }
-      })
+      validated,
+      E.map(() => ({...token, tokenValue}))
     )
   }
 
-  /**
-   * Create a new agent refresh token
-   */
-  static createForAgent(
+  static validate(data: unknown): Either<RefreshTokenValidationError, AccountRefreshToken> {
+    if (!isObject(data)) return left("refresh_token_invalid_structure")
+    const base = validateBase(data)
+    if (base._tag === "Left") return base
+    const state = validateState(data, base.right.createdAt)
+    if (state._tag === "Left") return state
+    if (data.kind !== "account") return left("refresh_token_invalid_structure")
+    if (!hasOwnProperty(data, "accountId") || typeof data.accountId !== "string" || !isUUIDv7(data.accountId))
+      return left("refresh_token_invalid_account_id")
+    if (!hasOwnProperty(data, "sessionId") || typeof data.sessionId !== "string" || !isUUIDv7(data.sessionId))
+      return left("refresh_token_invalid_session_id")
+    if (
+      !hasOwnProperty(data, "providerConnectionId") ||
+      typeof data.providerConnectionId !== "string" ||
+      !isUUIDv7(data.providerConnectionId)
+    )
+      return left("refresh_token_invalid_provider_connection_id")
+
+    return right({
+      ...base.right,
+      ...state.right,
+      kind: "account",
+      accountId: data.accountId,
+      sessionId: data.sessionId,
+      providerConnectionId: data.providerConnectionId
+    })
+  }
+
+  static validateVersioned(data: unknown): Either<RefreshTokenValidationError, VersionedAccountRefreshToken> {
+    if (!isObject(data)) return left("refresh_token_invalid_structure")
+    return pipe(
+      this.validate(data),
+      E.chain(token =>
+        pipe(
+          validateOcc(data),
+          E.map(occ => ({...token, occ}))
+        )
+      )
+    )
+  }
+
+  static markAsUsed(
+    token: AccountRefreshToken,
+    nextTokenId: string,
+    usedAt = new Date()
+  ): Either<RefreshTokenValidationError, UsedAccountRefreshToken> {
+    const candidate: UsedAccountRefreshToken = {...token, status: RefreshTokenStatus.USED, usedAt, nextTokenId}
+    return pipe(
+      AccountRefreshTokenFactory.validate(candidate),
+      E.map(() => candidate)
+    )
+  }
+}
+
+export class AgentRefreshTokenFactory {
+  static create(
     agent: Agent,
     familyId?: string
-  ): E.Either<RefreshTokenValidationError, DecoratedActiveAgentRefreshToken<{occ: true}> & {tokenValue: string}> {
-    const {tokenValue, ...tokenBaseProps} = RefreshTokenFactory.generateTokenBaseProps(familyId)
-
-    const token: ActiveAgentRefreshToken = {
-      ...tokenBaseProps,
-      entityType: EntityType.AGENT,
+  ): Either<RefreshTokenValidationError, VersionedActiveAgentRefreshToken & {readonly tokenValue: string}> {
+    const {tokenValue, ...base} = generateTokenBase(familyId)
+    const token: VersionedActiveAgentRefreshToken = {
+      ...base,
+      kind: "agent",
+      organizationId: agent.organizationId,
       agentId: agent.id,
-      status: RefreshTokenStatus.ACTIVE
+      status: RefreshTokenStatus.ACTIVE,
+      occ: 0n
     }
-
+    const validated = this.validateVersioned(token)
     return pipe(
-      {...token, occ: 0n},
-      E.right,
-      E.chainW(data => RefreshTokenFactory.validate(data, {occ: true})),
-      E.map(t => {
-        return {
-          ...(t as DecoratedActiveAgentRefreshToken<{occ: true}>),
-          tokenValue
-        }
-      })
+      validated,
+      E.map(() => ({...token, tokenValue}))
     )
   }
 
-  private static generateTokenBaseProps(familyIdOverride?: string): {tokenValue: string} & RefreshTokenBase {
-    const id = uuidv7()
-    const familyId = familyIdOverride ?? uuidv7()
-    const tokenValue = uuidv7()
-    const tokenHash = createSha256Hash(tokenValue)
-    const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
-
-    return {
-      createdAt: new Date(),
-      expiresAt,
-      familyId,
-      id,
-      tokenHash,
-      tokenValue
-    }
-  }
-
-  /**
-   * Validate a refresh token
-   */
-  static validate<T extends RefreshTokenDecoratorSelector>(
-    data: unknown,
-    selectors?: T
-  ): E.Either<RefreshTokenValidationError, DecoratedRefreshToken<T>> {
-    if (!isObject(data)) return E.left("refresh_token_invalid_structure" as const)
-
-    const commonFields = RefreshTokenFactory.validateCommonFields(data)
-    if (E.isLeft(commonFields)) return commonFields
-
-    const {status, entityType, ...base} = commonFields.right
-
-    const eitherStatusProps = RefreshTokenFactory.validateStatusProps({
-      ...data,
-      ...base,
-      status
-    })
-
-    const eitherEntityProps = RefreshTokenFactory.validateEntityProps({
-      ...data,
-      ...base,
-      entityType
-    })
-
-    if (E.isLeft(eitherStatusProps)) return eitherStatusProps
-    if (E.isLeft(eitherEntityProps)) return eitherEntityProps
-
-    const undecorated: RefreshToken = {
-      ...data,
-      ...base,
-      ...eitherStatusProps.right,
-      ...eitherEntityProps.right
-    }
-
-    let occ: bigint | undefined = undefined
-    if (selectors?.occ) {
-      if (
-        !isDecoratedRefreshToken(undecorated, "occ", {
-          occ: true
-        })
-      )
-        return E.left("refresh_token_missing_occ")
-
-      occ = undecorated.occ
-    }
-
-    return E.right({
-      ...undecorated,
-      ...(occ !== undefined && {occ})
-    })
-  }
-
-  private static validateCommonFields(
-    data: Record<string, unknown>
-  ): E.Either<RefreshTokenValidationError, RefreshTokenBase & {status: RefreshTokenStatus; entityType: EntityType}> {
-    if (!hasOwnProperty(data, "id") || typeof data.id !== "string" || !isUUIDv7(data.id))
-      return E.left("refresh_token_invalid_id")
-
-    if (!hasOwnProperty(data, "familyId") || typeof data.familyId !== "string" || !isUUIDv7(data.familyId))
-      return E.left("refresh_token_invalid_family_id")
-
-    if (!hasOwnProperty(data, "tokenHash") || typeof data.tokenHash !== "string" || data.tokenHash.length === 0)
-      return E.left("refresh_token_invalid_token_hash")
-
-    const status = RefreshTokenFactory.parseStatus(data)
-    if (E.isLeft(status)) return status
-
-    const entityType = RefreshTokenFactory.parseEntityType(data)
-    if (E.isLeft(entityType)) return entityType
-
-    if (!hasOwnProperty(data, "expiresAt") || !(data.expiresAt instanceof Date))
-      return E.left("refresh_token_invalid_expires_at")
-
-    if (!hasOwnProperty(data, "createdAt") || !(data.createdAt instanceof Date))
-      return E.left("refresh_token_invalid_created_at")
-
-    if (data.expiresAt < data.createdAt) return E.left("refresh_token_expire_before_create")
-
-    return E.right({
-      id: data.id,
-      tokenHash: data.tokenHash,
-      familyId: data.familyId,
-      expiresAt: data.expiresAt,
-      createdAt: data.createdAt,
-      status: status.right,
-      entityType: entityType.right
-    })
-  }
-
-  private static parseStatus(data: Record<string, unknown>): E.Either<RefreshTokenValidationError, RefreshTokenStatus> {
-    if (!hasOwnProperty(data, "status") || typeof data.status !== "string")
-      return E.left("refresh_token_invalid_status")
-
-    const status = getStringAsEnum(data.status, RefreshTokenStatus)
-    if (status === undefined) return E.left("refresh_token_invalid_status")
-
-    return E.right(status)
-  }
-
-  private static parseEntityType(data: Record<string, unknown>): E.Either<RefreshTokenValidationError, EntityType> {
-    if (!hasOwnProperty(data, "entityType") || typeof data.entityType !== "string")
-      return E.left("refresh_token_missing_entity_type")
-
-    const entityType = getStringAsEnum(data.entityType, EntityType)
-    if (entityType === undefined) return E.left("refresh_token_invalid_entity_type")
-
-    return E.right(entityType)
-  }
-
-  private static validateStatusProps(
-    data: RefreshTokenBase & {status: RefreshTokenStatus}
-  ): E.Either<RefreshTokenValidationError, StatusProps> {
-    let eitherStatusProps: E.Either<RefreshTokenValidationError, StatusProps>
-
-    switch (data.status) {
-      case RefreshTokenStatus.ACTIVE:
-        eitherStatusProps = RefreshTokenFactory.validateActiveStatusProps({
-          ...data,
-          status: RefreshTokenStatus.ACTIVE
-        })
-        break
-      case RefreshTokenStatus.USED:
-        eitherStatusProps = RefreshTokenFactory.validateUsedStatusProps({
-          ...data,
-          status: RefreshTokenStatus.USED
-        })
-        break
-      case RefreshTokenStatus.REVOKED:
-        eitherStatusProps = RefreshTokenFactory.validateRevokedStatusProps({
-          ...data,
-          status: RefreshTokenStatus.REVOKED
-        })
-        break
-    }
-
-    return eitherStatusProps
-  }
-
-  private static validateActiveStatusProps(data: {
-    status: RefreshTokenStatus.ACTIVE
-  }): E.Either<RefreshTokenValidationError, ActiveStatusProps> {
-    if (typeof data !== "object" || data === null) return E.left("refresh_token_invalid_structure" as const)
-
-    return E.right({
-      status: RefreshTokenStatus.ACTIVE
-    })
-  }
-
-  private static validateUsedStatusProps(
-    data: RefreshTokenBase & {status: RefreshTokenStatus.USED}
-  ): E.Either<RefreshTokenValidationError, UsedStatusProps> {
-    if (typeof data !== "object" || data === null) return E.left("refresh_token_invalid_structure" as const)
-
-    if (!hasOwnProperty(data, "usedAt") || !(data.usedAt instanceof Date))
-      return E.left("refresh_token_invalid_used_at")
-
-    if (data.usedAt < data.createdAt) return E.left("refresh_token_used_before_create")
-
-    if (!hasOwnProperty(data, "nextTokenId") || typeof data.nextTokenId !== "string" || !isUUIDv7(data.nextTokenId))
-      return E.left("refresh_token_invalid_next_token_id")
-
-    return E.right({
-      status: RefreshTokenStatus.USED,
-      usedAt: data.usedAt,
-      nextTokenId: data.nextTokenId
-    })
-  }
-
-  private static validateRevokedStatusProps(data: {
-    status: RefreshTokenStatus.REVOKED
-  }): E.Either<RefreshTokenValidationError, RevokedStatusProps> {
-    if (typeof data !== "object" || data === null) return E.left("refresh_token_invalid_structure" as const)
-
-    return E.right({
-      status: RefreshTokenStatus.REVOKED
-    })
-  }
-
-  private static validateEntityProps(
-    data: RefreshTokenBase & {entityType: EntityType}
-  ): E.Either<RefreshTokenValidationError, EntityProps> {
-    let eitherEntityProps: E.Either<RefreshTokenValidationError, EntityProps>
-
-    switch (data.entityType) {
-      case EntityType.USER:
-        eitherEntityProps = RefreshTokenFactory.validateUserEntityProps({
-          ...data,
-          entityType: EntityType.USER
-        })
-        break
-      case EntityType.AGENT:
-        eitherEntityProps = RefreshTokenFactory.validateAgentEntityProps({
-          ...data,
-          entityType: EntityType.AGENT
-        })
-        break
-    }
-
-    return eitherEntityProps
-  }
-
-  private static validateUserEntityProps(
-    data: RefreshTokenBase & {entityType: EntityType.USER}
-  ): E.Either<RefreshTokenValidationError, UserProps> {
-    if (typeof data !== "object" || data === null) return E.left("refresh_token_invalid_structure" as const)
-
-    if (!hasOwnProperty(data, "userId") || typeof data.userId !== "string" || !isUUIDv7(data.userId))
-      return E.left("refresh_token_invalid_user_id")
-
-    if (!hasOwnProperty(data, "providerId") || typeof data.providerId !== "string" || data.providerId.length === 0)
-      return E.left("refresh_token_missing_provider_id")
-
-    return E.right({
-      entityType: EntityType.USER,
-      userId: data.userId,
-      providerId: data.providerId
-    })
-  }
-
-  private static validateAgentEntityProps(
-    data: RefreshTokenBase & {entityType: EntityType.AGENT}
-  ): E.Either<RefreshTokenValidationError, AgentProps> {
-    if (typeof data !== "object" || data === null) return E.left("refresh_token_invalid_structure" as const)
-
+  static validate(data: unknown): Either<RefreshTokenValidationError, AgentRefreshToken> {
+    if (!isObject(data)) return left("refresh_token_invalid_structure")
+    const base = validateBase(data)
+    if (base._tag === "Left") return base
+    const state = validateState(data, base.right.createdAt)
+    if (state._tag === "Left") return state
+    if (data.kind !== "agent") return left("refresh_token_invalid_structure")
+    if (
+      !hasOwnProperty(data, "organizationId") ||
+      typeof data.organizationId !== "string" ||
+      !isUUIDv7(data.organizationId)
+    )
+      return left("refresh_token_invalid_organization_id")
     if (!hasOwnProperty(data, "agentId") || typeof data.agentId !== "string" || !isUUIDv7(data.agentId))
-      return E.left("refresh_token_invalid_agent_id")
+      return left("refresh_token_invalid_agent_id")
 
-    return E.right({
-      entityType: EntityType.AGENT,
+    return right({
+      ...base.right,
+      ...state.right,
+      kind: "agent",
+      organizationId: data.organizationId,
       agentId: data.agentId
     })
   }
 
-  /**
-   * Mark a token as used
-   */
-  static markAsUsed(token: RefreshToken, nextTokenId: string): E.Either<RefreshTokenValidationError, UsedRefreshToken> {
-    const updatedToken: UsedRefreshToken = {
-      ...token,
-      status: RefreshTokenStatus.USED,
-      usedAt: new Date(),
-      nextTokenId
-    }
-
-    const validated = RefreshTokenFactory.validate(updatedToken)
-
-    if (E.isLeft(validated)) return validated
-
-    return E.right(updatedToken)
+  static validateVersioned(data: unknown): Either<RefreshTokenValidationError, VersionedAgentRefreshToken> {
+    if (!isObject(data)) return left("refresh_token_invalid_structure")
+    return pipe(
+      this.validate(data),
+      E.chain(token =>
+        pipe(
+          validateOcc(data),
+          E.map(occ => ({...token, occ}))
+        )
+      )
+    )
   }
 
-  static markAsUsedForAgent(
+  static markAsUsed(
     token: AgentRefreshToken,
-    nextTokenId: string
-  ): E.Either<RefreshTokenValidationError, UsedAgentRefreshToken> {
-    const eitherUser = RefreshTokenFactory.markAsUsed(token, nextTokenId)
-
-    if (E.isLeft(eitherUser)) return eitherUser
-
-    return E.right(eitherUser.right as UsedAgentRefreshToken)
-  }
-
-  static markAsUsedForUser(
-    token: UserRefreshToken,
-    nextTokenId: string
-  ): E.Either<RefreshTokenValidationError, UsedUserRefreshToken> {
-    const eitherUser = RefreshTokenFactory.markAsUsed(token, nextTokenId)
-
-    if (E.isLeft(eitherUser)) return eitherUser
-
-    return E.right(eitherUser.right as UsedUserRefreshToken)
-  }
-
-  /**
-   * Mark a token as revoked
-   */
-  static markAsRevoked(token: RefreshToken): E.Either<RefreshTokenValidationError, RevokedRefreshToken> {
-    const updatedToken: RevokedRefreshToken = {
-      ...token,
-      status: RefreshTokenStatus.REVOKED
-    }
-
-    const validated = RefreshTokenFactory.validate(updatedToken)
-
-    if (E.isLeft(validated)) return validated
-
-    return E.right(updatedToken)
-  }
-
-  /**
-   * Check if a token is within the grace period
-   */
-  static isWithinGracePeriod(token: RefreshToken, time: Date): boolean {
-    if (token.status !== RefreshTokenStatus.USED) return false
-
-    const gracePeriodMs = GRACE_PERIOD_SECONDS * 1000
-    const timeSinceUse = time.getTime() - token.usedAt.getTime()
-
-    return timeSinceUse <= gracePeriodMs
-  }
-
-  /**
-   * Check if a token is expired
-   */
-  static isExpired(token: RefreshToken, time: Date): boolean {
-    return token.expiresAt < time
-  }
-
-  static isUserToken(token: RefreshToken): token is RefreshToken & UserProps {
-    return token.entityType === EntityType.USER
-  }
-
-  static isAgentToken(token: RefreshToken): token is RefreshToken & AgentProps {
-    return token.entityType === EntityType.AGENT
+    nextTokenId: string,
+    usedAt = new Date()
+  ): Either<RefreshTokenValidationError, UsedAgentRefreshToken> {
+    const candidate: UsedAgentRefreshToken = {...token, status: RefreshTokenStatus.USED, usedAt, nextTokenId}
+    return pipe(
+      AgentRefreshTokenFactory.validate(candidate),
+      E.map(() => candidate)
+    )
   }
 }
 
 export type RefreshTokenEligibilityError =
   "refresh_token_expired" | "refresh_token_revoked" | "refresh_token_reuse_detected"
 
-export function canTokenBeRefreshed(token: RefreshToken, time: Date): E.Either<RefreshTokenEligibilityError, true> {
-  if (RefreshTokenFactory.isExpired(token, time)) return E.left("refresh_token_expired" as const)
-  if (token.status === RefreshTokenStatus.REVOKED) return E.left("refresh_token_revoked")
-  if (token.status === RefreshTokenStatus.USED)
-    if (!RefreshTokenFactory.isWithinGracePeriod(token, time))
-      // Within grace period - return the next token
-      // This is can be a possible race condition or someone that is trying to abuse the system.
-      // Since the token was already used but we are outside the grace period,
-      // the caller can not get anymore refreshed token
-      return E.left("refresh_token_reuse_detected" as const)
+// TODO: Check removed helpers and comments
 
-  // This is a race condition - the token was already used but since we are still inside the grace
-  // period we allow the caller to still obtain a new token. This is a relaxation of the
-  // strictness of the refresh token system to remove reduce the overhead of the caller logic
-  // in case multiple requests are made in quick succession
-
-  return E.right(true)
-}
-
-export function isDecoratedRefreshToken<K extends keyof RefreshTokenDecorators>(
-  token: DecoratedRefreshToken<RefreshTokenDecoratorSelector>,
-  key: K,
-  options?: RefreshTokenDecoratorSelector
-): token is DecoratedRefreshToken<RefreshTokenDecoratorSelector & Record<K, true>> {
-  return isDecoratedWith<
-    DecoratedRefreshToken<RefreshTokenDecoratorSelector>,
-    RefreshTokenDecorators,
-    RefreshTokenDecoratorSelector,
-    keyof RefreshTokenDecorators
-  >(token, key, options)
+/**
+ * Applies expiry, family-revocation, and bounded token-reuse checks before a
+ * refresh rotation. The grace interval admits a concurrent retry from the
+ * same client while preserving reuse detection after that interval.
+ */
+export function canTokenBeRefreshed(token: RefreshToken, time: Date): Either<RefreshTokenEligibilityError, true> {
+  if (token.expiresAt < time) return left("refresh_token_expired")
+  if (token.status === RefreshTokenStatus.REVOKED) return left("refresh_token_revoked")
+  if (token.status === RefreshTokenStatus.USED && time.getTime() - token.usedAt.getTime() > GRACE_PERIOD_SECONDS * 1000)
+    return left("refresh_token_reuse_detected")
+  return right(true)
 }

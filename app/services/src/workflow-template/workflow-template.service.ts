@@ -12,7 +12,8 @@ import {
   WorkflowStatus,
   markTemplateForDeprecation,
   markTemplateAsDeprecated,
-  WorkflowTemplateDeprecationError
+  WorkflowTemplateDeprecationError,
+  TenantContext
 } from "@domain"
 import {QuotaService} from "@services/quota/quota.service"
 import {
@@ -58,7 +59,8 @@ export class WorkflowTemplateService {
         this.quotaService.isQuotaAvailable(
           {type: "Space", identifier: request.workflowTemplateData.spaceId},
           "MAX_WORKFLOW_TEMPLATES_PER_SPACE",
-          1
+          1,
+          request
         ),
         TE.mapLeft(() => "quota_check_error" as const),
         TE.chainW(isAvailable => (isAvailable ? TE.right(undefined) : TE.left("quota_exceeded" as const)))
@@ -75,28 +77,30 @@ export class WorkflowTemplateService {
           approvalRule: request.workflowTemplateData.approvalRule,
           actions: request.workflowTemplateData.actions || [],
           defaultExpiresInHours: request.workflowTemplateData.defaultExpiresInHours,
-          spaceId: request.workflowTemplateData.spaceId
+          spaceId: request.workflowTemplateData.spaceId,
+          organizationId: request.organizationId
         })
       ),
-      TE.chainW(workflowTemplate => this.workflowTemplateRepository.createWorkflowTemplate(workflowTemplate)),
+      TE.chainW(workflowTemplate => this.workflowTemplateRepository.createWorkflowTemplate(request, workflowTemplate)),
       logSuccess("Workflow template created", "WorkflowTemplateService", t => ({id: t.id}))
     )
   }
 
   getWorkflowTemplateByIdentifier(
+    context: TenantContext,
     templateIdentifier: string
   ): TaskEither<WorkflowTemplateGetError | WorkflowTemplateGetActiveError, Versioned<WorkflowTemplate>> {
     if (isUUIDv7(templateIdentifier))
       return pipe(
-        this.workflowTemplateRepository.getWorkflowTemplateById(templateIdentifier),
+        this.workflowTemplateRepository.getWorkflowTemplateById(context, templateIdentifier),
         logSuccess("Workflow template retrieved by id", "WorkflowTemplateService", t => ({id: t.id}))
       )
 
     return pipe(
-      this.workflowTemplateRepository.getActiveWorkflowTemplateByName(templateIdentifier),
+      this.workflowTemplateRepository.getActiveWorkflowTemplateByName(context, templateIdentifier),
       TE.altW(() =>
         pipe(
-          this.workflowTemplateRepository.getMostRecentNonActiveWorkflowTemplateByName(templateIdentifier),
+          this.workflowTemplateRepository.getMostRecentNonActiveWorkflowTemplateByName(context, templateIdentifier),
           TE.chainW(maybeTemplate =>
             pipe(
               maybeTemplate,
@@ -133,8 +137,8 @@ export class WorkflowTemplateService {
       TE.bindW("validatedAttributes", validateAttributes),
       TE.bindW("activeTemplate", () =>
         isUUIDv7(request.templateName)
-          ? this.workflowTemplateRepository.getWorkflowTemplateById(request.templateName)
-          : this.workflowTemplateRepository.getActiveWorkflowTemplateByName(request.templateName)
+          ? this.workflowTemplateRepository.getWorkflowTemplateById(request, request.templateName)
+          : this.workflowTemplateRepository.getActiveWorkflowTemplateByName(request, request.templateName)
       ),
       // Fail-fast if the active template has been updated since the last read done by the caller
       TE.chainFirstW(({activeTemplate}) => {
@@ -164,7 +168,7 @@ export class WorkflowTemplateService {
       ),
       // Atomically update the existing template and create the new one
       TE.chainW(({deprecatedVersionWithOcc, newVersion}) =>
-        this.workflowTemplateRepository.atomicUpdateAndCreate({
+        this.workflowTemplateRepository.atomicUpdateAndCreate(request, {
           existingTemplate: deprecatedVersionWithOcc,
           newTemplate: newVersion
         })
@@ -193,6 +197,7 @@ export class WorkflowTemplateService {
    *          if active workflows persist after all attempts).
    */
   cancelWorkflowsAndDeprecateTemplate(
+    context: TenantContext,
     templateId: string,
     maxAttempts = 2
   ): TaskEither<
@@ -218,7 +223,7 @@ export class WorkflowTemplateService {
       void
     > => {
       return pipe(
-        this.cancelWorkflows(templateId),
+        this.cancelWorkflows(context, templateId),
         TE.chainW(remainingWorkflows => {
           if (remainingWorkflows > 0) {
             if (attempt + 1 >= maxAttempts) return TE.left("max_attempts_reach_for_cancelling_workflows" as const)
@@ -232,7 +237,7 @@ export class WorkflowTemplateService {
 
     return pipe(
       cancelWorkflowsLoop(0),
-      TE.chainW(() => this.workflowTemplateRepository.getWorkflowTemplateById(templateId)),
+      TE.chainW(() => this.workflowTemplateRepository.getWorkflowTemplateById(context, templateId)),
       TE.chainW(template =>
         pipe(
           markTemplateAsDeprecated(template),
@@ -241,7 +246,7 @@ export class WorkflowTemplateService {
         )
       ),
       TE.chainW(versionedDeprecatedTemplate =>
-        this.workflowTemplateRepository.updateWorkflowTemplate(versionedDeprecatedTemplate)
+        this.workflowTemplateRepository.updateWorkflowTemplate(context, versionedDeprecatedTemplate)
       ),
       TE.map(() => undefined)
     )
@@ -261,6 +266,7 @@ export class WorkflowTemplateService {
    * - Active workflows are listed twice per pass (before and after cancellation).
    */
   private cancelWorkflows(
+    context: TenantContext,
     templateId: string
   ): TaskEither<
     | "max_attempts_reach_for_cancelling_workflows"
@@ -270,7 +276,7 @@ export class WorkflowTemplateService {
     number
   > {
     const getActiveWorkflowsForTemplate = () =>
-      this.workflowRepository.listWorkflows({
+      this.workflowRepository.listWorkflows(context, {
         include: {occ: true},
         filters: {includeOnlyNonTerminalState: true, templateId}
       })
@@ -285,7 +291,7 @@ export class WorkflowTemplateService {
         pipe(
           TE.sequenceArray(
             activeWorkflows.workflows.map(workflow =>
-              this.workflowRepository.updateWorkflowConcurrentSafe(workflow.id, workflow.occ, {
+              this.workflowRepository.updateWorkflowConcurrentSafe(context, workflow.id, workflow.occ, {
                 status: WorkflowStatus.CANCELED,
                 updatedAt: new Date()
               })
@@ -310,8 +316,8 @@ export class WorkflowTemplateService {
       TE.bindW("requestor", () => validateRequestor()),
       TE.bindW("activeTemplate", () =>
         isUUIDv7(request.templateName)
-          ? this.workflowTemplateRepository.getWorkflowTemplateById(request.templateName)
-          : this.workflowTemplateRepository.getActiveWorkflowTemplateByName(request.templateName)
+          ? this.workflowTemplateRepository.getWorkflowTemplateById(request, request.templateName)
+          : this.workflowTemplateRepository.getActiveWorkflowTemplateByName(request, request.templateName)
       ),
       TE.bindW("deprecatedVersion", ({activeTemplate}) => {
         return TE.fromEither(markTemplateForDeprecation(activeTemplate, request.cancelWorkflows ?? false))
@@ -323,7 +329,7 @@ export class WorkflowTemplateService {
         })
       }),
       TE.chainW(({deprecatedVersionWithOcc}) =>
-        this.workflowTemplateRepository.updateWorkflowTemplate(deprecatedVersionWithOcc)
+        this.workflowTemplateRepository.updateWorkflowTemplate(request, deprecatedVersionWithOcc)
       ),
       logSuccess("Workflow template deprecated", "WorkflowTemplateService", t => ({id: t.id}))
     )
@@ -331,7 +337,11 @@ export class WorkflowTemplateService {
 
   listWorkflowTemplates(
     request: ListWorkflowTemplatesRequest
-  ): TaskEither<WorkflowTemplateValidationError | UnknownError | AuthorizationError, ListWorkflowTemplatesResponse> {
+  ): TaskEither<
+    // TODO: WTF there is an import in the middle of the type definition ?
+    WorkflowTemplateValidationError | UnknownError | AuthorizationError | import("@domain").BoundaryError,
+    ListWorkflowTemplatesResponse
+  > {
     const filters = request.filters
       ? {
           spaceId:
@@ -356,7 +366,7 @@ export class WorkflowTemplateService {
     return pipe(
       validateUserEntity(request.requestor),
       TE.fromEither,
-      TE.chainW(() => this.workflowTemplateRepository.listWorkflowTemplates(repoRequest)),
+      TE.chainW(() => this.workflowTemplateRepository.listWorkflowTemplates(request, repoRequest)),
       logSuccess("Workflow templates listed", "WorkflowTemplateService", r => ({count: r.pagination.total}))
     )
   }

@@ -11,23 +11,29 @@ import {
 import {RolePermissionChecker} from "../src/permission-checker"
 import {v7 as uuidv7} from "uuid"
 
+const organizationId = uuidv7()
+
 // Test helper functions
 const createOrgScope = (): OrgScope => ({
-  type: "org"
+  type: "org",
+  organizationId
 })
 
 const createSpaceScope = (spaceId: string = uuidv7()): SpaceScope => ({
   type: "space",
+  organizationId,
   spaceId
 })
 
 const createGroupScope = (groupId: string = uuidv7()): GroupScope => ({
   type: "group",
+  organizationId,
   groupId
 })
 
 const createWorkflowTemplateScope = (templateName: string = uuidv7()): WorkflowTemplateScope => ({
   type: "workflow_template",
+  organizationId,
   templateName
 })
 

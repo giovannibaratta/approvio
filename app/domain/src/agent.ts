@@ -16,13 +16,17 @@ export type AgentCreate = Readonly<AgentCreateData>
 
 interface AgentData {
   id: string
+  organizationId: string
   agentName: string
   publicKey: string
+  status: "active" | "revoked"
   createdAt: Date
+  updatedAt: Date
   roles: ReadonlyArray<UnconstrainedBoundRole>
 }
 
 interface AgentCreateData {
+  organizationId: string
   agentName: string
 }
 
@@ -30,10 +34,17 @@ type AgentNameValidationError = PrefixUnion<"agent", "name_empty" | "name_too_lo
 type IdValidationError = PrefixUnion<"agent", "invalid_uuid">
 type KeyGenerationError = PrefixUnion<"agent", "key_generation_failed">
 type OccValidationError = PrefixUnion<"agent", "invalid_occ">
+type TenantValidationError = PrefixUnion<"agent", "invalid_organization_id" | "role_organization_mismatch">
+type StatusValidationError = PrefixUnion<"agent", "invalid_status" | "update_before_create">
 
 export type AgentValidationError =
-  IdValidationError | AgentNameValidationError | OccValidationError | PrefixUnion<"agent", RoleValidationError>
-export type AgentCreateValidationError = AgentNameValidationError
+  | IdValidationError
+  | AgentNameValidationError
+  | OccValidationError
+  | TenantValidationError
+  | StatusValidationError
+  | PrefixUnion<"agent", RoleValidationError>
+export type AgentCreateValidationError = AgentNameValidationError | TenantValidationError
 export type AgentCreationError = KeyGenerationError | AgentNameValidationError
 
 export interface AgentDecorators {
@@ -68,11 +79,15 @@ export class AgentFactory {
       E.bindW("data", () => E.right(data)),
       E.bindW("validatedData", ({data}) => this.validateAgentCreateData(data)),
       E.bindW("keyPair", () => this.generateKeyPair()),
-      E.bindW("validatedAgent", ({validatedData, keyPair}) =>
+      E.bind("now", () => E.right(new Date())),
+      E.bindW("validatedAgent", ({validatedData, keyPair, now}) =>
         AgentFactory.validate({
           id: uuidv7(),
+          organizationId: validatedData.organizationId,
           agentName: validatedData.agentName,
-          createdAt: new Date(),
+          createdAt: now,
+          updatedAt: now,
+          status: "active",
           roles: [],
           publicKey: keyPair.publicKey
         })
@@ -96,9 +111,11 @@ export class AgentFactory {
     return pipe(
       E.Do,
       E.bindW("agentName", () => this.validateAgentName(data.agentName)),
-      E.map(({agentName}) => {
+      E.bindW("organizationId", () => this.validateOrganizationId(data.organizationId)),
+      E.map(({agentName, organizationId}) => {
         return {
-          agentName
+          agentName,
+          organizationId
         }
       })
     )
@@ -115,12 +132,19 @@ export class AgentFactory {
     return pipe(
       E.Do,
       E.bindW("validatedId", () => this.validateId(data.id)),
+      E.bindW("validatedOrganizationId", () => this.validateOrganizationId(data.organizationId)),
       E.bindW("validatedAgentName", () => this.validateAgentName(data.agentName)),
       E.bindW("validatedRoles", () => this.validateRoles(data.roles)),
-      E.bindW("baseObj", ({validatedId, validatedAgentName, validatedRoles}) => {
+      E.bindW("baseObj", ({validatedId, validatedOrganizationId, validatedAgentName, validatedRoles}) => {
+        if (validatedRoles.some(role => role.scope.organizationId !== validatedOrganizationId))
+          return E.left<AgentValidationError>("agent_role_organization_mismatch")
+        if (data.status !== "active" && data.status !== "revoked")
+          return E.left<AgentValidationError>("agent_invalid_status")
+        if (data.createdAt > data.updatedAt) return E.left<AgentValidationError>("agent_update_before_create")
         return E.right({
           ...data,
           id: validatedId,
+          organizationId: validatedOrganizationId,
           agentName: validatedAgentName,
           roles: validatedRoles
         })
@@ -213,6 +237,11 @@ export class AgentFactory {
   private static validateId(id: string): Either<IdValidationError, string> {
     if (!isUUIDv7(id)) return left("agent_invalid_uuid")
     return right(id)
+  }
+
+  private static validateOrganizationId(organizationId: string): Either<TenantValidationError, string> {
+    if (!isUUIDv7(organizationId)) return left("agent_invalid_organization_id")
+    return right(organizationId)
   }
 
   private static validateAgentName(agentName: string): Either<AgentNameValidationError, string> {

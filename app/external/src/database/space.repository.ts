@@ -174,14 +174,10 @@ export class SpaceDbRepository implements SpaceRepository {
       TE.map(() => undefined)
     )
   }
-
-  countSpaces(): TaskEither<"unknown_error", number> {
+  countSpaces(context: TenantContext): TE.TaskEither<"unknown_error", number> {
     return TE.tryCatch(
-      () => this.dbClient.cx.space.count(),
-      error => {
-        Logger.error("Error counting spaces", error)
-        return "unknown_error"
-      }
+      () => this.dbClient.cx.space.count({where: {organizationId: context.organizationId}}),
+      error => this.unknown(error, "count")
     )
   }
 

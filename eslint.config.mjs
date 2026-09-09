@@ -9,6 +9,46 @@ import globals from "globals"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
+const approvioPlugin = {
+  rules: {
+    "enforce-tenant-route-param": {
+      meta: {
+        type: "problem",
+        docs: {
+          description: "Enforce :organizationId as the route parameter name for routes under /o/"
+        },
+        schema: []
+      },
+      create(context) {
+        return {
+          Literal(node) {
+            if (typeof node.value === "string") {
+              const match = node.value.match(/(?:^|\/)o\/:([a-zA-Z0-9_]+)/)
+              if (match && match[1] !== "organizationId") {
+                context.report({
+                  node,
+                  message: `Tenant routes under /o/ must name the parameter ':organizationId', but found ':${match[1]}'`
+                })
+              }
+            }
+          },
+          TemplateElement(node) {
+            if (typeof node.value?.raw === "string") {
+              const match = node.value.raw.match(/(?:^|\/)o\/:([a-zA-Z0-9_]+)/)
+              if (match && match[1] !== "organizationId") {
+                context.report({
+                  node,
+                  message: `Tenant routes under /o/ must name the parameter ':organizationId', but found ':${match[1]}'`
+                })
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
 export default tseslint.config(
   {
     ignores: ["build/**", "generated/**", "dist/**", ".yarn/**", "load-tests/**", "coverage/**"]
@@ -17,6 +57,9 @@ export default tseslint.config(
   nPlugin.configs["flat/recommended"],
   prettierPlugin,
   {
+    plugins: {
+      approvio: approvioPlugin
+    },
     languageOptions: {
       globals: {
         ...globals.node,
@@ -31,6 +74,7 @@ export default tseslint.config(
       }
     },
     rules: {
+      "approvio/enforce-tenant-route-param": "error",
       "block-scoped-var": "error",
       eqeqeq: "error",
       "no-var": "error",

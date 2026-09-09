@@ -1,3 +1,5 @@
+// TODO: cast to String seems unnecesary.
+// TODO: Remove the default and use switch exhaustiveness
 import {
   AuthError,
   GetGroupRepoError,
@@ -36,7 +38,7 @@ type ExchangePrivilegeTokenError = PrivilegedTokenExchangeRequestValidationError
 export function generateErrorResponseForRefreshUserToken(error: RefreshUserTokenError, context: string): HttpException {
   const errorCode = error.toUpperCase()
 
-  switch (error) {
+  switch (String(error)) {
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -202,6 +204,8 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
     case "dpop_jti_reused":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: unauthorized request`))
   }
+
+  return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
 }
 
 export function generateErrorResponseForExchangePrivilegeToken(
@@ -209,7 +213,7 @@ export function generateErrorResponseForExchangePrivilegeToken(
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
-  switch (error) {
+  switch (String(error)) {
     case "request_empty_body":
     case "request_missing_code":
     case "request_invalid_code":
@@ -295,6 +299,7 @@ export function generateErrorResponseForExchangePrivilegeToken(
         generateErrorPayload(errorCode, `${context}: functionality is not enabled`)
       )
   }
+  return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
 }
 
 export function mapToTokenResponse(data: TokenPair): TokenResponse {
@@ -310,7 +315,7 @@ export function generateErrorResponseForRefreshAgentToken(
 ): HttpException {
   const errorCode = error.toUpperCase()
 
-  switch (error) {
+  switch (String(error)) {
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -478,12 +483,13 @@ export function generateErrorResponseForRefreshAgentToken(
     case "dpop_jti_reused":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: unauthorized request`))
   }
+  return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
 }
 
 export function generateErrorResponseForGenerateToken(error: GenerateTokenError, context: string): HttpException {
   const errorCode = error.toUpperCase()
 
-  switch (error) {
+  switch (String(error)) {
     case "refresh_token_expire_before_create":
     case "refresh_token_invalid_agent_id":
     case "refresh_token_invalid_created_at":
@@ -580,6 +586,7 @@ export function generateErrorResponseForGenerateToken(error: GenerateTokenError,
     case "requestor_not_authorized":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: ${errorCode}`))
   }
+  return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
 }
 
 export function mapToEntityInfoResponse(entity: AuthenticatedEntity, groups: Group[]): GetEntityInfo200Response {
@@ -595,18 +602,19 @@ export function mapToEntityInfoResponse(entity: AuthenticatedEntity, groups: Gro
       ...baseInfo,
       entityType: "user",
       id: entity.user.id,
+      organizationId: entity.user.organizationId,
       roles: entity.user.roles.map(r => ({
         roleName: r.name,
         scope: r.scope
       })),
-      orgRole: entity.user.orgRole,
-      concurrencyControl: {version: entity.user.occ.toString()}
+      orgRole: entity.user.orgRole
     }
 
   return {
     ...baseInfo,
     entityType: "agent",
     id: entity.agent.id,
+    organizationId: entity.agent.organizationId,
     roles: entity.agent.roles.map(r => ({
       roleName: r.name,
       scope: r.scope
@@ -617,7 +625,7 @@ export function mapToEntityInfoResponse(entity: AuthenticatedEntity, groups: Gro
 export function generateErrorResponseForEntityInfo(error: GetGroupRepoError, context: string): HttpException {
   const errorCode = error.toUpperCase()
 
-  switch (error) {
+  switch (String(error)) {
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: unknown error`))
     case "group_not_found":
@@ -631,6 +639,7 @@ export function generateErrorResponseForEntityInfo(error: GetGroupRepoError, con
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
   }
+  return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
 }
 
 export function mapToPrivilegeTokenExchange(

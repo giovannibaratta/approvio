@@ -1,16 +1,13 @@
-import {Agent, Versioned} from "@domain"
-import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "@external/database/errors"
 import {Injectable, Logger} from "@nestjs/common"
-import {Agent as PrismaAgent, Prisma} from "@prisma/client"
-import {AgentRepository, AgentCreateError, AgentGetError, AgentUpdateError} from "@services"
-import * as TE from "fp-ts/TaskEither"
+import {Agent, AgentFactory, DecoratedAgent, TenantContext} from "@domain"
+import {AgentCreateError, AgentGetError, AgentRepository, AgentUpdateError} from "@services"
+import {Agent as PrismaAgent} from "@prisma/client"
 import * as E from "fp-ts/Either"
-import {TaskEither} from "fp-ts/TaskEither"
+import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {DatabaseClient} from "./database-client"
-import {chainNullableToLeft} from "./utils"
-import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
-import {mapAgentToDomain, mapRolesToPrisma, mapToDomainVersionedAgent} from "./shared"
+import {isPrismaUniqueConstraintError} from "./errors"
+import {mapRolesToPrisma} from "./shared"
 
 @Injectable()
 export class AgentDbRepository implements AgentRepository {

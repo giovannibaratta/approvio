@@ -7,14 +7,20 @@ import {Agent} from "./agent"
 import {v7 as uuidv7} from "uuid"
 
 export const CHALLENGE_EXPIRY_MINUTES = 10
-export const NONCE_LENGTH = 32
+// Sixteen random bytes provide a 128-bit replay-resistant nonce while keeping the
+// RSA-OAEP envelope below the maximum plaintext size of the 2048-bit test and
+// production agent keys.
+export const NONCE_LENGTH = 16
 
 export type AgentChallenge = Readonly<AgentChallengeData>
 export type AgentChallengeCreate = Readonly<AgentChallengeCreateData>
 
 interface AgentChallengeData {
   id: string
-  agentName: string
+  organizationId: string
+  // Challenges bind to the immutable agent ID. The mutable/display-oriented
+  // agent name remains on Agent and is resolved only at the request boundary.
+  agentId: string
   nonce: string
   expiresAt: Date
   usedAt?: Date
@@ -22,7 +28,10 @@ interface AgentChallengeData {
 }
 
 interface AgentChallengeCreateData {
-  agentName: string
+  organizationId: string
+  // Persisting the immutable ID avoids coupling challenge validity to a
+  // renameable agent name; Agent still retains the name for lookup and display.
+  agentId: string
 }
 
 export type ServerChallengePayload = Readonly<PrivateChallengePayload>
@@ -47,13 +56,14 @@ interface JwtAssertionClaims {
 }
 
 type IdValidationError = PrefixUnion<"agent_challenge", "invalid_uuid">
-type AgentNameValidationError = PrefixUnion<"agent_challenge", "agent_name_empty" | "agent_name_invalid">
+type AgentReferenceValidationError = PrefixUnion<"agent_challenge", "agent_id_invalid" | "organization_id_invalid">
 type NonceValidationError = PrefixUnion<"agent_challenge", "nonce_empty" | "nonce_invalid_length">
 type ExpirationValidationError = PrefixUnion<"agent_challenge", "challenge_expired" | "challenge_already_used">
 type NonceGenerationError = PrefixUnion<"agent_challenge", "nonce_generation_failed">
 type DateValidationError = PrefixUnion<"agent_challenge", "expire_before_creation" | "used_at_before_creation">
 type OccValidationError = PrefixUnion<"agent_challenge", "invalid_occ">
 type EncryptionError = PrefixUnion<"agent_challenge", "encryption_failed">
+type AgentBindingError = PrefixUnion<"agent_challenge", "organization_mismatch" | "agent_mismatch">
 type JwtValidationError = PrefixUnion<
   "agent_challenge",
   | "invalid_jwt_format"
@@ -75,16 +85,16 @@ type ChallengeProcessingError = PrefixUnion<
   | "challenge_already_used"
 >
 
-export type AgentChallengeCreateValidationError = AgentNameValidationError
-export type AgentChallengeCreationError = AgentNameValidationError | NonceGenerationError
+export type AgentChallengeCreateValidationError = AgentReferenceValidationError
+export type AgentChallengeCreationError = AgentReferenceValidationError | NonceGenerationError
 export type AgentChallengeUseError = ExpirationValidationError
-export type AgentChallengeEncryptionError = EncryptionError
+export type AgentChallengeEncryptionError = EncryptionError | AgentBindingError
 export type AgentChallengeJwtValidationError = JwtValidationError
 export type AgentChallengeProcessingError = ChallengeProcessingError
 
 export type AgentChallengeValidationError =
   | IdValidationError
-  | AgentNameValidationError
+  | AgentReferenceValidationError
   | NonceValidationError
   | ExpirationValidationError
   | OccValidationError
@@ -111,7 +121,8 @@ export class AgentChallengeFactory {
       E.bindW("challenge", ({nonce}) => {
         return E.right({
           id: uuidv7(),
-          agentName: data.agentName,
+          organizationId: data.organizationId,
+          agentId: data.agentId,
           nonce,
           createdAt,
           expiresAt
@@ -124,17 +135,17 @@ export class AgentChallengeFactory {
   /**
    * Creates a challenge payload to be encrypted and sent to agent
    * @param challenge The challenge entity
-   * @param agentName The agent name (audience)
+   * @param agentId The immutable agent UUID used as the credential subject.
    * @param issuer The issuer name (e.g., "Approvio")
    * @returns Challenge payload object
    */
   private static createServerChallengePayload(
     challenge: AgentChallenge,
-    agentName: string,
+    agentId: string,
     issuer: string
   ): ServerChallengePayload {
     return {
-      audience: agentName,
+      audience: agentId,
       expiresAt: challenge.expiresAt,
       issuer,
       nonce: challenge.nonce
@@ -153,8 +164,10 @@ export class AgentChallengeFactory {
     agent: Agent,
     issuer: string
   ): Either<AgentChallengeEncryptionError, string> {
+    if (challenge.organizationId !== agent.organizationId) return left("agent_challenge_organization_mismatch")
+    if (challenge.agentId !== agent.id) return left("agent_challenge_agent_mismatch")
     try {
-      const challengePayload = this.createServerChallengePayload(challenge, agent.agentName, issuer)
+      const challengePayload = this.createServerChallengePayload(challenge, agent.id, issuer)
       const jsonPayload = JSON.stringify(challengePayload)
       const encrypted = publicEncrypt(
         {
@@ -175,7 +188,7 @@ export class AgentChallengeFactory {
    * @param jwtAssertion The JWT assertion string
    * @param agent The agent entity containing publicKey for signature verification
    * @param expectedAudience The expected audience (authorization server identifier)
-   * @returns Either JWT validation error or validated JWT payload with agent name
+   * @returns Either JWT validation error or validated JWT payload with agent UUID
    */
   static validateJwtAssertion(
     jwtAssertion: string,
@@ -186,17 +199,17 @@ export class AgentChallengeFactory {
       E.Do,
       E.bindW("parsedJwt", () => this.parseJwt(jwtAssertion)),
       E.bindW("verifiedPayload", ({parsedJwt}) => this.verifyJwtSignature(parsedJwt, agent)),
-      E.chainW(({verifiedPayload}) => this.validateJwtClaims(verifiedPayload, agent.agentName, expectedAudience))
+      E.chainW(({verifiedPayload}) => this.validateJwtClaims(verifiedPayload, agent.id, expectedAudience))
     )
   }
 
   /**
-   * Extracts agent name from JWT assertion without full validation
+   * Extracts the immutable agent UUID from a JWT assertion without full validation.
    * Used for agent lookup before signature verification
    * @param jwtAssertion The JWT assertion string
-   * @returns Either parsing error or agent name from issuer claim
+   * @returns Either parsing error or agent UUID from issuer claim
    */
-  static extractAgentNameFromJwt(jwtAssertion: string): Either<AgentChallengeJwtValidationError, string> {
+  static extractAgentIdFromJwt(jwtAssertion: string): Either<AgentChallengeJwtValidationError, string> {
     return pipe(
       this.parseJwt(jwtAssertion),
       E.chainW(({payload}) => {
@@ -221,14 +234,16 @@ export class AgentChallengeFactory {
     return pipe(
       E.Do,
       E.bindW("challengeId", () => this.validateChallengeId(data.id)),
-      E.bindW("agentName", () => this.validateAgentName(data.agentName)),
+      E.bindW("organizationId", () => this.validateOrganizationId(data.organizationId)),
+      E.bindW("agentId", () => this.validateAgentId(data.agentId)),
       E.bindW("nonce", () => this.validateNonce(data.nonce)),
       E.bindW("dates", () => this.validateAgentChallengeDates(data)),
       E.bindW("decoratorValidation", () => this.validateDecorators(data, decorators)),
-      E.map(({challengeId, agentName, nonce, dates, decoratorValidation}) => {
+      E.map(({challengeId, organizationId, agentId, nonce, dates, decoratorValidation}) => {
         const validated = {
           id: challengeId,
-          agentName,
+          organizationId,
+          agentId,
           nonce,
           ...dates,
           ...decoratorValidation
@@ -286,7 +301,7 @@ export class AgentChallengeFactory {
     if (jwtPayload.jti !== truthChallenge.nonce) return left("agent_challenge_nonce_mismatch")
 
     // Validate issuer matches the challenge agent
-    if (jwtPayload.iss !== truthChallenge.agentName) return left("agent_challenge_invalid_issuer")
+    if (jwtPayload.iss !== truthChallenge.agentId) return left("agent_challenge_invalid_issuer")
 
     // Validate challenge hasn't expired
     if (now > truthChallenge.expiresAt) return left("agent_challenge_challenge_expired")
@@ -315,10 +330,14 @@ export class AgentChallengeFactory {
     return right(id)
   }
 
-  private static validateAgentName(agentName: string): Either<AgentNameValidationError, string> {
-    if (!agentName || agentName.trim().length === 0) return left("agent_challenge_agent_name_empty")
+  private static validateAgentId(agentId: string): Either<AgentReferenceValidationError, string> {
+    if (!isUUIDv7(agentId)) return left("agent_challenge_agent_id_invalid")
+    return right(agentId)
+  }
 
-    return right(agentName)
+  private static validateOrganizationId(organizationId: string): Either<AgentReferenceValidationError, string> {
+    if (!isUUIDv7(organizationId)) return left("agent_challenge_organization_id_invalid")
+    return right(organizationId)
   }
 
   private static validateNonce(nonce: string): Either<NonceValidationError, string> {

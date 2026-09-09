@@ -2,9 +2,10 @@ import {
   AgentRegistrationRequest,
   AgentRegistrationResponse,
   AgentGet200Response,
+  RoleAssignmentRequest,
   RoleOperationRequestValidationError
 } from "@approvio/api"
-import {Agent, AgentWithPrivateKey, AuthenticatedEntity} from "@domain"
+import {Agent, AgentWithPrivateKey, AuthenticatedEntity, RoleScope, TenantContext} from "@domain"
 import {
   BadRequestException,
   ConflictException,
@@ -27,15 +28,18 @@ import {generateErrorPayload} from "../error"
 export function agentRegistrationApiToServiceModel(data: {
   agentData: AgentRegistrationRequest
   requestor: AuthenticatedEntity
+  context: TenantContext
 }): Either<never, RegisterAgentRequest> {
   return right({
     agentName: data.agentData.agentName,
-    requestor: data.requestor
+    requestor: data.requestor,
+    context: data.context
   })
 }
 
 export function mapAgentToRegistrationResponse(agent: AgentWithPrivateKey): AgentRegistrationResponse {
   return {
+    organizationId: agent.organizationId,
     agentId: agent.id,
     agentName: agent.agentName,
     publicKey: Buffer.from(agent.publicKey).toString("base64"),
@@ -46,10 +50,31 @@ export function mapAgentToRegistrationResponse(agent: AgentWithPrivateKey): Agen
 
 export function mapAgentToApi(agent: Agent): AgentGet200Response {
   return {
+    organizationId: agent.organizationId,
     id: agent.id,
     agentName: agent.agentName,
     publicKey: Buffer.from(agent.publicKey).toString("base64"),
     createdAt: agent.createdAt.toISOString()
+  }
+}
+
+/**
+ * API role scopes omit organizationId because the organization is the mandatory
+ * route context. Bind it once at the controller boundary before domain validation.
+ */
+export function bindRoleScopeToOrganization(
+  scope: RoleAssignmentRequest["roles"][number]["scope"],
+  organizationId: string
+): RoleScope {
+  switch (scope.type) {
+    case "org":
+      return {type: "org", organizationId}
+    case "space":
+      return {type: "space", organizationId, spaceId: scope.spaceId}
+    case "group":
+      return {type: "group", organizationId, groupId: scope.groupId}
+    case "workflow_template":
+      return {type: "workflow_template", organizationId, templateName: scope.templateName}
   }
 }
 
@@ -98,6 +123,9 @@ export function generateErrorResponseForRegisterAgent(error: AgentRegistrationEr
     case "requestor_not_authorized":
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Requestor not authorized`))
   }
+
+  // TODO: Remove this and use switch exhaustion for all the branches (no default). We have a skill to detect all the available branches.
+  return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: Unexpected error`))
 }
 
 export function generateErrorResponseForGetAgent(error: AgentGetError, context: string): HttpException {
@@ -139,6 +167,9 @@ export function generateErrorResponseForGetAgent(error: AgentGetError, context: 
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
   }
+
+  // TODO: Remove this and use switch exhaustion for all the branches (no default). We have a skill to detect all the available branches.
+  return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: Unexpected error`))
 }
 
 export function generateErrorResponseForAgentRoleAssignment(
@@ -236,6 +267,9 @@ export function generateErrorResponseForAgentRoleAssignment(
         generateErrorPayload(errorCode, `${context}: The agent was affected by another request`)
       )
   }
+
+  // TODO: Remove this and use switch exhaustion for all the branches (no default). We have a skill to detect all the available branches.
+  return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: Unexpected error`))
 }
 
 export function generateErrorResponseForAgentRoleRemoval(
@@ -333,4 +367,7 @@ export function generateErrorResponseForAgentRoleRemoval(
         generateErrorPayload(errorCode, `${context}: The agent was affected by another request`)
       )
   }
+
+  // TODO: Remove this and use switch exhaustion for all the branches (no default). We have a skill to detect all the available branches.
+  return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: Unexpected error`))
 }

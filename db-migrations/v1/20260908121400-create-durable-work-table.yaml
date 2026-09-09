@@ -1,0 +1,93 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908121400-create-durable-work-table
+      author: giovannibaratta
+      comment: Shared tenant-owned execution state for concrete workflow action tasks.
+      changes:
+        - createTable:
+            tableName: durable_work
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: kind
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: state
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: lease_owner
+                  type: text
+              - column:
+                  name: lease_until
+                  type: timestamptz
+              # TODO: What is fencing
+              - column:
+                  name: fencing
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: available_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: attempts
+                  type: integer
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: durable_work
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_durable_work_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: durable_work
+            columnNames: organization_id, id
+            constraintName: durable_work_organization_id_unique
+        # TODO: peristence layer should not contain any validation. This is domain responsility
+        - sql:
+            dbms: postgresql
+            sql: ALTER TABLE durable_work ADD CONSTRAINT durable_work_kind_check CHECK (kind IN ('email', 'webhook', 'slack'))
+        - createIndex:
+            tableName: durable_work
+            indexName: idx_durable_work_organization_available
+            columns:
+              - column:
+                  name: organization_id
+              - column:
+                  name: available_at
+              - column:
+                  name: id

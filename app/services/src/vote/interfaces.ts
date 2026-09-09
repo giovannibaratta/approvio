@@ -1,4 +1,4 @@
-import {Vote, VoteValidationError, EntityReference} from "@domain"
+import {BoundaryError, Vote, VoteValidationError, EntityReference, TenantContext} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 import {UnknownError} from "@services/error"
 import {Option} from "fp-ts/Option"
@@ -7,15 +7,22 @@ import {WorkflowGetError} from "../workflow/interfaces"
 export const VOTE_REPOSITORY_TOKEN = "VoteRepositoryToken"
 
 export type PersistVoteError =
-  VoteValidationError | UnknownError | "workflow_not_found" | "voter_not_found" | "quota_exceeded" | "quota_check_error"
-export type FindVotesError = VoteValidationError | UnknownError | WorkflowGetError
-export type GetLatestVoteError = UnknownError | VoteValidationError
+  | BoundaryError
+  | VoteValidationError
+  | UnknownError
+  | "workflow_not_found"
+  | "voter_not_found"
+  | "quota_exceeded"
+  | "quota_check_error"
+export type FindVotesError = BoundaryError | VoteValidationError | UnknownError | WorkflowGetError
+export type GetLatestVoteError = BoundaryError | UnknownError | VoteValidationError
 
 export interface VoteRepository {
-  persistVoteAndMarkWorkflowRecalculation(vote: Vote): TaskEither<PersistVoteError, Vote>
+  persistVoteAndMarkWorkflowRecalculation(context: TenantContext, vote: Vote): TaskEither<PersistVoteError, Vote>
   getOptionalLatestVoteByWorkflowAndVoter(
+    context: TenantContext,
     workflowId: string,
     voter: EntityReference
   ): TaskEither<GetLatestVoteError, Option<Vote>>
-  getVotesByWorkflowId(workflowId: string): TaskEither<FindVotesError, ReadonlyArray<Vote>>
+  getVotesByWorkflowId(context: TenantContext, workflowId: string): TaskEither<FindVotesError, ReadonlyArray<Vote>>
 }

@@ -73,7 +73,8 @@ services:
   backend:
     image: ghcr.io/${REGISTRY_USER}/approvio-backend:${VERSION}
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://${POSTGRES_TENANT_USER}:${POSTGRES_TENANT_PASSWORD}@db:5432/${POSTGRES_DB}
+      PLATFORM_DATABASE_URL: postgresql://${POSTGRES_PLATFORM_USER}:${POSTGRES_PLATFORM_PASSWORD}@db:5432/${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET}
       JWT_TRUSTED_ISSUERS: ${JWT_TRUSTED_ISSUERS}
       JWT_ISSUER: ${JWT_ISSUER}
@@ -108,7 +109,7 @@ services:
   worker:
     image: ghcr.io/${REGISTRY_USER}/approvio-worker:${VERSION}
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://${POSTGRES_WORKER_USER}:${POSTGRES_WORKER_PASSWORD}@db:5432/${POSTGRES_DB}
       JWT_SECRET: ${JWT_SECRET}
       JWT_TRUSTED_ISSUERS: ${JWT_TRUSTED_ISSUERS}
       JWT_ISSUER: ${JWT_ISSUER}

@@ -8,62 +8,102 @@ databaseChangeLog:
             columns:
               - column:
                   name: id
-                  type: UUID
+                  type: uuid
                   constraints:
                     primaryKey: true
                     nullable: false
               - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
                   name: audit_type
-                  type: VARCHAR(255)
+                  type: text
                   constraints:
                     nullable: false
               - column:
                   name: entity_type
-                  type: VARCHAR(255)
+                  type: text
                   constraints:
                     nullable: false
               - column:
                   name: entity_id
-                  type: UUID
+                  type: uuid
                   constraints:
                     nullable: false
               - column:
+                  name: entity_display_name
+                  type: text
+              - column:
                   name: actor_id
-                  type: UUID
+                  type: uuid
                   constraints:
                     nullable: false
               - column:
                   name: actor_type
-                  type: VARCHAR(255)
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actor_display_name
+                  type: text
                   constraints:
                     nullable: false
               - column:
                   name: payload
-                  type: JSONB
+                  type: jsonb
+                  constraints:
+                    nullable: false
+              - column:
+                  # TODO: Decide whether audit payload version belongs in this typed column or
+                  # inside payload. D4 must implement the selected representation in the audit
+                  # domain and repository; do not keep two independent versions.
+                  name: schema_version
+                  type: integer
                   constraints:
                     nullable: false
               - column:
                   name: created_at
-                  type: TIMESTAMP(6)
+                  type: timestamptz
                   constraints:
                     nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: audit_logs
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_audit_logs_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: audit_logs
+            columnNames: organization_id, id
+            constraintName: audit_logs_organization_id_unique
         - createIndex:
             tableName: audit_logs
-            indexName: idx_audit_logs_actor_id_created_at
+            indexName: idx_audit_logs_organization_actor_time
             columns:
+              - column:
+                  name: organization_id
+              - column:
+                  name: actor_type
               - column:
                   name: actor_id
               - column:
                   name: created_at
-                  descending: true
         - createIndex:
             tableName: audit_logs
-            indexName: idx_audit_logs_entity_id_created_at
+            indexName: idx_audit_logs_organization_entity_time
             columns:
+              - column:
+                  name: organization_id
+              - column:
+                  name: entity_type
               - column:
                   name: entity_id
               - column:
                   name: created_at
-                  descending: true
         - sql:
-            sql: CREATE INDEX idx_audit_logs_created_at_brin ON audit_logs USING brin (created_at);
+            dbms: postgresql
+            sql: CREATE INDEX idx_audit_logs_created_at_brin ON audit_logs USING brin(created_at)

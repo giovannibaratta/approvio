@@ -138,3 +138,16 @@ export function mapToLeftWithPrefix<T extends string, E extends string>(error: T
  * This is a distributive type that works with unions.
  */
 export type Overwrite<T, U> = Omit<T, keyof U> & U
+
+/**
+ * Generic branded type helper.
+ * Attaches a nominal phantom brand to an underlying data shape.
+ */
+export type Brand<T, TBrand extends symbol> = T & {readonly [K in TBrand]: true}
+
+/**
+ * Attaches a phantom brand to an already validated data structure.
+ */
+export function brand<T, TBrand extends symbol>(data: T): Brand<T, TBrand> {
+  return data as Brand<T, TBrand>
+}

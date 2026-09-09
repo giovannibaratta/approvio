@@ -1,46 +1,57 @@
-import {Either, left, right, isLeft} from "fp-ts/Either"
-
-import {getStringAsEnum, isEmail, isUUIDv7, PrefixUnion} from "@utils"
-import {UnconstrainedBoundRole, RoleFactory, RoleValidationError, MAX_ROLES_PER_ENTITY} from "./role"
-import {Versioned} from "./shared"
+import {Either, isLeft, left, right} from "fp-ts/Either"
 import {v7 as uuidv7} from "uuid"
 
+import {getStringAsEnum, isUUIDv7, PrefixUnion} from "@utils"
+import {MAX_ROLES_PER_ENTITY, RoleFactory, RoleValidationError, UnconstrainedBoundRole} from "./role"
+import {TenantContext, Versioned} from "./shared"
+
 export const DISPLAY_NAME_MAX_LENGTH = 255
-export const EMAIL_MAX_LENGTH = 255
 
 export enum OrgRole {
+  OWNER = "owner",
   ADMIN = "admin",
   MEMBER = "member"
 }
 
-export type User = Readonly<PrivateUser>
-export type UserSummary = Readonly<UserSummaryData>
-
-interface UserSummaryData {
-  id: string
-  displayName: string
-  email: string
+export enum MembershipStatus {
+  ACTIVE = "active",
+  REMOVED = "removed"
 }
 
-interface PrivateUser extends UserSummaryData {
-  createdAt: Date
-  orgRole: OrgRole
-  roles: ReadonlyArray<UnconstrainedBoundRole>
+
+export interface User extends TenantContext {
+  readonly id: string
+  readonly accountId: string
+  readonly displayName: string
+  readonly status: MembershipStatus
+  readonly orgRole: OrgRole
+  readonly roles: ReadonlyArray<UnconstrainedBoundRole>
+  readonly createdAt: Date
+  readonly updatedAt: Date
 }
 
-type EmailValidationError = "email_empty" | "email_too_long" | "email_invalid"
-type DisplayNameValidationError = "display_name_empty" | "display_name_too_long"
-type OrgValidationError = "org_role_invalid"
-type IdValidationError = "invalid_uuid"
-type RoleAssignmentValidationError = "role_assignments_invalid_format" | "duplicate_roles"
+// TODO: why you inverted the interface etension to a Pick type ? Is there are meaningul reason for it ?
+export type UserSummary = Pick<User, "id" | "organizationId" | "accountId" | "displayName" | "status" | "orgRole">
 
-export type UserValidationError = PrefixUnion<"user", UnprefixedUserValidationError> | RoleValidationError
-export type UserSummaryValidationError = PrefixUnion<"user", UnprefixedUserSummaryValidationError>
+type UnprefixedUserIdentityValidationError =
+  "invalid_uuid" | "invalid_organization_id" | "invalid_account_id" | "display_name_empty" | "display_name_too_long"
 
-type UnprefixedUserValidationError =
-  UnprefixedUserSummaryValidationError | OrgValidationError | RoleAssignmentValidationError
-type UnprefixedUserSummaryValidationError = IdValidationError | DisplayNameValidationError | EmailValidationError
+type UserIdentityValidationError = PrefixUnion<"user", UnprefixedUserIdentityValidationError>
 
+type UnprefixedUserFieldValidationError =
+  | UnprefixedUserIdentityValidationError
+  | "org_role_invalid"
+  | "status_invalid"
+  | "update_before_create"
+  | "role_assignments_invalid_format"
+  | "duplicate_roles"
+  | "role_organization_mismatch"
+
+export type UserValidationError = PrefixUnion<"user", UserFieldValidationError> | RoleValidationError
+export type UserSummaryValidationError = UserValidationError
+export type MembershipTransitionError = "user_invalid_membership_transition"
+
+// TODO: A lot of refactoring seems unnecessary, that is the reason for it? Why couldn't we keep the previous base ?
 export class UserFactory {
   /**
    * Adds new permissions to a user, validating that they are not duplicated with existing ones

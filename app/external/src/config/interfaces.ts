@@ -116,7 +116,17 @@ export interface ConfigProviderInterface {
    * This can be disabled by setting the DISABLE_HIGH_PRIVILEGE_MODE environment variable to 'true'.
    */
   isPrivilegeMode: boolean
+  // TODO: Comment is not clear. Why not renaimin to tenant connection url saying that this should be used
+  // to interact with tenant resources (assuming it is true ?)
+  /** Tenant request connection. Its login can assume only the tenant runtime role. */
   dbConnectionUrl: string
+  // TODO: WTF does it mean ? Why do we want to have it optional ?
+  /**
+   * Platform capability connection for identity, session, discovery, and
+   * provisioning. It is optional for deployments that do not load those
+   * capabilities; the capability client fails fast when it is constructed.
+   */
+  platformDbConnectionUrl?: string
   emailProviderConfig: Option<EmailProviderConfig>
   oidcProviders: Map<string, OidcProviderConfig>
   jwtConfig: JwtConfig

@@ -1,4 +1,4 @@
-import {Agent, AgentFactory, AgentWithPrivateKey} from "@domain"
+import {Agent, AgentFactory, AgentWithPrivateKey, TenantContext} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
@@ -17,14 +17,19 @@ export class AgentService {
   ) {}
 
   registerAgent(request: RegisterAgentRequest): TaskEither<AgentRegistrationError, AgentWithPrivateKey> {
-    const persistAgent = (agent: AgentWithPrivateKey) => this.agentRepo.persistAgent(agent)
+    const persistAgent = (agent: AgentWithPrivateKey) => this.agentRepo.persistAgent(request.context, agent)
 
     const validateAndCreateAgent = (
       req: RegisterAgentRequest
     ): E.Either<AgentRegistrationError | AuthorizationError, AgentWithPrivateKey> => {
-      if (req.requestor.entityType !== "user") return E.left("requestor_not_authorized")
+      if (
+        req.requestor.entityType !== "user" ||
+        req.requestor.user.organizationId !== req.context.organizationId
+      )
+        return E.left("requestor_not_authorized")
 
       return AgentFactory.create({
+        organizationId: req.context.organizationId,
         agentName: req.agentName
       })
     }
@@ -38,24 +43,25 @@ export class AgentService {
     )
   }
 
-  getAgent(idOrName: string): TaskEither<AgentGetError, Agent> {
-    const getAgentResult = isUUIDv7(idOrName) ? this.getAgentById(idOrName) : this.getAgentByName(idOrName)
+  getAgent(context: TenantContext, idOrName: string): TaskEither<AgentGetError, Agent> {
+    const getAgentResult = isUUIDv7(idOrName) ? this.getAgentById(context, idOrName) : this.getAgentByName(context, idOrName)
     return pipe(
       getAgentResult,
       logSuccess("Agent retrieved", "AgentService", agent => ({agentId: agent.id}))
     )
   }
 
-  getAgentByName(agentName: string): TaskEither<AgentGetError, Agent> {
-    return this.agentRepo.getAgentByName(agentName)
+  getAgentByName(context: TenantContext, agentName: string): TaskEither<AgentGetError, Agent> {
+    return this.agentRepo.getAgentByName(context, agentName)
   }
 
-  getAgentById(agentId: string): TaskEither<AgentGetError, Agent> {
-    return this.agentRepo.getAgentById(agentId)
+  getAgentById(context: TenantContext, agentId: string): TaskEither<AgentGetError, Agent> {
+    return this.agentRepo.getAgentById(context, agentId)
   }
 }
 
 export interface RegisterAgentRequest {
   readonly agentName: string
   readonly requestor: AuthenticatedEntity
+  readonly context: TenantContext
 }

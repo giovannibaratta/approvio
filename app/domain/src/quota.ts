@@ -92,6 +92,7 @@ export type QuotaIdentifier = {
 
 export type Quota = QuotaIdentifier & {
   readonly id: string
+  readonly organizationId: string
   readonly limit: number
   readonly createdAt: Date
   readonly updatedAt: Date
@@ -108,6 +109,7 @@ export type QuotaValidationError = PrefixUnion<
   | "missing_target_id"
   | "invalid_target_id"
   | "missing_configuration"
+  | "invalid_organization_id"
 >
 
 function isSupportedQuotaType(val: string): val is SupportedQuotaType {
@@ -185,6 +187,10 @@ export class QuotaFactory {
 
     if (typeof data.id !== "string") return E.left("quota_malformed_quota")
     if (!isUUIDv7(data.id)) return E.left("quota_invalid_id")
+    if (typeof data.organizationId !== "string" || !isUUIDv7(data.organizationId))
+      return E.left("quota_invalid_organization_id")
+    if (identifierEither.right.node.type === "Org" && identifierEither.right.node.identifier !== data.organizationId)
+      return E.left("quota_invalid_organization_id")
 
     if (typeof data.limit !== "number" || !Number.isInteger(data.limit) || data.limit < 0)
       return E.left("quota_invalid_limit")
@@ -194,6 +200,7 @@ export class QuotaFactory {
 
     return E.right({
       id: data.id,
+      organizationId: data.organizationId,
       node: identifierEither.right.node,
       quotaType: identifierEither.right.quotaType,
       limit: data.limit,

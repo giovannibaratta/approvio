@@ -1,0 +1,10 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260912192200-unique-provider-connection-config-reference
+      author: codex
+      comment: An OIDC configuration reference identifies exactly one immutable platform connection.
+      changes:
+        - addUniqueConstraint:
+            tableName: provider_connections
+            columnNames: config_reference
+            constraintName: provider_connections_config_reference_unique

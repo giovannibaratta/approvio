@@ -38,6 +38,7 @@ const HOSTNAME_REGEX = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[
 export class ConfigProvider implements ConfigProviderInterface {
   readonly isPrivilegeMode: boolean
   readonly dbConnectionUrl: string
+  readonly platformDbConnectionUrl?: string
   readonly emailProviderConfig: Option<EmailProviderConfig>
   readonly oidcProviders: Map<string, OidcProviderConfig>
   readonly jwtConfig: JwtConfig
@@ -58,6 +59,7 @@ export class ConfigProvider implements ConfigProviderInterface {
   constructor() {
     this.isPrivilegeMode = this.validatePrivilegeMode()
     this.dbConnectionUrl = this.validateConnectionUrl()
+    this.platformDbConnectionUrl = this.validateOptionalConnectionUrl("PLATFORM_DATABASE_URL")
     this.emailProviderConfig = ConfigProvider.validateEmailProviderConfig()
     this.oidcProviders = this.validateOidcProviderConfig()
     this.jwtConfig = this.validateJwtConfig()
@@ -169,6 +171,25 @@ export class ConfigProvider implements ConfigProviderInterface {
     const connectionUrl = process.env.DATABASE_URL
 
     if (connectionUrl === undefined) throw new Error("DATABASE_URL is not defined")
+
+    return this.validatePostgresConnectionUrl("DATABASE_URL", connectionUrl)
+  }
+
+  private validateOptionalConnectionUrl(name: string): string | undefined {
+    const connectionUrl = process.env[name]
+    return connectionUrl === undefined ? undefined : this.validatePostgresConnectionUrl(name, connectionUrl)
+  }
+
+  private validatePostgresConnectionUrl(name: string, connectionUrl: string): string {
+    let parsed: URL
+    try {
+      parsed = new URL(connectionUrl)
+    } catch {
+      throw new Error(`${name} must be a valid PostgreSQL connection URL`)
+    }
+
+    if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:")
+      throw new Error(`${name} must use the postgres or postgresql protocol`)
 
     return connectionUrl
   }
@@ -540,11 +561,12 @@ export class ConfigProvider implements ConfigProviderInterface {
     const backoffFactorRaw = process.env.WEBHOOK_RETRY_BACKOFF_FACTOR
     const maxDelayMsRaw = process.env.WEBHOOK_RETRY_MAX_DELAY_MS
 
+    // TODO: Why these 2 values have been changed ?
     return {
       maxAttempts: maxAttemptsRaw ? parseInt(maxAttemptsRaw, 10) : 3,
-      initialDelayMs: initialDelayMsRaw ? parseInt(initialDelayMsRaw, 10) : 1000,
+      initialDelayMs: initialDelayMsRaw ? parseInt(initialDelayMsRaw, 10) : 25,
       backoffFactor: backoffFactorRaw ? parseFloat(backoffFactorRaw) : 2,
-      maxDelayMs: maxDelayMsRaw ? parseInt(maxDelayMsRaw, 10) : 10000
+      maxDelayMs: maxDelayMsRaw ? parseInt(maxDelayMsRaw, 10) : 250
     }
   }
 

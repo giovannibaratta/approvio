@@ -4,10 +4,12 @@ import {v7 as uuidv7} from "uuid"
 import {unwrapRight} from "@utils/either"
 
 describe("UsageEventFactory", () => {
+  const organizationId = uuidv7()
   const validData: CreateUsageEvent = {
+    organizationId,
     entityType: "organization",
     entityId: uuidv7(),
-    actor: {id: uuidv7(), type: "user"},
+    actor: {id: uuidv7(), type: "user", displayName: "Test User"},
     metric: "MAX_LLM_TOKENS_PER_MONTH",
     quantity: 1000n,
     isBillable: true,
@@ -113,7 +115,7 @@ describe("UsageEventFactory", () => {
       const event = {
         id: uuidv7(),
         ...validData,
-        actor: {id: uuidv7(), type: "system" as unknown as ActorType}
+        actor: {id: uuidv7(), type: "invalid" as unknown as ActorType, displayName: "Invalid"}
       }
 
       // When

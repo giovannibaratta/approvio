@@ -1,0 +1,86 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908123000-create-usage-settlement-intents-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: usage_settlement_intents
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: operation_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: revision
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: desired_status
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actual_units
+                  type: bigint
+              - column:
+                  name: applied_at
+                  type: timestamptz
+              - column:
+                  name: available_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: attempts
+                  type: integer
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: usage_settlement_intents
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_usage_settlement_intents_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: usage_settlement_intents
+            baseColumnNames: organization_id, operation_id
+            referencedTableName: usage_operations
+            referencedColumnNames: organization_id, operation_id
+            constraintName: fk_usage_settlement_intents_operation
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: usage_settlement_intents
+            columnNames: organization_id, id
+            constraintName: usage_settlement_intents_organization_id_unique
+        - addUniqueConstraint:
+            tableName: usage_settlement_intents
+            columnNames: organization_id, operation_id, revision
+            constraintName: usage_settlement_intents_operation_revision_unique
+        # The reconciler claims only pending intents due for this organization. PostgreSQL requires SQL for a partial index.
+        - sql:
+            dbms: postgresql
+            sql: >-
+              CREATE INDEX usage_settlement_intents_pending
+              ON usage_settlement_intents(organization_id, available_at, id)
+              WHERE applied_at IS NULL

@@ -9,7 +9,10 @@ import {
   HttpCode,
   BadRequestException,
   InternalServerErrorException,
-  Req
+  Req,
+  Headers,
+  PreconditionFailedException,
+  UnauthorizedException
 } from "@nestjs/common"
 import {Response, Request} from "express"
 import {AuthService, TokenPair} from "@services"
@@ -18,8 +21,8 @@ import {isLeft} from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {PublicRoute} from "../../../main/src/auth/jwt.authguard"
-import {GetAuthenticatedEntity} from "../../../main/src/auth"
-import {AuthenticatedEntity} from "@domain"
+import {GetAuthenticatedEntity, GetBrowserSession} from "../../../main/src/auth"
+import {AuthenticatedBrowserSession, AuthenticatedEntity} from "@domain"
 import {generateErrorPayload} from "@controllers/error"
 import {logSuccess} from "@utils"
 import {HttpStatusCode} from "axios"
@@ -29,6 +32,8 @@ import {
   validateExchangeWebPrivilegeTokenRequest
 } from "./web-auth.validators"
 import {mapWebCallbackErrorToCode} from "./web-auth.mappers"
+import {WebSessionContext, validateWebOrganizationSwitch} from "@approvio/api"
+import {createSessionTag, parseSessionTag} from "../etag"
 import {
   generateErrorResponseForExchangePrivilegeToken,
   generateErrorResponseForRefreshUserToken,
@@ -85,6 +90,68 @@ export class WebAuthController {
 
     this.setAuthCookies(res, result.right)
     res.redirect(this.configProvider.frontendUrl)
+  }
+
+  @Get("session")
+  async getSessionContext(
+    @GetBrowserSession() principal: AuthenticatedBrowserSession,
+    @Res({passthrough: true}) res: Response
+  ): Promise<WebSessionContext> {
+    const result = await this.authService.getWebSessionContext(principal)()
+    if (isLeft(result)) throw new UnauthorizedException(generateErrorPayload("INVALID_SESSION", "Session is no longer active"))
+
+    res.setHeader(
+      "ETag",
+      // TODO: Why OCC is typed as a string ?
+      createSessionTag(this.configProvider.jwtConfig.secret, browserSessionAccountId(principal), principal.sessionId, BigInt(result.right.occ))
+    )
+    return {selectedOrganizationId: result.right.selectedOrganizationId}
+  }
+
+  @Post("organization-context")
+  async switchOrganizationContext(
+    @GetBrowserSession() principal: AuthenticatedBrowserSession,
+    @Body() body: unknown,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Res({passthrough: true}) res: Response
+  ): Promise<WebSessionContext> {
+    // TODO: Code should be refactored to be leverage fp-ts pipes
+    const request = validateWebOrganizationSwitch(body)
+    if (isLeft(request)) throw new BadRequestException(generateErrorPayload("INVALID_ORGANIZATION", "Invalid organization"))
+
+    const expectedOcc = parseSessionTag(
+      this.configProvider.jwtConfig.secret,
+      browserSessionAccountId(principal),
+      principal.sessionId,
+      ifMatch
+    )
+    if (isLeft(expectedOcc))
+      throw new PreconditionFailedException(generateErrorPayload("INVALID_ETAG", "If-Match must be a current session tag"))
+
+    const result = await this.authService.switchWebOrganization(principal, request.right.organizationId, expectedOcc.right.toString())()
+    if (isLeft(result)) throw new UnauthorizedException(generateErrorPayload("ORGANIZATION_SWITCH_FAILED", "Organization switch failed"))
+
+    const secure = this.configProvider.cookieSecure
+
+    // TODO: Deep dive if we should introduce a second token along the access session that is strictly binded to the organization
+    // so basically the access_token will be only for account related operations
+    // and the org_token will be used for all the operations that require the organization context
+    // it seems that the path is only used by the browser for attaching it but it is not considered a security measure
+    // still we need to assess if it will help us.
+    res.cookie("access_token", result.right.accessToken, {
+      httpOnly: true,
+      secure,
+      sameSite: "lax",
+      path: "/",
+      // TODO: In other methods the token also carries the make age. Why are we doing a different thing and also setting a deafult based on what ?
+      maxAge: (this.configProvider.jwtConfig.accessTokenExpirationSec ?? 60 * 60) * 1000
+    })
+    res.setHeader(
+      "ETag",
+      // TODO: Why casting occ to string and casting it back to BigInt ?
+      createSessionTag(this.configProvider.jwtConfig.secret, browserSessionAccountId(principal), principal.sessionId, BigInt(result.right.occ))
+    )
+    return {selectedOrganizationId: result.right.selectedOrganizationId}
   }
 
   @PublicRoute()
@@ -202,4 +269,9 @@ export class WebAuthController {
       maxAge: tokenPair.refreshTokenExpiresInSec * 1000
     })
   }
+}
+
+// TODO: Terrible function name
+function browserSessionAccountId(principal: AuthenticatedBrowserSession): string {
+  return principal.entityType === "platform" ? principal.account.id : principal.user.accountId
 }

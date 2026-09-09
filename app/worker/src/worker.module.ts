@@ -1,4 +1,4 @@
-import {QueueModule} from "@external"
+import {PersistenceModule, QueueModule} from "@external"
 import {Module} from "@nestjs/common"
 import {ServiceModule} from "@services/service.module"
 import {v7 as uuidv7} from "uuid"
@@ -8,10 +8,14 @@ import {WorkflowActionWebhookProcessor} from "./processor/workflow-action-webhoo
 import {WorkflowActionEmailProcessor} from "./processor/workflow-action-email.processor"
 import {WorkflowActionSlackProcessor} from "./processor/workflow-action-slack.processor"
 import {WorkflowExpirationSweepProcessor} from "./processor/workflow-expiration-sweep.processor"
+import {TenantOutboxRelayProcessor} from "./processor/tenant-outbox-relay.processor"
 import {WORKER_ID} from "./worker.constants"
+import {WORKFLOW_RECALCULATION_TOKEN} from "@services/durable-work/interfaces"
+import {WorkflowRecalculationService} from "@services/workflow/workflow-recalculation.service"
 
 @Module({
-  imports: [ServiceModule, QueueModule],
+  // TODO: Reason for importing the PersistenceModule ?
+  imports: [ServiceModule, PersistenceModule, QueueModule],
   providers: [
     WorkflowRecalculationProcessor,
     WorkflowEventsProcessor,
@@ -19,6 +23,12 @@ import {WORKER_ID} from "./worker.constants"
     WorkflowActionEmailProcessor,
     WorkflowActionSlackProcessor,
     WorkflowExpirationSweepProcessor,
+    TenantOutboxRelayProcessor,
+    // TODO: Why do we need this explicit import. Isn't this included in the ServiceModule ?
+    {
+      provide: WORKFLOW_RECALCULATION_TOKEN,
+      useExisting: WorkflowRecalculationService
+    },
     {
       // Initializing the worker ID here will not actually make the lock on the task safe
       // since the worker could potentially work on multiple requests in parallel. If for some

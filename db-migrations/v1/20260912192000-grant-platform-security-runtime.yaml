@@ -1,0 +1,19 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260912192000-grant-platform-security-runtime
+      author: codex
+      changes:
+        - sql:
+            splitStatements: false
+            # TODO: the IF NOT EXISTS Should be unnecessay. The role should not exists. We should fail if it already exists.
+            # Migrtations are not replayed. If it already exists, it means that it was created by a previous migration.
+            sql: |
+              DO $$
+              BEGIN
+                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'approvio_security_runtime') THEN
+                  CREATE ROLE approvio_security_runtime NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS;
+                END IF;
+              END $$;
+              GRANT approvio_security_runtime TO approvio_platform;
+              GRANT USAGE ON SCHEMA public TO approvio_security_runtime;
+              GRANT INSERT ON platform_security_events TO approvio_security_runtime;

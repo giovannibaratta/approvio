@@ -1,0 +1,8 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260912192100-grant-discovery-row-key
+      author: codex
+      comment: Prisma relation materialization requires the local membership row key in addition to the discovery projection.
+      changes:
+        - sql:
+            sql: GRANT SELECT (id, organization_id, platform_account_id, status) ON users TO approvio_discovery_runtime;

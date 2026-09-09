@@ -13,21 +13,26 @@ databaseChangeLog:
                     primaryKey: true
                     nullable: false
               - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
                   name: name
-                  type: varchar
+                  type: text
                   constraints:
                     nullable: false
               - column:
                   name: description
-                  type: varchar
+                  type: text
               - column:
                   name: created_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: updated_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
@@ -35,7 +40,23 @@ databaseChangeLog:
                   type: bigint
                   constraints:
                     nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: groups
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_groups_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        # PostgreSQL requires the referenced key of a composite foreign key to be unique. This
+        # permits child tables to reference (organization_id, id), which proves that related rows
+        # belong to the same organization. `id` remains globally unique; this supporting index is
+        # retained solely for tenant-matching foreign keys.
         - addUniqueConstraint:
             tableName: groups
-            columnNames: name
-            constraintName: groups_name_unique
+            columnNames: organization_id, id
+            constraintName: groups_organization_id_unique
+        - addUniqueConstraint:
+            tableName: groups
+            columnNames: organization_id, name
+            constraintName: groups_organization_name_unique
