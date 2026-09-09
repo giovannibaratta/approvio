@@ -8,48 +8,75 @@ databaseChangeLog:
             columns:
               - column:
                   name: id
-                  type: UUID
+                  type: uuid
                   constraints:
                     primaryKey: true
                     nullable: false
               - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
                   name: workflow_id
-                  type: UUID
-                  constraints:
-                    foreignKeyName: fk_workflow_actions_webhook_workflow_id
-                    references: workflows(id)
-                    nullable: false
-              - column:
-                  name: status
-                  type: VARCHAR(255)
+                  type: uuid
                   constraints:
                     nullable: false
               - column:
-                  name: url
-                  type: VARCHAR(4096)
+                  name: event_id
+                  type: uuid
                   constraints:
                     nullable: false
               - column:
-                  name: method
-                  type: VARCHAR(10)
+                  name: action_index
+                  type: integer
                   constraints:
                     nullable: false
               - column:
-                  name: headers
-                  type: JSONB
+                  name: initiating_actor_type
+                  type: text
+                  constraints:
+                    nullable: false
               - column:
-                  name: payload
-                  type: JSONB
+                  name: initiating_actor_id
+                  type: uuid
+                  constraints:
+                    nullable: false
               - column:
-                  name: response_status
-                  type: INT
+                  name: initiating_actor_display_name
+                  type: text
+                  constraints:
+                    nullable: false
               - column:
-                  name: response_body
-                  type: TEXT
+                  name: enc_payload
+                  type: text
+                  remarks: Tenant-bound encrypted dispatch payload.
+                  constraints:
+                    nullable: false
               - column:
-                  name: retry_count
-                  type: INT
-                  defaultValue: 0
+                  name: state
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: lease_owner
+                  type: text
+              - column:
+                  name: lease_until
+                  type: timestamptz
+              - column:
+                  name: fencing
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: available_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: attempts
+                  type: integer
                   constraints:
                     nullable: false
               - column:
@@ -63,21 +90,31 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
-                  name: error_reason
-                  type: VARCHAR(16384)
-              - column:
-                  name: locked_by
-                  type: VARCHAR(512)
-              - column:
-                  name: locked_at
-                  type: timestamptz
-              - column:
                   name: occ
-                  type: BIGINT
+                  type: bigint
                   constraints:
                     nullable: false
-              - column:
-                  name: response_body_status
-                  type: VARCHAR(50)
-                  constraints:
-                    nullable: true
+        - addForeignKeyConstraint:
+            baseTableName: workflow_actions_webhook_tasks
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_workflow_actions_webhook_tasks_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: workflow_actions_webhook_tasks
+            baseColumnNames: organization_id, workflow_id
+            referencedTableName: workflows
+            referencedColumnNames: organization_id, id
+            constraintName: fk_workflow_actions_webhook_tasks_workflow
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: workflow_actions_webhook_tasks
+            columnNames: organization_id, id
+            constraintName: workflow_actions_webhook_tasks_organization_id_unique
+        - addUniqueConstraint:
+            tableName: workflow_actions_webhook_tasks
+            columnNames: organization_id, event_id, action_index
+            constraintName: workflow_actions_webhook_tasks_organization_event_action_unique

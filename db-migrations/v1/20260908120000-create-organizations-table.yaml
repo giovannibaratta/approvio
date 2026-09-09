@@ -1,0 +1,55 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908120000-create-organizations-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: organizations
+            remarks: Organization tombstones are retained; physical deletion is disabled pending a retention policy.
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: slug
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: display_name
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: suspension_reason
+                  type: text
+              - column:
+                  name: grace_until
+                  type: timestamptz
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: organizations
+            columnNames: slug
+            constraintName: organizations_slug_unique

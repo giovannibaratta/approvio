@@ -1,4 +1,4 @@
-import {Injectable, Logger, OnModuleInit, OnModuleDestroy} from "@nestjs/common"
+import {Inject, Injectable, Logger, OnModuleInit, OnModuleDestroy} from "@nestjs/common"
 import {PrismaClient, Prisma} from "@prisma/client"
 import {ConfigProvider} from "../config"
 import {transactionContext} from "./transaction-context"
@@ -7,22 +7,13 @@ import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import * as E from "fp-ts/Either"
 import {checkMigrationId} from "./migration-utils"
-import {retryWithBackoff} from "@utils"
+import {isUUIDv7} from "@utils"
 
 // This constant MUST be updated whenever the repositories need to access properties defined by a
 // a newer migration file. The timestamp provided here is used to check if the database is using
 // a migration that is older than the one required by the repositories. If this is the case, the
 // application will fail to start.
-export const REQUIRED_DB_MIGRATION_TIMESTAMP = "20260830120003"
-
-const TRANSIENT_CODES = [
-  "P1001", // Can't reach database server
-  "P1008", // Operations timed out
-  "P1017", // Server closed connection
-  "P2024", // Connection pool timeout
-  "P2028", // Transaction API error
-  "P2034" // Transaction failed due to write conflict or deadlock
-]
+export const REQUIRED_DB_MIGRATION_TIMESTAMP = "20260908123300"
 
 export class ConflictingIsolationLevelError extends Error {
   constructor(requested: string, active: string) {
@@ -31,6 +22,48 @@ export class ConflictingIsolationLevelError extends Error {
     )
     this.name = "ConflictingIsolationLevelError"
   }
+}
+
+export class TenantContextRequiredError extends Error {
+  constructor() {
+    super("A tenant transaction context is required")
+    this.name = "TenantContextRequiredError"
+  }
+}
+
+export class InvalidOrganizationIdError extends Error {
+  constructor() {
+    super("The tenant organization ID must be a UUIDv7")
+    this.name = "InvalidOrganizationIdError"
+  }
+}
+
+export class OrganizationMismatchError extends Error {
+  constructor(requested: string, active: string) {
+    super(`Tenant context mismatch: requested ${requested}, active ${active}`)
+    this.name = "OrganizationMismatchError"
+  }
+}
+
+// TODO: This class has been introduced replacing TRANSIENT_CODES but I don't believe we have
+// covered the codes that were detected before. What is the reason for this choice ?
+export class RetryableTransactionError extends Error {
+  constructor(message = "The transaction must be retried") {
+    super(message)
+    this.name = "RetryableTransactionError"
+  }
+}
+
+export class TransactionRetryExhaustedError extends Error {
+  constructor(readonly cause: unknown) {
+    super("Retryable transaction attempts were exhausted")
+    this.name = "TransactionRetryExhaustedError"
+  }
+}
+
+interface TenantDatabaseConfig extends Pick<ConfigProvider, "dbConnectionUrl" | "databaseRetryConfig"> {
+  // TODO: Should we include this in the a database config or parma in the Config provider and maybe push everything under a databse field ?
+  readonly databasePoolSize?: number
 }
 
 @Injectable()
@@ -48,46 +81,21 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
   private static readonly DEFAULT_ISOLATION_LEVEL: Prisma.TransactionIsolationLevel =
     Prisma.TransactionIsolationLevel.ReadCommitted
 
-  private static isTransientPrismaError(error: unknown): boolean {
-    if (error instanceof Prisma.PrismaClientKnownRequestError) return TRANSIENT_CODES.includes(error.code)
-    return false
-  }
-
-  constructor(readonly config: ConfigProvider) {
+  constructor(@Inject(ConfigProvider) readonly config: TenantDatabaseConfig) {
     const basePrisma = new PrismaClient({
       adapter: new PrismaPg({
-        connectionString: config.dbConnectionUrl
+        connectionString: config.dbConnectionUrl,
+        max: config.databasePoolSize
       })
     })
 
     // Modify the Prisma client to prevent update/delete operations on audit logs.
     // This is not expected to be the ultimate solution for protection records, but only a
     // safe mechanism for accidental data loss due to silly mistakes.
-    // Also inject automated query retries on transient errors when running outside of transaction context.
+
+    // TODO: Should we block any non transactional (that enforce the org context) ?  keep in mind the platform operator access. Maybe it is safer to have two diffent clients.
     this.prisma = basePrisma.$extends({
       query: {
-        $allOperations: async ({args, query}) => {
-          // If we are already running inside transactional() context, do not retry individual query.
-          // Let the outer transactional() retry block handle it!
-          if (transactionContext.getStore() !== undefined) return query(args) as Promise<unknown>
-
-          // Otherwise, we are outside of a transaction. Let's retry on transient errors!
-          const executeWithRetry = TE.tryCatch(
-            () => query(args) as Promise<unknown>,
-            error => error
-          )
-
-          return pipe(
-            retryWithBackoff(
-              () => executeWithRetry,
-              e => DatabaseClient.isTransientPrismaError(e),
-              this.config.databaseRetryConfig
-            ),
-            TE.getOrElse(error => {
-              throw error
-            })
-          )()
-        },
         auditLog: auditLogExtension
       }
     }) as PrismaClient
@@ -109,7 +117,9 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
   }
 
   public get cx(): Prisma.TransactionClient {
-    return transactionContext.getStore()?.tx ?? this.prisma
+    const activeContext = transactionContext.getStore()
+    if (!activeContext) throw new TenantContextRequiredError()
+    return activeContext.tx
   }
 
   /**
@@ -122,14 +132,20 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
    * @param options - Optional configuration (e.g., isolationLevel).
    */
   public transactional<T>(
+    organizationId: string,
     computation: (cx: Prisma.TransactionClient) => Promise<T>,
     options?: {isolationLevel?: Prisma.TransactionIsolationLevel}
   ): Promise<T> {
+    if (!isUUIDv7(organizationId)) throw new InvalidOrganizationIdError()
+
     const activeContext = transactionContext.getStore()
     const isolationLevel = options?.isolationLevel ?? DatabaseClient.DEFAULT_ISOLATION_LEVEL
 
     // If an active transaction exists, reuse it and check isolation level
     if (activeContext) {
+      if (activeContext.organizationId !== organizationId)
+        throw new OrganizationMismatchError(organizationId, activeContext.organizationId)
+
       const requestedStrictness = DatabaseClient.ISOLATION_STRICTNESS[isolationLevel]
       const currentStrictness = DatabaseClient.ISOLATION_STRICTNESS[activeContext.isolationLevel]
 
@@ -139,29 +155,48 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
       return computation(activeContext.tx)
     }
 
-    // Start a new transaction and initialize context
-    const doTx = TE.tryCatch(
-      () =>
-        this.prisma.$transaction(
+    return this.executeWithRetry(organizationId, computation, isolationLevel)
+  }
+
+  private async executeWithRetry<T>(
+    organizationId: string,
+    computation: (cx: Prisma.TransactionClient) => Promise<T>,
+    isolationLevel: Prisma.TransactionIsolationLevel
+  ): Promise<T> {
+    const retry = this.config.databaseRetryConfig
+
+    for (let attempt = 1; attempt <= retry.maxAttempts; attempt++)
+      try {
+        return await this.prisma.$transaction(
           async tx => {
-            return transactionContext.run({tx, isolationLevel}, () => computation(tx))
+            // TODO: The role should be defined in a constant.
+            await tx.$executeRawUnsafe('SET LOCAL ROLE "approvio_tenant_runtime"')
+            // TODO: We should document why we are doing this.
+            await tx.$queryRaw`SELECT set_config('approvio.organization_id', ${organizationId}, true)`
+            return transactionContext.run({tx, organizationId, isolationLevel}, () => computation(tx))
           },
           {isolationLevel}
-        ),
-      error => error
-    )
+        )
+      } catch (error) {
+        if (!DatabaseClient.isRetryableTransactionError(error)) throw error
+        if (attempt === retry.maxAttempts) throw new TransactionRetryExhaustedError(error)
 
-    return pipe(
-      retryWithBackoff(
-        () => doTx,
-        e => DatabaseClient.isTransientPrismaError(e),
-        this.config.databaseRetryConfig
-      ),
-      // If TE.left, we exhausted retries or hit a non-transient error; throw it so Promise rejects
-      TE.getOrElse(error => {
-        throw error
-      })
-    )()
+        const maximumDelay = Math.min(
+          retry.initialDelayMs * Math.pow(retry.backoffFactor, attempt - 1),
+          retry.maxDelayMs
+        )
+        const jitteredDelay = Math.floor(Math.random() * (maximumDelay + 1))
+        // TODO: What is this, for waiting ?
+        if (jitteredDelay > 0) await new Promise(resolve => setTimeout(resolve, jitteredDelay))
+      }
+
+    // TODO: This undefined smell a bit
+    throw new TransactionRetryExhaustedError(undefined)
+  }
+
+  private static isRetryableTransactionError(error: unknown): boolean {
+    if (error instanceof RetryableTransactionError) return true
+    return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034"
   }
 
   private checkDbVersion(): TE.TaskEither<string, void> {

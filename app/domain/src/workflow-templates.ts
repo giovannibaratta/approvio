@@ -38,6 +38,7 @@ export type WorkflowTemplate = Readonly<WorkflowTemplateData & WorkflowTemplateL
 
 interface WorkflowTemplateData {
   id: string
+  organizationId: string
   name: string
   version: number
   description?: string
@@ -92,6 +93,7 @@ type UnprefixedWorkflowTemplateValidationError =
   | "version_too_long"
   | "version_invalid_format"
   | "space_id_invalid_uuid"
+  | "organization_id_invalid_uuid"
 
 export type WorkflowTemplateDeprecationError =
   "workflow_template_not_active" | "workflow_template_not_pending_deprecation"
@@ -192,6 +194,7 @@ export class WorkflowTemplateFactory {
     return pipe(
       E.Do,
       E.bindW("name", () => validateWorkflowTemplateName(data.name)),
+      E.bindW("organizationId", () => validateOrganizationId(data.organizationId)),
       E.bindW("version", () => validateWorkflowTemplateVersion(data.version)),
       E.bindW("description", () => validateWorkflowTemplateDescription(data.description)),
       E.bindW("approvalRule", () => ApprovalRuleFactory.validate(data.approvalRule)),
@@ -200,10 +203,10 @@ export class WorkflowTemplateFactory {
       E.bindW("status", () => validateWorkflowTemplateStatus(data.status)),
       E.bindW("spaceId", () => validateSpaceId(data.spaceId)),
       E.chainFirstW(() => validateCreatedBeforeUpdated(data.createdAt, data.updatedAt)),
-      E.map(({name, version, description, approvalRule, actions, defaultExpiresInHours, status, spaceId}) => {
-        const workflowTemplateData: WorkflowTemplateData = {
-          ...data,
+      E.map(
+        ({
           name,
+          organizationId,
           version,
           description,
           approvalRule,
@@ -211,17 +214,30 @@ export class WorkflowTemplateFactory {
           defaultExpiresInHours,
           status,
           spaceId
-        }
+        }) => {
+          const workflowTemplateData: WorkflowTemplateData = {
+            ...data,
+            organizationId,
+            name,
+            version,
+            description,
+            approvalRule,
+            actions,
+            defaultExpiresInHours,
+            status,
+            spaceId
+          }
 
-        return {
-          ...workflowTemplateData,
-          canVote: (
-            memberships: ReadonlyArray<MembershipWithGroupRef>,
-            entityRoles: ReadonlyArray<UnconstrainedBoundRole>,
-            votedForGroups?: ReadonlyArray<string>
-          ) => canVote(workflowTemplateData, memberships, entityRoles, votedForGroups)
+          return {
+            ...workflowTemplateData,
+            canVote: (
+              memberships: ReadonlyArray<MembershipWithGroupRef>,
+              entityRoles: ReadonlyArray<UnconstrainedBoundRole>,
+              votedForGroups?: ReadonlyArray<string>
+            ) => canVote(workflowTemplateData, memberships, entityRoles, votedForGroups)
+          }
         }
-      })
+      )
     )
   }
 }
@@ -235,6 +251,11 @@ function validateWorkflowTemplateName(name: string): Either<WorkflowTemplateVali
     return E.left("workflow_template_name_invalid_characters")
 
   return E.right(name)
+}
+
+function validateOrganizationId(organizationId: string): Either<WorkflowTemplateValidationError, string> {
+  if (!isUUIDv7(organizationId)) return left("workflow_template_organization_id_invalid_uuid")
+  return right(organizationId)
 }
 
 function validateWorkflowTemplateDescription(

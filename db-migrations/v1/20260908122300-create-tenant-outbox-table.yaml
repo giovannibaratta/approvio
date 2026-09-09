@@ -1,0 +1,100 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908122300-create-tenant-outbox-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: tenant_outbox
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: event_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: event_type
+                  type: text
+                  constraints:
+                    nullable: false
+            # TODO: Assess if schema_versions should be stored in the payload 
+              - column:
+                  name: schema_version
+                  type: integer
+                  constraints:
+                    nullable: false
+              - column:
+                  name: resource_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: resource_version
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: payload
+                  type: jsonb
+                  constraints:
+                    nullable: false
+              - column:
+                  name: available_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: lease_owner
+                  type: text
+              - column:
+                  name: lease_until
+                  type: timestamptz
+              - column:
+                  name: published_at
+                  type: timestamptz
+              - column:
+                  name: attempts
+                  type: integer
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: tenant_outbox
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_tenant_outbox_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: tenant_outbox
+            columnNames: organization_id, id
+            constraintName: tenant_outbox_organization_id_unique
+        - addUniqueConstraint:
+            tableName: tenant_outbox
+            columnNames: organization_id, event_id
+            constraintName: tenant_outbox_organization_event_unique
+        - createIndex:
+            tableName: tenant_outbox
+            indexName: idx_tenant_outbox_organization_available
+            columns:
+              - column:
+                  name: organization_id
+              - column:
+                  name: available_at
+              - column:
+                  name: id

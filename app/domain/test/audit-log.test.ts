@@ -1,10 +1,13 @@
 import {AuditLogFactory} from "../src/audit-log"
 import {isLeft, isRight} from "fp-ts/Either"
+import {v7 as uuidv7} from "uuid"
 
 describe("AuditLogFactory", () => {
-  const baseActor = {id: "user-id", type: "user"}
+  const organizationId = uuidv7()
+  const baseActor = {id: "user-id", type: "user", displayName: "Test User"}
   const baseAudit = {
     id: "audit-id",
+    organizationId,
     actor: baseActor,
     createdAt: new Date()
   }
@@ -19,8 +22,8 @@ describe("AuditLogFactory", () => {
         entityId: "group-id",
         payload: {
           members: [
-            {entityId: "user-1", entityType: "user"},
-            {entityId: "agent-1", entityType: "agent"}
+            {entityId: "user-1", entityType: "user", organizationId},
+            {entityId: "agent-1", entityType: "agent", organizationId}
           ]
         }
       }
@@ -40,7 +43,7 @@ describe("AuditLogFactory", () => {
         entityType: "GROUP",
         entityId: "group-id",
         payload: {
-          members: [{entityId: "user-1", entityType: "invalid"}]
+          members: [{entityId: "user-1", entityType: "invalid", organizationId}]
         }
       }
 
@@ -64,11 +67,11 @@ describe("AuditLogFactory", () => {
           roles: [
             {
               roleName: "Admin",
-              scope: {type: "org"}
+              scope: {type: "org", organizationId}
             },
             {
               roleName: "SpaceManager",
-              scope: {type: "space", spaceId: "space-1"}
+              scope: {type: "space", organizationId, spaceId: uuidv7()}
             }
           ]
         }

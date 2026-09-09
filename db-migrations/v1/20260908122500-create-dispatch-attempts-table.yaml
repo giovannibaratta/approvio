@@ -1,0 +1,114 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908122500-create-dispatch-attempts-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: dispatch_attempts
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+            # TODO: This method does not scale well if we add more actions type
+              - column:
+                  name: email_task_id
+                  type: uuid
+              - column:
+                  name: webhook_task_id
+                  type: uuid
+              - column:
+                  name: slack_task_id
+                  type: uuid
+            # TODO: What is the fencing ?
+              - column:
+                  name: fencing
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: state
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: outcome_category
+                  type: text
+              - column:
+                  name: admitted_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: sending_at
+                  type: timestamptz
+              - column:
+                  name: completed_at
+                  type: timestamptz
+        - addForeignKeyConstraint:
+            baseTableName: dispatch_attempts
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_dispatch_attempts_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: dispatch_attempts
+            baseColumnNames: organization_id, email_task_id
+            referencedTableName: workflow_actions_email_task
+            referencedColumnNames: organization_id, id
+            constraintName: fk_dispatch_attempts_email_task
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: dispatch_attempts
+            baseColumnNames: organization_id, webhook_task_id
+            referencedTableName: workflow_actions_webhook_tasks
+            referencedColumnNames: organization_id, id
+            constraintName: fk_dispatch_attempts_webhook_task
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: dispatch_attempts
+            baseColumnNames: organization_id, slack_task_id
+            referencedTableName: workflow_actions_slack_tasks
+            referencedColumnNames: organization_id, id
+            constraintName: fk_dispatch_attempts_slack_task
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: dispatch_attempts
+            columnNames: organization_id, id
+            constraintName: dispatch_attempts_organization_id_unique
+        # Partial indexes enforce one fence per concrete task type; ordinary Liquibase indexes cannot express WHERE.
+        - sql:
+            dbms: postgresql
+            sql: >-
+              CREATE UNIQUE INDEX dispatch_attempts_email_fence_unique
+              ON dispatch_attempts(organization_id, email_task_id, fencing)
+              WHERE email_task_id IS NOT NULL
+        - sql:
+            dbms: postgresql
+            sql: >-
+              CREATE UNIQUE INDEX dispatch_attempts_webhook_fence_unique
+              ON dispatch_attempts(organization_id, webhook_task_id, fencing)
+              WHERE webhook_task_id IS NOT NULL
+        - sql:
+            dbms: postgresql
+            sql: >-
+              CREATE UNIQUE INDEX dispatch_attempts_slack_fence_unique
+              ON dispatch_attempts(organization_id, slack_task_id, fencing)
+              WHERE slack_task_id IS NOT NULL

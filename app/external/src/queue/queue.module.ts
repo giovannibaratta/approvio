@@ -10,6 +10,7 @@ export const WORKFLOW_ACTION_EMAIL_QUEUE = "workflow-action-email"
 export const WORKFLOW_ACTION_WEBHOOK_QUEUE = "workflow-action-webhook"
 export const WORKFLOW_ACTION_SLACK_QUEUE = "workflow-action-slack"
 export const WORKFLOW_EXPIRATION_SWEEP_QUEUE = "workflow-expiration-sweep"
+export const TENANT_OUTBOX_RELAY_QUEUE = "tenant-outbox-relay"
 
 @Module({
   imports: [
@@ -55,6 +56,9 @@ export const WORKFLOW_EXPIRATION_SWEEP_QUEUE = "workflow-expiration-sweep"
     }),
     BullModule.registerQueue({
       name: WORKFLOW_EXPIRATION_SWEEP_QUEUE
+    }),
+    BullModule.registerQueue({
+      name: TENANT_OUTBOX_RELAY_QUEUE
     })
   ],
   exports: [BullModule]

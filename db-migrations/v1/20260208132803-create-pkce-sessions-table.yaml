@@ -8,43 +8,100 @@ databaseChangeLog:
             columns:
               - column:
                   name: state
-                  type: VARCHAR(255)
+                  type: text
                   constraints:
                     primaryKey: true
                     nullable: false
               - column:
-                  name: code_verifier
-                  type: VARCHAR(2048)
+                  name: enc_code_verifier
+                  type: text
+                  remarks: Platform-bound encrypted PKCE verifier.
                   constraints:
                     nullable: false
               - column:
                   name: redirect_uri
-                  type: VARCHAR(500)
+                  type: text
                   constraints:
                     nullable: false
               - column:
                   name: oidc_state
-                  type: VARCHAR(255)
+                  type: text
                   constraints:
                     nullable: false
               - column:
+                  name: provider_connection_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  # TODO: If account_id and session_id remain stored together, enforce that the
+                  # session belongs to the account and uses provider_connection_id with composite
+                  # foreign keys. Alternatively, remove redundant bindings and derive them from
+                  # the session. D1 must decide before implementing the PKCE repository.
+                  name: account_id
+                  type: uuid
+              - column:
+                  name: session_id
+                  type: uuid
+              - column:
+                  name: step_up_organization_id
+                  type: uuid
+              - column:
+                  name: step_up_operation
+                  type: text
+              - column:
+                  name: step_up_resource_id
+                  type: uuid
+              - column:
+                  name: step_up_context_version
+                  type: bigint
+              - column:
                   name: created_at
-                  type: TIMESTAMP
-                  defaultValueComputed: CURRENT_TIMESTAMP
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: expires_at
-                  type: TIMESTAMP
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: used_at
-                  type: TIMESTAMP
-                  constraints:
-                    nullable: true
+                  type: timestamptz
               - column:
                   name: occ
-                  type: BIGINT
+                  type: bigint
                   constraints:
                     nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: pkce_sessions
+            baseColumnNames: provider_connection_id
+            referencedTableName: provider_connections
+            referencedColumnNames: id
+            constraintName: fk_pkce_sessions_provider
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: pkce_sessions
+            baseColumnNames: account_id
+            referencedTableName: platform_accounts
+            referencedColumnNames: id
+            constraintName: fk_pkce_sessions_account
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: pkce_sessions
+            baseColumnNames: session_id
+            referencedTableName: browser_sessions
+            referencedColumnNames: id
+            constraintName: fk_pkce_sessions_session
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: pkce_sessions
+            baseColumnNames: step_up_organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_pkce_sessions_step_up_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION

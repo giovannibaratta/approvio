@@ -7,8 +7,21 @@ import {
   validateRoleAssignmentRequest,
   validateRoleRemovalRequest
 } from "@approvio/api"
-import {GetAuthenticatedEntity} from "@app/auth"
-import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Logger, Param, Post, Put, Res} from "@nestjs/common"
+import {GetAuthenticatedEntity, GetTenantContext} from "@app/auth"
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Logger,
+  Param,
+  Post,
+  Put,
+  Res
+} from "@nestjs/common"
 import {
   AgentService,
   RegisterAgentRequest,
@@ -26,31 +39,54 @@ import {
   generateErrorResponseForAgentRoleAssignment,
   generateErrorResponseForAgentRoleRemoval,
   generateErrorResponseForGetAgent,
+  bindRoleScopeToOrganization,
   mapAgentToRegistrationResponse,
   mapAgentToApi
 } from "./agents.mappers"
-import {AuthenticatedEntity, roleScopeToString} from "@domain"
+import {AuthenticatedEntity, TenantContext, roleScopeToString} from "@domain"
 import {logSuccess} from "@utils"
+import {ConfigProvider} from "@external/config"
+import {createEntityTag, parseEntityTag} from "../etag"
+import {PreconditionFailedException} from "@nestjs/common"
+import {generateErrorPayload} from "../error"
 
-export const AGENTS_ENDPOINT_ROOT = "agents"
+export const AGENTS_ENDPOINT_ROOT = "o/:organizationId/agents"
 
 @Controller(AGENTS_ENDPOINT_ROOT)
 export class AgentsController {
+  private readonly etagSecret: string
+
   constructor(
     private readonly agentService: AgentService,
-    private readonly roleService: RoleService
-  ) {}
+    private readonly roleService: RoleService,
+    private readonly configProvider: ConfigProvider
+  ) {
+    this.etagSecret = configProvider.jwtConfig.secret
+  }
 
   @Get(":idOrName")
   @HttpCode(HttpStatus.OK)
-  async getAgent(@Param("idOrName") idOrName: string): Promise<AgentGet200Response> {
+  async getAgent(
+    @Param("idOrName") idOrName: string,
+    @GetTenantContext() context: TenantContext,
+    @Res({passthrough: true}) response: Response
+  ): Promise<AgentGet200Response> {
     const eitherAgent = await pipe(
-      this.agentService.getAgent(idOrName),
+      this.agentService.getAgent(context, idOrName),
       logSuccess("Agent retrieved", "AgentsController", agent => ({agentId: agent.id}))
     )()
 
     if (isLeft(eitherAgent)) throw generateErrorResponseForGetAgent(eitherAgent.left, "Failed to fetch agent details")
 
+    response.setHeader(
+      "ETag",
+      createEntityTag(
+        this.etagSecret,
+        context.organizationId,
+        eitherAgent.right.id,
+        eitherAgent.right.occ
+      )
+    )
     return mapAgentToApi(eitherAgent.right)
   }
 
@@ -59,12 +95,13 @@ export class AgentsController {
   async registerAgent(
     @Body() request: AgentRegistrationRequest,
     @Res({passthrough: true}) response: Response,
+    @GetTenantContext() context: TenantContext,
     @GetAuthenticatedEntity() entity: AuthenticatedEntity
   ): Promise<AgentRegistrationResponse> {
     const serviceRegisterAgent = (req: RegisterAgentRequest) => this.agentService.registerAgent(req)
 
     const eitherAgent = await pipe(
-      {agentData: request, requestor: entity},
+      {agentData: request, requestor: entity, context},
       agentRegistrationApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceRegisterAgent),
@@ -75,7 +112,7 @@ export class AgentsController {
     if (isLeft(eitherAgent)) throw generateErrorResponseForRegisterAgent(eitherAgent.left, "Failed to register agent")
 
     const agent = eitherAgent.right
-    const location = `${response.req.protocol}://${response.req.headers.host}/agents/${agent.id}`
+    const location = `${response.req.protocol}://${response.req.headers.host}/o/${context.organizationId}/agents/${agent.id}`
     response.setHeader("Location", location)
 
     return mapAgentToRegistrationResponse(agent)
@@ -86,13 +123,24 @@ export class AgentsController {
   async assignRolesToAgent(
     @Param("agentId") agentId: string,
     @Body() request: unknown,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Res({passthrough: true}) response: Response,
+    @GetTenantContext() context: TenantContext,
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<void> {
+    // TODO: This should have been node inside the pipe.
+    const occVersion = parseEntityTag(this.etagSecret, context.organizationId, agentId, ifMatch)
+    if (isLeft(occVersion))
+      throw new PreconditionFailedException(
+        generateErrorPayload("INVALID_ETAG", "If-Match must be a current entity tag")
+      )
+
     const mapToServiceModel = (req: RoleAssignmentRequest) => ({
       agentId,
-      roles: req.roles,
+      roles: req.roles.map(role => ({...role, scope: bindRoleScopeToOrganization(role.scope, context.organizationId)})),
       requestor,
-      occVersion: BigInt(req.concurrencyControl.version)
+      context,
+      occVersion: occVersion.right
     })
     const assignRole = (req: AssignRolesToAgentRequest) => this.roleService.assignRolesToAgent(req)
 
@@ -109,6 +157,11 @@ export class AgentsController {
 
     if (isLeft(eitherResult))
       throw generateErrorResponseForAgentRoleAssignment(eitherResult.left, "Failed to assign roles to agent")
+    // TODO: Why are we incrementing the OCC here ? It should be the domain + service. Controller layer should only map the values ?
+    response.setHeader(
+      "ETag",
+      createEntityTag(this.etagSecret, context.organizationId, agentId, occVersion.right + 1n)
+    )
   }
 
   @Delete(":agentId/roles")
@@ -116,13 +169,23 @@ export class AgentsController {
   async removeRolesFromAgent(
     @Param("agentId") agentId: string,
     @Body() request: unknown,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Res({passthrough: true}) response: Response,
+    @GetTenantContext() context: TenantContext,
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<void> {
+    const occVersion = parseEntityTag(this.etagSecret, context.organizationId, agentId, ifMatch)
+    if (isLeft(occVersion))
+      throw new PreconditionFailedException(
+        generateErrorPayload("INVALID_ETAG", "If-Match must be a current entity tag")
+      )
+
     const mapToServiceModel = (req: RoleRemovalRequest) => ({
       agentId,
-      roles: req.roles,
+      roles: req.roles.map(role => ({...role, scope: bindRoleScopeToOrganization(role.scope, context.organizationId)})),
       requestor,
-      occVersion: BigInt(req.concurrencyControl.version)
+      context,
+      occVersion: occVersion.right
     })
     const removeRole = (req: RemoveRolesFromAgentRequest) => this.roleService.removeRolesFromAgent(req)
 
@@ -139,5 +202,11 @@ export class AgentsController {
 
     if (isLeft(eitherResult))
       throw generateErrorResponseForAgentRoleRemoval(eitherResult.left, "Failed to remove roles from agent")
+
+    // TODO: Why are we incrementing the OCC here ? It should be the domain + service. Controller layer should only map the values ?
+    response.setHeader(
+      "ETag",
+      createEntityTag(this.etagSecret, context.organizationId, agentId, occVersion.right + 1n)
+    )
   }
 }

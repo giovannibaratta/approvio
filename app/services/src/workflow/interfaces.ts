@@ -1,5 +1,7 @@
 import {
   DecoratedWorkflow,
+  BoundaryError,
+  TenantContext,
   Workflow,
   WorkflowDecoratorSelector,
   WorkflowTemplateValidationError,

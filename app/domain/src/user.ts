@@ -9,6 +9,7 @@ export const DISPLAY_NAME_MAX_LENGTH = 255
 export const EMAIL_MAX_LENGTH = 255
 
 export enum OrgRole {
+  OWNER = "owner",
   ADMIN = "admin",
   MEMBER = "member"
 }

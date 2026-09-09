@@ -13,6 +13,11 @@ databaseChangeLog:
                     primaryKey: true
                     nullable: false
               - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
                   name: agent_name
                   type: text
                   constraints:
@@ -23,21 +28,41 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
-                  name: created_at
-                  type: timestamp
+                  name: status
+                  type: text
                   constraints:
                     nullable: false
               - column:
                   name: roles
-                  type: json
+                  type: jsonb
+              - column:
+                  name: created_at
+                  type: timestamptz
                   constraints:
-                    nullable: true
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
               - column:
                   name: occ
                   type: bigint
                   constraints:
                     nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: agents
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_agents_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
         - addUniqueConstraint:
             tableName: agents
-            columnNames: agent_name
-            constraintName: agents_agent_name_unique
+            columnNames: organization_id, id
+            constraintName: agents_organization_id_unique
+        - addUniqueConstraint:
+            tableName: agents
+            columnNames: organization_id, agent_name
+            constraintName: agents_organization_name_unique

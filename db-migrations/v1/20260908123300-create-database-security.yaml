@@ -1,0 +1,113 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908123300-create-database-security
+      author: giovannibaratta
+      comment: PostgreSQL-specific isolation policies and least-privilege roles.
+      changes:
+        # Runtime roles are capability boundaries: tenant data, platform identity, browser/PKCE sessions,
+        # membership discovery, organization provisioning, lifecycle scheduling, dispatch workers, audit,
+        # and quota metering. Deployment login roles receive only the capability memberships they need.
+        # This block creates the complete expected role set. A pre-existing role is a configuration collision
+        # and deliberately fails the clean-slate migration; it grants no login and no membership. RLS and grants
+        # below enforce the boundaries even if application code is bypassed.
+        - sql:
+            dbms: postgresql
+            splitStatements: false
+            sql: |
+              DO $$
+              DECLARE
+                role_name text;
+              BEGIN
+                FOREACH role_name IN ARRAY ARRAY[
+                  'approvio_tenant_runtime', 'approvio_identity_runtime', 'approvio_session_runtime',
+                  'approvio_discovery_runtime', 'approvio_provisioning_runtime', 'approvio_scheduler_runtime',
+                  'approvio_worker_runtime', 'approvio_audit_runtime', 'approvio_metering_runtime'
+                ] LOOP
+                  EXECUTE format(
+                    'CREATE ROLE %I NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS',
+                    role_name
+                  );
+                END LOOP;
+              END
+              $$;
+
+              -- Login principals are provisioned outside this changelog because their credentials are secrets.
+              -- Their stable names are the deployment ABI; this non-secret membership binding belongs to Liquibase.
+              GRANT approvio_tenant_runtime TO approvio_tenant;
+              GRANT approvio_identity_runtime, approvio_session_runtime, approvio_discovery_runtime,
+                approvio_provisioning_runtime TO approvio_platform;
+              GRANT approvio_worker_runtime, approvio_audit_runtime, approvio_metering_runtime,
+                approvio_scheduler_runtime TO approvio_worker;
+
+              -- Every listed table owns tenant data. Dynamic SQL is required because table identifiers cannot
+              -- be parameters. Each table receives FORCE RLS and a policy that permits a row only when its
+              -- organization_id equals the transaction-local organization context; USING controls reads and
+              -- existing-row updates/deletes, while WITH CHECK controls inserts and updated row values.
+              DO $$
+              DECLARE
+                tenant_table text;
+              BEGIN
+                FOREACH tenant_table IN ARRAY ARRAY[
+                  'users', 'organization_invitations', 'groups', 'agents', 'group_memberships',
+                  'agent_group_memberships', 'agent_challenges', 'agent_refresh_tokens', 'spaces',
+                  'workflow_templates', 'workflows', 'votes', 'workflow_actions_email_task',
+                  'workflow_actions_webhook_tasks', 'workflow_actions_slack_tasks', 'tenant_outbox',
+                  'tenant_event_receipts', 'dispatch_attempts', 'step_up_receipts', 'quotas',
+                  'usage_events', 'usage_operations', 'usage_settlement_intents', 'audit_logs'
+                ] LOOP
+                  EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tenant_table);
+                  EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', tenant_table);
+                  EXECUTE format(
+                    'CREATE POLICY %I_tenant_isolation ON %I TO approvio_tenant_runtime, approvio_provisioning_runtime, approvio_worker_runtime, approvio_audit_runtime, approvio_metering_runtime USING (organization_id = NULLIF(current_setting(''approvio.organization_id'', true), '''')::uuid) WITH CHECK (organization_id = NULLIF(current_setting(''approvio.organization_id'', true), '''')::uuid)',
+                    tenant_table, tenant_table
+                  );
+                END LOOP;
+              END
+              $$;
+
+              -- Discovery reads membership keys only, then joins organizations for current directory data.
+              -- Membership status is evaluated by the application; this role has no access to local roles,
+              -- display names, or other tenant records.
+              CREATE POLICY users_discovery_membership_keys ON users FOR SELECT TO approvio_discovery_runtime
+                USING (true);
+
+              ALTER TABLE organizations ENABLE ROW LEVEL SECURITY;
+              ALTER TABLE organizations FORCE ROW LEVEL SECURITY;
+              CREATE POLICY organizations_tenant_isolation ON organizations TO approvio_tenant_runtime
+                USING (id = NULLIF(current_setting('approvio.organization_id', true), '')::uuid)
+                WITH CHECK (id = NULLIF(current_setting('approvio.organization_id', true), '')::uuid);
+              CREATE POLICY organizations_discovery_read ON organizations FOR SELECT TO approvio_discovery_runtime USING (true);
+              CREATE POLICY organizations_scheduler_read ON organizations FOR SELECT TO approvio_scheduler_runtime USING (true);
+              CREATE POLICY organizations_provisioning_insert ON organizations FOR INSERT TO approvio_provisioning_runtime WITH CHECK (true);
+
+              REVOKE ALL ON ALL TABLES IN SCHEMA public FROM PUBLIC;
+              REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM PUBLIC;
+              GRANT USAGE ON SCHEMA public TO approvio_tenant_runtime, approvio_identity_runtime,
+                approvio_session_runtime, approvio_discovery_runtime, approvio_provisioning_runtime,
+                approvio_scheduler_runtime, approvio_worker_runtime, approvio_audit_runtime,
+                approvio_metering_runtime;
+              GRANT SELECT, UPDATE ON organizations TO approvio_tenant_runtime;
+              GRANT SELECT, INSERT, UPDATE, DELETE ON users, organization_invitations, groups, agents,
+                group_memberships, agent_group_memberships, agent_challenges, agent_refresh_tokens, spaces,
+                workflow_templates, workflows, votes, step_up_receipts TO approvio_tenant_runtime;
+              GRANT SELECT, INSERT ON tenant_outbox, audit_logs, usage_events TO approvio_tenant_runtime;
+              GRANT SELECT, INSERT, UPDATE ON quotas, usage_operations, usage_settlement_intents
+                TO approvio_tenant_runtime;
+              GRANT SELECT, INSERT, UPDATE ON platform_accounts, platform_account_identities
+                TO approvio_identity_runtime;
+              GRANT SELECT ON provider_connections TO approvio_identity_runtime;
+              GRANT SELECT, INSERT, UPDATE, DELETE ON browser_sessions, refresh_tokens, pkce_sessions
+                TO approvio_session_runtime;
+              GRANT SELECT ON platform_accounts, provider_connections, organizations TO approvio_session_runtime;
+              GRANT SELECT (organization_id, platform_account_id, status) ON users TO approvio_discovery_runtime;
+              GRANT SELECT ON organizations TO approvio_discovery_runtime;
+              GRANT INSERT ON organizations, users TO approvio_provisioning_runtime;
+              GRANT SELECT ON organizations TO approvio_scheduler_runtime;
+              GRANT SELECT ON organizations, workflows TO approvio_worker_runtime;
+              GRANT SELECT, INSERT, UPDATE ON workflow_actions_email_task, workflow_actions_webhook_tasks,
+                workflow_actions_slack_tasks, tenant_outbox, tenant_event_receipts, dispatch_attempts
+                TO approvio_worker_runtime;
+              GRANT SELECT, INSERT ON audit_logs TO approvio_audit_runtime;
+              GRANT SELECT, INSERT, UPDATE ON quotas, usage_operations, usage_settlement_intents
+                TO approvio_metering_runtime;
+              GRANT SELECT, INSERT ON usage_events TO approvio_metering_runtime;

@@ -1,0 +1,39 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908123200-create-platform-security-events-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: platform_security_events
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: actor_type
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actor_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: reason
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: metadata
+                  type: jsonb
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occurred_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false

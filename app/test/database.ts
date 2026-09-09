@@ -24,6 +24,28 @@ export async function prepareDatabase(): Promise<string> {
   return `postgresql://developer:Safe1!@localhost:5433/${databaseName}?schema=public`
 }
 
+// TODO: Why do we need this function ?
+/** Drop a database previously created by prepareDatabase using the test admin connection. */
+export async function dropPreparedDatabase(connectionString: string): Promise<void> {
+  const targetUrl = new URL(connectionString)
+  const databaseName = targetUrl.pathname.slice(1)
+  if (!/^integration_test_[a-f0-9]+$/.test(databaseName))
+    throw new Error(`Refusing to drop unexpected test database: ${databaseName}`)
+
+  const adminConnection = process.env.DATABASE_URL
+  if (!adminConnection) throw new Error("DATABASE_URL is required to clean a prepared database")
+  const adminUrl = new URL(adminConnection)
+  adminUrl.pathname = "/postgres"
+
+  const admin = new PrismaClient({adapter: new PrismaPg({connectionString: adminUrl.toString()})})
+  try {
+    await admin.$queryRaw`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = ${databaseName}`
+    await admin.$executeRawUnsafe(`DROP DATABASE "${databaseName}"`)
+  } finally {
+    await admin.$disconnect()
+  }
+}
+
 /**
  * Prepare an isolated Redis key prefix for testing
  * @returns a unique prefix string for this test run
@@ -57,24 +79,37 @@ export async function cleanRedisByPrefix(prefix: string): Promise<void> {
 export async function cleanDatabase(client: PrismaClient): Promise<void> {
   // Clean in dependency order (children before parents)
   // Use raw query for AuditLog to bypass the immutability protection in DatabaseClient
-  await client.$executeRawUnsafe("DELETE FROM audit_logs;")
-  await client.agentChallenge.deleteMany()
-  await client.organizationAdmin.deleteMany()
-  await client.userIdentity.deleteMany()
-  await client.pkceSession.deleteMany()
-  await client.refreshToken.deleteMany()
+  await client.dispatchAttempt.deleteMany()
+  await client.tenantEventReceipt.deleteMany()
   await client.workflowActionsEmailTask.deleteMany()
   await client.workflowActionsWebhookTask.deleteMany()
   await client.workflowActionsSlackTask.deleteMany()
   await client.vote.deleteMany()
   await client.workflow.deleteMany()
   await client.workflowTemplate.deleteMany()
+  await client.agentChallenge.deleteMany()
+  await client.agentRefreshToken.deleteMany()
   await client.agentGroupMembership.deleteMany()
   await client.groupMembership.deleteMany()
+  await client.organizationInvitation.deleteMany()
+  await client.stepUpReceipt.deleteMany()
   await client.group.deleteMany()
   await client.space.deleteMany()
-  await client.user.deleteMany()
   await client.agent.deleteMany()
+  await client.usageSettlementIntent.deleteMany()
+  await client.usageOperation.deleteMany()
   await client.quota.deleteMany()
   await client.usageEvent.deleteMany()
+  await client.tenantOutbox.deleteMany()
+  // TOOD: Why using rawUnsafe query ?
+  await client.$executeRawUnsafe("DELETE FROM audit_logs;")
+  await client.user.deleteMany()
+  await client.refreshToken.deleteMany()
+  await client.pkceSession.deleteMany()
+  await client.browserSession.deleteMany()
+  await client.platformAccountIdentity.deleteMany()
+  await client.platformSecurityEvent.deleteMany()
+  await client.platformAccount.deleteMany()
+  await client.providerConnection.deleteMany()
+  await client.organization.deleteMany()
 }

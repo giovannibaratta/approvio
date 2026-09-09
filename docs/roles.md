@@ -120,11 +120,11 @@ Role assignment is governed by strict authorization rules based on the user's cu
 
 Access to administrative and financial resources is governed directly by organizational role:
 
-| Endpoint / Operation | Permitted Roles | Notes |
-| :--- | :--- | :--- |
-| **Manage Quotas (`/quotas`)** | Organization Admin | Create, update, and delete resource and organization overrides. |
-| **Inspect Usage (`/organizations/:orgId/usage`)** | Organization Admin | View monthly token meters, evaluation counts, and remaining balances. Members and agents receive HTTP 403. |
-| **Inspect Entitlements (`/organizations/:orgId/entitlements`)** | Organization Admin, Member | View active tier, feature flags, and resolved limits. Agents receive HTTP 403. |
+| Endpoint / Operation                                            | Permitted Roles            | Notes                                                                                                      |
+| :-------------------------------------------------------------- | :------------------------- | :--------------------------------------------------------------------------------------------------------- |
+| **Manage Quotas (`/quotas`)**                                   | Organization Admin         | Create, update, and delete resource and organization overrides.                                            |
+| **Inspect Usage (`/organizations/:orgId/usage`)**               | Organization Admin         | View monthly token meters, evaluation counts, and remaining balances. Members and agents receive HTTP 403. |
+| **Inspect Entitlements (`/organizations/:orgId/entitlements`)** | Organization Admin, Member | View active tier, feature flags, and resolved limits. Agents receive HTTP 403.                             |
 
 ## Integration with Other Features
 

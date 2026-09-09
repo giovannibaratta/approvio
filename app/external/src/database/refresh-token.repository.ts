@@ -1,28 +1,30 @@
 import {Injectable, Logger} from "@nestjs/common"
-import * as TE from "fp-ts/TaskEither"
-import {TaskEither} from "fp-ts/TaskEither"
-import {pipe} from "fp-ts/function"
-import * as E from "fp-ts/Either"
-import {Prisma, RefreshToken as PrismaRefreshToken} from "@prisma/client"
 import {
-  RefreshToken,
-  RefreshTokenFactory,
-  DecoratedRefreshToken,
+  AccountRefreshToken,
+  AccountRefreshTokenFactory,
+  AgentRefreshToken,
+  AgentRefreshTokenFactory,
   RefreshTokenStatus,
-  EntityType,
-  UsedUserRefreshToken,
-  DecoratedActiveUserRefreshToken,
-  DecoratedActiveAgentRefreshToken,
+  TenantContext,
+  UsedAccountRefreshToken,
   UsedAgentRefreshToken,
-  RefreshTokenValidationError,
-  RefreshTokenDecoratorSelector
+  VersionedAccountRefreshToken,
+  VersionedActiveAccountRefreshToken,
+  VersionedActiveAgentRefreshToken,
+  VersionedAgentRefreshToken
 } from "@domain"
 import {
+  AccountRefreshTokenRepository,
+  AgentRefreshTokenRepository,
   RefreshTokenCreateError,
   RefreshTokenGetError,
-  RefreshTokenRepository,
   RefreshTokenUpdateError
 } from "@services/auth"
+import {RefreshToken as PrismaAccountRefreshToken, AgentRefreshToken as PrismaAgentRefreshToken} from "@prisma/client"
+import * as E from "fp-ts/Either"
+import * as TE from "fp-ts/TaskEither"
+import {pipe} from "fp-ts/function"
+import {SessionDatabaseClient} from "./capability-database-client"
 import {DatabaseClient} from "./database-client"
 
 @Injectable()

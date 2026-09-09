@@ -3,7 +3,7 @@ import {ControllersModule} from "@controllers/controllers.module"
 import {AuthModule} from "./auth/auth.module"
 import {RateLimiterModule} from "./rate-limiter/rate-limiter.module"
 import {APP_GUARD} from "@nestjs/core"
-import {JwtAuthGuard} from "./auth"
+import {JwtAuthGuard, TenantGuard} from "./auth"
 import {RateLimiterGuard} from "./rate-limiter"
 import {RequestIdMiddleware} from "./logging/request-id.middleware"
 import cookieParser from "cookie-parser"
@@ -19,10 +19,14 @@ import {ServiceModule} from "@services/service.module"
       provide: APP_GUARD,
       useClass: LeverGuard
     },
-    // The JwtAuthGuard must be first to ensure that the user is authenticated before the rate limiter is applied
+    // The JwtAuthGuard must be first to ensure that the user is authenticated before tenant validation and rate limiter
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard
+    },
+    {
+      provide: APP_GUARD,
+      useClass: TenantGuard
     },
     {
       provide: APP_GUARD,

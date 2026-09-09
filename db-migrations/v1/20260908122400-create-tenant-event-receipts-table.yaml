@@ -1,0 +1,59 @@
+# TODO: Do we need this table at all ?
+databaseChangeLog:
+  - changeSet:
+      id: 20260908122400-create-tenant-event-receipts-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: tenant_event_receipts
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: consumer
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: event_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: processed_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: tenant_event_receipts
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_tenant_event_receipts_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: tenant_event_receipts
+            baseColumnNames: organization_id, event_id
+            referencedTableName: tenant_outbox
+            referencedColumnNames: organization_id, event_id
+            constraintName: fk_tenant_event_receipts_event
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: tenant_event_receipts
+            columnNames: organization_id, id
+            constraintName: tenant_event_receipts_organization_id_unique
+        - addUniqueConstraint:
+            tableName: tenant_event_receipts
+            columnNames: organization_id, consumer, event_id
+            constraintName: tenant_event_receipts_consumer_event_unique

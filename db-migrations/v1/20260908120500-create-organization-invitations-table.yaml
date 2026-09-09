@@ -1,0 +1,92 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908120500-create-organization-invitations-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: organization_invitations
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: target_account_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: inviter_user_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: token_hash
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: requested_org_role
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: expires_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: accepted_at
+                  type: timestamptz
+              - column:
+                  name: revoked_at
+                  type: timestamptz
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: organization_invitations
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_organization_invitations_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: organization_invitations
+            baseColumnNames: target_account_id
+            referencedTableName: platform_accounts
+            referencedColumnNames: id
+            constraintName: fk_organization_invitations_target_account
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: organization_invitations
+            baseColumnNames: organization_id, inviter_user_id
+            referencedTableName: users
+            referencedColumnNames: organization_id, id
+            constraintName: fk_organization_invitations_inviter
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: organization_invitations
+            columnNames: token_hash
+            constraintName: organization_invitations_token_hash_unique
+        - addUniqueConstraint:
+            tableName: organization_invitations
+            columnNames: organization_id, id
+            constraintName: organization_invitations_organization_id_unique

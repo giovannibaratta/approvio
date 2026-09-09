@@ -78,14 +78,15 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
   }
 
   /**
-   * Validates and retrieves an agent entity by name
+   * Validates and retrieves an agent entity by immutable identifier within its organization.
    *
-   * @param agentName - Agent name from JWT payload
+   * @param agentId - Agent identifier from JWT payload
+   * @param organizationId - Organization identifier from JWT payload
    * @returns Promise<AuthenticatedAgent> - Agent entity wrapped in AuthenticatedEntity
    * @throws UnauthorizedException - When agent is not found or other errors occur
    */
-  private async validateAgentEntity(agentName: string): Promise<AuthenticatedAgent> {
-    const agentResult = await this.agentService.getAgentByName(agentName)()
+  private async validateAgentEntity(agentId: string, organizationId: string): Promise<AuthenticatedAgent> {
+    const agentResult = await this.agentService.getAgentById({organizationId}, agentId)()
 
     if (isRight(agentResult))
       return {
@@ -151,7 +152,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
           authContext: stepUpContext
         }
       }
-    } else if (payload.entityType === "agent") authenticatedEntity = await this.validateAgentEntity(payload.sub)
+    } else if (payload.entityType === "agent")
+      authenticatedEntity = await this.validateAgentEntity(payload.sub, payload.organizationId)
     else throw new UnauthorizedException(generateErrorPayload("INVALID_ENTITY_TYPE", "Invalid entity type in token"))
 
     // Set requestor on request for GetAuthenticatedEntity decorator

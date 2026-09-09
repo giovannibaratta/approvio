@@ -13,6 +13,11 @@ databaseChangeLog:
                     primaryKey: true
                     nullable: false
               - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
                   name: agent_id
                   type: uuid
                   constraints:
@@ -24,17 +29,15 @@ databaseChangeLog:
                     nullable: false
               - column:
                   name: expires_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: used_at
-                  type: timestamp
-                  constraints:
-                    nullable: true
+                  type: timestamptz
               - column:
                   name: created_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
@@ -44,13 +47,25 @@ databaseChangeLog:
                     nullable: false
         - addForeignKeyConstraint:
             baseTableName: agent_challenges
-            baseColumnNames: agent_id
-            constraintName: fk_agent_challenges_agent
-            referencedTableName: agents
+            baseColumnNames: organization_id
+            referencedTableName: organizations
             referencedColumnNames: id
-            onDelete: CASCADE
+            constraintName: fk_agent_challenges_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: agent_challenges
+            baseColumnNames: organization_id, agent_id
+            referencedTableName: agents
+            referencedColumnNames: organization_id, id
+            constraintName: fk_agent_challenges_agent
+            onDelete: RESTRICT
             onUpdate: NO ACTION
         - addUniqueConstraint:
             tableName: agent_challenges
-            columnNames: nonce
-            constraintName: agent_challenges_nonce_unique
+            columnNames: organization_id, id
+            constraintName: agent_challenges_organization_id_unique
+        - addUniqueConstraint:
+            tableName: agent_challenges
+            columnNames: organization_id, nonce
+            constraintName: agent_challenges_organization_nonce_unique

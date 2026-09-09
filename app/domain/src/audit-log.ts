@@ -30,6 +30,7 @@ export interface Actor {
  */
 interface BaseAuditLog {
   id: string
+  organizationId: string
   auditType: AuditType
   entityType: EntityTypeAudit
   entityId: string

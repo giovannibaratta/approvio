@@ -40,6 +40,7 @@ export type AuthenticatedAgent = {
 export interface EntityReference {
   entityId: string
   entityType: "user" | "agent"
+  organizationId: string
 }
 
 export function getEntityId(entity: AuthenticatedEntity): string {
@@ -67,7 +68,8 @@ export function getEntityRoles(entity: AuthenticatedEntity): ReadonlyArray<Uncon
 export function createEntityReference(entity: AuthenticatedEntity): EntityReference {
   return {
     entityId: getEntityId(entity),
-    entityType: getEntityType(entity)
+    entityType: getEntityType(entity),
+    organizationId: entity.entityType === "user" ? entity.user.organizationId : entity.agent.organizationId
   }
 }
 

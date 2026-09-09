@@ -6,27 +6,40 @@ databaseChangeLog:
       comment: Convert all tables to UNLOGGED for improved test performance
       changes:
         - sql:
+            splitStatements: false
             sql: |
               -- Convert all application tables to UNLOGGED for test performance
               -- UNLOGGED tables skip WAL writes and are much faster for tests
               -- Order is important: convert child tables (with FKs) first, then parent tables
-              ALTER TABLE usage_events SET UNLOGGED;
-              ALTER TABLE user_identities SET UNLOGGED;
-              ALTER TABLE refresh_tokens SET UNLOGGED;
-              ALTER TABLE pkce_sessions SET UNLOGGED;
-              ALTER TABLE agent_challenges SET UNLOGGED;
+              ALTER TABLE dispatch_attempts SET UNLOGGED;
+              ALTER TABLE tenant_event_receipts SET UNLOGGED;
+              ALTER TABLE usage_settlement_intents SET UNLOGGED;
+              ALTER TABLE votes SET UNLOGGED;
               ALTER TABLE workflow_actions_email_task SET UNLOGGED;
               ALTER TABLE workflow_actions_webhook_tasks SET UNLOGGED;
               ALTER TABLE workflow_actions_slack_tasks SET UNLOGGED;
-              ALTER TABLE votes SET UNLOGGED;
+              ALTER TABLE step_up_receipts SET UNLOGGED;
+              ALTER TABLE organization_invitations SET UNLOGGED;
+              ALTER TABLE group_memberships SET UNLOGGED;
+              ALTER TABLE agent_group_memberships SET UNLOGGED;
+              ALTER TABLE agent_challenges SET UNLOGGED;
+              ALTER TABLE agent_refresh_tokens SET UNLOGGED;
+              ALTER TABLE refresh_tokens SET UNLOGGED;
+              ALTER TABLE platform_account_identities SET UNLOGGED;
+              ALTER TABLE pkce_sessions SET UNLOGGED;
+              ALTER TABLE tenant_outbox SET UNLOGGED;
+              ALTER TABLE usage_operations SET UNLOGGED;
+              ALTER TABLE usage_events SET UNLOGGED;
+              ALTER TABLE audit_logs SET UNLOGGED;
+              ALTER TABLE quotas SET UNLOGGED;
               ALTER TABLE workflows SET UNLOGGED;
               ALTER TABLE workflow_templates SET UNLOGGED;
-              ALTER TABLE organization_admins SET UNLOGGED;
-              ALTER TABLE agent_group_memberships SET UNLOGGED;
-              ALTER TABLE group_memberships SET UNLOGGED;
-              ALTER TABLE quotas SET UNLOGGED;
-              ALTER TABLE audit_logs SET UNLOGGED;
-              ALTER TABLE users SET UNLOGGED;
               ALTER TABLE groups SET UNLOGGED;
               ALTER TABLE agents SET UNLOGGED;
+              ALTER TABLE users SET UNLOGGED;
               ALTER TABLE spaces SET UNLOGGED;
+              ALTER TABLE browser_sessions SET UNLOGGED;
+              ALTER TABLE platform_security_events SET UNLOGGED;
+              ALTER TABLE provider_connections SET UNLOGGED;
+              ALTER TABLE platform_accounts SET UNLOGGED;
+              ALTER TABLE organizations SET UNLOGGED;

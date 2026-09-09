@@ -1,14 +1,15 @@
 import {TaskEither} from "fp-ts/TaskEither"
-import {AuditLog, CreateAuditLog} from "@domain"
+import {AuditLog, BoundaryError, CreateAuditLog, TenantContext} from "@domain"
 import {UnknownError} from "../error"
 
 export const AUDIT_LOG_REPOSITORY_TOKEN = "AUDIT_LOG_REPOSITORY_TOKEN"
 
-export type FindManyError = UnknownError | "invalid_cursor"
+export type FindManyError = BoundaryError | UnknownError | "invalid_cursor"
 
 export interface AuditLogRepository {
-  persist(data: CreateAuditLog): TaskEither<UnknownError, void>
+  persist(context: TenantContext, data: CreateAuditLog): TaskEither<UnknownError | BoundaryError, void>
   findMany(
+    context: TenantContext,
     limit: number,
     fromDate: Date,
     cursor: string | undefined,

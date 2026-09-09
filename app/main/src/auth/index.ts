@@ -1,4 +1,7 @@
 export * from "./auth.module"
 export * from "./jwt.strategy"
 export * from "./get-authenticated-entity.decorator"
+export * from "./get-platform-session.decorator"
 export * from "./jwt.authguard"
+export * from "./tenant.guard"
+export * from "./get-tenant-context.decorator"

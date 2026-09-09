@@ -29,6 +29,7 @@ import "@utils/matchers"
 import {unwrapRight} from "@utils/either"
 
 describe("Workflow Evaluation Complexity", () => {
+  const organizationId = uuidv7()
   const groupId1 = uuidv7()
   const workflowTemplateId = uuidv7()
 
@@ -37,6 +38,7 @@ describe("Workflow Evaluation Complexity", () => {
   beforeEach(() => {
     const templateResult = unwrapRight(
       WorkflowTemplateFactory.newWorkflowTemplate({
+        organizationId,
         name: "Complexity Template",
         description: "A template for complexity testing",
         approvalRule: {
@@ -57,6 +59,7 @@ describe("Workflow Evaluation Complexity", () => {
 
     const workflowResult = unwrapRight(
       WorkflowFactory.newWorkflow({
+        organizationId,
         name: "Complexity-Workflow",
         description: "Test description",
         workflowTemplateId: template.id,
@@ -79,8 +82,9 @@ describe("Workflow Evaluation Complexity", () => {
       const voterId = uuidv7()
       votes.push({
         id: uuidv7(),
+        organizationId,
         workflowId: decoratedWorkflow.id,
-        voter: {entityId: voterId, entityType: "user"},
+        voter: {entityId: voterId, entityType: "user", organizationId},
         type: "APPROVE",
         votedForGroups: [groupId1],
         castedAt: new Date(2026, 5, 23, 10, 0, i)
@@ -121,8 +125,9 @@ describe("Workflow Evaluation Complexity", () => {
       const voterId = uuidv7()
       votes.push({
         id: uuidv7(),
+        organizationId,
         workflowId: decoratedWorkflow.id,
-        voter: {entityId: voterId, entityType: "user"},
+        voter: {entityId: voterId, entityType: "user", organizationId},
         type: "APPROVE",
         votedForGroups: [groupId1],
         castedAt: new Date(2026, 5, 23, 10, 0, i)

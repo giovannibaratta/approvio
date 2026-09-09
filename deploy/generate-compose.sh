@@ -7,6 +7,12 @@ REGISTRY_USER="giovannibaratta"
 POSTGRES_USER="approvio"
 POSTGRES_PASSWORD="password"
 POSTGRES_DB="approvio"
+POSTGRES_TENANT_USER="approvio_tenant"
+POSTGRES_TENANT_PASSWORD="tenant-password"
+POSTGRES_PLATFORM_USER="approvio_platform"
+POSTGRES_PLATFORM_PASSWORD="platform-password"
+POSTGRES_WORKER_USER="approvio_worker"
+POSTGRES_WORKER_PASSWORD="worker-password"
 JWT_SECRET="this-is-a-secret"
 JWT_TRUSTED_ISSUERS="approvio"
 JWT_ISSUER="approvio"
@@ -27,6 +33,12 @@ while [[ "$#" -gt 0 ]]; do
         --postgres-user) POSTGRES_USER="$2"; shift ;;
         --postgres-password) POSTGRES_PASSWORD="$2"; shift ;;
         --postgres-db) POSTGRES_DB="$2"; shift ;;
+        --postgres-tenant-user) POSTGRES_TENANT_USER="$2"; shift ;;
+        --postgres-tenant-password) POSTGRES_TENANT_PASSWORD="$2"; shift ;;
+        --postgres-platform-user) POSTGRES_PLATFORM_USER="$2"; shift ;;
+        --postgres-platform-password) POSTGRES_PLATFORM_PASSWORD="$2"; shift ;;
+        --postgres-worker-user) POSTGRES_WORKER_USER="$2"; shift ;;
+        --postgres-worker-password) POSTGRES_WORKER_PASSWORD="$2"; shift ;;
         --jwt-secret) JWT_SECRET="$2"; shift ;;
         --jwt-trusted-issuers) JWT_TRUSTED_ISSUERS="$2"; shift ;;
         --jwt-issuer) JWT_ISSUER="$2"; shift ;;
@@ -49,6 +61,12 @@ export REGISTRY_USER
 export POSTGRES_USER
 export POSTGRES_PASSWORD
 export POSTGRES_DB
+export POSTGRES_TENANT_USER
+export POSTGRES_TENANT_PASSWORD
+export POSTGRES_PLATFORM_USER
+export POSTGRES_PLATFORM_PASSWORD
+export POSTGRES_WORKER_USER
+export POSTGRES_WORKER_PASSWORD
 export JWT_SECRET
 export JWT_TRUSTED_ISSUERS
 export JWT_ISSUER

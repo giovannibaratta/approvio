@@ -16,11 +16,11 @@ The adopted model combines platform social login accounts with separate organiza
 
 The required rule is independent of storage technology: all tenant-owned resources and relationships stay within their organization. The enforcement trade-offs are:
 
-| Mechanism | Protection | Cost and limitations |
-| --- | --- | --- |
-| Application-scoped resolution and validation | Checks membership, role permissions, tenant ownership, and JSON references with domain-specific errors. | Every read/write path must comply, including jobs, bulk operations, raw SQL, and future import/repair tools. Missing validation can produce durable invalid relationships. |
-| Tenant-matching composite foreign keys | Atomically reject cross-organization relational links, even when application validation is bypassed. | Additional constraints and supporting unique indexes; write/storage overhead; persistence mapping and migration work. Does not validate arbitrary JSON or authorize a person. |
-| RLS using transaction context | Rejects or filters ordinary reads/writes outside the selected organization when a predicate is omitted. | PostgreSQL-specific policies, restricted roles, transaction lifecycle discipline, and query-planning/transaction overhead. Does not prove membership or automatically enforce matching organizations across relationships. |
+| Mechanism                                    | Protection                                                                                              | Cost and limitations                                                                                                                                                                                                       |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Application-scoped resolution and validation | Checks membership, role permissions, tenant ownership, and JSON references with domain-specific errors. | Every read/write path must comply, including jobs, bulk operations, raw SQL, and future import/repair tools. Missing validation can produce durable invalid relationships.                                                 |
+| Tenant-matching composite foreign keys       | Atomically reject cross-organization relational links, even when application validation is bypassed.    | Additional constraints and supporting unique indexes; write/storage overhead; persistence mapping and migration work. Does not validate arbitrary JSON or authorize a person.                                              |
+| RLS using transaction context                | Rejects or filters ordinary reads/writes outside the selected organization when a predicate is omitted. | PostgreSQL-specific policies, restricted roles, transaction lifecycle discipline, and query-planning/transaction overhead. Does not prove membership or automatically enforce matching organizations across relationships. |
 
 **Adopted decision:** Keep authorization in the application and require tenant-matching relational constraints plus RLS. Their distinct protections justify the additional persistence and transaction discipline.
 
@@ -36,11 +36,11 @@ Exact constraint selection belongs in the low-level schema design. The HLD requi
 
 PostgreSQL distinguishes the table owner, ordinary runtime roles, and privileged roles:
 
-| Role | ENABLE RLS | ENABLE + FORCE RLS |
-| --- | --- | --- |
-| Ordinary runtime role without bypass privileges | Policies apply | Policies apply |
-| Non-superuser table owner | Normally bypasses policies | Policies apply |
-| Superuser or role with BYPASSRLS | Bypasses policies | Still bypasses policies |
+| Role                                            | ENABLE RLS                 | ENABLE + FORCE RLS      |
+| ----------------------------------------------- | -------------------------- | ----------------------- |
+| Ordinary runtime role without bypass privileges | Policies apply             | Policies apply          |
+| Non-superuser table owner                       | Normally bypasses policies | Policies apply          |
+| Superuser or role with BYPASSRLS                | Bypasses policies          | Still bypasses policies |
 
 The table owner retains DDL authority, so `FORCE` does not make that owner an untrusted party. Use separate migration/owner and restricted runtime credentials. PostgreSQL handles transaction-local setting cleanup on commit/rollback; session-level tenant settings must not be used. [PostgreSQL row security](https://www.postgresql.org/docs/17/ddl-rowsecurity.html), [SET semantics](https://www.postgresql.org/docs/17/sql-set.html)
 
@@ -50,12 +50,12 @@ This adds database policies and a credential/transaction contract, not a new run
 
 JWT cryptographic validation and authorization freshness are separate. A token can have an hour lifetime while a current-state check rejects it immediately after membership removal. Conversely, removing a refresh token does not stop an already-issued access token when the API checks only its signature and expiry.
 
-| Approach | Residual access after removal | Work on request path | Failure/operational trade-off |
-| --- | --- | --- | --- |
-| Token-only authorization; one-hour TTL | Up to the remaining hour, assuming renewal is denied after removal. | Local signature/claims validation. | Authorization continues during state-store outages, but a departed admin can retain full token authority during the window. |
-| Shorter token-only TTL | Up to the remaining shorter lifetime. | Local validation plus more frequent token renewal. | More renewal traffic and dependence on renewal availability; still no immediate revocation. |
-| Current-state authorization | Requests admitted after committed revocation are denied when checked against authoritative current state. | Indexed state lookup, potentially combined with principal loading. | Adds database work/latency and fails closed when current authority cannot be established. In-flight operations need defined concurrency semantics. |
-| Bounded authorization cache | A deliberately bounded stale-state window; invalidation can usually shorten it. | Cache lookup or local cached check; database on misses. | Less database load, but invalidation, cache-fill races, freshness timestamps, and failure behavior must be designed. |
+| Approach                               | Residual access after removal                                                                             | Work on request path                                               | Failure/operational trade-off                                                                                                                      |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Token-only authorization; one-hour TTL | Up to the remaining hour, assuming renewal is denied after removal.                                       | Local signature/claims validation.                                 | Authorization continues during state-store outages, but a departed admin can retain full token authority during the window.                        |
+| Shorter token-only TTL                 | Up to the remaining shorter lifetime.                                                                     | Local validation plus more frequent token renewal.                 | More renewal traffic and dependence on renewal availability; still no immediate revocation.                                                        |
+| Current-state authorization            | Requests admitted after committed revocation are denied when checked against authoritative current state. | Indexed state lookup, potentially combined with principal loading. | Adds database work/latency and fails closed when current authority cannot be established. In-flight operations need defined concurrency semantics. |
+| Bounded authorization cache            | A deliberately bounded stale-state window; invalidation can usually shorten it.                           | Cache lookup or local cached check; database on misses.            | Less database load, but invalidation, cache-fill races, freshness timestamps, and failure behavior must be designed.                               |
 
 **Adopted starting point:** Keep the existing per-request principal lookup and make it organization-aware, including organization status and current permissions. [JwtStrategy](../../../app/main/src/auth/jwt.strategy.ts) already retrieves users/agents. This is an incremental extension of current behavior; no centralized authorization service or Redis cache is necessary initially. It is not a claim of zero extra database work or a measured latency guarantee.
 

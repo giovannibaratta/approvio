@@ -1,6 +1,7 @@
 import {Either, left, right, isLeft} from "fp-ts/Either"
 
 import {hasOwnProperty} from "@utils/validation"
+import {isUUIDv7} from "@utils"
 import {PrefixUnion} from "@utils"
 import {OrgRole, User} from "@domain"
 import {v7 as uuidv7} from "uuid"
@@ -12,6 +13,7 @@ export type Group = Readonly<PrivateGroup>
 
 interface PrivateGroup {
   id: string
+  organizationId: string
   name: string
   description: string | null
   createdAt: Date
@@ -27,7 +29,11 @@ export type GroupProps = keyof Group | keyof GroupWithEntitiesCount
 export type GroupValidationError = PrefixUnion<"group", UnprefixedGroupValidationError>
 
 type UnprefixedGroupValidationError =
-  NameValidationError | TimestampValidationError | DescriptionValidationError | "entities_count_invalid"
+  | NameValidationError
+  | TimestampValidationError
+  | DescriptionValidationError
+  | "entities_count_invalid"
+  | "invalid_organization_id"
 
 type TimestampValidationError = "update_before_create"
 type NameValidationError = "name_empty" | "name_too_long" | "name_invalid_characters"
@@ -52,6 +58,7 @@ export class GroupFactory {
   }
 
   private static createGroup<T extends Group>(data: T): Either<GroupValidationError, T> {
+    if (!isUUIDv7(data.organizationId)) return left("group_invalid_organization_id")
     const nameValidation = validateGroupName(data.name)
     const descriptionValidation = data.description ? validateGroupDescription(data.description) : right(null)
     const additionalProps: Partial<Record<GroupProps, unknown>> = {}
@@ -108,6 +115,7 @@ interface ListGroupsWhereRequestorIsMemberFilter {
 export class ListFilterFactory {
   static generateListFiltersForRequestor(requestor: User, search?: string): ListGroupsFilter {
     switch (requestor.orgRole) {
+      case OrgRole.OWNER:
       case OrgRole.ADMIN:
         return {type: "all", search}
       case OrgRole.MEMBER:
