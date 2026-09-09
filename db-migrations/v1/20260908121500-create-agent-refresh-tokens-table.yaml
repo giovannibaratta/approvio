@@ -1,0 +1,100 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908121500-create-agent-refresh-tokens-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: agent_refresh_tokens
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: agent_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: token_hash
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: family_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: used_at
+                  type: timestamptz
+              - column:
+                  name: next_token_id
+                  type: uuid
+              - column:
+                  name: expires_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+        - addUniqueConstraint:
+            tableName: agent_refresh_tokens
+            columnNames: organization_id, id
+            constraintName: agent_refresh_tokens_organization_id_unique
+        - addUniqueConstraint:
+            tableName: agent_refresh_tokens
+            columnNames: organization_id, token_hash
+            constraintName: agent_refresh_tokens_organization_token_hash_unique
+        - addForeignKeyConstraint:
+            baseTableName: agent_refresh_tokens
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_agent_refresh_tokens_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: agent_refresh_tokens
+            baseColumnNames: organization_id, agent_id
+            referencedTableName: agents
+            referencedColumnNames: organization_id, id
+            constraintName: fk_agent_refresh_tokens_agent
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: agent_refresh_tokens
+            baseColumnNames: organization_id, next_token_id
+            referencedTableName: agent_refresh_tokens
+            referencedColumnNames: organization_id, id
+            constraintName: fk_agent_refresh_tokens_next_token
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - createIndex:
+            tableName: agent_refresh_tokens
+            indexName: idx_agent_refresh_tokens_organization_family
+            columns:
+              - column:
+                  name: organization_id
+              - column:
+                  name: family_id

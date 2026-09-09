@@ -8,46 +8,63 @@ databaseChangeLog:
             columns:
               - column:
                   name: id
-                  type: UUID
+                  type: uuid
                   constraints:
                     primaryKey: true
                     nullable: false
               - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
                   name: scope
-                  type: VARCHAR(50)
+                  type: text
                   constraints:
                     nullable: false
               - column:
                   name: quota_type
-                  type: VARCHAR(100)
+                  type: text
                   constraints:
                     nullable: false
               - column:
                   name: target_id
-                  type: UUID
+                  type: uuid
                   constraints:
                     nullable: false
               - column:
-                  name: "limit"
-                  type: INT
+                  name: limit
+                  type: integer
                   constraints:
                     nullable: false
               - column:
                   name: created_at
-                  type: TIMESTAMP(6)
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: updated_at
-                  type: TIMESTAMP(6)
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: occ
-                  type: BIGINT
+                  type: bigint
                   constraints:
                     nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: quotas
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_quotas_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
         - addUniqueConstraint:
             tableName: quotas
-            columnNames: scope, quota_type, target_id
-            constraintName: quotas_scope_quota_type_target_id_unique
+            columnNames: organization_id, id
+            constraintName: quotas_organization_id_unique
+        - addUniqueConstraint:
+            tableName: quotas
+            columnNames: organization_id, scope, quota_type, target_id
+            constraintName: quotas_organization_scope_type_target_unique

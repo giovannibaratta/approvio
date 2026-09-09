@@ -1,10 +1,10 @@
 databaseChangeLog:
   - changeSet:
-      id: 20260208132805-create-organization-admins-table
+      id: 20260908120200-create-provider-connections-table
       author: giovannibaratta
       changes:
         - createTable:
-            tableName: organization_admins
+            tableName: provider_connections
             columns:
               - column:
                   name: id
@@ -13,19 +13,22 @@ databaseChangeLog:
                     primaryKey: true
                     nullable: false
               - column:
-                  name: email
-                  type: varchar(512)
+                  name: trust_scope
+                  type: text
                   constraints:
                     nullable: false
-                    foreignKeyName: fk_organization_admins_user
-                    references: users(email)
-                    deleteCascade: true
+              - column:
+                  name: issuer
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: config_reference
+                  type: text
+                  constraints:
+                    nullable: false
               - column:
                   name: created_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
-        - addUniqueConstraint:
-            tableName: organization_admins
-            columnNames: email
-            constraintName: organization_admins_email_unique

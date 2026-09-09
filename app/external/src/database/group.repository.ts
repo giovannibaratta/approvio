@@ -1,12 +1,5 @@
-import {Group, GroupWithEntitiesCount, ListGroupsFilter} from "@domain"
-import {
-  isPrismaForeignKeyConstraintError,
-  isPrismaRecordNotFoundError,
-  isPrismaUniqueConstraintError
-} from "@external/database/errors"
 import {Injectable, Logger} from "@nestjs/common"
-import {Prisma, Group as PrismaGroup} from "@prisma/client"
-import {UnknownError} from "@services/error"
+import {Group, GroupFactory, GroupWithEntitiesCount, TenantContext, Versioned} from "@domain"
 import {
   CreateGroupRepoError,
   CreateGroupWithMembershipAndUpdateUserRepo,
@@ -18,35 +11,14 @@ import {
   ListGroupsRepoError,
   ListGroupsResult
 } from "@services"
-import {Versioned} from "@domain"
+import {Group as PrismaGroup, Prisma} from "@prisma/client"
 import * as E from "fp-ts/Either"
 import {isLeft} from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
-import {TaskEither} from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
-import * as RA from "fp-ts/ReadonlyArray"
-import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 import {DatabaseClient} from "./database-client"
-import {mapToDomainVersionedGroupWithEntities} from "./shared"
-import {persistExistingUserRaceConditionFree} from "./shared/user-operations"
-import {areAllRights, chainNullableToLeft} from "./utils"
-
-interface Identifier {
-  identifier: string
-  type: "id" | "name"
-}
-
-interface ListOptions {
-  take: number
-  skip: number
-  filter: ListGroupsFilter
-}
-
-export type PrismaGroupWithCount = PrismaGroup & {
-  _count: {
-    groupMemberships: number
-    agentGroupMemberships: number
-  }
+import {isPrismaUniqueConstraintError} from "./errors"
+import {mapRolesToPrisma} from "./shared"
 }
 
 @Injectable()

@@ -13,7 +13,7 @@ import {retryWithBackoff} from "@utils"
 // a newer migration file. The timestamp provided here is used to check if the database is using
 // a migration that is older than the one required by the repositories. If this is the case, the
 // application will fail to start.
-export const REQUIRED_DB_MIGRATION_TIMESTAMP = "20260830120003"
+export const REQUIRED_DB_MIGRATION_TIMESTAMP = "20260908123300"
 
 const TRANSIENT_CODES = [
   "P1001", // Can't reach database server
@@ -30,6 +30,43 @@ export class ConflictingIsolationLevelError extends Error {
       `Transaction isolation level conflict: Requested ${requested}, but an active transaction is already running at a weaker level (${active}).`
     )
     this.name = "ConflictingIsolationLevelError"
+  }
+}
+
+export class TenantContextRequiredError extends Error {
+  constructor() {
+    super("A tenant transaction context is required")
+    this.name = "TenantContextRequiredError"
+  }
+}
+
+export class InvalidOrganizationIdError extends Error {
+  constructor() {
+    super("The tenant organization ID must be a UUIDv7")
+    this.name = "InvalidOrganizationIdError"
+  }
+}
+
+export class OrganizationMismatchError extends Error {
+  constructor(requested: string, active: string) {
+    super(`Tenant context mismatch: requested ${requested}, active ${active}`)
+    this.name = "OrganizationMismatchError"
+  }
+}
+
+// TODO: This class has been introduced replacing TRANSIENT_CODES but I don't believe we have
+// covered the codes that were detected before. What is the reason for this choice ?
+export class RetryableTransactionError extends Error {
+  constructor(message = "The transaction must be retried") {
+    super(message)
+    this.name = "RetryableTransactionError"
+  }
+}
+
+export class TransactionRetryExhaustedError extends Error {
+  constructor(readonly cause: unknown) {
+    super("Retryable transaction attempts were exhausted")
+    this.name = "TransactionRetryExhaustedError"
   }
 }
 

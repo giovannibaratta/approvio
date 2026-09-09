@@ -1,0 +1,94 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908120700-create-browser-sessions-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: browser_sessions
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: account_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: provider_connection_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: selected_organization_id
+                  type: uuid
+              - column:
+                  name: context_version
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: transport
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: expires_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: browser_sessions
+            baseColumnNames: account_id
+            referencedTableName: platform_accounts
+            referencedColumnNames: id
+            constraintName: fk_browser_sessions_account
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: browser_sessions
+            baseColumnNames: provider_connection_id
+            referencedTableName: provider_connections
+            referencedColumnNames: id
+            constraintName: fk_browser_sessions_provider
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: browser_sessions
+            baseColumnNames: selected_organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_browser_sessions_selected_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: browser_sessions
+            columnNames: account_id, id
+            constraintName: browser_sessions_account_id_unique
+        - addUniqueConstraint:
+            tableName: browser_sessions
+            columnNames: id, provider_connection_id
+            constraintName: browser_sessions_provider_id_unique

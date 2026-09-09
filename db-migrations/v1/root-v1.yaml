@@ -2,13 +2,35 @@ databaseChangeLog:
   - include:
       file: v1/19700101000000-add-databasechangelog-pk.yaml
   - include:
-      file: v1/20260208132754-create-groups-table.yaml
+      file: v1/20260908120000-create-organizations-table.yaml
+  - include:
+      file: v1/20260908120100-create-platform-accounts-table.yaml
+  - include:
+      file: v1/20260908120200-create-provider-connections-table.yaml
+  - include:
+      file: v1/20260616120001-create-user-identities-table.yaml
   - include:
       file: v1/20260208132755-create-users-table.yaml
+  - include:
+      file: v1/20260908120500-create-organization-invitations-table.yaml
+  - include:
+      file: v1/20260908120700-create-browser-sessions-table.yaml
+  - include:
+      file: v1/20260208132804-create-refresh-tokens-table.yaml
+  - include:
+      file: v1/20260208132803-create-pkce-sessions-table.yaml
+  - include:
+      file: v1/20260208132754-create-groups-table.yaml
   - include:
       file: v1/20260208132756-create-agents-table.yaml
   - include:
       file: v1/20260208132757-create-group-memberships-table.yaml
+  - include:
+      file: v1/20260208132807-create-agent-group-memberships-table.yaml
+  - include:
+      file: v1/20260208132806-create-agent-challenges-table.yaml
+  - include:
+      file: v1/20260908121500-create-agent-refresh-tokens-table.yaml
   - include:
       file: v1/20260208132758-create-spaces-table.yaml
   - include:
@@ -20,28 +42,28 @@ databaseChangeLog:
   - include:
       file: v1/20260208132802-create-workflow-actions-email-task-table.yaml
   - include:
-      file: v1/20260208132803-create-pkce-sessions-table.yaml
-  - include:
-      file: v1/20260208132804-create-refresh-tokens-table.yaml
-  - include:
-      file: v1/20260208132805-create-organization-admins-table.yaml
-  - include:
-      file: v1/20260208132806-create-agent-challenges-table.yaml
-  - include:
-      file: v1/20260208132807-create-agent-group-memberships-table.yaml
-  - include:
       file: v1/20260208132808-create-workflow-actions-webhook-tasks-table.yaml
-  - include:
-      file: v1/20260215114500-create-quotas-table.yaml
-  - include:
-      file: v1/20260509143200-create-audit-logs-table.yaml
   - include:
       file: v1/20260530120000-create-workflow-actions-slack-tasks-table.yaml
   - include:
-      file: v1/20260616120000-add-provider-to-pkce-sessions-table.yaml
+      file: v1/20260908122300-create-tenant-outbox-table.yaml
   - include:
-      file: v1/20260616120001-create-user-identities-table.yaml
+      file: v1/20260908122400-create-tenant-event-receipts-table.yaml
   - include:
-      file: v1/20260616120002-add-provider-to-refresh-tokens-table.yaml
+      file: v1/20260908122500-create-dispatch-attempts-table.yaml
+  - include:
+      file: v1/20260908122600-create-step-up-receipts-table.yaml
+  - include:
+      file: v1/20260215114500-create-quotas-table.yaml
   - include:
       file: v1/20260830120003-create-usage-events-table.yaml
+  - include:
+      file: v1/20260908122900-create-usage-operations-table.yaml
+  - include:
+      file: v1/20260908123000-create-usage-settlement-intents-table.yaml
+  - include:
+      file: v1/20260509143200-create-audit-logs-table.yaml
+  - include:
+      file: v1/20260908123200-create-platform-security-events-table.yaml
+  - include:
+      file: v1/20260908123300-create-database-security.yaml

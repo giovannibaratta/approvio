@@ -1,0 +1,117 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908122900-create-usage-operations-table
+      author: giovannibaratta
+      changes:
+        - createTable:
+            tableName: usage_operations
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: operation_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: metric
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: period
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: entity_type
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: entity_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actor_type
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actor_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actor_display_name
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: estimated_units
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: actual_units
+                  type: bigint
+              - column:
+                  name: is_billable
+                  type: boolean
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: request_digest
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: usage_operations
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_usage_operations_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: usage_operations
+            columnNames: organization_id, id
+            constraintName: usage_operations_organization_id_unique
+        - addUniqueConstraint:
+            tableName: usage_operations
+            columnNames: organization_id, operation_id
+            constraintName: usage_operations_organization_operation_unique
+        - addUniqueConstraint:
+            tableName: usage_operations
+            columnNames: organization_id, metric, period, operation_id
+            constraintName: usage_operations_metric_period_operation_unique

@@ -1,64 +1,68 @@
 databaseChangeLog:
   - changeSet:
       id: 20260616120001-create-user-identities-table
-      author: ai-agent
+      author: giovannibaratta
       changes:
         - createTable:
-            tableName: user_identities
+            tableName: platform_account_identities
             columns:
               - column:
                   name: id
-                  type: UUID
+                  type: uuid
                   constraints:
                     primaryKey: true
                     nullable: false
               - column:
-                  name: user_id
-                  type: UUID
+                  name: account_id
+                  type: uuid
                   constraints:
                     nullable: false
               - column:
-                  name: provider_id
-                  type: VARCHAR(255)
+                  name: provider_connection_id
+                  type: uuid
                   constraints:
                     nullable: false
               - column:
-                  name: subject_id
-                  type: VARCHAR(255)
+                  name: issuer
+                  type: text
                   constraints:
                     nullable: false
               - column:
-                  name: email
-                  type: VARCHAR(512)
+                  name: subject
+                  type: text
                   constraints:
                     nullable: false
               - column:
                   name: created_at
-                  type: TIMESTAMP
-                  defaultValueComputed: CURRENT_TIMESTAMP
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: occ
-                  type: BIGINT
-                  defaultValueNumeric: 1
+                  type: bigint
                   constraints:
                     nullable: false
-
         - addForeignKeyConstraint:
-            baseTableName: user_identities
-            baseColumnNames: user_id
-            constraintName: fk_user_identities_user
-            referencedTableName: users
+            baseTableName: platform_account_identities
+            baseColumnNames: account_id
+            referencedTableName: platform_accounts
             referencedColumnNames: id
-            onDelete: CASCADE
-
+            constraintName: fk_platform_account_identities_account
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: platform_account_identities
+            baseColumnNames: provider_connection_id
+            referencedTableName: provider_connections
+            referencedColumnNames: id
+            constraintName: fk_platform_account_identities_provider
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
         - addUniqueConstraint:
-            tableName: user_identities
-            columnNames: provider_id, subject_id
-            constraintName: user_identities_provider_subject_unique
-
+            tableName: platform_account_identities
+            columnNames: provider_connection_id, issuer, subject
+            constraintName: platform_account_identities_provider_subject_unique
         - addUniqueConstraint:
-            tableName: user_identities
-            columnNames: user_id, provider_id
-            constraintName: user_identities_user_provider_unique
+            tableName: platform_account_identities
+            columnNames: account_id, provider_connection_id
+            constraintName: platform_account_identities_account_provider_unique

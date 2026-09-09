@@ -1,6 +1,8 @@
 import {GroupFactory} from "../src/group"
+import {v7 as uuidv7} from "uuid"
 
 describe("GroupFactory", () => {
+  const organizationId = uuidv7()
   describe("newGroup name validation", () => {
     describe("good cases", () => {
       it("should allow valid names", () => {
@@ -8,7 +10,7 @@ describe("GroupFactory", () => {
         const validNames = ["group-a", "GroupA", "group-1", "group-with-hyphens", "a", "A"]
 
         // When
-        const results = validNames.map(name => GroupFactory.newGroup({name, description: null}))
+        const results = validNames.map(name => GroupFactory.newGroup({organizationId, name, description: null}))
 
         // Then
         results.forEach(result => {
@@ -23,7 +25,7 @@ describe("GroupFactory", () => {
         const invalidNames = ["group!", "group@", "group#", "group ", "group_"]
 
         // When
-        const results = invalidNames.map(name => GroupFactory.newGroup({name, description: null}))
+        const results = invalidNames.map(name => GroupFactory.newGroup({organizationId, name, description: null}))
 
         // Then
         results.forEach(result => {
@@ -36,7 +38,7 @@ describe("GroupFactory", () => {
         const name = "1group"
 
         // When
-        const group = GroupFactory.newGroup({name, description: null})
+        const group = GroupFactory.newGroup({organizationId, name, description: null})
 
         // Then
         expect(group).toBeLeftOf("group_name_invalid_characters")
@@ -47,7 +49,7 @@ describe("GroupFactory", () => {
         const name = "-group"
 
         // When
-        const group = GroupFactory.newGroup({name, description: null})
+        const group = GroupFactory.newGroup({organizationId, name, description: null})
 
         // Then
         expect(group).toBeLeftOf("group_name_invalid_characters")
@@ -58,7 +60,7 @@ describe("GroupFactory", () => {
         const name = "group-"
 
         // When
-        const group = GroupFactory.newGroup({name, description: null})
+        const group = GroupFactory.newGroup({organizationId, name, description: null})
 
         // Then
         expect(group).toBeLeftOf("group_name_invalid_characters")
@@ -69,7 +71,7 @@ describe("GroupFactory", () => {
         const name = ""
 
         // When
-        const group = GroupFactory.newGroup({name, description: null})
+        const group = GroupFactory.newGroup({organizationId, name, description: null})
 
         // Then
         expect(group).toBeLeftOf("group_name_empty")
@@ -80,7 +82,7 @@ describe("GroupFactory", () => {
         const longName = "a".repeat(513)
 
         // When
-        const group = GroupFactory.newGroup({name: longName, description: null})
+        const group = GroupFactory.newGroup({organizationId, name: longName, description: null})
 
         // Then
         expect(group).toBeLeftOf("group_name_too_long")

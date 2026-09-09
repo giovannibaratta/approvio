@@ -10,25 +10,31 @@ import {
   WorkflowTemplateScope
 } from "../src/role"
 import {SystemRole} from "../src/system-role"
+import {v7 as uuidv7} from "uuid"
 
 describe("RoleFactory", () => {
+  const organizationId = uuidv7()
   // Test data helpers
   const createValidOrgScope = (): OrgScope => ({
-    type: "org"
+    type: "org",
+    organizationId
   })
 
   const createValidSpaceScope = (): SpaceScope => ({
     type: "space",
-    spaceId: "space-123"
+    organizationId,
+    spaceId: uuidv7()
   })
 
   const createValidGroupScope = (): GroupScope => ({
     type: "group",
-    groupId: "group-123"
+    organizationId,
+    groupId: uuidv7()
   })
 
   const createValidWorkflowTemplateScope = (): WorkflowTemplateScope => ({
     type: "workflow_template",
+    organizationId,
     templateName: "template-123"
   })
 

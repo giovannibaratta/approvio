@@ -62,3 +62,5 @@ load-tests/summary.json
 .agent/skills/caveman/*
 .agent/skills/no-ai-slop/*
 plans/*
+docs/adr-010-tasks/*
+docs/ADR/reviews/experiments/tenancy-compatibility.cjs

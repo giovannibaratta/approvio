@@ -7,44 +7,55 @@ databaseChangeLog:
             tableName: agent_group_memberships
             columns:
               - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
                   name: group_id
                   type: uuid
                   constraints:
                     nullable: false
-                    foreignKeyName: fk_agent_group_memberships_group
-                    references: groups(id)
-                    deleteCascade: true
               - column:
                   name: agent_id
                   type: uuid
                   constraints:
                     nullable: false
-                    foreignKeyName: fk_agent_group_memberships_agent
-                    references: agents(id)
-                    deleteCascade: true
               - column:
                   name: created_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: updated_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
         - addPrimaryKey:
             tableName: agent_group_memberships
-            columnNames: group_id, agent_id
+            columnNames: organization_id, group_id, agent_id
             constraintName: pk_agent_group_memberships
-        - createIndex:
-            tableName: agent_group_memberships
-            indexName: idx_agent_group_memberships_group_id
-            columns:
-              - column:
-                  name: group_id
-        - createIndex:
-            tableName: agent_group_memberships
-            indexName: idx_agent_group_memberships_agent_id
-            columns:
-              - column:
-                  name: agent_id
+        - addForeignKeyConstraint:
+            baseTableName: agent_group_memberships
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_agent_group_memberships_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: agent_group_memberships
+            baseColumnNames: organization_id, group_id
+            referencedTableName: groups
+            referencedColumnNames: organization_id, id
+            constraintName: fk_agent_group_memberships_group
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: agent_group_memberships
+            baseColumnNames: organization_id, agent_id
+            referencedTableName: agents
+            referencedColumnNames: organization_id, id
+            constraintName: fk_agent_group_memberships_agent
+            onDelete: RESTRICT
+            onUpdate: NO ACTION

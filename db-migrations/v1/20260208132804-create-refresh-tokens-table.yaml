@@ -23,38 +23,39 @@ databaseChangeLog:
                   constraints:
                     nullable: false
               - column:
-                  name: user_id
+                  name: account_id
                   type: uuid
                   constraints:
-                    nullable: true
+                    nullable: false
               - column:
-                  name: agent_id
+                  name: session_id
                   type: uuid
                   constraints:
-                    nullable: true
+                    nullable: false
+              - column:
+                  name: provider_connection_id
+                  type: uuid
+                  constraints:
+                    nullable: false
               - column:
                   name: status
-                  type: varchar(20)
+                  type: text
                   constraints:
                     nullable: false
               - column:
                   name: used_at
-                  type: timestamp
-                  constraints:
-                    nullable: true
+                  type: timestamptz
               - column:
                   name: next_token_id
                   type: uuid
-                  constraints:
-                    nullable: true
               - column:
                   name: expires_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: created_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
@@ -64,19 +65,35 @@ databaseChangeLog:
                     nullable: false
         - addForeignKeyConstraint:
             baseTableName: refresh_tokens
-            baseColumnNames: user_id
-            constraintName: fk_refresh_tokens_user
-            referencedTableName: users
+            baseColumnNames: account_id
+            referencedTableName: platform_accounts
             referencedColumnNames: id
-            onDelete: CASCADE
+            constraintName: fk_refresh_tokens_account
+            onDelete: RESTRICT
             onUpdate: NO ACTION
         - addForeignKeyConstraint:
             baseTableName: refresh_tokens
-            baseColumnNames: agent_id
-            constraintName: fk_refresh_tokens_agent
-            referencedTableName: agents
+            baseColumnNames: account_id, session_id
+            referencedTableName: browser_sessions
+            referencedColumnNames: account_id, id
+            constraintName: fk_refresh_tokens_account_session
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: refresh_tokens
+            baseColumnNames: session_id, provider_connection_id
+            referencedTableName: browser_sessions
+            referencedColumnNames: id, provider_connection_id
+            constraintName: fk_refresh_tokens_session_provider
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: refresh_tokens
+            baseColumnNames: next_token_id
+            referencedTableName: refresh_tokens
             referencedColumnNames: id
-            onDelete: CASCADE
+            constraintName: fk_refresh_tokens_next_token
+            onDelete: RESTRICT
             onUpdate: NO ACTION
         - addUniqueConstraint:
             tableName: refresh_tokens
@@ -88,9 +105,3 @@ databaseChangeLog:
             columns:
               - column:
                   name: family_id
-        - createIndex:
-            tableName: refresh_tokens
-            indexName: idx_refresh_tokens_token_hash
-            columns:
-              - column:
-                  name: token_hash

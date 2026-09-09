@@ -8,59 +8,86 @@ databaseChangeLog:
             columns:
               - column:
                   name: id
-                  type: UUID
+                  type: uuid
                   constraints:
                     primaryKey: true
                     nullable: false
               - column:
-                  name: workflow_id
-                  type: UUID
+                  name: organization_id
+                  type: uuid
                   constraints:
                     nullable: false
-                    foreignKeyName: fk_votes_workflow
-                    references: workflows(id)
-                    deleteCascade: true
+              - column:
+                  name: workflow_id
+                  type: uuid
+                  constraints:
+                    nullable: false
               - column:
                   name: user_id
-                  type: UUID
-                  constraints:
-                    nullable: true
-                    foreignKeyName: fk_votes_user
-                    references: users(id)
-                    deleteCascade: true
-
+                  type: uuid
               - column:
                   name: agent_id
                   type: uuid
-                  constraints:
-                    nullable: true
-                    foreignKeyName: fk_votes_agent
-                    references: agents(id)
-                    deleteCascade: true
               - column:
                   name: vote_type
-                  remarks: The type of vote (e.g. APPROVE, VETO, WITHDRAW)
-                  type: VARCHAR(255)
+                  type: text
                   constraints:
                     nullable: false
               - column:
                   name: reason
-                  type: TEXT
-                  constraints:
-                    nullable: true
+                  type: text
               - column:
                   name: voted_for_groups
-                  type: VARCHAR[]
-              - column:
-                  name: created_at
-                  type: timestamp
+                  type: text[]
                   constraints:
                     nullable: false
-
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: votes
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_votes_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: votes
+            baseColumnNames: organization_id, workflow_id
+            referencedTableName: workflows
+            referencedColumnNames: organization_id, id
+            constraintName: fk_votes_workflow
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: votes
+            baseColumnNames: organization_id, user_id
+            referencedTableName: users
+            referencedColumnNames: organization_id, id
+            constraintName: fk_votes_user
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: votes
+            baseColumnNames: organization_id, agent_id
+            referencedTableName: agents
+            referencedColumnNames: organization_id, id
+            constraintName: fk_votes_agent
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: votes
+            columnNames: organization_id, id
+            constraintName: votes_organization_id_unique
         - createIndex:
             tableName: votes
-            indexName: idx_votes_workflow_user_created
+            indexName: idx_votes_organization_workflow_actor_created
             columns:
+              - column:
+                  name: organization_id
               - column:
                   name: workflow_id
               - column:
@@ -69,4 +96,4 @@ databaseChangeLog:
                   name: agent_id
               - column:
                   name: created_at
-                  descending: true # To get the most recent vote easily
+                  # TODO: Why descending: true has been dropped is this intentional ?

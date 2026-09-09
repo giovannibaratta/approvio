@@ -116,7 +116,10 @@ export interface ConfigProviderInterface {
    * This can be disabled by setting the DISABLE_HIGH_PRIVILEGE_MODE environment variable to 'true'.
    */
   isPrivilegeMode: boolean
+  // TODO: Document the distinction between dbConnectionUrl and platformDbConnectionUrl
   dbConnectionUrl: string
+  // TODO: Why this is optional ?
+  platformDbConnectionUrl?: string
   emailProviderConfig: Option<EmailProviderConfig>
   oidcProviders: Map<string, OidcProviderConfig>
   jwtConfig: JwtConfig

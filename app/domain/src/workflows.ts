@@ -30,6 +30,7 @@ export type Workflow = Readonly<WorkflowData>
 
 interface WorkflowData {
   id: string
+  organizationId: string
   name: string
   description?: string
   status: WorkflowStatus
@@ -51,6 +52,7 @@ type UnprefixedWorkflowValidationError =
   | "status_invalid"
   | "workflow_template_id_invalid_uuid"
   | "expires_at_in_the_past"
+  | "organization_id_invalid_uuid"
 
 export class WorkflowFactory {
   /**
@@ -61,6 +63,8 @@ export class WorkflowFactory {
   static validate(
     data: Parameters<typeof WorkflowFactory.instantiateWorkflow>[0]
   ): Either<WorkflowValidationError, Workflow> {
+    // TODO: Why the newWorkflow does not need to validate the ID ? Shouldn't be better to move in the instantiate method ?
+    if (!isUUIDv7(data.organizationId)) return left("workflow_organization_id_invalid_uuid")
     return WorkflowFactory.instantiateWorkflow(data)
   }
 

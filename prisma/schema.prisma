@@ -1,6 +1,7 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider        = "prisma-client"
+  output          = "../generated/prisma"
+  previewFeatures = ["partialIndexes"]
 }
 
 datasource db {
@@ -39,325 +40,692 @@ model Databasechangeloglock {
 
 model Group {
   id                    String                 @id @db.Uuid
-  name                  String                 @unique(map: "groups_name_unique") @db.VarChar
-  description           String?                @db.VarChar
-  createdAt             DateTime               @map("created_at") @db.Timestamp(6)
-  updatedAt             DateTime               @map("updated_at") @db.Timestamp(6)
+  organizationId        String                 @map("organization_id") @db.Uuid
+  name                  String
+  description           String?
+  createdAt             DateTime               @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime               @map("updated_at") @db.Timestamptz(6)
   occ                   BigInt
   agentGroupMemberships AgentGroupMembership[]
   groupMemberships      GroupMembership[]
+  organizations         Organization           @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_groups_organization")
 
+  @@unique([organizationId, id], map: "groups_organization_id_unique")
+  @@unique([organizationId, name], map: "groups_organization_name_unique")
   @@map("groups")
 }
 
 model GroupMembership {
-  groupId   String   @map("group_id") @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
-  createdAt DateTime @map("created_at") @db.Timestamp(6)
-  updatedAt DateTime @map("updated_at") @db.Timestamp(6)
-  groups    Group    @relation(fields: [groupId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_group_memberships_group")
-  users     User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_group_memberships_user")
+  organizationId String       @map("organization_id") @db.Uuid
+  groupId        String       @map("group_id") @db.Uuid
+  userId         String       @map("user_id") @db.Uuid
+  createdAt      DateTime     @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @map("updated_at") @db.Timestamptz(6)
+  groups         Group        @relation(fields: [organizationId, groupId], references: [organizationId, id], onUpdate: NoAction, map: "fk_group_memberships_group")
+  organizations  Organization @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_group_memberships_organization")
+  users          User         @relation(fields: [organizationId, userId], references: [organizationId, id], onUpdate: NoAction, map: "fk_group_memberships_user")
 
-  @@id([groupId, userId], map: "pk_group_memberships")
-  @@index([groupId], map: "idx_group_memberships_group_id")
-  @@index([userId], map: "idx_group_memberships_user_id")
+  @@id([organizationId, groupId, userId], map: "pk_group_memberships")
+  @@index([organizationId, userId], map: "idx_group_memberships_organization_user")
   @@map("group_memberships")
 }
 
 model User {
-  id                 String             @id @db.Uuid
-  displayName        String             @map("display_name") @db.VarChar
-  email              String             @unique(map: "users_email_unique") @db.VarChar
-  createdAt          DateTime           @map("created_at") @db.Timestamp(6)
-  roles              Json?              @db.Json
-  occ                BigInt
-  groupMemberships   GroupMembership[]
-  organizationAdmins OrganizationAdmin?
-  refreshTokens      RefreshToken[]
-  userIdentities     UserIdentity[]
-  votes              Vote[]
+  id                      String                   @id @db.Uuid
+  organizationId          String                   @map("organization_id") @db.Uuid
+  platformAccountId       String                   @map("platform_account_id") @db.Uuid
+  displayName             String                   @map("display_name")
+  status                  String
+  orgRole                 String                   @map("org_role")
+  roles                   Json?
+  createdAt               DateTime                 @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime                 @map("updated_at") @db.Timestamptz(6)
+  occ                     BigInt
+  groupMemberships        GroupMembership[]
+  organizationInvitations OrganizationInvitation[]
+  stepUpReceipts          StepUpReceipt[]
+  organizations           Organization             @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_users_organization")
+  platformAccounts        PlatformAccount          @relation(fields: [platformAccountId], references: [id], onUpdate: NoAction, map: "fk_users_platform_account")
+  votes                   Vote[]
 
+  @@unique([organizationId, platformAccountId], map: "users_organization_account_unique")
+  @@unique([organizationId, id], map: "users_organization_id_unique")
+  @@index([platformAccountId, status, organizationId], map: "idx_users_account_status_organization")
   @@map("users")
-}
-
-model UserIdentity {
-  id         String   @id @db.Uuid
-  userId     String   @map("user_id") @db.Uuid
-  providerId String   @map("provider_id") @db.VarChar(255)
-  subjectId  String   @map("subject_id") @db.VarChar(255)
-  email      String   @db.VarChar(512)
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(6)
-  occ        BigInt   @default(1)
-  users      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_identities_user")
-
-  @@unique([providerId, subjectId], map: "user_identities_provider_subject_unique")
-  @@unique([userId, providerId], map: "user_identities_user_provider_unique")
-  @@map("user_identities")
 }
 
 model Workflow {
   id                          String                       @id @db.Uuid
-  name                        String                       @unique(map: "workflows_name_unique") @db.VarChar
-  description                 String?                      @db.VarChar
-  createdAt                   DateTime                     @map("created_at") @db.Timestamp(6)
-  updatedAt                   DateTime                     @map("updated_at") @db.Timestamp(6)
-  status                      String                       @db.VarChar
+  organizationId              String                       @map("organization_id") @db.Uuid
+  name                        String
+  description                 String?
+  createdAt                   DateTime                     @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime                     @map("updated_at") @db.Timestamptz(6)
+  status                      String
   occ                         BigInt
   recalculationRequired       Boolean                      @map("recalculation_required")
   workflowTemplateId          String                       @map("workflow_template_id") @db.Uuid
-  expiresAt                   DateTime                     @map("expires_at") @db.Timestamp(6)
+  expiresAt                   DateTime                     @map("expires_at") @db.Timestamptz(6)
   votes                       Vote[]
   workflowActionsEmailTasks   WorkflowActionsEmailTask[]
   workflowActionsSlackTasks   WorkflowActionsSlackTask[]
   workflowActionsWebhookTasks WorkflowActionsWebhookTask[]
-  workflowTemplates           WorkflowTemplate             @relation(fields: [workflowTemplateId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_workflows_workflow_template")
+  organizations               Organization                 @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_workflows_organization")
+  workflowTemplates           WorkflowTemplate             @relation(fields: [organizationId, workflowTemplateId], references: [organizationId, id], onUpdate: NoAction, map: "fk_workflows_template")
 
+  @@unique([organizationId, id], map: "workflows_organization_id_unique")
+  @@unique([organizationId, name], map: "workflows_organization_name_unique")
   @@map("workflows")
 }
 
 model WorkflowTemplate {
-  id                              String     @id @db.Uuid
-  name                            String     @db.VarChar
-  description                     String?    @db.VarChar
-  approvalRule                    Json       @map("approval_rule")
-  actions                         Json?
-  defaultExpiresInHours           Int?       @map("default_expires_in_hours")
-  createdAt                       DateTime   @map("created_at") @db.Timestamp(6)
-  updatedAt                       DateTime   @map("updated_at") @db.Timestamp(6)
-  status                          String     @db.VarChar(50)
+  id                              String       @id @db.Uuid
+  organizationId                  String       @map("organization_id") @db.Uuid
+  name                            String
+  description                     String?
+  approvalRule                    Json         @map("approval_rule")
+  encActions                      String?      @map("enc_actions")
+  defaultExpiresInHours           Int?         @map("default_expires_in_hours")
+  createdAt                       DateTime     @map("created_at") @db.Timestamptz(6)
+  updatedAt                       DateTime     @map("updated_at") @db.Timestamptz(6)
+  status                          String
   version                         Int
-  allowVotingOnDeprecatedTemplate Boolean    @map("allow_voting_on_deprecated_template")
+  allowVotingOnDeprecatedTemplate Boolean      @map("allow_voting_on_deprecated_template")
   occ                             BigInt
-  spaceId                         String     @map("space_id") @db.Uuid
-  spaces                          Space      @relation(fields: [spaceId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_workflow_templates_space")
+  spaceId                         String       @map("space_id") @db.Uuid
+  organizations                   Organization @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_workflow_templates_organization")
+  spaces                          Space        @relation(fields: [organizationId, spaceId], references: [organizationId, id], onUpdate: NoAction, map: "fk_workflow_templates_space")
   workflows                       Workflow[]
 
-  @@unique([name, version], map: "workflow_templates_name_version_unique")
+  @@unique([organizationId, id], map: "workflow_templates_organization_id_unique")
+  @@unique([organizationId, name, version], map: "workflow_templates_organization_name_version_unique")
   @@map("workflow_templates")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model Vote {
-  id             String   @id @db.Uuid
-  workflowId     String   @map("workflow_id") @db.Uuid
-  userId         String?  @map("user_id") @db.Uuid
-  agentId        String?  @map("agent_id") @db.Uuid
-  voteType       String   @map("vote_type") @db.VarChar(255)
+  id             String       @id @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  workflowId     String       @map("workflow_id") @db.Uuid
+  userId         String?      @map("user_id") @db.Uuid
+  agentId        String?      @map("agent_id") @db.Uuid
+  voteType       String       @map("vote_type")
   reason         String?
-  votedForGroups String[] @map("voted_for_groups") @db.VarChar
-  createdAt      DateTime @map("created_at") @db.Timestamp(6)
-  agents         Agent?   @relation(fields: [agentId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_votes_agent")
-  users          User?    @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_votes_user")
-  workflows      Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_votes_workflow")
+  votedForGroups String[]     @map("voted_for_groups")
+  createdAt      DateTime     @map("created_at") @db.Timestamptz(6)
+  agents         Agent?       @relation(fields: [organizationId, agentId], references: [organizationId, id], onUpdate: NoAction, map: "fk_votes_agent")
+  organizations  Organization @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_votes_organization")
+  users          User?        @relation(fields: [organizationId, userId], references: [organizationId, id], onUpdate: NoAction, map: "fk_votes_user")
+  workflows      Workflow     @relation(fields: [organizationId, workflowId], references: [organizationId, id], onUpdate: NoAction, map: "fk_votes_workflow")
 
-  @@index([workflowId, userId, agentId, createdAt(sort: Desc)], map: "idx_votes_workflow_user_created")
+  @@unique([organizationId, id], map: "votes_organization_id_unique")
+  @@index([organizationId, workflowId, userId, agentId, createdAt], map: "idx_votes_organization_workflow_actor_created")
   @@map("votes")
 }
 
 model WorkflowActionsEmailTask {
-  id          String    @id @db.Uuid
-  workflowId  String    @map("workflow_id") @db.Uuid
-  status      String    @db.VarChar(255)
-  recipients  String[]
-  subject     String    @db.VarChar(512)
-  body        String
-  retryCount  Int       @default(0) @map("retry_count")
-  createdAt   DateTime  @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime  @map("updated_at") @db.Timestamptz(6)
-  errorReason String?   @map("error_reason") @db.VarChar(16384)
-  lockedBy    String?   @map("locked_by") @db.VarChar(512)
-  lockedAt    DateTime? @map("locked_at") @db.Timestamptz(6)
-  occ         BigInt
-  workflows   Workflow  @relation(fields: [workflowId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_workflow_actions_email_workflow_id")
+  id                         String            @id @db.Uuid
+  organizationId             String            @map("organization_id") @db.Uuid
+  workflowId                 String            @map("workflow_id") @db.Uuid
+  eventId                    String            @map("event_id") @db.Uuid
+  actionIndex                Int               @map("action_index")
+  initiatingActorType        String            @map("initiating_actor_type")
+  initiatingActorId          String            @map("initiating_actor_id") @db.Uuid
+  initiatingActorDisplayName String            @map("initiating_actor_display_name")
+  encPayload                 String            @map("enc_payload")
+  state                      String
+  leaseOwner                 String?           @map("lease_owner")
+  leaseUntil                 DateTime?         @map("lease_until") @db.Timestamptz(6)
+  fencing                    BigInt
+  availableAt                DateTime          @map("available_at") @db.Timestamptz(6)
+  attempts                   Int
+  createdAt                  DateTime          @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime          @map("updated_at") @db.Timestamptz(6)
+  occ                        BigInt
+  dispatchAttempts           DispatchAttempt[]
+  organizations              Organization      @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_workflow_actions_email_task_organization")
+  workflows                  Workflow          @relation(fields: [organizationId, workflowId], references: [organizationId, id], onUpdate: NoAction, map: "fk_workflow_actions_email_task_workflow")
 
+  @@unique([organizationId, eventId, actionIndex], map: "workflow_actions_email_task_organization_event_action_unique")
+  @@unique([organizationId, id], map: "workflow_actions_email_task_organization_id_unique")
   @@map("workflow_actions_email_task")
 }
 
 model PkceSession {
-  state        String    @id @db.VarChar(255)
-  codeVerifier String    @map("code_verifier") @db.VarChar(2048)
-  redirectUri  String    @map("redirect_uri") @db.VarChar(500)
-  oidcState    String    @map("oidc_state") @db.VarChar(255)
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
-  expiresAt    DateTime  @map("expires_at") @db.Timestamp(6)
-  usedAt       DateTime? @map("used_at") @db.Timestamp(6)
-  occ          BigInt
-  providerId   String    @map("provider_id") @db.VarChar(255)
+  state                String             @id
+  encCodeVerifier      String             @map("enc_code_verifier")
+  redirectUri          String             @map("redirect_uri")
+  oidcState            String             @map("oidc_state")
+  providerConnectionId String             @map("provider_connection_id") @db.Uuid
+  accountId            String?            @map("account_id") @db.Uuid
+  sessionId            String?            @map("session_id") @db.Uuid
+  stepUpOrganizationId String?            @map("step_up_organization_id") @db.Uuid
+  stepUpOperation      String?            @map("step_up_operation")
+  stepUpResourceId     String?            @map("step_up_resource_id") @db.Uuid
+  stepUpContextVersion BigInt?            @map("step_up_context_version")
+  createdAt            DateTime           @map("created_at") @db.Timestamptz(6)
+  expiresAt            DateTime           @map("expires_at") @db.Timestamptz(6)
+  usedAt               DateTime?          @map("used_at") @db.Timestamptz(6)
+  occ                  BigInt
+  platformAccounts     PlatformAccount?   @relation(fields: [accountId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_pkce_sessions_account")
+  providerConnections  ProviderConnection @relation(fields: [providerConnectionId], references: [id], onUpdate: NoAction, map: "fk_pkce_sessions_provider")
+  browserSessions      BrowserSession?    @relation(fields: [sessionId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_pkce_sessions_session")
+  organizations        Organization?      @relation(fields: [stepUpOrganizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_pkce_sessions_step_up_organization")
 
   @@map("pkce_sessions")
 }
 
-model OrganizationAdmin {
-  id        String   @id @db.Uuid
-  email     String   @unique(map: "organization_admins_email_unique") @db.VarChar(512)
-  createdAt DateTime @map("created_at") @db.Timestamp(6)
-  users     User     @relation(fields: [email], references: [email], onDelete: Cascade, onUpdate: NoAction, map: "fk_organization_admins_user")
-
-  @@map("organization_admins")
-}
-
 model Space {
   id                String             @id @db.Uuid
-  name              String             @unique(map: "spaces_name_unique") @db.VarChar(255)
-  description       String?            @db.VarChar(2048)
-  createdAt         DateTime           @map("created_at") @db.Timestamp(6)
-  updatedAt         DateTime           @map("updated_at") @db.Timestamp(6)
+  organizationId    String             @map("organization_id") @db.Uuid
+  name              String
+  description       String?
+  createdAt         DateTime           @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime           @map("updated_at") @db.Timestamptz(6)
   occ               BigInt
+  organizations     Organization       @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_spaces_organization")
   workflowTemplates WorkflowTemplate[]
 
+  @@unique([organizationId, id], map: "spaces_organization_id_unique")
+  @@unique([organizationId, name], map: "spaces_organization_name_unique")
   @@map("spaces")
 }
 
 model Agent {
   id                    String                 @id @db.Uuid
-  agentName             String                 @unique(map: "agents_agent_name_unique") @map("agent_name")
+  organizationId        String                 @map("organization_id") @db.Uuid
+  agentName             String                 @map("agent_name")
   base64PublicKey       String                 @map("base64_public_key")
-  createdAt             DateTime               @map("created_at") @db.Timestamp(6)
-  roles                 Json?                  @db.Json
+  status                String
+  roles                 Json?
+  createdAt             DateTime               @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime               @map("updated_at") @db.Timestamptz(6)
   occ                   BigInt
   agentChallenges       AgentChallenge[]
   agentGroupMemberships AgentGroupMembership[]
-  refreshTokens         RefreshToken[]
+  agentRefreshTokens    AgentRefreshToken[]
+  organizations         Organization           @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_agents_organization")
   votes                 Vote[]
 
+  @@unique([organizationId, id], map: "agents_organization_id_unique")
+  @@unique([organizationId, agentName], map: "agents_organization_name_unique")
   @@map("agents")
 }
 
 model AgentChallenge {
-  id        String    @id @db.Uuid
-  agentId   String    @map("agent_id") @db.Uuid
-  nonce     String    @unique(map: "agent_challenges_nonce_unique")
-  expiresAt DateTime  @map("expires_at") @db.Timestamp(6)
-  usedAt    DateTime? @map("used_at") @db.Timestamp(6)
-  createdAt DateTime  @map("created_at") @db.Timestamp(6)
-  occ       BigInt
-  agents    Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_agent_challenges_agent")
+  id             String       @id @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  agentId        String       @map("agent_id") @db.Uuid
+  nonce          String
+  expiresAt      DateTime     @map("expires_at") @db.Timestamptz(6)
+  usedAt         DateTime?    @map("used_at") @db.Timestamptz(6)
+  createdAt      DateTime     @map("created_at") @db.Timestamptz(6)
+  occ            BigInt
+  agents         Agent        @relation(fields: [organizationId, agentId], references: [organizationId, id], onUpdate: NoAction, map: "fk_agent_challenges_agent")
+  organizations  Organization @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_agent_challenges_organization")
 
+  @@unique([organizationId, id], map: "agent_challenges_organization_id_unique")
+  @@unique([organizationId, nonce], map: "agent_challenges_organization_nonce_unique")
   @@map("agent_challenges")
 }
 
 model AgentGroupMembership {
-  groupId   String   @map("group_id") @db.Uuid
-  agentId   String   @map("agent_id") @db.Uuid
-  createdAt DateTime @map("created_at") @db.Timestamp(6)
-  updatedAt DateTime @map("updated_at") @db.Timestamp(6)
-  agents    Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_agent_group_memberships_agent")
-  groups    Group    @relation(fields: [groupId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_agent_group_memberships_group")
+  organizationId String       @map("organization_id") @db.Uuid
+  groupId        String       @map("group_id") @db.Uuid
+  agentId        String       @map("agent_id") @db.Uuid
+  createdAt      DateTime     @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @map("updated_at") @db.Timestamptz(6)
+  agents         Agent        @relation(fields: [organizationId, agentId], references: [organizationId, id], onUpdate: NoAction, map: "fk_agent_group_memberships_agent")
+  groups         Group        @relation(fields: [organizationId, groupId], references: [organizationId, id], onUpdate: NoAction, map: "fk_agent_group_memberships_group")
+  organizations  Organization @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_agent_group_memberships_organization")
 
-  @@id([groupId, agentId], map: "pk_agent_group_memberships")
-  @@index([agentId], map: "idx_agent_group_memberships_agent_id")
-  @@index([groupId], map: "idx_agent_group_memberships_group_id")
+  @@id([organizationId, groupId, agentId], map: "pk_agent_group_memberships")
   @@map("agent_group_memberships")
 }
 
 model WorkflowActionsWebhookTask {
-  id                 String    @id @db.Uuid
-  workflowId         String    @map("workflow_id") @db.Uuid
-  status             String    @db.VarChar(255)
-  url                String    @db.VarChar(4096)
-  method             String    @db.VarChar(10)
-  headers            Json?
-  payload            Json?
-  responseStatus     Int?      @map("response_status")
-  responseBody       String?   @map("response_body")
-  retryCount         Int       @default(0) @map("retry_count")
-  createdAt          DateTime  @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime  @map("updated_at") @db.Timestamptz(6)
-  errorReason        String?   @map("error_reason") @db.VarChar(16384)
-  lockedBy           String?   @map("locked_by") @db.VarChar(512)
-  lockedAt           DateTime? @map("locked_at") @db.Timestamptz(6)
-  occ                BigInt
-  responseBodyStatus String?   @map("response_body_status") @db.VarChar(50)
-  workflows          Workflow  @relation(fields: [workflowId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_workflow_actions_webhook_workflow_id")
+  id                         String            @id @db.Uuid
+  organizationId             String            @map("organization_id") @db.Uuid
+  workflowId                 String            @map("workflow_id") @db.Uuid
+  eventId                    String            @map("event_id") @db.Uuid
+  actionIndex                Int               @map("action_index")
+  initiatingActorType        String            @map("initiating_actor_type")
+  initiatingActorId          String            @map("initiating_actor_id") @db.Uuid
+  initiatingActorDisplayName String            @map("initiating_actor_display_name")
+  encPayload                 String            @map("enc_payload")
+  state                      String
+  leaseOwner                 String?           @map("lease_owner")
+  leaseUntil                 DateTime?         @map("lease_until") @db.Timestamptz(6)
+  fencing                    BigInt
+  availableAt                DateTime          @map("available_at") @db.Timestamptz(6)
+  attempts                   Int
+  createdAt                  DateTime          @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime          @map("updated_at") @db.Timestamptz(6)
+  occ                        BigInt
+  dispatchAttempts           DispatchAttempt[]
+  organizations              Organization      @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_workflow_actions_webhook_tasks_organization")
+  workflows                  Workflow          @relation(fields: [organizationId, workflowId], references: [organizationId, id], onUpdate: NoAction, map: "fk_workflow_actions_webhook_tasks_workflow")
 
+  @@unique([organizationId, eventId, actionIndex], map: "workflow_actions_webhook_tasks_organization_event_action_unique")
+  @@unique([organizationId, id], map: "workflow_actions_webhook_tasks_organization_id_unique")
   @@map("workflow_actions_webhook_tasks")
 }
 
 model WorkflowActionsSlackTask {
-  id                 String    @id @db.Uuid
-  workflowId         String    @map("workflow_id") @db.Uuid
-  status             String    @db.VarChar(255)
-  webhookUrl         String    @map("webhook_url") @db.VarChar(4096)
-  message            String?
-  responseStatus     Int?      @map("response_status")
-  responseBody       String?   @map("response_body")
-  retryCount         Int       @default(0) @map("retry_count")
-  createdAt          DateTime  @map("created_at") @db.Timestamptz(6)
-  updatedAt          DateTime  @map("updated_at") @db.Timestamptz(6)
-  errorReason        String?   @map("error_reason") @db.VarChar(16384)
-  lockedBy           String?   @map("locked_by") @db.VarChar(512)
-  lockedAt           DateTime? @map("locked_at") @db.Timestamptz(6)
-  occ                BigInt
-  responseBodyStatus String?   @map("response_body_status") @db.VarChar(50)
-  workflows          Workflow  @relation(fields: [workflowId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_workflow_actions_slack_workflow_id")
+  id                         String            @id @db.Uuid
+  organizationId             String            @map("organization_id") @db.Uuid
+  workflowId                 String            @map("workflow_id") @db.Uuid
+  eventId                    String            @map("event_id") @db.Uuid
+  actionIndex                Int               @map("action_index")
+  initiatingActorType        String            @map("initiating_actor_type")
+  initiatingActorId          String            @map("initiating_actor_id") @db.Uuid
+  initiatingActorDisplayName String            @map("initiating_actor_display_name")
+  encPayload                 String            @map("enc_payload")
+  state                      String
+  leaseOwner                 String?           @map("lease_owner")
+  leaseUntil                 DateTime?         @map("lease_until") @db.Timestamptz(6)
+  fencing                    BigInt
+  availableAt                DateTime          @map("available_at") @db.Timestamptz(6)
+  attempts                   Int
+  createdAt                  DateTime          @map("created_at") @db.Timestamptz(6)
+  updatedAt                  DateTime          @map("updated_at") @db.Timestamptz(6)
+  occ                        BigInt
+  dispatchAttempts           DispatchAttempt[]
+  organizations              Organization      @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_workflow_actions_slack_tasks_organization")
+  workflows                  Workflow          @relation(fields: [organizationId, workflowId], references: [organizationId, id], onUpdate: NoAction, map: "fk_workflow_actions_slack_tasks_workflow")
 
+  @@unique([organizationId, eventId, actionIndex], map: "workflow_actions_slack_tasks_organization_event_action_unique")
+  @@unique([organizationId, id], map: "workflow_actions_slack_tasks_organization_id_unique")
   @@map("workflow_actions_slack_tasks")
 }
 
 model RefreshToken {
-  id          String    @id @db.Uuid
-  tokenHash   String    @unique(map: "refresh_tokens_token_hash_unique") @map("token_hash")
-  familyId    String    @map("family_id") @db.Uuid
-  userId      String?   @map("user_id") @db.Uuid
-  agentId     String?   @map("agent_id") @db.Uuid
-  status      String    @db.VarChar(20)
-  usedAt      DateTime? @map("used_at") @db.Timestamp(6)
-  nextTokenId String?   @map("next_token_id") @db.Uuid
-  expiresAt   DateTime  @map("expires_at") @db.Timestamp(6)
-  createdAt   DateTime  @map("created_at") @db.Timestamp(6)
-  occ         BigInt
-  providerId  String?   @map("provider_id") @db.VarChar(255)
-  agents      Agent?    @relation(fields: [agentId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_refresh_tokens_agent")
-  users       User?     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_refresh_tokens_user")
+  id                                                                         String          @id @db.Uuid
+  tokenHash                                                                  String          @unique(map: "refresh_tokens_token_hash_unique") @map("token_hash")
+  familyId                                                                   String          @map("family_id") @db.Uuid
+  accountId                                                                  String          @map("account_id") @db.Uuid
+  sessionId                                                                  String          @map("session_id") @db.Uuid
+  providerConnectionId                                                       String          @map("provider_connection_id") @db.Uuid
+  status                                                                     String
+  usedAt                                                                     DateTime?       @map("used_at") @db.Timestamptz(6)
+  nextTokenId                                                                String?         @map("next_token_id") @db.Uuid
+  expiresAt                                                                  DateTime        @map("expires_at") @db.Timestamptz(6)
+  createdAt                                                                  DateTime        @map("created_at") @db.Timestamptz(6)
+  occ                                                                        BigInt
+  platformAccounts                                                           PlatformAccount @relation(fields: [accountId], references: [id], onUpdate: NoAction, map: "fk_refresh_tokens_account")
+  browserSessionsRefreshTokensAccountIdSessionIdTobrowserSessions            BrowserSession  @relation("refresh_tokens_account_id_session_idTobrowser_sessions", fields: [accountId, sessionId], references: [accountId, id], onUpdate: NoAction, map: "fk_refresh_tokens_account_session")
+  refreshTokens                                                              RefreshToken?   @relation("refresh_tokensTorefresh_tokens", fields: [nextTokenId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_refresh_tokens_next_token")
+  otherRefreshTokens                                                         RefreshToken[]  @relation("refresh_tokensTorefresh_tokens")
+  browserSessionsRefreshTokensSessionIdProviderConnectionIdTobrowserSessions BrowserSession  @relation("refresh_tokens_session_id_provider_connection_idTobrowser_sessions", fields: [sessionId, providerConnectionId], references: [id, providerConnectionId], onUpdate: NoAction, map: "fk_refresh_tokens_session_provider")
 
   @@index([familyId], map: "idx_refresh_tokens_family_id")
-  @@index([tokenHash], map: "idx_refresh_tokens_token_hash")
   @@map("refresh_tokens")
 }
 
 model Quota {
-  id        String   @id @db.Uuid
-  scope     String   @db.VarChar(50)
-  quotaType String   @map("quota_type") @db.VarChar(100)
-  targetId  String   @map("target_id") @db.Uuid
-  limit     Int
-  createdAt DateTime @map("created_at") @db.Timestamp(6)
-  updatedAt DateTime @map("updated_at") @db.Timestamp(6)
-  occ       BigInt
+  id             String       @id @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  scope          String
+  quotaType      String       @map("quota_type")
+  targetId       String       @map("target_id") @db.Uuid
+  limit          Int
+  createdAt      DateTime     @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime     @map("updated_at") @db.Timestamptz(6)
+  occ            BigInt
+  organizations  Organization @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_quotas_organization")
 
-  @@unique([scope, quotaType, targetId], map: "quotas_scope_quota_type_target_id_unique")
+  @@unique([organizationId, id], map: "quotas_organization_id_unique")
+  @@unique([organizationId, scope, quotaType, targetId], map: "quotas_organization_scope_type_target_unique")
   @@map("quotas")
 }
 
 model AuditLog {
-  id         String   @id @db.Uuid
-  auditType  String   @map("audit_type") @db.VarChar(255)
-  entityType String   @map("entity_type") @db.VarChar(255)
-  entityId   String   @map("entity_id") @db.Uuid
-  actorId    String   @map("actor_id") @db.Uuid
-  actorType  String   @map("actor_type") @db.VarChar(255)
-  payload    Json
-  createdAt  DateTime @map("created_at") @db.Timestamp(6)
+  id                String       @id @db.Uuid
+  organizationId    String       @map("organization_id") @db.Uuid
+  auditType         String       @map("audit_type")
+  entityType        String       @map("entity_type")
+  entityId          String       @map("entity_id") @db.Uuid
+  entityDisplayName String?      @map("entity_display_name")
+  actorId           String       @map("actor_id") @db.Uuid
+  actorType         String       @map("actor_type")
+  actorDisplayName  String       @map("actor_display_name")
+  payload           Json
+  schemaVersion     Int          @map("schema_version")
+  createdAt         DateTime     @map("created_at") @db.Timestamptz(6)
+  organizations     Organization @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_audit_logs_organization")
 
-  @@index([actorId, createdAt(sort: Desc)], map: "idx_audit_logs_actor_id_created_at")
-  @@index([entityId, createdAt(sort: Desc)], map: "idx_audit_logs_entity_id_created_at")
+  @@unique([organizationId, id], map: "audit_logs_organization_id_unique")
   @@index([createdAt], map: "idx_audit_logs_created_at_brin", type: Brin)
+  @@index([organizationId, actorType, actorId, createdAt], map: "idx_audit_logs_organization_actor_time")
+  @@index([organizationId, entityType, entityId, createdAt], map: "idx_audit_logs_organization_entity_time")
   @@map("audit_logs")
 }
 
 model UsageEvent {
-  id         String   @id @map("event_id") @db.Uuid
-  entityType String   @map("entity_type") @db.VarChar(64)
-  entityId   String   @map("entity_id") @db.Uuid
-  actorType  String   @map("actor_type") @db.VarChar(32)
-  actorId    String   @map("actor_id") @db.Uuid
-  metric     String   @db.VarChar(64)
-  quantity   BigInt
-  isBillable Boolean  @map("is_billable")
-  occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
-  metadata   Json?
+  id               String       @id @map("event_id") @db.Uuid
+  organizationId   String       @map("organization_id") @db.Uuid
+  entityType       String       @map("entity_type")
+  entityId         String       @map("entity_id") @db.Uuid
+  actorType        String       @map("actor_type")
+  actorId          String       @map("actor_id") @db.Uuid
+  actorDisplayName String       @map("actor_display_name")
+  metric           String
+  quantity         BigInt
+  isBillable       Boolean      @map("is_billable")
+  occurredAt       DateTime     @map("occurred_at") @db.Timestamptz(6)
+  metadata         Json?
+  organizations    Organization @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_usage_events_organization")
 
-  @@index([entityType, entityId, occurredAt], map: "idx_usage_events_entity")
-  @@index([actorType, actorId, occurredAt], map: "idx_usage_events_actor")
+  @@unique([organizationId, id], map: "usage_events_organization_event_unique")
+  @@index([organizationId, metric, occurredAt], map: "idx_usage_events_organization_metric_time")
   @@map("usage_events")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model AgentRefreshToken {
+  id                      String              @id @db.Uuid
+  organizationId          String              @map("organization_id") @db.Uuid
+  agentId                 String              @map("agent_id") @db.Uuid
+  tokenHash               String              @map("token_hash")
+  familyId                String              @map("family_id") @db.Uuid
+  status                  String
+  usedAt                  DateTime?           @map("used_at") @db.Timestamptz(6)
+  nextTokenId             String?             @map("next_token_id") @db.Uuid
+  expiresAt               DateTime            @map("expires_at") @db.Timestamptz(6)
+  createdAt               DateTime            @map("created_at") @db.Timestamptz(6)
+  occ                     BigInt
+  agents                  Agent               @relation(fields: [organizationId, agentId], references: [organizationId, id], onUpdate: NoAction, map: "fk_agent_refresh_tokens_agent")
+  agentRefreshTokens      AgentRefreshToken?  @relation("agent_refresh_tokensToagent_refresh_tokens", fields: [organizationId, nextTokenId], references: [organizationId, id], onUpdate: NoAction, map: "fk_agent_refresh_tokens_next_token")
+  otherAgentRefreshTokens AgentRefreshToken[] @relation("agent_refresh_tokensToagent_refresh_tokens")
+  organizations           Organization        @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_agent_refresh_tokens_organization")
+
+  @@unique([organizationId, id], map: "agent_refresh_tokens_organization_id_unique")
+  @@unique([organizationId, tokenHash], map: "agent_refresh_tokens_organization_token_hash_unique")
+  @@index([organizationId, familyId], map: "idx_agent_refresh_tokens_organization_family")
+  @@map("agent_refresh_tokens")
+}
+
+model BrowserSession {
+  id                                                                       String             @id @db.Uuid
+  accountId                                                                String             @map("account_id") @db.Uuid
+  providerConnectionId                                                     String             @map("provider_connection_id") @db.Uuid
+  selectedOrganizationId                                                   String?            @map("selected_organization_id") @db.Uuid
+  contextVersion                                                           BigInt             @map("context_version")
+  transport                                                                String
+  status                                                                   String
+  expiresAt                                                                DateTime           @map("expires_at") @db.Timestamptz(6)
+  createdAt                                                                DateTime           @map("created_at") @db.Timestamptz(6)
+  updatedAt                                                                DateTime           @map("updated_at") @db.Timestamptz(6)
+  occ                                                                      BigInt
+  platformAccounts                                                         PlatformAccount    @relation(fields: [accountId], references: [id], onUpdate: NoAction, map: "fk_browser_sessions_account")
+  providerConnections                                                      ProviderConnection @relation(fields: [providerConnectionId], references: [id], onUpdate: NoAction, map: "fk_browser_sessions_provider")
+  organizations                                                            Organization?      @relation(fields: [selectedOrganizationId], references: [id], onDelete: Restrict, onUpdate: NoAction, map: "fk_browser_sessions_selected_organization")
+  pkceSessions                                                             PkceSession[]
+  refreshTokensRefreshTokensAccountIdSessionIdTobrowserSessions            RefreshToken[]     @relation("refresh_tokens_account_id_session_idTobrowser_sessions")
+  refreshTokensRefreshTokensSessionIdProviderConnectionIdTobrowserSessions RefreshToken[]     @relation("refresh_tokens_session_id_provider_connection_idTobrowser_sessions")
+  stepUpReceipts                                                           StepUpReceipt[]
+
+  @@unique([accountId, id], map: "browser_sessions_account_id_unique")
+  @@unique([id, providerConnectionId], map: "browser_sessions_provider_id_unique")
+  @@map("browser_sessions")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model DispatchAttempt {
+  id                          String                      @id @db.Uuid
+  organizationId              String                      @map("organization_id") @db.Uuid
+  emailTaskId                 String?                     @map("email_task_id") @db.Uuid
+  webhookTaskId               String?                     @map("webhook_task_id") @db.Uuid
+  slackTaskId                 String?                     @map("slack_task_id") @db.Uuid
+  fencing                     BigInt
+  state                       String
+  occ                         BigInt
+  outcomeCategory             String?                     @map("outcome_category")
+  admittedAt                  DateTime                    @map("admitted_at") @db.Timestamptz(6)
+  sendingAt                   DateTime?                   @map("sending_at") @db.Timestamptz(6)
+  completedAt                 DateTime?                   @map("completed_at") @db.Timestamptz(6)
+  workflowActionsEmailTask    WorkflowActionsEmailTask?   @relation(fields: [organizationId, emailTaskId], references: [organizationId, id], onUpdate: NoAction, map: "fk_dispatch_attempts_email_task")
+  organizations               Organization                @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_dispatch_attempts_organization")
+  workflowActionsSlackTasks   WorkflowActionsSlackTask?   @relation(fields: [organizationId, slackTaskId], references: [organizationId, id], onUpdate: NoAction, map: "fk_dispatch_attempts_slack_task")
+  workflowActionsWebhookTasks WorkflowActionsWebhookTask? @relation(fields: [organizationId, webhookTaskId], references: [organizationId, id], onUpdate: NoAction, map: "fk_dispatch_attempts_webhook_task")
+
+  @@unique([organizationId, emailTaskId, fencing], map: "dispatch_attempts_email_fence_unique", where: raw("(email_task_id IS NOT NULL)"))
+  @@unique([organizationId, slackTaskId, fencing], map: "dispatch_attempts_slack_fence_unique", where: raw("(slack_task_id IS NOT NULL)"))
+  @@unique([organizationId, webhookTaskId, fencing], map: "dispatch_attempts_webhook_fence_unique", where: raw("(webhook_task_id IS NOT NULL)"))
+  @@unique([organizationId, id], map: "dispatch_attempts_organization_id_unique")
+  @@map("dispatch_attempts")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model OrganizationInvitation {
+  id               String          @id @db.Uuid
+  organizationId   String          @map("organization_id") @db.Uuid
+  targetAccountId  String          @map("target_account_id") @db.Uuid
+  inviterUserId    String          @map("inviter_user_id") @db.Uuid
+  tokenHash        String          @unique(map: "organization_invitations_token_hash_unique") @map("token_hash")
+  requestedOrgRole String          @map("requested_org_role")
+  expiresAt        DateTime        @map("expires_at") @db.Timestamptz(6)
+  acceptedAt       DateTime?       @map("accepted_at") @db.Timestamptz(6)
+  revokedAt        DateTime?       @map("revoked_at") @db.Timestamptz(6)
+  createdAt        DateTime        @map("created_at") @db.Timestamptz(6)
+  occ              BigInt
+  users            User            @relation(fields: [organizationId, inviterUserId], references: [organizationId, id], onUpdate: NoAction, map: "fk_organization_invitations_inviter")
+  organizations    Organization    @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_organization_invitations_organization")
+  platformAccounts PlatformAccount @relation(fields: [targetAccountId], references: [id], onUpdate: NoAction, map: "fk_organization_invitations_target_account")
+
+  @@unique([organizationId, id], map: "organization_invitations_organization_id_unique")
+  @@map("organization_invitations")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model Organization {
+  id                          String                       @id @db.Uuid
+  slug                        String                       @unique(map: "organizations_slug_unique")
+  displayName                 String                       @map("display_name")
+  status                      String
+  suspensionReason            String?                      @map("suspension_reason")
+  graceUntil                  DateTime?                    @map("grace_until") @db.Timestamptz(6)
+  occ                         BigInt
+  createdAt                   DateTime                     @map("created_at") @db.Timestamptz(6)
+  updatedAt                   DateTime                     @map("updated_at") @db.Timestamptz(6)
+  agentChallenges             AgentChallenge[]
+  agentGroupMemberships       AgentGroupMembership[]
+  agentRefreshTokens          AgentRefreshToken[]
+  agents                      Agent[]
+  auditLogs                   AuditLog[]
+  browserSessions             BrowserSession[]
+  dispatchAttempts            DispatchAttempt[]
+  groupMemberships            GroupMembership[]
+  groups                      Group[]
+  organizationInvitations     OrganizationInvitation[]
+  pkceSessions                PkceSession[]
+  quotas                      Quota[]
+  spaces                      Space[]
+  stepUpReceipts              StepUpReceipt[]
+  tenantEventReceipts         TenantEventReceipt[]
+  tenantOutboxes              TenantOutbox[]
+  usageEvents                 UsageEvent[]
+  usageOperations             UsageOperation[]
+  usageSettlementIntents      UsageSettlementIntent[]
+  users                       User[]
+  votes                       Vote[]
+  workflowActionsEmailTasks   WorkflowActionsEmailTask[]
+  workflowActionsSlackTasks   WorkflowActionsSlackTask[]
+  workflowActionsWebhookTasks WorkflowActionsWebhookTask[]
+  workflowTemplates           WorkflowTemplate[]
+  workflows                   Workflow[]
+
+  @@map("organizations")
+}
+
+model PlatformAccountIdentity {
+  id                   String             @id @db.Uuid
+  accountId            String             @map("account_id") @db.Uuid
+  providerConnectionId String             @map("provider_connection_id") @db.Uuid
+  issuer               String
+  subject              String
+  createdAt            DateTime           @map("created_at") @db.Timestamptz(6)
+  occ                  BigInt
+  platformAccounts     PlatformAccount    @relation(fields: [accountId], references: [id], onUpdate: NoAction, map: "fk_platform_account_identities_account")
+  providerConnections  ProviderConnection @relation(fields: [providerConnectionId], references: [id], onUpdate: NoAction, map: "fk_platform_account_identities_provider")
+
+  @@unique([accountId, providerConnectionId], map: "platform_account_identities_account_provider_unique")
+  @@unique([providerConnectionId, issuer, subject], map: "platform_account_identities_provider_subject_unique")
+  @@map("platform_account_identities")
+}
+
+model PlatformAccount {
+  id                        String                    @id @db.Uuid
+  displayName               String                    @map("display_name")
+  profileEmail              String?                   @map("profile_email")
+  status                    String
+  createdAt                 DateTime                  @map("created_at") @db.Timestamptz(6)
+  updatedAt                 DateTime                  @map("updated_at") @db.Timestamptz(6)
+  occ                       BigInt
+  browserSessions           BrowserSession[]
+  organizationInvitations   OrganizationInvitation[]
+  pkceSessions              PkceSession[]
+  platformAccountIdentities PlatformAccountIdentity[]
+  refreshTokens             RefreshToken[]
+  users                     User[]
+
+  @@map("platform_accounts")
+}
+
+model PlatformSecurityEvent {
+  id         String   @id @db.Uuid
+  actorType  String   @map("actor_type")
+  actorId    String   @map("actor_id") @db.Uuid
+  reason     String
+  metadata   Json
+  occurredAt DateTime @map("occurred_at") @db.Timestamptz(6)
+
+  @@map("platform_security_events")
+}
+
+model ProviderConnection {
+  id                        String                    @id @db.Uuid
+  trustScope                String                    @map("trust_scope")
+  issuer                    String
+  configReference           String                    @map("config_reference")
+  createdAt                 DateTime                  @map("created_at") @db.Timestamptz(6)
+  browserSessions           BrowserSession[]
+  pkceSessions              PkceSession[]
+  platformAccountIdentities PlatformAccountIdentity[]
+
+  @@map("provider_connections")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model StepUpReceipt {
+  id                   String         @id @db.Uuid
+  organizationId       String         @map("organization_id") @db.Uuid
+  jti                  String
+  userId               String         @map("user_id") @db.Uuid
+  sessionId            String         @map("session_id") @db.Uuid
+  providerConnectionId String         @map("provider_connection_id") @db.Uuid
+  contextVersion       BigInt         @map("context_version")
+  operation            String
+  resourceId           String         @map("resource_id") @db.Uuid
+  expiresAt            DateTime       @map("expires_at") @db.Timestamptz(6)
+  consumedAt           DateTime?      @map("consumed_at") @db.Timestamptz(6)
+  createdAt            DateTime       @map("created_at") @db.Timestamptz(6)
+  organizations        Organization   @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_step_up_receipts_organization")
+  browserSessions      BrowserSession @relation(fields: [sessionId, providerConnectionId], references: [id, providerConnectionId], onUpdate: NoAction, map: "fk_step_up_receipts_session_provider")
+  users                User           @relation(fields: [organizationId, userId], references: [organizationId, id], onUpdate: NoAction, map: "fk_step_up_receipts_user")
+
+  @@unique([organizationId, id], map: "step_up_receipts_organization_id_unique")
+  @@unique([organizationId, jti], map: "step_up_receipts_organization_jti_unique")
+  @@map("step_up_receipts")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model TenantEventReceipt {
+  id             String       @id @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  consumer       String
+  eventId        String       @map("event_id") @db.Uuid
+  processedAt    DateTime     @map("processed_at") @db.Timestamptz(6)
+  tenantOutbox   TenantOutbox @relation(fields: [organizationId, eventId], references: [organizationId, eventId], onUpdate: NoAction, map: "fk_tenant_event_receipts_event")
+  organizations  Organization @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_tenant_event_receipts_organization")
+
+  @@unique([organizationId, consumer, eventId], map: "tenant_event_receipts_consumer_event_unique")
+  @@unique([organizationId, id], map: "tenant_event_receipts_organization_id_unique")
+  @@map("tenant_event_receipts")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model TenantOutbox {
+  id                  String               @id @db.Uuid
+  organizationId      String               @map("organization_id") @db.Uuid
+  eventId             String               @map("event_id") @db.Uuid
+  eventType           String               @map("event_type")
+  schemaVersion       Int                  @map("schema_version")
+  resourceId          String               @map("resource_id") @db.Uuid
+  resourceVersion     BigInt               @map("resource_version")
+  payload             Json
+  availableAt         DateTime             @map("available_at") @db.Timestamptz(6)
+  leaseOwner          String?              @map("lease_owner")
+  leaseUntil          DateTime?            @map("lease_until") @db.Timestamptz(6)
+  publishedAt         DateTime?            @map("published_at") @db.Timestamptz(6)
+  attempts            Int
+  createdAt           DateTime             @map("created_at") @db.Timestamptz(6)
+  tenantEventReceipts TenantEventReceipt[]
+  organizations       Organization         @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_tenant_outbox_organization")
+
+  @@unique([organizationId, eventId], map: "tenant_outbox_organization_event_unique")
+  @@unique([organizationId, id], map: "tenant_outbox_organization_id_unique")
+  @@index([organizationId, availableAt, id], map: "idx_tenant_outbox_organization_available")
+  @@map("tenant_outbox")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model UsageOperation {
+  id                     String                  @id @db.Uuid
+  organizationId         String                  @map("organization_id") @db.Uuid
+  operationId            String                  @map("operation_id") @db.Uuid
+  metric                 String
+  period                 String
+  entityType             String                  @map("entity_type")
+  entityId               String                  @map("entity_id") @db.Uuid
+  actorType              String                  @map("actor_type")
+  actorId                String                  @map("actor_id") @db.Uuid
+  actorDisplayName       String                  @map("actor_display_name")
+  estimatedUnits         BigInt                  @map("estimated_units")
+  actualUnits            BigInt?                 @map("actual_units")
+  isBillable             Boolean                 @map("is_billable")
+  status                 String
+  requestDigest          String                  @map("request_digest")
+  createdAt              DateTime                @map("created_at") @db.Timestamptz(6)
+  updatedAt              DateTime                @map("updated_at") @db.Timestamptz(6)
+  occ                    BigInt
+  organizations          Organization            @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_usage_operations_organization")
+  usageSettlementIntents UsageSettlementIntent[]
+
+  @@unique([organizationId, metric, period, operationId], map: "usage_operations_metric_period_operation_unique")
+  @@unique([organizationId, id], map: "usage_operations_organization_id_unique")
+  @@unique([organizationId, operationId], map: "usage_operations_organization_operation_unique")
+  @@map("usage_operations")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model UsageSettlementIntent {
+  id              String         @id @db.Uuid
+  organizationId  String         @map("organization_id") @db.Uuid
+  operationId     String         @map("operation_id") @db.Uuid
+  revision        BigInt
+  desiredStatus   String         @map("desired_status")
+  actualUnits     BigInt?        @map("actual_units")
+  appliedAt       DateTime?      @map("applied_at") @db.Timestamptz(6)
+  availableAt     DateTime       @map("available_at") @db.Timestamptz(6)
+  attempts        Int
+  createdAt       DateTime       @map("created_at") @db.Timestamptz(6)
+  usageOperations UsageOperation @relation(fields: [organizationId, operationId], references: [organizationId, operationId], onUpdate: NoAction, map: "fk_usage_settlement_intents_operation")
+  organizations   Organization   @relation(fields: [organizationId], references: [id], onUpdate: NoAction, map: "fk_usage_settlement_intents_organization")
+
+  @@unique([organizationId, operationId, revision], map: "usage_settlement_intents_operation_revision_unique")
+  @@unique([organizationId, id], map: "usage_settlement_intents_organization_id_unique")
+  @@index([organizationId, availableAt, id], map: "usage_settlement_intents_pending", where: raw("(applied_at IS NULL)"))
+  @@map("usage_settlement_intents")
 }

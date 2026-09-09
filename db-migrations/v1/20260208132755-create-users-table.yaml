@@ -13,31 +13,79 @@ databaseChangeLog:
                     primaryKey: true
                     nullable: false
               - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: platform_account_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
                   name: display_name
-                  type: varchar
+                  type: text
                   constraints:
                     nullable: false
               - column:
-                  name: email
-                  type: varchar
+                  name: status
+                  type: text
                   constraints:
                     nullable: false
               - column:
-                  name: created_at
-                  type: timestamp
+                  name: org_role
+                  type: text
                   constraints:
                     nullable: false
               - column:
                   name: roles
-                  type: json
+                  type: jsonb
+              - column:
+                  name: created_at
+                  type: timestamptz
                   constraints:
-                    nullable: true
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
               - column:
                   name: occ
                   type: bigint
                   constraints:
                     nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: users
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_users_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: users
+            baseColumnNames: platform_account_id
+            referencedTableName: platform_accounts
+            referencedColumnNames: id
+            constraintName: fk_users_platform_account
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
         - addUniqueConstraint:
             tableName: users
-            columnNames: email
-            constraintName: users_email_unique
+            columnNames: organization_id, id
+            constraintName: users_organization_id_unique
+        - addUniqueConstraint:
+            tableName: users
+            columnNames: organization_id, platform_account_id
+            constraintName: users_organization_account_unique
+        - createIndex:
+            tableName: users
+            indexName: idx_users_account_status_organization
+            columns:
+              - column:
+                  name: platform_account_id
+              - column:
+                  name: status
+              - column:
+                  name: organization_id

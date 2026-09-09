@@ -13,26 +13,31 @@ databaseChangeLog:
                     primaryKey: true
                     nullable: false
               - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
                   name: name
-                  type: varchar
+                  type: text
                   constraints:
                     nullable: false
               - column:
                   name: description
-                  type: varchar
+                  type: text
               - column:
                   name: created_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: updated_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: status
-                  type: varchar
+                  type: text
                   constraints:
                     nullable: false
               - column:
@@ -50,15 +55,32 @@ databaseChangeLog:
                   type: uuid
                   constraints:
                     nullable: false
-                    foreignKeyName: fk_workflows_workflow_template_id
-                    references: workflow_templates(id)
-                    deleteCascade: true
               - column:
                   name: expires_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: workflows
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_workflows_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: workflows
+            baseColumnNames: organization_id, workflow_template_id
+            referencedTableName: workflow_templates
+            referencedColumnNames: organization_id, id
+            constraintName: fk_workflows_template
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
         - addUniqueConstraint:
             tableName: workflows
-            columnNames: name
-            constraintName: workflows_name_unique
+            columnNames: organization_id, id
+            constraintName: workflows_organization_id_unique
+        - addUniqueConstraint:
+            tableName: workflows
+            columnNames: organization_id, name
+            constraintName: workflows_organization_name_unique

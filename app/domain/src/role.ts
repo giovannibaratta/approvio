@@ -23,7 +23,7 @@
  * 5. **ResourceScopePermissionBinding** (derived type) - Ties everything together
  */
 
-import {PrefixUnion} from "@utils"
+import {isUUIDv7, PrefixUnion} from "@utils"
 import {Either, left, right, traverseArray, chainFirstW} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 
@@ -33,20 +33,24 @@ export const MAX_ROLES_PER_ENTITY = 128
 
 export interface OrgScope {
   readonly type: "org"
+  readonly organizationId: string
 }
 
 export interface SpaceScope {
   readonly type: "space"
+  readonly organizationId: string
   readonly spaceId: string
 }
 
 export interface GroupScope {
   readonly type: "group"
+  readonly organizationId: string
   readonly groupId: string
 }
 
 export interface WorkflowTemplateScope {
   readonly type: "workflow_template"
+  readonly organizationId: string
   readonly templateName: string
 }
 
@@ -56,13 +60,13 @@ export type ScopeType = RoleScope["type"]
 export function roleScopeToString(scope: RoleScope): string {
   switch (scope.type) {
     case "org":
-      return "org"
+      return `organization:${scope.organizationId}`
     case "space":
-      return `space:${scope.spaceId}`
+      return `organization:${scope.organizationId}:space:${scope.spaceId}`
     case "group":
-      return `group:${scope.groupId}`
+      return `organization:${scope.organizationId}:group:${scope.groupId}`
     case "workflow_template":
-      return `workflow_template:${scope.templateName}`
+      return `organization:${scope.organizationId}:workflow_template:${scope.templateName}`
   }
 }
 
@@ -258,6 +262,7 @@ export class RoleFactory {
    */
   static isSameScope(scope1: RoleScope, scope2: RoleScope): boolean {
     if (scope1.type !== scope2.type) return false
+    if (scope1.organizationId !== scope2.organizationId) return false
 
     switch (scope1.type) {
       case "org":
@@ -349,6 +354,10 @@ export class RoleFactory {
       "templateName" in scope &&
       typeof scope.templateName === "string"
     )
+  }
+
+  private static hasValidOrganizationId(scope: object): scope is {readonly organizationId: string} {
+    return "organizationId" in scope && typeof scope.organizationId === "string" && isUUIDv7(scope.organizationId)
   }
 
   private static validatePermissionsForResourceType(

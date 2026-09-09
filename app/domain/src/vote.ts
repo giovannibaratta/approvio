@@ -9,6 +9,7 @@ export type Vote = Readonly<ApproveVote | VetoVote | WithdrawVote>
 
 interface _BaseVote {
   id: string
+  organizationId: string
   workflowId: string
   voter: EntityReference
   reason?: string
@@ -40,6 +41,8 @@ type UnprefixedVoteValidationError =
   | "voted_for_groups_required"
   | "missing_voter_entity"
   | "conflicting_voter_entities"
+  | "invalid_organization_id"
+  | "organization_mismatch"
 
 export class VoteFactory {
   static newVote(data: DistributiveOmit<Vote, "id" | "castedAt">): Either<VoteValidationError, Vote> {
@@ -48,6 +51,7 @@ export class VoteFactory {
 
     const baseVoteProperties = {
       id,
+      organizationId: data.organizationId,
       workflowId: data.workflowId,
       voter: data.voter,
       reason: data.reason,
@@ -75,6 +79,8 @@ export class VoteFactory {
   }
 
   static validate(data: Vote): Either<VoteValidationError, Vote> {
+    if (!isUUIDv7(data.organizationId)) return left("vote_invalid_organization_id")
+    if (data.voter.organizationId !== data.organizationId) return left("vote_organization_mismatch")
     const workflowIdValidation = validateUUID(data.workflowId, "vote_invalid_workflow_id")
     const voterValidation = validateVoter(data.voter)
     const reasonValidation = data.reason ? validateReason(data.reason) : right(undefined)

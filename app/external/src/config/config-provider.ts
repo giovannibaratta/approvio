@@ -38,6 +38,7 @@ const HOSTNAME_REGEX = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[
 export class ConfigProvider implements ConfigProviderInterface {
   readonly isPrivilegeMode: boolean
   readonly dbConnectionUrl: string
+  readonly platformDbConnectionUrl?: string
   readonly emailProviderConfig: Option<EmailProviderConfig>
   readonly oidcProviders: Map<string, OidcProviderConfig>
   readonly jwtConfig: JwtConfig
@@ -58,6 +59,8 @@ export class ConfigProvider implements ConfigProviderInterface {
   constructor() {
     this.isPrivilegeMode = this.validatePrivilegeMode()
     this.dbConnectionUrl = this.validateConnectionUrl()
+    // TODO: We are not validating the url like for dbConnectionUrl
+    this.platformDbConnectionUrl = process.env.PLATFORM_DATABASE_URL
     this.emailProviderConfig = ConfigProvider.validateEmailProviderConfig()
     this.oidcProviders = this.validateOidcProviderConfig()
     this.jwtConfig = this.validateJwtConfig()
@@ -540,11 +543,12 @@ export class ConfigProvider implements ConfigProviderInterface {
     const backoffFactorRaw = process.env.WEBHOOK_RETRY_BACKOFF_FACTOR
     const maxDelayMsRaw = process.env.WEBHOOK_RETRY_MAX_DELAY_MS
 
+    // TODO: Why these 2 values have been changed ?
     return {
       maxAttempts: maxAttemptsRaw ? parseInt(maxAttemptsRaw, 10) : 3,
-      initialDelayMs: initialDelayMsRaw ? parseInt(initialDelayMsRaw, 10) : 1000,
+      initialDelayMs: initialDelayMsRaw ? parseInt(initialDelayMsRaw, 10) : 25,
       backoffFactor: backoffFactorRaw ? parseFloat(backoffFactorRaw) : 2,
-      maxDelayMs: maxDelayMsRaw ? parseInt(maxDelayMsRaw, 10) : 10000
+      maxDelayMs: maxDelayMsRaw ? parseInt(maxDelayMsRaw, 10) : 250
     }
   }
 

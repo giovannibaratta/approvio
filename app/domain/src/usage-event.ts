@@ -1,7 +1,8 @@
 import {Either, left, right, isLeft} from "fp-ts/Either"
-import {DistributiveOmit, PrefixUnion, isObject, hasOwnProperty, isDate} from "@utils"
+import {DistributiveOmit, PrefixUnion, isObject, hasOwnProperty, isDate, isUUIDv7} from "@utils"
 import {v7 as uuidv7} from "uuid"
-import {Actor, ActorType} from "./audit-log"
+import {Actor} from "./authenticated-entity"
+import {ActorType} from "./audit-log"
 import {TierQuotaLimit} from "./tier"
 
 export const UNLIMITED_QUOTA_SENTINEL = -1
@@ -53,6 +54,7 @@ export function calculateRemainingQuota(limit: TierQuotaLimit, consumed: number,
 
 export interface UsageEvent {
   readonly id: string
+  readonly organizationId: string
   readonly entityType: string
   readonly entityId: string
   readonly actor: Actor
@@ -73,10 +75,12 @@ export type UsageEventValidationError = PrefixUnion<
   | "invalid_actor_type"
   | "invalid_metric"
   | "invalid_quantity"
+  | "invalid_organization_id"
 >
 
 interface ValidatedRequiredFields {
   readonly id: string
+  readonly organizationId: string
   readonly entityType: string
   readonly entityId: string
   readonly isBillable: boolean
@@ -118,6 +122,7 @@ export class UsageEventFactory {
 
     const validatedEvent: UsageEvent = {
       id: requiredCheck.right.id,
+      organizationId: requiredCheck.right.organizationId,
       entityType: requiredCheck.right.entityType,
       entityId: requiredCheck.right.entityId,
       actor: actorCheck.right,
@@ -136,6 +141,7 @@ export class UsageEventFactory {
   ): Either<UsageEventValidationError, ValidatedRequiredFields> {
     if (
       !hasOwnProperty(data, "id") ||
+      !hasOwnProperty(data, "organizationId") ||
       !hasOwnProperty(data, "entityType") ||
       !hasOwnProperty(data, "entityId") ||
       !hasOwnProperty(data, "isBillable") ||
@@ -143,11 +149,12 @@ export class UsageEventFactory {
     )
       return left("usage_event_missing_required_fields")
 
-    const {id, entityType, entityId, isBillable, occurredAt} = data
+    const {id, organizationId, entityType, entityId, isBillable, occurredAt} = data
 
     if (
       typeof id !== "string" ||
       id.trim() === "" ||
+      typeof organizationId !== "string" ||
       typeof entityId !== "string" ||
       entityId.trim() === "" ||
       typeof isBillable !== "boolean" ||
@@ -157,9 +164,11 @@ export class UsageEventFactory {
       return left("usage_event_missing_required_fields")
 
     if (typeof entityType !== "string" || entityType.trim() === "") return left("usage_event_invalid_entity_type")
+    if (!isUUIDv7(organizationId)) return left("usage_event_invalid_organization_id")
 
     return right({
       id,
+      organizationId,
       entityType,
       entityId,
       isBillable,
@@ -168,19 +177,31 @@ export class UsageEventFactory {
   }
 
   private static validateActor(actor: unknown): Either<UsageEventValidationError, Actor> {
-    if (!isObject(actor) || !hasOwnProperty(actor, "id") || !hasOwnProperty(actor, "type"))
+    if (
+      !isObject(actor) ||
+      !hasOwnProperty(actor, "id") ||
+      !hasOwnProperty(actor, "type") ||
+      !hasOwnProperty(actor, "displayName")
+    )
       return left("usage_event_missing_required_fields")
 
-    const {id, type} = actor
+    const {id, type, displayName} = actor
 
-    if (typeof id !== "string" || id.trim() === "" || typeof type !== "string")
+    if (
+      typeof id !== "string" ||
+      id.trim() === "" ||
+      typeof type !== "string" ||
+      typeof displayName !== "string" ||
+      !displayName.trim()
+    )
       return left("usage_event_missing_required_fields")
 
-    if (type !== "user" && type !== "agent") return left("usage_event_invalid_actor_type")
+    if (type !== "user" && type !== "agent" && type !== "operator" && type !== "system")
+      return left("usage_event_invalid_actor_type")
 
     const actorType: ActorType = type
 
-    return right({id, type: actorType})
+    return right({id, type: actorType, displayName})
   }
 
   private static validateMetric(metric: unknown): Either<UsageEventValidationError, UsageMetric> {
