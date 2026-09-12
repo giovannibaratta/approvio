@@ -38,16 +38,29 @@ Both **users** and **agents** can vote on workflows if they meet the requirement
 
 ### Vote Types
 
-Both users and agents can cast two types of votes:
+Both users and agents can cast three types of votes:
 
-| Vote Type   | Description                                         |
-| :---------- | :-------------------------------------------------- |
-| **APPROVE** | Positive vote contributing to approval requirements |
-| **VETO**    | Negative vote that immediately rejects the workflow |
+| Vote Type    | Description                                                                             |
+| :----------- | :-------------------------------------------------------------------------------------- |
+| **APPROVE**  | Positive vote contributing to approval requirements                                     |
+| **VETO**     | Negative vote that immediately rejects the workflow                                     |
+| **WITHDRAW** | Reverts a previous vote; can restore a REJECTED workflow back to EVALUATION_IN_PROGRESS |
 
 ### Approval Logic
 
-The logic determining when a workflow is formally approved relies on multiple conditions being met simultaneously. First, the accumulated positive votes must satisfy all of the approval rules defined by the template. Second, there must be no veto votes cast by any user or agent. Finally, the workflow must be active; it cannot be expired or canceled. It is crucial to understand that a single veto vote will immediately reject the workflow, entirely overriding any number of accumulated approval votes.
+The logic determining when a workflow is formally approved relies on multiple conditions being met simultaneously. First, the accumulated positive votes must satisfy all of the approval rules defined by the template. Second, there must be no veto votes cast by any user or agent. Finally, the workflow must be active; it cannot be expired or canceled. It is crucial to understand that a single veto vote will immediately reject the workflow, entirely overriding any number of accumulated approval votes. However, a `REJECTED` state is not necessarily terminal: a subsequent `WITHDRAW` vote cast by the vetoing entity will revert the workflow back to the `EVALUATION_IN_PROGRESS` state.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant System
+
+    System->>System: State: EVALUATION_IN_PROGRESS
+    User->>System: Cast VETO
+    System->>System: State: REJECTED
+    User->>System: Cast WITHDRAW (retract VETO)
+    System->>System: State: EVALUATION_IN_PROGRESS
+```
 
 ### Multiple Votes
 
