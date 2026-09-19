@@ -1,5 +1,5 @@
 import {Space as SpaceApi, SpaceCreate, ListSpaces200Response} from "@approvio/api"
-import {AuthenticatedEntity, Space, SpaceValidationError} from "@domain"
+import {AuthenticatedEntity, Space, SpaceValidationError, TenantContext} from "@domain"
 import {
   CreateSpaceError,
   CreateSpaceRequest,
@@ -24,20 +24,24 @@ import {generateErrorPayload} from "@controllers/error"
 export function createSpaceApiToServiceModel(data: {
   request: SpaceCreate
   requestor: AuthenticatedEntity
+  context: TenantContext
 }): Either<SpaceValidationError, CreateSpaceRequest> {
   const spaceData = {
     name: data.request.name,
-    description: data.request.description
+    description: data.request.description,
+    organizationId: data.context.organizationId
   }
 
   return right({
     spaceData,
+    organizationId: data.context.organizationId,
     requestor: data.requestor
   })
 }
 
 export function mapSpaceToApi(space: Versioned<Space>): SpaceApi {
   return {
+    organizationId: space.organizationId,
     id: space.id,
     name: space.name,
     description: space.description,
@@ -85,24 +89,36 @@ export function generateErrorResponseForCreateSpace(error: CreateSpaceError, con
     case "quota_check_error":
     case "unknown_error":
     case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
     case "audit_log_malformed_object":
     case "audit_log_invalid_audit_type":
     case "audit_log_invalid_entity_type":
     case "audit_log_invalid_actor_type":
     case "audit_log_invalid_payload":
     case "audit_log_missing_required_fields":
+    case "audit_log_organization_mismatch":
+    case "audit_log_invalid_schema_version":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: an unexpected error occurred`)
       )
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "user_org_role_invalid":
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":
+    case "user_update_before_create":
+    case "user_invalid_organization_id":
+    case "user_invalid_account_id":
+    case "user_status_invalid":
+    case "user_role_organization_mismatch":
+    case "user_membership_roles_invalid":
+    case "space_invalid_organization_id":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
     case "role_invalid_uuid":
     case "role_name_empty":
     case "role_name_too_long":
@@ -141,6 +157,11 @@ export function generateErrorResponseForGetSpace(error: GetSpaceError, context: 
         generateErrorPayload(errorCode, `${context}: you are not authorized to perform this action`)
       )
     case "unknown_error":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: an unexpected error occurred`)
       )
@@ -150,6 +171,10 @@ export function generateErrorResponseForGetSpace(error: GetSpaceError, context: 
     case "space_description_too_long":
     case "space_invalid_uuid":
     case "space_update_before_create":
+    case "space_invalid_organization_id":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
       Logger.error(`Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
@@ -170,6 +195,11 @@ export function generateErrorResponseForListSpaces(
     case "malformed_object":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid list parameters`))
     case "unknown_error":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: an unexpected error occurred`)
       )
@@ -179,6 +209,10 @@ export function generateErrorResponseForListSpaces(
     case "space_description_too_long":
     case "space_invalid_uuid":
     case "space_update_before_create":
+    case "space_invalid_organization_id":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
       Logger.error(`Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
@@ -200,6 +234,21 @@ export function generateErrorResponseForDeleteSpace(error: DeleteSpaceError, con
       )
     case "unknown_error":
     case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "audit_log_organization_mismatch":
+    case "audit_log_malformed_object":
+    case "audit_log_invalid_audit_type":
+    case "audit_log_invalid_entity_type":
+    case "audit_log_invalid_actor_type":
+    case "audit_log_invalid_schema_version":
+    case "audit_log_invalid_payload":
+    case "audit_log_missing_required_fields":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: an unexpected error occurred`)
       )

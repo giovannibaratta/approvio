@@ -34,10 +34,11 @@ import {
   UnprocessableEntityException,
   Logger
 } from "@nestjs/common"
-import {generateErrorPayload} from "@controllers/error"
+import {generateErrorPayload, isAuthorityError, mapAuthorityError} from "@controllers/error"
 import {
   ApprovalRuleValidationError,
   AuthenticatedEntity,
+  TenantContext,
   DecoratedWorkflow,
   isDecoratedWorkflow,
   VoteValidationError,
@@ -89,6 +90,7 @@ function isValidMetadata(metadata: unknown): metadata is Record<string, string> 
 export function createWorkflowApiToServiceModel(data: {
   workflowData: WorkflowCreateApi
   requestor: AuthenticatedEntity
+  context: TenantContext
 }): Either<ApprovalRuleValidationError, CreateWorkflowRequest> {
   const workflowData: CreateWorkflowRequest["workflowData"] = {
     name: data.workflowData.name,
@@ -98,6 +100,7 @@ export function createWorkflowApiToServiceModel(data: {
 
   return right({
     workflowData,
+    organizationId: data.context.organizationId,
     requestor: data.requestor
   })
 }
@@ -117,6 +120,7 @@ export function generateErrorResponseForCreateWorkflow(
     case "workflow_name_too_long":
     case "workflow_name_invalid_characters":
     case "workflow_description_too_long":
+    case "workflow_id_invalid_uuid":
     case "workflow_workflow_template_id_invalid_uuid":
     case "workflow_template_not_found":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow data`))
@@ -209,6 +213,7 @@ export function generateErrorResponseForGetWorkflow(
     case "workflow_action_url_invalid":
     case "workflow_action_method_invalid":
     case "workflow_description_too_long":
+    case "workflow_id_invalid_uuid":
     case "workflow_expires_at_in_the_past":
     case "workflow_name_empty":
     case "workflow_name_invalid_characters":
@@ -312,6 +317,7 @@ export function generateErrorResponseForListWorkflows(
     case "workflow_action_url_invalid":
     case "workflow_action_method_invalid":
     case "workflow_description_too_long":
+    case "workflow_id_invalid_uuid":
     case "workflow_expires_at_in_the_past":
     case "workflow_name_empty":
     case "workflow_name_invalid_characters":
@@ -349,6 +355,7 @@ export function mapWorkflowToApi<T extends WorkflowDecoratorSelector>(
 ): WorkflowApi {
   const {id, name, description, status, createdAt, updatedAt, expiresAt, workflowTemplateId} = workflowResult
   const workflow: WorkflowApi = {
+    organizationId: workflowResult.organizationId,
     id,
     name,
     status,
@@ -476,6 +483,7 @@ export function createCastVoteApiToServiceModel(data: {
   workflowId: string
   request: WorkflowVoteRequestApi
   requestor: AuthenticatedEntity
+  context: TenantContext
 }): Either<VoteValidationError, CastVoteRequest> {
   switch (data.request.voteType.type) {
     case "APPROVE":
@@ -484,6 +492,7 @@ export function createCastVoteApiToServiceModel(data: {
         type: "APPROVE",
         votedForGroups: data.request.voteType.votedForGroups,
         reason: data.request.reason,
+        organizationId: data.context.organizationId,
         requestor: data.requestor
       })
     case "VETO":
@@ -491,6 +500,7 @@ export function createCastVoteApiToServiceModel(data: {
         workflowId: data.workflowId,
         type: "VETO",
         reason: data.request.reason,
+        organizationId: data.context.organizationId,
         requestor: data.requestor
       })
     case "WITHDRAW":
@@ -498,6 +508,7 @@ export function createCastVoteApiToServiceModel(data: {
         workflowId: data.workflowId,
         type: "WITHDRAW",
         reason: data.request.reason,
+        organizationId: data.context.organizationId,
         requestor: data.requestor
       })
   }
@@ -545,6 +556,7 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "workflow_action_url_invalid":
     case "workflow_action_method_invalid":
     case "workflow_description_too_long":
+    case "workflow_id_invalid_uuid":
     case "workflow_expires_at_in_the_past":
     case "workflow_name_empty":
     case "workflow_name_invalid_characters":
@@ -566,9 +578,6 @@ export function generateErrorResponseForCanVote(error: CanVoteError, context: st
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "user_org_role_invalid":
     case "user_role_assignments_invalid_format":
     case "role_name_empty":
@@ -687,10 +696,6 @@ export function generateErrorResponseForCastVote(
     case "step_up_operation_mismatch":
     case "step_up_resource_mismatch":
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: High privilege token required`))
-    case "token_not_found":
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: Failed to consume token`)
-      )
     case "approval_rule_and_rule_must_have_rules":
     case "approval_rule_group_rule_invalid_group_id":
     case "approval_rule_group_rule_invalid_min_count":
@@ -707,6 +712,7 @@ export function generateErrorResponseForCastVote(
     case "workflow_action_url_invalid":
     case "workflow_action_method_invalid":
     case "workflow_description_too_long":
+    case "workflow_id_invalid_uuid":
     case "workflow_expires_at_in_the_past":
     case "workflow_name_empty":
     case "workflow_name_invalid_characters":
@@ -728,9 +734,6 @@ export function generateErrorResponseForCastVote(
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "user_org_role_invalid":
     case "user_role_assignments_invalid_format":
     case "role_name_empty":
@@ -797,6 +800,7 @@ export function mapVoteListToApi(votes: ReadonlyArray<Vote>): GetWorkflowVotes20
   return {
     votes: votes.map(vote => {
       const apiVote: WorkflowVote = {
+        organizationId: vote.organizationId,
         voterId: vote.voter.entityId,
         voterType: vote.voter.entityType === "user" ? "USER" : "AGENT",
         voteType: vote.type,
@@ -841,6 +845,7 @@ export function generateErrorResponseForListVotes(error: FindVotesError, context
     case "workflow_action_url_invalid":
     case "workflow_action_method_invalid":
     case "workflow_description_too_long":
+    case "workflow_id_invalid_uuid":
     case "workflow_expires_at_in_the_past":
     case "workflow_name_empty":
     case "workflow_name_invalid_characters":

@@ -1,3 +1,4 @@
+import {OrganizationId, isOrganizationId} from "./shared"
 import * as E from "fp-ts/Either"
 import {Either, isLeft, left, right} from "fp-ts/Either"
 import {DecorableEntity, getStringAsEnum, isDecoratedWith, isUUIDv7, PrefixUnion} from "@utils"
@@ -30,6 +31,7 @@ export type Workflow = Readonly<WorkflowData>
 
 interface WorkflowData {
   id: string
+  organizationId: OrganizationId
   name: string
   description?: string
   status: WorkflowStatus
@@ -49,8 +51,10 @@ type UnprefixedWorkflowValidationError =
   | "description_too_long"
   | "update_before_create"
   | "status_invalid"
+  | "id_invalid_uuid"
   | "workflow_template_id_invalid_uuid"
   | "expires_at_in_the_past"
+  | "organization_id_invalid_uuid"
 
 export class WorkflowFactory {
   /**
@@ -96,7 +100,8 @@ export class WorkflowFactory {
    * @returns Either a validation error or the validated Workflow object.
    */
   private static instantiateWorkflow(
-    data: Omit<WorkflowData, "status"> & {
+    data: Omit<WorkflowData, "status" | "organizationId"> & {
+      organizationId: string
       status: string
     }
   ): Either<WorkflowValidationError, Workflow> {
@@ -104,6 +109,8 @@ export class WorkflowFactory {
     const descriptionValidation = data.description ? validateWorkflowDescription(data.description) : right(undefined)
     const statusValidation = validateWorkflowStatus(data.status)
 
+    if (!isUUIDv7(data.id)) return left("workflow_id_invalid_uuid")
+    if (!isOrganizationId(data.organizationId)) return left("workflow_organization_id_invalid_uuid")
     if (!isUUIDv7(data.workflowTemplateId)) return left("workflow_workflow_template_id_invalid_uuid")
     if (isLeft(nameValidation)) return nameValidation
     if (isLeft(descriptionValidation)) return descriptionValidation
@@ -113,6 +120,7 @@ export class WorkflowFactory {
 
     const workflowData = {
       ...data,
+      organizationId: data.organizationId,
       name: nameValidation.right,
       description: descriptionValidation.right,
       status: data.recalculationRequired ? WorkflowStatus.EVALUATION_IN_PROGRESS : statusValidation.right
@@ -151,7 +159,10 @@ function generateCantVoteReasonForTerminalStatus(status: WorkflowStatus): CantVo
       return "workflow_cancelled"
     case WorkflowStatus.EXPIRED:
       return "workflow_expired"
-    default:
+    case WorkflowStatus.REJECTED:
+    case WorkflowStatus.EVALUATION_IN_PROGRESS:
+      // These are not terminal statuses, so they should never be returned here.
+      // If this is reached, it's a logic error.
       throw new Error(`Invalid terminal status: ${status}`)
   }
 }

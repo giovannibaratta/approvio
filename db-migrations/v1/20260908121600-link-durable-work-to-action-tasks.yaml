@@ -1,0 +1,30 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908121600-link-durable-work-to-action-tasks
+      author: giovannibaratta
+      comment: Each concrete action task is a one-to-one durable-work child.
+      changes:
+        - addForeignKeyConstraint:
+            baseTableName: workflow_actions_email_task
+            baseColumnNames: organization_id, id
+            referencedTableName: durable_work
+            referencedColumnNames: organization_id, id
+            constraintName: fk_workflow_actions_email_task_durable_work
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: workflow_actions_webhook_tasks
+            baseColumnNames: organization_id, id
+            referencedTableName: durable_work
+            referencedColumnNames: organization_id, id
+            constraintName: fk_workflow_actions_webhook_tasks_durable_work
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: workflow_actions_slack_tasks
+            baseColumnNames: organization_id, id
+            referencedTableName: durable_work
+            referencedColumnNames: organization_id, id
+            constraintName: fk_workflow_actions_slack_tasks_durable_work
+            onDelete: RESTRICT
+            onUpdate: NO ACTION

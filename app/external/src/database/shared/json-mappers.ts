@@ -3,6 +3,8 @@ import {Prisma} from "@prisma/client"
 export function mapToJsonValue(value: unknown): Prisma.InputJsonValue {
   if (value === null || value === undefined) throw new Error("Value cannot be null or undefined")
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value
+  if (typeof value === "bigint") return value.toString()
+  if (value instanceof Date) return value.toISOString()
   if (Array.isArray(value)) return mapArray(value)
 
   return mapToNonNullableJsonValue(value)

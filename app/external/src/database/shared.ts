@@ -1,3 +1,6 @@
+// TODO: you fucker up hard on this file. The domain must perform all the validations.
+// persistnece layer should do minimal mapping and delegate all validation to the domain.
+
 import {
   Agent,
   Group,
@@ -79,6 +82,7 @@ export function mapToDomainVersionedGroupWithEntities(
     createdAt: dbObject.createdAt,
     description: dbObject.description,
     id: dbObject.id,
+    organizationId: dbObject.organizationId,
     name: dbObject.name,
     updatedAt: dbObject.updatedAt,
     entitiesCount: dbObject._count.groupMemberships + dbObject._count.agentGroupMemberships
@@ -143,6 +147,7 @@ function mapWorkflowToNonVersionedDomain(dbObject: PrismaWorkflow): Either<Workf
     createdAt: dbObject.createdAt,
     description: dbObject.description ?? undefined,
     id: dbObject.id,
+    organizationId: dbObject.organizationId,
     name: dbObject.name,
     updatedAt: dbObject.updatedAt,
     status: dbObject.status,

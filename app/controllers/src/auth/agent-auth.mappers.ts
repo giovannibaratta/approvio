@@ -16,6 +16,7 @@ import {
   UnprocessableEntityException
 } from "@nestjs/common"
 import {generateErrorPayload} from "@controllers/error"
+import {TenantContext} from "@domain"
 
 type ChallengeRequestValidationError = "request_invalid_agent_name"
 
@@ -72,12 +73,14 @@ export const validateAgentChallengeRequest = (
  * Maps API challenge request to service request
  */
 export const mapAgentChallengeRequestToService = (
-  request: AgentChallengeRequest
+  request: AgentChallengeRequest,
+  context: TenantContext
 ): E.Either<ChallengeRequestValidationError, GenerateChallengeRequest> => {
   if (!request.agentName || request.agentName.trim().length === 0) return E.left("request_invalid_agent_name")
 
   return E.right({
-    agentName: request.agentName
+    agentName: request.agentName,
+    context
   })
 }
 
@@ -111,6 +114,11 @@ export const generateErrorResponseForChallengeRequest = (
 ): HttpException => {
   const errorCode = error.toUpperCase()
   switch (error) {
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
     case "agent_challenge_storage_error":
     case "agent_challenge_nonce_generation_failed":
     case "agent_challenge_encryption_failed":
@@ -121,8 +129,6 @@ export const generateErrorResponseForChallengeRequest = (
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: agent not found`))
     case "agent_key_decode_error":
     case "agent_invalid_uuid":
-    case "agent_challenge_agent_name_empty":
-    case "agent_challenge_agent_name_invalid":
     case "agent_challenge_invalid_uuid":
     case "agent_challenge_nonce_empty":
     case "agent_challenge_nonce_invalid_length":
@@ -133,6 +139,17 @@ export const generateErrorResponseForChallengeRequest = (
     case "agent_name_empty":
     case "agent_name_too_long":
     case "agent_challenge_invalid_occ":
+    case "agent_challenge_agent_id_invalid":
+    case "agent_challenge_organization_id_invalid":
+    case "agent_challenge_organization_mismatch":
+    case "agent_challenge_agent_mismatch":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
     case "agent_role_invalid_uuid":
     case "agent_role_name_empty":
     case "agent_role_name_too_long":
@@ -185,8 +202,6 @@ export const generateErrorResponseForAgentTokenExchange = (
     case "agent_challenge_invalid_issuer":
     case "agent_challenge_invalid_agent_ownership":
     case "agent_challenge_invalid_uuid":
-    case "agent_challenge_agent_name_empty":
-    case "agent_challenge_agent_name_invalid":
     case "agent_challenge_nonce_empty":
     case "agent_challenge_nonce_invalid_length":
     case "agent_challenge_expire_before_creation":
@@ -216,8 +231,6 @@ export const generateErrorResponseForAgentTokenExchange = (
     case "refresh_token_expire_before_create":
     case "refresh_token_invalid_agent_id":
     case "refresh_token_invalid_created_at":
-    case "refresh_token_invalid_dpop_jkt":
-    case "refresh_token_invalid_entity_type":
     case "refresh_token_invalid_expires_at":
     case "refresh_token_invalid_family_id":
     case "refresh_token_invalid_id":
@@ -225,17 +238,31 @@ export const generateErrorResponseForAgentTokenExchange = (
     case "refresh_token_invalid_status":
     case "refresh_token_invalid_token_hash":
     case "refresh_token_invalid_used_at":
-    case "refresh_token_invalid_user_id":
-    case "refresh_token_missing_entity_id":
-    case "refresh_token_missing_entity_type":
-    case "refresh_token_missing_provider_id":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_name_cannot_be_uuid":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
+    case "agent_challenge_agent_id_invalid":
+    case "agent_challenge_organization_id_invalid":
+    case "refresh_token_invalid_organization_id":
+    case "refresh_token_invalid_account_id":
+    case "refresh_token_invalid_session_id":
+    case "refresh_token_invalid_provider_id":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
       Logger.error(`${context}: data inconsistency error - ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: data inconsistency detected`)
       )
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: unknown error`))
     case "agent_challenge_not_found":

@@ -2,8 +2,7 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {HttpStatus, INestApplication} from "@nestjs/common"
 import request from "supertest"
 import {AppModule} from "@app/app.module"
-import {DatabaseClient} from "@external/database"
-import {cleanDatabase, prepareDatabase} from "@test/database"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
 import {ConfigProvider} from "@external/config"
 import {OidcBootstrapService} from "@external/oidc/oidc-bootstrap.service"
 import {MockConfigProvider, createMockGroupInDb, createUserWithRefreshToken} from "@test/mock-data"
@@ -25,7 +24,7 @@ describe("Auth Integration", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
+        .useValue(MockConfigProvider.fromOriginalProvider({tenantConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -33,7 +32,7 @@ describe("Auth Integration", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     configProvider = module.get(ConfigProvider)
 
     await app.init()
@@ -47,6 +46,8 @@ describe("Auth Integration", () => {
   afterEach(async () => {
     await cleanDatabase(prisma)
   })
+
+  beforeEach(async () => {})
 
   // Helper to create a user and a refresh token
   const setupUserWithRefreshToken = async (
@@ -201,7 +202,7 @@ describe("Auth Integration", () => {
 
   describe("GET /auth/info", () => {
     it("should return unauthorized without authentication token", async () => {
-      const response = await request(app.getHttpServer()).get("/auth/info")
+      const response = await request(app.getHttpServer()).get("/o/00000000-0000-7000-8000-000000000001/auth/info")
 
       expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
     })
@@ -209,7 +210,7 @@ describe("Auth Integration", () => {
     it("should return BAD REQUEST with invalid authentication token", async () => {
       // When: An invalid authentication token is used
       const response = await request(app.getHttpServer())
-        .get("/auth/info")
+        .get("/o/00000000-0000-7000-8000-000000000001/auth/info")
         .set("Authorization", "Bearer invalid-jwt-token")
 
       // Expect
@@ -225,11 +226,12 @@ describe("Auth Integration", () => {
       const validAccessToken = refreshResponse.body.accessToken
 
       // Given: Two groups, one with the user and one without
-      const group1 = await createMockGroupInDb(prisma)
-      await createMockGroupInDb(prisma)
+      const group1 = await createMockGroupInDb(prisma, {organizationId: user.organizationId})
+      await createMockGroupInDb(prisma, {organizationId: user.organizationId})
 
       await prisma.groupMembership.create({
         data: {
+          organizationId: user.organizationId,
           groupId: group1.id,
           userId: user.id,
           createdAt: new Date(),
@@ -239,7 +241,7 @@ describe("Auth Integration", () => {
 
       // When: Requesting info
       const response = await request(app.getHttpServer())
-        .get("/auth/info")
+        .get(`/o/${user.organizationId}/auth/info`)
         .set("Authorization", `Bearer ${validAccessToken}`)
 
       // Expect
@@ -258,7 +260,7 @@ describe("Auth Integration", () => {
 
     it("should return empty groups when user has no memberships", async () => {
       // Given: A user with no memberships
-      const {token} = await setupUserWithRefreshToken()
+      const {user, token} = await setupUserWithRefreshToken()
       const refreshResponse = await request(app.getHttpServer())
         .post("/auth/cli/refresh")
         .send({refreshToken: token.plainToken})
@@ -266,7 +268,7 @@ describe("Auth Integration", () => {
 
       // When: Requesting info
       const response = await request(app.getHttpServer())
-        .get("/auth/info")
+        .get(`/o/${user.organizationId}/auth/info`)
         .set("Authorization", `Bearer ${validAccessToken}`)
 
       // Expect
@@ -281,7 +283,7 @@ describe("Auth Integration", () => {
   describe("POST /auth/cli/refresh", () => {
     it("should return new tokens for valid refresh token", async () => {
       // Given: A user with a valid active refresh token
-      const {token} = await setupUserWithRefreshToken()
+      const {user, token} = await setupUserWithRefreshToken()
       const {plainToken, tokenId} = token
 
       // When: Requesting refresh
@@ -302,7 +304,7 @@ describe("Auth Integration", () => {
       // Expect: the token can be used to query the endpoints
       // When: Use JWT token to access /auth/info endpoint
       const infoResponse = await request(app.getHttpServer())
-        .get("/auth/info")
+        .get(`/o/${user.organizationId}/auth/info`)
         .set("Authorization", `Bearer ${response.body.accessToken}`)
 
       // Expect: User info endpoint returns entity type

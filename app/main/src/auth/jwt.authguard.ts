@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ExecutionContext,
+  HttpException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -60,6 +61,7 @@ export class JwtAuthGuard extends AuthGuard("jwt") {
     }
 
     if (err) {
+      if (err instanceof HttpException) throw err
       Logger.error("Unable to validate JWT token")
       Logger.error(err)
       throw new InternalServerErrorException(generateErrorPayload("JWT_UNKNOWN_ERROR", "Unable to validate JWT token"))

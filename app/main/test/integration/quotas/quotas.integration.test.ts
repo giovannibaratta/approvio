@@ -1,3 +1,4 @@
+import {toOrganizationId} from "@test/organization-id"
 import {v7 as uuidv7} from "uuid"
 import {Test, TestingModule} from "@nestjs/testing"
 import {NestApplication} from "@nestjs/core"
@@ -5,12 +6,10 @@ import {HttpStatus} from "@nestjs/common"
 import {AppModule} from "@app/app.module"
 import {createMockQuotaInDb, MockConfigProvider} from "@test/mock-data"
 import {createAuthenticatedUserInDb} from "@test/token-helpers"
-import {cleanDatabase, prepareDatabase} from "@test/database"
-import {DEFAULT_ORG_ID} from "@services"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
 import {PrismaClient} from "@prisma/client"
 import {ConfigProvider} from "@external/config"
 import {JwtService} from "@nestjs/jwt"
-import {DatabaseClient} from "@external"
 import {get, post, patch, del} from "@test/requests"
 import {QuotaCreate, QuotaUpdate} from "@approvio/api"
 import "@utils/matchers"
@@ -24,6 +23,8 @@ describe("Quotas Integration Tests", () => {
   let configProvider: ConfigProvider
   let adminToken: string
   let userToken: string
+  let organizationId: ReturnType<typeof toOrganizationId>
+  let endpoint: string
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -34,7 +35,7 @@ describe("Quotas Integration Tests", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
+        .useValue(MockConfigProvider.fromOriginalProvider({tenantConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -42,7 +43,7 @@ describe("Quotas Integration Tests", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
 
@@ -52,10 +53,15 @@ describe("Quotas Integration Tests", () => {
   beforeEach(async () => {
     // Setup users and tokens
     const adminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
-    const regularUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
+    const regularUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+      orgAdmin: false,
+      organizationId: adminUser.user.organizationId
+    })
 
     adminToken = adminUser.token
     userToken = regularUser.token
+    organizationId = adminUser.user.organizationId
+    endpoint = `/o/${organizationId}/quotas`
   })
 
   afterAll(async () => {
@@ -74,11 +80,11 @@ describe("Quotas Integration Tests", () => {
         scope: "Org",
         quotaType: "MAX_GROUPS",
         limit: 10,
-        targetId: DEFAULT_ORG_ID
+        targetId: organizationId
       }
 
       // When
-      const response = await post(app, "/quotas").withToken(adminToken).build().send(payload)
+      const response = await post(app, endpoint).withToken(adminToken).build().send(payload)
 
       // Then
       expect(response).toHaveStatusCode(HttpStatus.CREATED)
@@ -86,8 +92,18 @@ describe("Quotas Integration Tests", () => {
         scope: "Org",
         quotaType: "MAX_GROUPS",
         limit: 10,
-        targetId: DEFAULT_ORG_ID
+        targetId: organizationId
       })
+    })
+
+    it("should reject an organization-level target that disagrees with the route tenant", async () => {
+      const response = await post(app, endpoint)
+        .withToken(adminToken)
+        .build()
+        .send({scope: "Org", quotaType: "MAX_GROUPS", limit: 10, targetId: uuidv7()})
+
+      expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      expect(response.body).toHaveErrorCode("QUOTA_INVALID_TARGET_ID")
     })
 
     it("should allow admin to create a targeted quota (MAX_ENTITIES_PER_GROUP)", async () => {
@@ -101,7 +117,7 @@ describe("Quotas Integration Tests", () => {
       }
 
       // When
-      const response = await post(app, "/quotas").withToken(adminToken).build().send(payload).expect(HttpStatus.CREATED)
+      const response = await post(app, endpoint).withToken(adminToken).build().send(payload).expect(HttpStatus.CREATED)
 
       // Then
       expect(response.body).toMatchObject({
@@ -118,11 +134,11 @@ describe("Quotas Integration Tests", () => {
         scope: "Org",
         quotaType: "MAX_GROUPS",
         limit: 10,
-        targetId: DEFAULT_ORG_ID
+        targetId: organizationId
       }
 
       // When
-      const response = await post(app, "/quotas").withToken(userToken).build().send(payload)
+      const response = await post(app, endpoint).withToken(userToken).build().send(payload)
 
       // Then
       expect(response).toHaveStatusCode(HttpStatus.FORBIDDEN)
@@ -134,12 +150,13 @@ describe("Quotas Integration Tests", () => {
     it("should list quotas", async () => {
       // Given: some quotas exist
       await createMockQuotaInDb(prisma, {
+        organizationId,
         scope: "Org",
         quotaType: "MAX_GROUPS"
       })
 
       // When
-      const response = await get(app, "/quotas").withToken(adminToken).build().expect(HttpStatus.OK)
+      const response = await get(app, endpoint).withToken(adminToken).build().expect(HttpStatus.OK)
 
       // Then
       expect(response.body.data).toHaveLength(1)
@@ -151,16 +168,18 @@ describe("Quotas Integration Tests", () => {
     it("should filter quotas by scope", async () => {
       // Given
       await createMockQuotaInDb(prisma, {
+        organizationId,
         scope: "Org",
         quotaType: "MAX_GROUPS"
       })
       await createMockQuotaInDb(prisma, {
+        organizationId,
         scope: "Group",
         quotaType: "MAX_ENTITIES_PER_GROUP"
       })
 
       // When
-      const response = await get(app, "/quotas")
+      const response = await get(app, endpoint)
         .query({scope: "Group"})
         .withToken(adminToken)
         .build()
@@ -170,15 +189,31 @@ describe("Quotas Integration Tests", () => {
       expect(response.body.data).toHaveLength(1)
       expect(response.body.data[0].scope).toBe("Group")
     })
+
+    it("should return no quotas for a different organization target", async () => {
+      await createMockQuotaInDb(prisma, {
+        organizationId,
+        scope: "Org",
+        quotaType: "MAX_GROUPS"
+      })
+
+      const response = await get(app, endpoint)
+        .query({scope: "Org", targetId: uuidv7()})
+        .withToken(adminToken)
+        .build()
+        .expect(HttpStatus.OK)
+
+      expect(response.body.data).toHaveLength(0)
+    })
   })
 
   describe("GET /quotas/:id", () => {
     it("should retrieve a quota by id", async () => {
       // Given
-      const quota = await createMockQuotaInDb(prisma)
+      const quota = await createMockQuotaInDb(prisma, {organizationId})
 
       // When
-      const response = await get(app, `/quotas/${quota.id}`).withToken(adminToken).build().expect(HttpStatus.OK)
+      const response = await get(app, `${endpoint}/${quota.id}`).withToken(adminToken).build().expect(HttpStatus.OK)
 
       // Then
       expect(response.body.id).toBe(quota.id)
@@ -189,6 +224,7 @@ describe("Quotas Integration Tests", () => {
     it("should update quota limit", async () => {
       // Given
       const quota = await createMockQuotaInDb(prisma, {
+        organizationId,
         limit: 10
       })
 
@@ -196,7 +232,7 @@ describe("Quotas Integration Tests", () => {
       const payload: QuotaUpdate = {limit: 50}
 
       // Then
-      const response = await patch(app, `/quotas/${quota.id}`)
+      const response = await patch(app, `${endpoint}/${quota.id}`)
         .withToken(adminToken)
         .build()
         .send(payload)
@@ -207,10 +243,10 @@ describe("Quotas Integration Tests", () => {
 
     it("should allow patching with an empty body (limit should be optional)", async () => {
       // Given
-      const quota = await createMockQuotaInDb(prisma)
+      const quota = await createMockQuotaInDb(prisma, {organizationId})
 
       // When: sending empty body
-      const response = await patch(app, `/quotas/${quota.id}`)
+      const response = await patch(app, `${endpoint}/${quota.id}`)
         .withToken(adminToken)
         .build()
         .send({})
@@ -230,10 +266,10 @@ describe("Quotas Integration Tests", () => {
       it("should return 409 Conflict if OCC condition fails during quota update", async () => {
         const repo = app.get<QuotaRepository>(QUOTA_REPOSITORY_TOKEN)
 
-        const quota = await createMockQuotaInDb(prisma)
+        const quota = await createMockQuotaInDb(prisma, {organizationId})
 
         // Intercept getQuotaById to trigger concurrent modification
-        spy = wrapTaskEitherWithSideEffect(repo, "getQuotaById", async id => {
+        spy = wrapTaskEitherWithSideEffect(repo, "getQuotaById", async (_context, id) => {
           if (id === quota.id)
             await prisma.quota.update({
               where: {id: quota.id},
@@ -243,7 +279,7 @@ describe("Quotas Integration Tests", () => {
 
         const payload: QuotaUpdate = {limit: 50}
 
-        const response = await patch(app, `/quotas/${quota.id}`).withToken(adminToken).build().send(payload)
+        const response = await patch(app, `${endpoint}/${quota.id}`).withToken(adminToken).build().send(payload)
 
         expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
         expect(response.body.code).toBe("QUOTA_CONCURRENT_MODIFICATION_ERROR")
@@ -254,10 +290,10 @@ describe("Quotas Integration Tests", () => {
   describe("DELETE /quotas/:id", () => {
     it("should delete a quota", async () => {
       // Given
-      const quota = await createMockQuotaInDb(prisma)
+      const quota = await createMockQuotaInDb(prisma, {organizationId})
 
       // When
-      await del(app, `/quotas/${quota.id}`).withToken(adminToken).build().expect(HttpStatus.NO_CONTENT)
+      await del(app, `${endpoint}/${quota.id}`).withToken(adminToken).build().expect(HttpStatus.NO_CONTENT)
 
       // Then
       const deleted = await prisma.quota.findUnique({where: {id: quota.id}})

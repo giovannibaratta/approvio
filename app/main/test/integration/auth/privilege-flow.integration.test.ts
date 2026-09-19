@@ -1,10 +1,11 @@
+import {randomOrgId, toOrganizationId} from "@test/organization-id"
+import * as E from "fp-ts/Either"
 import {Test, TestingModule} from "@nestjs/testing"
 import {INestApplication} from "@nestjs/common"
 import request from "supertest"
 import {AppModule} from "@app/app.module"
 import {ConfigProvider} from "@external/config"
-import {DatabaseClient} from "@external/database"
-import {cleanDatabase, prepareDatabase} from "@test/database"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
 import {MockConfigProvider, createMockUserInDb} from "@test/mock-data"
 import {PrismaClient} from "@prisma/client"
 import "@utils/matchers"
@@ -12,8 +13,10 @@ import {simulateOidcAuthorization, OidcMockUser} from "@test/oidc-test-helpers"
 import "expect-more-jest"
 import {AuthService} from "@services"
 import {JwtService} from "@nestjs/jwt"
-import {AuthenticatedUser, AuthenticatedAgent, OrgRole} from "@domain"
+import {AuthenticatedUser, AuthenticatedAgent, MembershipStatus, OrgRole} from "@domain"
 import {OidcBootstrapService} from "@external/oidc/oidc-bootstrap.service"
+
+const organizationId = randomOrgId()
 
 describe("Privilege Flow Integration", () => {
   let app: INestApplication
@@ -42,7 +45,7 @@ describe("Privilege Flow Integration", () => {
       ]
     }
 
-    const mockConfigProvider = MockConfigProvider.fromDbConnectionUrl(isolatedDb)
+    const mockConfigProvider = MockConfigProvider.fromTenantConnectionUrl(isolatedDb)
     const customProvider = mockConfigProvider.oidcProviders.get("custom")
     if (!customProvider) throw new Error("Custom OIDC provider not found")
     customProvider.provider = "auth0" // Must be supported provider for step-up auth
@@ -55,20 +58,10 @@ describe("Privilege Flow Integration", () => {
       .compile()
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     configProvider = module.get(ConfigProvider)
     authService = module.get(AuthService)
     jwtService = module.get(JwtService)
-
-    // Create database user with email that matches OIDC user claims and identity link
-    await createMockUserInDb(prisma, {
-      displayName,
-      email: userEmail,
-      identity: {
-        providerId: "custom",
-        subjectId: testUser.SubjectId
-      }
-    })
 
     await app.init()
   }, 20000)
@@ -82,28 +75,65 @@ describe("Privilege Flow Integration", () => {
     await cleanDatabase(prisma)
   })
 
+  beforeEach(async () => {
+    await createMockUserInDb(prisma, {
+      displayName: "Privilege User",
+      email: "privilege@localhost.com",
+      organizationId,
+      identity: {providerId: "custom", subjectId: testUser.SubjectId}
+    })
+  })
+
+  const authenticateCliUser = async (): Promise<{accessToken: string; refreshToken: string}> => {
+    const initiation = await request(app.getHttpServer())
+      .post("/auth/cli/initiate")
+      .send({redirectUri: "http://127.0.0.1:8080/callback", provider: "custom"})
+      .expect(200)
+    const state = new URL(initiation.body.authorizationUrl).searchParams.get("state")
+    if (!state) throw new Error("CLI authorization state not found")
+
+    const code = await simulateOidcAuthorization(initiation.body.authorizationUrl, testUser, configProvider)
+    const platformToken = await request(app.getHttpServer()).post("/auth/cli/token").send({code, state}).expect(201)
+    const organizationToken = await request(app.getHttpServer())
+      .post("/auth/cli/select-organization")
+      .set("Authorization", `Bearer ${platformToken.body.accessToken}`)
+      .send({organizationId})
+      .expect(200)
+    return organizationToken.body
+  }
+
   describe("Complete Privilege Token Flow", () => {
+    it("rejects a step-up without a resource", async () => {
+      // Given: An authenticated user initiates step-up
+      const {accessToken} = await authenticateCliUser()
+      const initiation = await request(app.getHttpServer())
+        .get("/auth/cli/initiatePrivilegedTokenExchange")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .expect(302)
+      const location = initiation.headers.location
+      if (typeof location !== "string") throw new Error("Privilege location not found")
+      const state = new URL(location).searchParams.get("state")
+      if (!state) throw new Error("Privilege state not found")
+
+      // When: Exchange the step-up code without a resource
+      const code = await simulateOidcAuthorization(location, testUser, configProvider)
+      const exchangeResponse = await request(app.getHttpServer())
+        .post("/auth/cli/exchangePrivilegedToken")
+        .set("Authorization", `Bearer ${accessToken}`)
+        .send({code, state, operation: "admin_action"})
+
+      // Expect: The request is rejected without creating a receipt
+      expect(exchangeResponse).toHaveStatusCode(400)
+      expect(exchangeResponse.body).toHaveErrorCode("REQUEST_MISSING_RESOURCE_ID")
+      expect(await prisma.stepUpReceipt.count({where: {organizationId}})).toBe(0)
+    }, 40000)
+
     it("should successfully complete step-up auth and enforce single-use", async () => {
-      // 1. Initial Login to get a standard access token
-      const loginResponse = await request(app.getHttpServer()).get("/auth/web/login").expect(302)
-      const loginLocation = loginResponse.headers.location
-      const loginStateMatch = loginLocation?.match(/state=([^&]+)/)
-      const loginState = loginStateMatch ? loginStateMatch[1] : null
-      expect(loginState).toBeTruthy()
-
-      if (!loginLocation) throw new Error("Login location not found")
-
-      const loginCode = await simulateOidcAuthorization(loginLocation, testUser, configProvider)
-
-      const tokenResponse = await request(app.getHttpServer())
-        .post("/auth/cli/token")
-        .send({code: loginCode, state: loginState})
-        .expect(201)
-
-      const standardAccessToken = tokenResponse.body.accessToken
+      // 1. Given: Initial login provides a standard access token
+      const {accessToken: standardAccessToken} = await authenticateCliUser()
       expect(standardAccessToken).toBeTruthy()
 
-      // 2. Initiate Privilege Token Exchange
+      // 2. When: Initiate privilege token exchange
       const initiateResponse = await request(app.getHttpServer())
         .get("/auth/cli/initiatePrivilegedTokenExchange")
         .set("Authorization", `Bearer ${standardAccessToken}`)
@@ -116,12 +146,12 @@ describe("Privilege Flow Integration", () => {
 
       if (!privilegeLocation) throw new Error("Privilege location not found")
 
-      // 3. IDP Flow for Step-Up (simulate user re-authenticating)
+      // 3. When: Re-authenticate at the IdP for step-up
       const privilegeCode = await simulateOidcAuthorization(privilegeLocation, testUser, configProvider)
 
-      // 4. Exchange Code for Privilege Token
+      // 4. When: Exchange the code for a privilege token
       const targetOperation = "vote"
-      const targetResource = "test-resource-123"
+      const targetResource = organizationId
 
       const exchangeResponse = await request(app.getHttpServer())
         .post("/auth/cli/exchangePrivilegedToken")
@@ -137,28 +167,37 @@ describe("Privilege Flow Integration", () => {
       const privilegeToken = exchangeResponse.body.accessToken
       expect(privilegeToken).toBeTruthy()
 
-      // Verify the token contains the step-up context
+      // Expect: The token contains the requested step-up context
       const decodedToken = jwtService.decode(privilegeToken)
       expect(decodedToken.operation).toBe(targetOperation)
       expect(decodedToken.resource).toBe(targetResource)
       expect(decodedToken.jti).toBeTruthy() // Context must have a JTI
 
-      // 5. Verify the token using /auth/info
-      await request(app.getHttpServer()).get("/auth/info").set("Authorization", `Bearer ${privilegeToken}`).expect(200)
+      // 5. Expect: The privilege token authenticates against its selected organization
+      await request(app.getHttpServer())
+        .get(`/o/${organizationId}/auth/info`)
+        .set("Authorization", `Bearer ${privilegeToken}`)
+        .expect(200)
 
-      // 6. Token Consumption (Single-use test) using AuthService
+      // 6. Given: An authenticated user with the single-use privilege context
       const authenticatedEntity: AuthenticatedUser = {
         entityType: "user" as const,
-        providerId: "custom",
+        providerId: decodedToken.providerId as string,
         user: {
           id: decodedToken.sub as string,
+          organizationId: toOrganizationId(
+            (await prisma.user.findUniqueOrThrow({where: {id: decodedToken.sub as string}})).organizationId
+          ),
+          accountId: (await prisma.user.findUniqueOrThrow({where: {id: decodedToken.sub as string}})).platformAccountId,
           displayName: "Privilege User",
-          email: "privilege@localhost.com",
           createdAt: new Date(),
+          updatedAt: new Date(),
+          status: MembershipStatus.ACTIVE,
           orgRole: OrgRole.MEMBER,
-          roles: [],
-          occ: 1n
+          roles: []
         },
+        sessionId: decodedToken.sessionId as string,
+        sessionContextVersion: BigInt(decodedToken.sessionContextVersion as string),
         authContext: {
           operation: targetOperation,
           resource: targetResource,
@@ -166,23 +205,43 @@ describe("Privilege Flow Integration", () => {
         }
       }
 
-      // First use should succeed
-      const firstUseResult = await authService.useHighPrivilegeToken(
-        authenticatedEntity,
-        targetOperation,
-        targetResource
-      )()
+      // Given: The step-up receipt has expired
+      const receiptWhere = {organizationId_jti: {organizationId, jti: decodedToken.jti as string}}
+      await prisma.stepUpReceipt.update({
+        where: receiptWhere,
+        data: {expiresAt: new Date(Date.now() - 1000)}
+      })
+      // Expect: An expired receipt is rejected and remains unconsumed
+      expect(
+        await authService.useHighPrivilegeToken(authenticatedEntity, targetOperation, targetResource)()
+      ).toBeLeftOf("invalid_credential")
+      expect((await prisma.stepUpReceipt.findUniqueOrThrow({where: receiptWhere})).consumedAt).toBeNull()
+      // Given: The receipt is valid again
+      await prisma.stepUpReceipt.update({
+        where: receiptWhere,
+        data: {expiresAt: new Date(Date.now() + 60_000)}
+      })
 
-      expect(firstUseResult).toBeRight()
+      // When: Attempt to consume the valid receipt concurrently
+      const uses = await Promise.all([
+        authService.useHighPrivilegeToken(authenticatedEntity, targetOperation, targetResource)(),
+        authService.useHighPrivilegeToken(authenticatedEntity, targetOperation, targetResource)()
+      ])
 
-      // Second use should fail
+      // Expect: Exactly one concurrent use consumes the receipt
+      expect(uses.filter(result => E.isRight(result))).toHaveLength(1)
+      expect(uses.filter(result => E.isLeft(result))).toEqual([E.left("invalid_credential")])
+      expect((await prisma.stepUpReceipt.findUniqueOrThrow({where: receiptWhere})).consumedAt).toBeInstanceOf(Date)
+
+      // When: Attempt to reuse the consumed receipt
       const secondUseResult = await authService.useHighPrivilegeToken(
         authenticatedEntity,
         targetOperation,
         targetResource
       )()
 
-      expect(secondUseResult).toBeLeftOf("token_not_found")
+      // Expect: A consumed receipt cannot be reused
+      expect(secondUseResult).toBeLeftOf("invalid_credential")
     }, 40000)
 
     describe("cross-provider step-up", () => {
@@ -207,22 +266,11 @@ describe("Privilege Flow Integration", () => {
       })
 
       it("should reject cross-provider step-up when step-up uses different provider than active session", async () => {
-        // 1. Initial Login with primary provider ("custom")
-        const loginResponse = await request(app.getHttpServer()).get("/auth/web/login?provider=custom").expect(302)
-        const loginLocation = loginResponse.headers.location ?? ""
-        const loginState = loginLocation.match(/state=([^&]+)/)?.[1] ?? ""
-
-        const loginCode = await simulateOidcAuthorization(loginLocation, testUser, configProvider, "custom")
-
-        const tokenResponse = await request(app.getHttpServer())
-          .post("/auth/cli/token")
-          .send({code: loginCode, state: loginState})
-          .expect(201)
-
-        const standardAccessToken = tokenResponse.body.accessToken
+        // 1. Given: Initial login provides a standard access token
+        const {accessToken: standardAccessToken} = await authenticateCliUser()
         expect(standardAccessToken).toBeTruthy()
 
-        // 2. Initiate step-up explicitly requesting the second provider ("okta")
+        // 2. When: Initiate step-up explicitly requesting the second provider ("okta")
         const initiateResponse = await request(app.getHttpServer())
           .get("/auth/cli/initiatePrivilegedTokenExchange?provider=okta")
           .set("Authorization", `Bearer ${standardAccessToken}`)
@@ -233,7 +281,7 @@ describe("Privilege Flow Integration", () => {
 
         const privilegeCode = await simulateOidcAuthorization(privilegeLocation, testUser, configProvider, "okta")
 
-        // 3. Attempt to exchange token: Should fail because session is bound to "custom", not "okta"
+        // 3. When: Exchange the code from "okta" using the session bound to "custom"
         const exchangeResponse = await request(app.getHttpServer())
           .post("/auth/cli/exchangePrivilegedToken")
           .set("Authorization", `Bearer ${standardAccessToken}`)
@@ -241,30 +289,21 @@ describe("Privilege Flow Integration", () => {
             code: privilegeCode,
             state: privilegeState,
             operation: "vote",
-            resourceId: "test-resource-123"
+            resourceId: organizationId
           })
 
+        // Expect: Cross-provider step-up is rejected
         expect(exchangeResponse).toHaveStatusCode(400)
         expect(exchangeResponse.body).toHaveErrorCode("AUTH_IDENTITY_CONFLICT")
       }, 40000)
     })
 
     it("should reject step-up when IdP credentials belong to a different user identity (account swapping defense)", async () => {
-      // 1. User 1 logs in
-      const loginResponse = await request(app.getHttpServer()).get("/auth/web/login").expect(302)
-      const loginLocation = loginResponse.headers.location ?? ""
-      const loginState = loginLocation.match(/state=([^&]+)/)?.[1] ?? ""
-
-      const loginCode = await simulateOidcAuthorization(loginLocation, testUser, configProvider)
-      const tokenResponse = await request(app.getHttpServer())
-        .post("/auth/cli/token")
-        .send({code: loginCode, state: loginState})
-        .expect(201)
-
-      const user1AccessToken = tokenResponse.body.accessToken
+      // 1. Given: User 1 logs in
+      const {accessToken: user1AccessToken} = await authenticateCliUser()
       expect(user1AccessToken).toBeTruthy()
 
-      // 2. Setup a second distinct user in DB and IdP
+      // 2. Given: A second distinct user in the database and IdP
       const otherUser: OidcMockUser = {
         SubjectId: "other-user-subject",
         Username: "other-user-subject",
@@ -279,13 +318,14 @@ describe("Privilege Flow Integration", () => {
       await createMockUserInDb(prisma, {
         displayName: "Other User",
         email: "other@localhost.com",
+        organizationId,
         identity: {
           providerId: "custom",
           subjectId: otherUser.SubjectId
         }
       })
 
-      // 3. User 1 initiates step-up
+      // 3. When: User 1 initiates step-up
       const initiateResponse = await request(app.getHttpServer())
         .get("/auth/cli/initiatePrivilegedTokenExchange")
         .set("Authorization", `Bearer ${user1AccessToken}`)
@@ -294,11 +334,11 @@ describe("Privilege Flow Integration", () => {
       const privilegeLocation = initiateResponse.headers.location ?? ""
       const privilegeState = privilegeLocation.match(/state=([^&]+)/)?.[1] ?? ""
 
-      // 4. An attacker / different user authorizes at IdP with otherUser credentials
+      // 4. When: A different user authorizes at the IdP with their own credentials
       const privilegeCodeFromOtherUser = await simulateOidcAuthorization(privilegeLocation, otherUser, configProvider)
 
-      // 5. User 1 attempts to exchange token using code from otherUser
-      // This MUST be rejected by the security check verifying IdP subject matches requestor.user.id
+      // 5. When: User 1 exchanges the code from the other user
+      // Expect: Identity ownership verification rejects the account swap
       const exchangeResponse = await request(app.getHttpServer())
         .post("/auth/cli/exchangePrivilegedToken")
         .set("Authorization", `Bearer ${user1AccessToken}`)
@@ -306,31 +346,20 @@ describe("Privilege Flow Integration", () => {
           code: privilegeCodeFromOtherUser,
           state: privilegeState,
           operation: "vote",
-          resourceId: "test-resource-123"
+          resourceId: organizationId
         })
 
       expect(exchangeResponse).toHaveStatusCode(400)
       expect(exchangeResponse.body).toHaveErrorCode("AUTH_IDENTITY_CONFLICT")
     }, 40000)
 
-    it("should preserve providerId across token refreshes and allow subsequent step-up", async () => {
-      // 1. Initial Login
-      const loginResponse = await request(app.getHttpServer()).get("/auth/web/login").expect(302)
-      const loginLocation = loginResponse.headers.location ?? ""
-      const loginState = loginLocation.match(/state=([^&]+)/)?.[1] ?? ""
-
-      const loginCode = await simulateOidcAuthorization(loginLocation, testUser, configProvider)
-      const tokenResponse = await request(app.getHttpServer())
-        .post("/auth/cli/token")
-        .send({code: loginCode, state: loginState})
-        .expect(201)
-
-      const initialAccessToken = tokenResponse.body.accessToken
-      const refreshToken = tokenResponse.body.refreshToken
+    it("should preserve configured provider ID across token refreshes and allow subsequent step-up", async () => {
+      // 1. Given: Initial login provides access and refresh tokens
+      const {accessToken: initialAccessToken, refreshToken} = await authenticateCliUser()
       expect(initialAccessToken).toBeTruthy()
       expect(refreshToken).toBeTruthy()
 
-      // 2. Refresh token via CLI refresh endpoint
+      // 2. When: Refresh the token via the CLI refresh endpoint
       const refreshResponse = await request(app.getHttpServer())
         .post("/auth/cli/refresh")
         .send({refreshToken})
@@ -339,11 +368,12 @@ describe("Privilege Flow Integration", () => {
       const refreshedAccessToken = refreshResponse.body.accessToken
       expect(refreshedAccessToken).toBeTruthy()
 
-      // Verify the refreshed access token contains providerId
+      // Expect: The refreshed access token preserves the configured provider ID
       const decodedRefreshed = jwtService.decode(refreshedAccessToken)
-      expect(decodedRefreshed.providerId).toBe("custom")
+      expect(decodedRefreshed.providerId).toBe(jwtService.decode(initialAccessToken).providerId)
+      expect(decodedRefreshed.email).toBe("privilege@localhost.com")
 
-      // 3. Initiate Step-Up using refreshed access token
+      // 3. When: Initiate step-up using the refreshed access token
       const initiateResponse = await request(app.getHttpServer())
         .get("/auth/cli/initiatePrivilegedTokenExchange")
         .set("Authorization", `Bearer ${refreshedAccessToken}`)
@@ -352,7 +382,7 @@ describe("Privilege Flow Integration", () => {
       const privilegeLocation = initiateResponse.headers.location ?? ""
       const privilegeState = privilegeLocation.match(/state=([^&]+)/)?.[1] ?? ""
 
-      // 4. Authorize and exchange
+      // 4. When: Authorize at the IdP and exchange the code
       const privilegeCode = await simulateOidcAuthorization(privilegeLocation, testUser, configProvider)
       const exchangeResponse = await request(app.getHttpServer())
         .post("/auth/cli/exchangePrivilegedToken")
@@ -361,26 +391,33 @@ describe("Privilege Flow Integration", () => {
           code: privilegeCode,
           state: privilegeState,
           operation: "vote",
-          resourceId: "test-resource-123"
+          resourceId: organizationId
         })
         .expect(200)
 
+      // Expect: Step-up succeeds after refresh
       expect(exchangeResponse.body.accessToken).toBeTruthy()
     }, 40000)
 
     it("should reject web privilege token initiation for agent entities", async () => {
+      // Given: An authenticated agent
       const agentEntity: AuthenticatedAgent = {
         entityType: "agent",
         agent: {
           id: "12345678-1234-7123-8123-123456789012",
+          organizationId: toOrganizationId("12345678-1234-7123-8123-123456789012"),
           agentName: "test-service-agent",
           publicKey: "test-public-key",
+          status: "active",
           createdAt: new Date(),
+          updatedAt: new Date(),
           roles: []
         }
       }
 
+      // When: The agent initiates web step-up
       const result = await authService.initiatePrivilegeTokenGenerationForWeb(agentEntity)()
+      // Expect: Step-up rejects agent entities
       expect(result).toBeLeftOf("auth_invalid_entity")
     })
   })

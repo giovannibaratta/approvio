@@ -2,8 +2,7 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {HttpStatus, INestApplication} from "@nestjs/common"
 import supertest from "supertest"
 import {AppModule} from "@app/app.module"
-import {DatabaseClient} from "@external/database"
-import {cleanDatabase, prepareDatabase} from "@test/database"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
 import {ConfigProvider} from "@external/config"
 import {createMockGroupInDb, MockConfigProvider, MockKeyPool, createMockAgentInDb} from "@test/mock-data"
 import {PrismaClient} from "@prisma/client"
@@ -20,6 +19,8 @@ import {RefreshTokenStatus, GRACE_PERIOD_SECONDS} from "@domain"
 import {createSha256Hash} from "@utils"
 import {SilentLogger} from "@test/logger-helpers"
 import {v7 as uuidv7} from "uuid"
+import {mapAgentToDomain} from "@external/database/shared"
+import {unwrapRight} from "@utils/either"
 
 describe("Agent Authentication Integration", () => {
   let app: INestApplication
@@ -27,6 +28,9 @@ describe("Agent Authentication Integration", () => {
   let jwtService: JwtService
   let configProvider: ConfigProvider
   let testAgent: AgentWithPrivateKey
+
+  const agentAuthEndpoint = (suffix: "challenge" | "token" | "refresh"): string =>
+    `/o/${testAgent.organizationId}/auth/agents/${suffix}`
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -37,7 +41,7 @@ describe("Agent Authentication Integration", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb))
         .setLogger(new SilentLogger())
         .compile()
     } catch (error) {
@@ -46,7 +50,7 @@ describe("Agent Authentication Integration", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
 
@@ -63,12 +67,7 @@ describe("Agent Authentication Integration", () => {
     })
 
     // Manually construct AgentWithPrivateKey since createMockAgentInDb returns PrismaAgent
-    testAgent = {
-      ...agent,
-      privateKey: keyPair.privateKey,
-      publicKey: keyPair.publicKey,
-      roles: []
-    }
+    testAgent = {...unwrapRight(mapAgentToDomain(agent)), privateKey: keyPair.privateKey}
   })
 
   afterEach(async () => {
@@ -81,7 +80,7 @@ describe("Agent Authentication Integration", () => {
   })
 
   describe("POST /auth/agents/challenge", () => {
-    const challengeEndpoint = "/auth/agents/challenge"
+    const challengeEndpoint = (): string => agentAuthEndpoint("challenge")
 
     describe("bad cases", () => {
       it("should return 400 when agentName is missing", async () => {
@@ -89,7 +88,7 @@ describe("Agent Authentication Integration", () => {
         const challengeRequest: Partial<AgentChallengeRequest> = {}
 
         // When
-        const response = await supertest(app.getHttpServer()).post(challengeEndpoint).send(challengeRequest)
+        const response = await supertest(app.getHttpServer()).post(challengeEndpoint()).send(challengeRequest)
 
         // Expect
         expect(response).toHaveStatusCode(400)
@@ -103,7 +102,7 @@ describe("Agent Authentication Integration", () => {
         }
 
         // When
-        const response = await supertest(app.getHttpServer()).post(challengeEndpoint).send(challengeRequest)
+        const response = await supertest(app.getHttpServer()).post(challengeEndpoint()).send(challengeRequest)
 
         // Expect
         expect(response).toHaveStatusCode(400)
@@ -117,7 +116,7 @@ describe("Agent Authentication Integration", () => {
         }
 
         // When
-        const response = await supertest(app.getHttpServer()).post(challengeEndpoint).send(challengeRequest)
+        const response = await supertest(app.getHttpServer()).post(challengeEndpoint()).send(challengeRequest)
 
         // Expect
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
@@ -133,7 +132,7 @@ describe("Agent Authentication Integration", () => {
         }
 
         // When
-        const response = await supertest(app.getHttpServer()).post(challengeEndpoint).send(challengeRequest)
+        const response = await supertest(app.getHttpServer()).post(challengeEndpoint()).send(challengeRequest)
 
         // Expect
         expect(response).toHaveStatusCode(200)
@@ -156,7 +155,7 @@ describe("Agent Authentication Integration", () => {
 
         const challengePayload = JSON.parse(decrypted.toString("utf8"))
 
-        expect(challengePayload).toHaveProperty("audience", testAgent.agentName)
+        expect(challengePayload).toHaveProperty("audience", testAgent.id)
         expect(challengePayload).toHaveProperty("issuer", configProvider.jwtConfig.issuer)
         expect(challengePayload).toHaveProperty("nonce")
         expect(challengePayload).toHaveProperty("expiresAt")
@@ -175,7 +174,7 @@ describe("Agent Authentication Integration", () => {
   })
 
   describe("POST /auth/agents/token", () => {
-    const tokenEndpoint = "/auth/agents/token"
+    const tokenEndpoint = (): string => agentAuthEndpoint("token")
 
     // Helper method to generate a challenge and get its payload
     const generateChallengeAndGetPayload = async (): Promise<{
@@ -188,7 +187,7 @@ describe("Agent Authentication Integration", () => {
       }
 
       const challengeResponse = await supertest(app.getHttpServer())
-        .post("/auth/agents/challenge")
+        .post(agentAuthEndpoint("challenge"))
         .send(challengeRequest)
 
       expect(challengeResponse).toHaveStatusCode(200)
@@ -219,8 +218,8 @@ describe("Agent Authentication Integration", () => {
       }
 
       const payload = {
-        iss: testAgent.agentName, // Issuer - agent name
-        sub: testAgent.agentName, // Subject - agent name (same as iss for client auth)
+        iss: testAgent.id, // Issuer - immutable agent ID
+        sub: testAgent.id, // Subject - immutable agent ID
         aud: configProvider.jwtConfig.audience, // Audience - authorization server
         exp: exp || Math.floor(Date.now() / 1000) + 300, // Expiration time - 5 minutes from now
         jti: nonce, // JWT ID - unique nonce from challenge
@@ -247,7 +246,7 @@ describe("Agent Authentication Integration", () => {
           }
 
           // When
-          const response = await supertest(app.getHttpServer()).post(tokenEndpoint).send(jwtTokenRequest)
+          const response = await supertest(app.getHttpServer()).post(tokenEndpoint()).send(jwtTokenRequest)
 
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
@@ -263,7 +262,7 @@ describe("Agent Authentication Integration", () => {
           }
 
           // When
-          const response = await supertest(app.getHttpServer()).post(tokenEndpoint).send(jwtTokenRequest)
+          const response = await supertest(app.getHttpServer()).post(tokenEndpoint()).send(jwtTokenRequest)
 
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
@@ -278,7 +277,7 @@ describe("Agent Authentication Integration", () => {
           }
 
           // When
-          const response = await supertest(app.getHttpServer()).post(tokenEndpoint).send(jwtTokenRequest)
+          const response = await supertest(app.getHttpServer()).post(tokenEndpoint()).send(jwtTokenRequest)
 
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
@@ -294,7 +293,7 @@ describe("Agent Authentication Integration", () => {
           }
 
           // When
-          const response = await supertest(app.getHttpServer()).post(tokenEndpoint).send(jwtTokenRequest)
+          const response = await supertest(app.getHttpServer()).post(tokenEndpoint()).send(jwtTokenRequest)
 
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
@@ -318,7 +317,7 @@ describe("Agent Authentication Integration", () => {
           }
 
           // When
-          const response = await supertest(app.getHttpServer()).post(tokenEndpoint).send(jwtTokenRequest)
+          const response = await supertest(app.getHttpServer()).post(tokenEndpoint()).send(jwtTokenRequest)
 
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
@@ -337,7 +336,7 @@ describe("Agent Authentication Integration", () => {
           }
 
           // When
-          const response = await supertest(app.getHttpServer()).post(tokenEndpoint).send(jwtTokenRequest)
+          const response = await supertest(app.getHttpServer()).post(tokenEndpoint()).send(jwtTokenRequest)
 
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.UNPROCESSABLE_ENTITY)
@@ -356,7 +355,7 @@ describe("Agent Authentication Integration", () => {
           }
 
           // When
-          const response = await supertest(app.getHttpServer()).post(tokenEndpoint).send(jwtTokenRequest)
+          const response = await supertest(app.getHttpServer()).post(tokenEndpoint()).send(jwtTokenRequest)
 
           // Expect
           expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
@@ -377,7 +376,7 @@ describe("Agent Authentication Integration", () => {
           }
 
           // When
-          const response = await supertest(app.getHttpServer()).post(tokenEndpoint).send(jwtTokenRequest)
+          const response = await supertest(app.getHttpServer()).post(tokenEndpoint()).send(jwtTokenRequest)
 
           // Expect
           expect(response).toHaveStatusCode(200)
@@ -388,7 +387,7 @@ describe("Agent Authentication Integration", () => {
 
           // Verify JWT token content
           const decodedToken = jwtService.decode(response.body.accessToken)
-          expect(decodedToken).toHaveProperty("sub", testAgent.agentName)
+          expect(decodedToken).toHaveProperty("sub", testAgent.id)
           expect(decodedToken).toHaveProperty("entityType", "agent")
           expect(decodedToken).toHaveProperty("name", testAgent.agentName)
           expect(decodedToken).toHaveProperty("iss", configProvider.jwtConfig.issuer)
@@ -404,7 +403,7 @@ describe("Agent Authentication Integration", () => {
 
           // Verify token can be used to authenticate
           const infoResponse = await supertest(app.getHttpServer())
-            .get("/auth/info")
+            .get(`/o/${testAgent.organizationId}/auth/info`)
             .set("Authorization", `Bearer ${response.body.accessToken}`)
 
           expect(infoResponse).toHaveStatusCode(200)
@@ -415,7 +414,7 @@ describe("Agent Authentication Integration", () => {
           // Given: An agent with a valid access token
           const {nonce} = await generateChallengeAndGetPayload()
           const jwtAssertion = createJwtAssertion(nonce)
-          const tokenResponse = await supertest(app.getHttpServer()).post(tokenEndpoint).send({
+          const tokenResponse = await supertest(app.getHttpServer()).post(tokenEndpoint()).send({
             grantType: "urn:ietf:params:oauth:grant-type:jwt-bearer",
             clientAssertionType: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
             clientAssertion: jwtAssertion
@@ -424,11 +423,12 @@ describe("Agent Authentication Integration", () => {
           const validAccessToken = tokenResponse.body.accessToken
 
           // Given: Two groups, one with the agent and one without
-          const group1 = await createMockGroupInDb(prisma)
-          await createMockGroupInDb(prisma)
+          const group1 = await createMockGroupInDb(prisma, {organizationId: testAgent.organizationId})
+          await createMockGroupInDb(prisma, {organizationId: testAgent.organizationId})
 
           await prisma.agentGroupMembership.create({
             data: {
+              organizationId: testAgent.organizationId,
               groupId: group1.id,
               agentId: testAgent.id,
               createdAt: new Date(),
@@ -438,7 +438,7 @@ describe("Agent Authentication Integration", () => {
 
           // When: Requesting info
           const infoResponse = await supertest(app.getHttpServer())
-            .get("/auth/info")
+            .get(`/o/${testAgent.organizationId}/auth/info`)
             .set("Authorization", `Bearer ${validAccessToken}`)
 
           // Expect
@@ -459,7 +459,7 @@ describe("Agent Authentication Integration", () => {
           // Given: An agent with no memberships
           const {nonce} = await generateChallengeAndGetPayload()
           const jwtAssertion = createJwtAssertion(nonce)
-          const tokenResponse = await supertest(app.getHttpServer()).post(tokenEndpoint).send({
+          const tokenResponse = await supertest(app.getHttpServer()).post(tokenEndpoint()).send({
             grantType: "urn:ietf:params:oauth:grant-type:jwt-bearer",
             clientAssertionType: "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
             clientAssertion: jwtAssertion
@@ -468,7 +468,7 @@ describe("Agent Authentication Integration", () => {
 
           // When: Requesting info
           const infoResponse = await supertest(app.getHttpServer())
-            .get("/auth/info")
+            .get(`/o/${testAgent.organizationId}/auth/info`)
             .set("Authorization", `Bearer ${validAccessToken}`)
 
           // Expect
@@ -492,7 +492,7 @@ describe("Agent Authentication Integration", () => {
           }
 
           // When
-          const response = await supertest(app.getHttpServer()).post(tokenEndpoint).send(jwtTokenRequest)
+          const response = await supertest(app.getHttpServer()).post(tokenEndpoint()).send(jwtTokenRequest)
 
           // Expect
           expect(response).toHaveStatusCode(200)
@@ -508,9 +508,9 @@ describe("Agent Authentication Integration", () => {
       })
 
       describe("POST /auth/agents/refresh", () => {
-        const refreshEndpoint = "/auth/agents/refresh"
+        const refreshEndpoint = (): string => agentAuthEndpoint("refresh")
         const host = "localhost:3000"
-        const expectedHtu = `http://${host}${refreshEndpoint}`
+        const expectedHtu = () => `http://${host}${refreshEndpoint()}`
 
         const createDpopJwt = async (
           privateKeyPem: string,
@@ -552,12 +552,12 @@ describe("Agent Authentication Integration", () => {
           // Create valid DPoP
           const dpopJwt = await createDpopJwt(testAgent.privateKey, testAgent.publicKey, {
             htm: "POST",
-            htu: expectedHtu
+            htu: expectedHtu()
           })
 
           // When: Requesting refresh
           const response = await supertest(app.getHttpServer())
-            .post(refreshEndpoint)
+            .post(refreshEndpoint())
             .set("Host", host)
             .set("DPoP", dpopJwt)
             .send({refreshToken: plainToken})
@@ -571,7 +571,7 @@ describe("Agent Authentication Integration", () => {
           expect(response.body.refreshToken).not.toBe(plainToken)
 
           // Verify token became used
-          const usedToken = await prisma.refreshToken.findUnique({where: {id: tokenId}})
+          const usedToken = await prisma.agentRefreshToken.findUnique({where: {id: tokenId}})
           expect(usedToken?.status).toBe(RefreshTokenStatus.USED)
         })
 
@@ -585,12 +585,12 @@ describe("Agent Authentication Integration", () => {
 
           const dpopJwt = await createDpopJwt(otherKey.privateKey, testAgent.publicKey, {
             htm: "POST",
-            htu: expectedHtu
+            htu: expectedHtu()
           })
 
           // When: Requesting refresh
           const response = await supertest(app.getHttpServer())
-            .post(refreshEndpoint)
+            .post(refreshEndpoint())
             .set("Host", host)
             .set("DPoP", dpopJwt)
             .send({refreshToken: plainToken})
@@ -607,12 +607,12 @@ describe("Agent Authentication Integration", () => {
           // Create valid DPoP
           const dpopJwt = await createDpopJwt(testAgent.privateKey, testAgent.publicKey, {
             htm: "POST",
-            htu: expectedHtu
+            htu: expectedHtu()
           })
 
           // First request: Should succeed
           const response1 = await supertest(app.getHttpServer())
-            .post(refreshEndpoint)
+            .post(refreshEndpoint())
             .set("Host", host)
             .set("DPoP", dpopJwt)
             .send({
@@ -626,7 +626,7 @@ describe("Agent Authentication Integration", () => {
           const {plainToken: refreshToken2} = await setupAgentWithRefreshToken()
 
           const response2 = await supertest(app.getHttpServer())
-            .post(refreshEndpoint)
+            .post(refreshEndpoint())
             .set("Host", host)
             .set("DPoP", dpopJwt)
             .send({
@@ -647,12 +647,12 @@ describe("Agent Authentication Integration", () => {
           // DPoP
           const dpopJwt = await createDpopJwt(testAgent.privateKey, testAgent.publicKey, {
             htm: "POST",
-            htu: expectedHtu
+            htu: expectedHtu()
           })
 
           // When
           const response = await supertest(app.getHttpServer())
-            .post(refreshEndpoint)
+            .post(refreshEndpoint())
             .set("Host", host)
             .set("DPoP", dpopJwt)
             .send({refreshToken: plainToken})
@@ -668,10 +668,11 @@ describe("Agent Authentication Integration", () => {
           const {plainToken, familyId} = await setupAgentWithRefreshToken(3600, "used", createdAt)
 
           // Create another active token in same family to verify revocation
-          await prisma.refreshToken.create({
+          await prisma.agentRefreshToken.create({
             data: {
               id: uuidv7(),
               tokenHash: createSha256Hash("sibling-token"),
+              organizationId: testAgent.organizationId,
               familyId: familyId,
               agentId: testAgent.id,
               status: "active",
@@ -684,12 +685,12 @@ describe("Agent Authentication Integration", () => {
           // DPoP
           const dpopJwt = await createDpopJwt(testAgent.privateKey, testAgent.publicKey, {
             htm: "POST",
-            htu: expectedHtu
+            htu: expectedHtu()
           })
 
           // When
           const response = await supertest(app.getHttpServer())
-            .post(refreshEndpoint)
+            .post(refreshEndpoint())
             .set("Host", host)
             .set("DPoP", dpopJwt)
             .send({refreshToken: plainToken})
@@ -699,7 +700,7 @@ describe("Agent Authentication Integration", () => {
           expect(response.body).toHaveErrorCode("REFRESH_TOKEN_REUSE_DETECTED")
 
           // Expect family revocation
-          const family = await prisma.refreshToken.findMany({where: {familyId}})
+          const family = await prisma.agentRefreshToken.findMany({where: {familyId}})
           expect(family?.every(token => token.status === (RefreshTokenStatus.REVOKED as string))).toBe(true)
         })
       })

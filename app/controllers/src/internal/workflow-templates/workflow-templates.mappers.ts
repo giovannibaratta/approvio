@@ -61,11 +61,18 @@ export function generateErrorResponseForCancelWorkflowsForTemplate(
     case "workflow_action_headers_invalid":
     case "workflow_action_webhook_url_invalid":
     case "workflow_action_redact_invalid":
+    case "workflow_template_organization_id_invalid_uuid":
+    case "workflow_organization_id_invalid_uuid":
+    case "workflow_id_invalid_uuid":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `Internal data inconsistency. Context: ${context}`)
       )
 
     case "concurrency_error":
+    case "conflicting_isolation_level":
       return new ConflictException(
         generateErrorPayload(errorCode, `Concurrency error occurred while processing request. Context: ${context}`)
       )
@@ -73,6 +80,9 @@ export function generateErrorResponseForCancelWorkflowsForTemplate(
     case "unknown_error":
     case "encryption_failed":
     case "decryption_failed":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `An unknown error occurred. Context: ${context}`)
       )

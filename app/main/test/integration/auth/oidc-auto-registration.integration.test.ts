@@ -2,10 +2,9 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {INestApplication} from "@nestjs/common"
 import request from "supertest"
 import {AppModule} from "@app/app.module"
-import {DatabaseClient} from "@external/database"
-import {cleanDatabase, prepareDatabase} from "@test/database"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
 import {ConfigProvider} from "@external/config"
-import {MockConfigProvider} from "@test/mock-data"
+import {MockConfigProvider, createMockUserInDb} from "@test/mock-data"
 import {PrismaClient} from "@prisma/client"
 import "@utils/matchers"
 import {simulateOidcAuthorization, OidcMockUser} from "@test/oidc-test-helpers"
@@ -42,7 +41,7 @@ describe("OIDC Auto-Registration Integration", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
+        .useValue(MockConfigProvider.fromOriginalProvider({tenantConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -50,7 +49,7 @@ describe("OIDC Auto-Registration Integration", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     configProvider = module.get(ConfigProvider)
 
     await app.init()
@@ -65,11 +64,13 @@ describe("OIDC Auto-Registration Integration", () => {
     await cleanDatabase(prisma)
   })
 
+  beforeEach(async () => {})
+
   describe("First User Bootstrap Scenario", () => {
-    it("should auto-register first OIDC user as organization admin", async () => {
+    it("should auto-register first OIDC user without organization membership", async () => {
       // Given: No users exist in the system (bootstrap scenario)
       const userCount = await prisma.user.count()
-      const orgAdminCount = await prisma.organizationAdmin.count()
+      const orgAdminCount = await prisma.user.count({where: {orgRole: "admin"}})
       expect(userCount).toBe(0)
       expect(orgAdminCount).toBe(0)
 
@@ -85,7 +86,8 @@ describe("OIDC Auto-Registration Integration", () => {
         Password: "testpassword123",
         Claims: [
           {Type: "name", Value: displayName},
-          {Type: "email", Value: userEmail}
+          {Type: "email", Value: userEmail},
+          {Type: "email_verified", Value: "true"}
         ]
       }
 
@@ -109,45 +111,30 @@ describe("OIDC Auto-Registration Integration", () => {
         refreshToken: expect.toBeVisibleString()
       })
 
-      // Expect: User was auto-registered in the database
-      const createdUsers = await prisma.user.findMany()
-      expect(createdUsers).toHaveLength(1)
-      expect(createdUsers[0]?.email).toBe(userEmail)
-      expect(createdUsers[0]?.displayName).toBe(displayName)
+      // Expect: User was auto-registered as a platform account
+      const createdAccounts = await prisma.platformAccount.findMany()
+      expect(createdAccounts).toHaveLength(1)
+      expect(createdAccounts[0]).toMatchObject({profileEmail: userEmail, displayName})
+      // Expect: Registration did not create an organization membership
+      expect(await prisma.user.count()).toBe(0)
 
-      // Expect: User was granted organization admin privileges (first user bootstrap)
-      const orgAdmins = await prisma.organizationAdmin.findMany()
-      expect(orgAdmins).toHaveLength(1)
-      expect(orgAdmins[0]?.email).toBe(userEmail)
-
-      // Expect: User can access authenticated endpoints with admin role
-      const infoResponse = await request(app.getHttpServer())
-        .get("/auth/info")
+      // Expect: User can access authenticated endpoints and has no organizations
+      const organizationsResponse = await request(app.getHttpServer())
+        .get("/organizations")
         .set("Authorization", `Bearer ${tokenResponse.body.accessToken}`)
 
-      expect(infoResponse).toHaveStatusCode(200)
-      expect(infoResponse.body).toMatchObject({entityType: "user"})
+      expect(organizationsResponse).toHaveStatusCode(200)
+      expect(organizationsResponse.body).toMatchObject({items: [], total: 0})
     }, 20000)
   })
 
   describe("Subsequent User Auto-Registration", () => {
-    it("should auto-register subsequent OIDC users as regular members", async () => {
+    it("should auto-register subsequent OIDC users without organization membership", async () => {
       // Given: First user already exists as organization admin
-      const firstUser = await prisma.user.create({
-        data: {
-          id: uuidv7(),
-          email: "existing-admin@example.com",
-          displayName: "Existing Admin",
-          createdAt: new Date(),
-          occ: 0
-        }
-      })
-      await prisma.organizationAdmin.create({
-        data: {
-          id: uuidv7(),
-          email: firstUser.email,
-          createdAt: new Date()
-        }
+      await createMockUserInDb(prisma, {
+        email: "existing-admin@example.com",
+        displayName: "Existing Admin",
+        orgRole: "admin"
       })
 
       // Given: Second OIDC user that doesn't exist in local database
@@ -162,7 +149,8 @@ describe("OIDC Auto-Registration Integration", () => {
         Password: "testpassword123",
         Claims: [
           {Type: "name", Value: displayName},
-          {Type: "email", Value: userEmail}
+          {Type: "email", Value: userEmail},
+          {Type: "email_verified", Value: "true"}
         ]
       }
 
@@ -186,54 +174,33 @@ describe("OIDC Auto-Registration Integration", () => {
         refreshToken: expect.toBeVisibleString()
       })
 
-      // Expect: Second user was auto-registered in the database
-      const allUsers = await prisma.user.findMany()
-      expect(allUsers).toHaveLength(2)
-      const secondUser = allUsers.find(u => u.email === userEmail)
-      expect(secondUser).toBeDefined()
-      expect(secondUser?.displayName).toBe(displayName)
+      // Expect: Second user was auto-registered as a platform account
+      const secondAccount = await prisma.platformAccount.findFirst({where: {profileEmail: userEmail}})
+      expect(secondAccount).toMatchObject({displayName})
+      // Expect: Registration did not create an additional organization membership
+      expect(await prisma.user.count()).toBe(1)
 
-      // Expect: Second user was NOT granted organization admin privileges
-      const orgAdmins = await prisma.organizationAdmin.findMany()
-      expect(orgAdmins).toHaveLength(1) // Still only the first user
-      expect(orgAdmins[0]?.email).toBe("existing-admin@example.com")
-
-      // Expect: Second user can access authenticated endpoints as regular member
-      const infoResponse = await request(app.getHttpServer())
-        .get("/auth/info")
+      // Expect: Second user can access authenticated endpoints and has no organizations
+      const organizationsResponse = await request(app.getHttpServer())
+        .get("/organizations")
         .set("Authorization", `Bearer ${tokenResponse.body.accessToken}`)
 
-      expect(infoResponse).toHaveStatusCode(200)
-      expect(infoResponse.body).toMatchObject({entityType: "user"})
+      expect(organizationsResponse).toHaveStatusCode(200)
+      expect(organizationsResponse.body).toMatchObject({items: [], total: 0})
     }, 20000)
   })
 
   describe("Existing User Flow", () => {
-    it("should be able to login and generate a token", async () => {
+    it("should reuse the existing account when provider and subject match", async () => {
       // Given: User already exists in the database
       const userEmail = "existing-user@example.com"
       const displayName = "Existing User"
       const uuid = uuidv7()
 
-      const existingUser = await prisma.user.create({
-        data: {
-          id: uuidv7(),
-          email: userEmail,
-          displayName: displayName,
-          createdAt: new Date(),
-          occ: 0
-        }
-      })
-
-      await prisma.userIdentity.create({
-        data: {
-          id: uuidv7(),
-          userId: existingUser.id,
-          providerId: "custom",
-          subjectId: uuid,
-          email: userEmail,
-          createdAt: new Date()
-        }
+      const existingUser = await createMockUserInDb(prisma, {
+        email: userEmail,
+        displayName,
+        identity: {providerId: "custom", subjectId: uuid}
       })
 
       // Given: OIDC mock user with same email as existing user
@@ -245,7 +212,8 @@ describe("OIDC Auto-Registration Integration", () => {
         Password: "testpassword123",
         Claims: [
           {Type: "name", Value: displayName},
-          {Type: "email", Value: userEmail}
+          {Type: "email", Value: userEmail},
+          {Type: "email_verified", Value: "true"}
         ]
       }
 
@@ -273,33 +241,35 @@ describe("OIDC Auto-Registration Integration", () => {
       const allUsers = await prisma.user.findMany()
       expect(allUsers).toHaveLength(1)
       expect(allUsers[0]?.id).toBe(existingUser.id)
-      expect(allUsers[0]?.email).toBe(userEmail)
+      const existingAccount = await prisma.platformAccount.findUnique({where: {id: allUsers[0]?.platformAccountId}})
+      expect(existingAccount?.profileEmail).toBe(userEmail)
 
-      // Expect: User can access authenticated endpoints
-      const infoResponse = await request(app.getHttpServer())
-        .get("/auth/info")
+      // Expect: Login reused the existing account and identity
+      expect(await prisma.platformAccount.count()).toBe(1)
+      expect(await prisma.platformAccountIdentity.count()).toBe(1)
+      const organizationsResponse = await request(app.getHttpServer())
+        .get("/organizations")
         .set("Authorization", `Bearer ${tokenResponse.body.accessToken}`)
 
-      expect(infoResponse).toHaveStatusCode(200)
-      expect(infoResponse.body).toMatchObject({entityType: "user"})
+      expect(organizationsResponse).toHaveStatusCode(200)
+      expect(organizationsResponse.body).toMatchObject({
+        items: [expect.objectContaining({id: existingUser.organizationId})],
+        total: 1
+      })
     }, 20000)
 
-    it("should reject login with IDENTITY_CONFLICT when email matches existing user but identity is not linked", async () => {
-      // Given: User already exists in the database without an identity link
+    it("should create a separate account when another provider asserts the same email", async () => {
+      // Given: User already has an account and membership linked to another provider
       const userEmail = "conflict-user@example.com"
       const displayName = "Conflict User"
 
-      await prisma.user.create({
-        data: {
-          id: uuidv7(),
-          email: userEmail,
-          displayName: displayName,
-          createdAt: new Date(),
-          occ: 0
-        }
+      const existingUser = await createMockUserInDb(prisma, {
+        email: userEmail,
+        displayName,
+        identity: {providerId: "other-provider", issuer: "https://other-provider.example.com", subjectId: uuidv7()}
       })
 
-      // Given: OIDC user arrives with matching email but new/unlinked subject ID
+      // Given: The configured custom provider asserts the same verified email for its own identity
       const uniqueId = Date.now().toString()
       const uuid = uuidv7()
 
@@ -309,7 +279,8 @@ describe("OIDC Auto-Registration Integration", () => {
         Password: "testpassword123",
         Claims: [
           {Type: "name", Value: displayName},
-          {Type: "email", Value: userEmail}
+          {Type: "email", Value: userEmail},
+          {Type: "email_verified", Value: "true"}
         ]
       }
 
@@ -326,11 +297,31 @@ describe("OIDC Auto-Registration Integration", () => {
         state: state
       })
 
-      // Expect: Login is rejected with IDENTITY_CONFLICT
-      expect(tokenResponse).toHaveStatusCode(400)
-      expect(tokenResponse.body).toMatchObject({
-        code: "AUTH_IDENTITY_CONFLICT"
+      // Expect: Login succeeds with a separate platform account
+      expect(tokenResponse).toHaveStatusCode(201)
+      expect(await prisma.platformAccount.count()).toBe(2)
+
+      const newIdentity = await prisma.platformAccountIdentity.findFirst({
+        where: {providerId: "custom", subject: uuid}
       })
+      expect(newIdentity).toMatchObject({accountId: expect.toBeVisibleString()})
+      expect(newIdentity?.accountId).not.toBe(existingUser.platformAccountId)
+
+      // Expect: The original identity and membership remain attached to the original account
+      expect(await prisma.platformAccountIdentity.findFirst({where: {providerId: "other-provider"}})).toMatchObject({
+        accountId: existingUser.platformAccountId
+      })
+      expect(await prisma.user.findMany()).toMatchObject([
+        {id: existingUser.id, platformAccountId: existingUser.platformAccountId}
+      ])
+
+      // Expect: The new account does not inherit the original account's organization membership
+      const organizationsResponse = await request(app.getHttpServer())
+        .get("/organizations")
+        .set("Authorization", `Bearer ${tokenResponse.body.accessToken}`)
+
+      expect(organizationsResponse).toHaveStatusCode(200)
+      expect(organizationsResponse.body).toMatchObject({items: [], total: 0})
     }, 20000)
 
     it("should reject login when OIDC provider returns email_verified as false", async () => {

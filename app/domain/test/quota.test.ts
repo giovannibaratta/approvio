@@ -1,3 +1,4 @@
+import {randomOrgId} from "@test/organization-id"
 import {
   QuotaFactory,
   QuotaIdentifierFactory,
@@ -70,7 +71,7 @@ describe("QuotaIdentifierFactory", () => {
       it("should validate an identifier where node is a parent of the metric's base type", () => {
         // Given
         const data = {
-          node: {type: "Org", identifier: uuidv7()},
+          node: {type: "Org", identifier: randomOrgId()},
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE"
         }
 
@@ -92,7 +93,7 @@ describe("QuotaIdentifierFactory", () => {
         // When & Then
         meteredMetrics.forEach(metric => {
           const data = {
-            node: {type: "Org", identifier: uuidv7()},
+            node: {type: "Org", identifier: randomOrgId()},
             quotaType: metric
           }
           const result = QuotaIdentifierFactory.validate(data)
@@ -133,7 +134,7 @@ describe("QuotaIdentifierFactory", () => {
       it("should fail if node type is invalid", () => {
         // Given
         const data = {
-          node: {type: "InvalidType", identifier: uuidv7()},
+          node: {type: "InvalidType", identifier: randomOrgId()},
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE"
         }
 
@@ -161,7 +162,7 @@ describe("QuotaIdentifierFactory", () => {
       it("should fail if metric is not supported", () => {
         // Given
         const data = {
-          node: {type: "Space", identifier: uuidv7()},
+          node: {type: "Space", identifier: randomOrgId()},
           quotaType: "INVALID_METRIC"
         }
 
@@ -175,7 +176,7 @@ describe("QuotaIdentifierFactory", () => {
       it("should fail if metric is not supported at node type", () => {
         // Given
         const data = {
-          node: {type: "User", identifier: uuidv7()},
+          node: {type: "User", identifier: randomOrgId()},
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE"
         }
 
@@ -205,7 +206,7 @@ describe("QuotaIdentifierFactory", () => {
   describe("fromNodeAndMetric", () => {
     it("should create a valid identifier", () => {
       // Given
-      const node = {type: "Org" as const, identifier: uuidv7()}
+      const node = {type: "Org" as const, identifier: randomOrgId()}
       const metric = "MAX_GROUPS"
 
       // When
@@ -218,7 +219,7 @@ describe("QuotaIdentifierFactory", () => {
 })
 
 describe("QuotaFactory", () => {
-  const validNode = {type: "Org", identifier: uuidv7()}
+  const validNode = {type: "Org", identifier: randomOrgId()}
   const validQuotaType = "MAX_GROUPS"
   const validId = uuidv7()
   const now = chance.date()
@@ -229,6 +230,7 @@ describe("QuotaFactory", () => {
         // Given
         const data = {
           id: validId,
+          organizationId: validNode.identifier,
           node: validNode,
           quotaType: validQuotaType,
           limit: 10,
@@ -260,7 +262,8 @@ describe("QuotaFactory", () => {
         // Given
         const data = {
           id: validId,
-          node: {type: "User", identifier: uuidv7()},
+          organizationId: validNode.identifier,
+          node: {type: "User", identifier: randomOrgId()},
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE",
           limit: 10,
           createdAt: now,
@@ -278,6 +281,7 @@ describe("QuotaFactory", () => {
         // Given
         const data = {
           id: "not-a-uuid",
+          organizationId: validNode.identifier,
           node: validNode,
           quotaType: validQuotaType,
           limit: 10,
@@ -296,6 +300,7 @@ describe("QuotaFactory", () => {
         // Given
         const data1 = {
           id: validId,
+          organizationId: validNode.identifier,
           node: validNode,
           quotaType: validQuotaType,
           limit: -1,
@@ -317,6 +322,7 @@ describe("QuotaFactory", () => {
         // Given
         const data = {
           id: validId,
+          organizationId: validNode.identifier,
           node: validNode,
           quotaType: validQuotaType,
           limit: 10
@@ -335,6 +341,7 @@ describe("QuotaFactory", () => {
     it("should create a new quota with generated id and dates", () => {
       // Given
       const data = {
+        organizationId: validNode.identifier,
         node: validNode,
         quotaType: validQuotaType
       }

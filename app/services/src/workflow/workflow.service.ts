@@ -3,13 +3,14 @@ import {
   Workflow,
   WorkflowDecoratorSelector,
   WorkflowFactory,
-  WorkflowTemplate,
+  WorkflowTemplateSummary,
+  TenantContext,
   WorkflowValidationError
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {
   WORKFLOW_TEMPLATE_REPOSITORY_TOKEN,
-  WorkflowTemplateGetError,
+  WorkflowTemplateSummaryGetError,
   WorkflowTemplateRepository
 } from "../workflow-template/interfaces"
 import {isUUIDv7} from "@utils"
@@ -17,6 +18,8 @@ import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {QuotaService} from "@services/quota/quota.service"
+import {TRANSACTION_MANAGER_TOKEN, TenantTransactionManager} from "@services/transaction/interfaces"
+import {inTransaction} from "@services/transaction/in-transaction"
 import {
   CreateWorkflowError,
   CreateWorkflowRepo,
@@ -36,7 +39,9 @@ export class WorkflowService {
     private readonly workflowRepo: WorkflowRepository,
     @Inject(WORKFLOW_TEMPLATE_REPOSITORY_TOKEN)
     private readonly workflowTemplateRepo: WorkflowTemplateRepository,
-    private readonly quotaService: QuotaService
+    private readonly quotaService: QuotaService,
+    @Inject(TRANSACTION_MANAGER_TOKEN)
+    private readonly transactionManager: TenantTransactionManager
   ) {}
 
   /**
@@ -44,18 +49,22 @@ export class WorkflowService {
    * @param request The request containing the workflow data and the requestor.
    * @returns A TaskEither with the created workflow or an error.
    */
-  createWorkflow(request: CreateWorkflowRequest): TaskEither<CreateWorkflowError | WorkflowTemplateGetError, Workflow> {
+  createWorkflow(
+    request: CreateWorkflowRequest
+  ): TaskEither<CreateWorkflowError | WorkflowTemplateSummaryGetError, Workflow> {
     // Wrap repo call in a lambda to preserve `this` context
-    const persistWorkflow = (data: CreateWorkflowRepo) => this.workflowRepo.createWorkflow(data)
+    const persistWorkflow = (data: CreateWorkflowRepo) => this.workflowRepo.createWorkflow(request, data)
 
     const getWorkflowTemplate = (
       request: CreateWorkflowRequest
-    ): TaskEither<WorkflowTemplateGetError, WorkflowTemplate> => {
-      return this.workflowTemplateRepo.getWorkflowTemplateById(request.workflowData.workflowTemplateId)
+    ): TaskEither<WorkflowTemplateSummaryGetError, WorkflowTemplateSummary> => {
+      return this.transactionManager.execute(request, () =>
+        this.workflowTemplateRepo.getWorkflowTemplateSummaryById(request, request.workflowData.workflowTemplateId)
+      )
     }
 
     const validateAndCreateWorkflow = (
-      template: WorkflowTemplate,
+      template: WorkflowTemplateSummary,
       request: CreateWorkflowRequest
     ): TaskEither<WorkflowValidationError, Workflow> => {
       const {workflowData} = request
@@ -64,7 +73,7 @@ export class WorkflowService {
         ? new Date(Date.now() + template.defaultExpiresInHours * 60 * 60 * 1000)
         : new Date(Date.now() + DEFAULT_EXPIRES_IN_MS)
 
-      const workflow = WorkflowFactory.newWorkflow({...workflowData, expiresAt})
+      const workflow = WorkflowFactory.newWorkflow({...workflowData, expiresAt, organizationId: request.organizationId})
       return TE.fromEither(workflow)
     }
 
@@ -73,6 +82,7 @@ export class WorkflowService {
         this.quotaService.isQuotaAvailable(
           {type: "WorkflowTemplate", identifier: request.workflowData.workflowTemplateId},
           "MAX_CONCURRENT_WORKFLOWS",
+          request,
           1
         ),
         TE.mapLeft(() => "quota_check_error" as const),
@@ -80,12 +90,14 @@ export class WorkflowService {
       )
 
     return pipe(
-      TE.Do,
-      TE.bindW("request", () => TE.right(request)),
-      TE.chainFirstW(() => checkQuota()),
-      TE.bindW("template", ({request}) => getWorkflowTemplate(request)),
-      TE.bindW("workflow", ({request, template}) => validateAndCreateWorkflow(template, request)),
-      TE.chainW(({workflow}) => persistWorkflow({workflow}))
+      getWorkflowTemplate(request),
+      inTransaction(this.transactionManager, request, template =>
+        pipe(
+          checkQuota(),
+          TE.chainW(() => validateAndCreateWorkflow(template, request)),
+          TE.chainW(workflow => persistWorkflow({workflow}))
+        )
+      )
     )
   }
 
@@ -97,6 +109,7 @@ export class WorkflowService {
    * @returns A TaskEither with the workflow or an error.
    */
   getWorkflowByIdentifier<T extends WorkflowDecoratorSelector>(
+    context: TenantContext,
     identifier: string,
     includeRef?: T
   ): TaskEither<WorkflowGetError, DecoratedWorkflow<T>> {
@@ -104,10 +117,12 @@ export class WorkflowService {
 
     const repoGetWorkflow = (value: string) =>
       isUuid
-        ? this.workflowRepo.getWorkflowById(value, includeRef)
-        : this.workflowRepo.getWorkflowByName(value, includeRef)
+        ? this.workflowRepo.getWorkflowById(context, value, includeRef)
+        : this.workflowRepo.getWorkflowByName(context, value, includeRef)
 
-    return pipe(identifier, TE.right, TE.chainW(repoGetWorkflow))
+    return this.transactionManager.execute<WorkflowGetError, DecoratedWorkflow<T>>(context, () =>
+      pipe(identifier, TE.right, TE.chainW(repoGetWorkflow))
+    )
   }
 
   /**
@@ -139,7 +154,9 @@ export class WorkflowService {
       sort: request.sort
     }
 
-    return this.workflowRepo.listWorkflows(repoRequest)
+    return this.transactionManager.execute<WorkflowGetError, ListWorkflowsResponse<T>>(request, () =>
+      this.workflowRepo.listWorkflows(request, repoRequest)
+    )
   }
 }
 

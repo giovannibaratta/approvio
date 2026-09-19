@@ -1,0 +1,54 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908120100-create-platform-accounts-table
+      author: giovannibaratta
+      changes:
+        - insert:
+            tableName: approvio_security_table_registry
+            columns:
+              - column:
+                  name: table_name
+                  value: platform_accounts
+              - column:
+                  name: security_class
+                  value: platform
+              - column:
+                  name: capability_profile
+                  value: platform_accounts
+        - createTable:
+            tableName: platform_accounts
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: display_name
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: profile_email
+                  type: text
+              - column:
+                  name: status
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false

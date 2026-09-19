@@ -1,12 +1,24 @@
-import {Injectable, Logger, UnauthorizedException} from "@nestjs/common"
+import {ConflictException, Injectable, Logger, NotFoundException, UnauthorizedException} from "@nestjs/common"
 import {Request} from "express"
 import {PassportStrategy} from "@nestjs/passport"
 import {ExtractJwt, Strategy} from "passport-jwt"
-import {TokenPayloadValidator, UserService, AgentService} from "@services"
+import {
+  AgentTokenPayload,
+  JwtPrincipalService,
+  PlatformTokenPayload,
+  TokenPayloadValidator,
+  UserTokenPayload
+} from "@services"
 import {generateErrorPayload} from "@controllers/error"
 import {isRight} from "fp-ts/Either"
 import {ConfigProvider} from "@external/config"
-import {AuthenticatedEntity, StepUpContext, isStepUpOperation, AuthenticatedUser, AuthenticatedAgent} from "@domain"
+import {
+  AuthenticatedEntity,
+  AuthenticatedPlatformSession,
+  StepUpContext,
+  isStepUpOperation,
+  AuthenticatedAgent
+} from "@domain"
 
 /**
  * JWT Authentication Strategy for NestJS using Passport
@@ -27,8 +39,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
   private audience: string
 
   constructor(
-    private readonly userService: UserService,
-    private readonly agentService: AgentService,
+    private readonly jwtPrincipalService: JwtPrincipalService,
     readonly configProvider: ConfigProvider
   ) {
     const {secret, trustedIssuers, audience} = configProvider.jwtConfig
@@ -60,43 +71,56 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
    * @returns Promise<AuthenticatedUser> - User entity wrapped in AuthenticatedEntity
    * @throws UnauthorizedException - When user is not found or other errors occur
    */
-  private async validateUserEntity(userIdentifier: string, providerId: string): Promise<AuthenticatedUser> {
-    const userResult = await this.userService.getUserByIdentifier(userIdentifier)()
+  private async validateUserEntity(payload: UserTokenPayload) {
+    const result = await this.jwtPrincipalService.resolveUser(payload)()
+    if (isRight(result)) return result.right
+    if (result.left === "account_not_found")
+      throw new UnauthorizedException(generateErrorPayload("ACCOUNT_NOT_FOUND", "Account not found"))
+    if (result.left === "resource_not_found")
+      throw new NotFoundException(generateErrorPayload("USER_NOT_FOUND", "User not found"))
+    if (result.left === "organization_context_changed")
+      throw new ConflictException(generateErrorPayload("ORGANIZATION_CONTEXT_CHANGED", "Organization context changed"))
+    if (
+      result.left === "invalid_session" ||
+      result.left === "invalid_credential" ||
+      result.left === "invalid_organization_id"
+    )
+      throw new UnauthorizedException(generateErrorPayload("INVALID_SESSION", "Session is no longer active"))
 
-    if (isRight(userResult))
-      return {
-        entityType: "user",
-        user: userResult.right,
-        providerId
-      }
-
-    if (userResult.left === "user_not_found")
-      throw new UnauthorizedException(generateErrorPayload("USER_NOT_FOUND", "User not found"))
-
-    Logger.error(`Error while fetching the user for token validation: ${userResult.left}`)
+    Logger.error(`Error while fetching the user for token validation: ${result.left}`)
     throw new UnauthorizedException(generateErrorPayload("UNKNOWN_ERROR", "An unknown error occurred"))
   }
 
   /**
-   * Validates and retrieves an agent entity by name
+   * Validates and retrieves an agent entity by immutable identifier within its organization.
    *
-   * @param agentName - Agent name from JWT payload
+   * @param agentId - Agent identifier from JWT payload
+   * @param organizationId - Organization identifier from JWT payload
    * @returns Promise<AuthenticatedAgent> - Agent entity wrapped in AuthenticatedEntity
    * @throws UnauthorizedException - When agent is not found or other errors occur
    */
-  private async validateAgentEntity(agentName: string): Promise<AuthenticatedAgent> {
-    const agentResult = await this.agentService.getAgentByName(agentName)()
-
-    if (isRight(agentResult))
-      return {
-        entityType: "agent",
-        agent: agentResult.right
-      }
+  private async validateAgentEntity(payload: AgentTokenPayload): Promise<AuthenticatedAgent> {
+    const agentResult = await this.jwtPrincipalService.resolveAgent(payload)()
+    if (isRight(agentResult)) return agentResult.right
 
     if (agentResult.left === "agent_not_found")
       throw new UnauthorizedException(generateErrorPayload("AGENT_NOT_FOUND", "Agent not found"))
+    if (agentResult.left === "agent_revoked")
+      throw new UnauthorizedException(generateErrorPayload("AGENT_REVOKED", "Agent is revoked"))
 
     Logger.error(`Error while fetching the agent for token validation: ${agentResult.left}`)
+    throw new UnauthorizedException(generateErrorPayload("UNKNOWN_ERROR", "An unknown error occurred"))
+  }
+
+  private async validatePlatformSession(payload: PlatformTokenPayload): Promise<AuthenticatedPlatformSession> {
+    const result = await this.jwtPrincipalService.resolvePlatformSession(payload)()
+    if (isRight(result)) return result.right
+    if (result.left === "account_not_found")
+      throw new UnauthorizedException(generateErrorPayload("ACCOUNT_NOT_FOUND", "Account not found"))
+    if (result.left === "invalid_session" || result.left === "invalid_credential")
+      throw new UnauthorizedException(generateErrorPayload("INVALID_SESSION", "Session is no longer active"))
+
+    Logger.error(`Error while fetching platform session for token validation: ${result.left}`)
     throw new UnauthorizedException(generateErrorPayload("UNKNOWN_ERROR", "An unknown error occurred"))
   }
 
@@ -111,7 +135,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
    * available to the GetAuthenticatedEntity decorator. This is a custom behavior
    * that deviates from Passport's default of setting `req.user`.
    */
-  async validate(req: Request & {requestor?: AuthenticatedEntity}, payload: unknown): Promise<AuthenticatedEntity> {
+  async validate(
+    req: Request & {requestor?: AuthenticatedEntity | AuthenticatedPlatformSession},
+    payload: unknown
+  ): Promise<AuthenticatedEntity | AuthenticatedPlatformSession> {
     // This method is invoked after Passport has verified the JWT's signature
     if (!TokenPayloadValidator.isValidPayloadSchema(payload))
       throw new UnauthorizedException(
@@ -129,10 +156,10 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
     if (!TokenPayloadValidator.isValidAudience(payload, this.audience))
       throw new UnauthorizedException(generateErrorPayload("INVALID_AUDIENCE", "Invalid token audience"))
 
-    let authenticatedEntity: AuthenticatedEntity
+    let authenticatedEntity: AuthenticatedEntity | AuthenticatedPlatformSession
 
     if (payload.entityType === "user") {
-      authenticatedEntity = await this.validateUserEntity(payload.sub, payload.providerId)
+      authenticatedEntity = await this.validateUserEntity(payload)
 
       if (payload.jti && payload.operation) {
         if (!isStepUpOperation(payload.operation))
@@ -151,7 +178,8 @@ export class JwtStrategy extends PassportStrategy(Strategy, "jwt") {
           authContext: stepUpContext
         }
       }
-    } else if (payload.entityType === "agent") authenticatedEntity = await this.validateAgentEntity(payload.sub)
+    } else if (payload.entityType === "agent") authenticatedEntity = await this.validateAgentEntity(payload)
+    else if (payload.entityType === "platform") authenticatedEntity = await this.validatePlatformSession(payload)
     else throw new UnauthorizedException(generateErrorPayload("INVALID_ENTITY_TYPE", "Invalid entity type in token"))
 
     // Set requestor on request for GetAuthenticatedEntity decorator

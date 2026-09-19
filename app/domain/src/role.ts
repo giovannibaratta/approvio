@@ -1,3 +1,4 @@
+import {OrganizationId, isOrganizationId} from "./shared"
 /**
  * Role and Permission System
  *
@@ -23,7 +24,7 @@
  * 5. **ResourceScopePermissionBinding** (derived type) - Ties everything together
  */
 
-import {PrefixUnion} from "@utils"
+import {isUUIDv7, PrefixUnion} from "@utils"
 import {Either, left, right, traverseArray, chainFirstW} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 
@@ -33,20 +34,24 @@ export const MAX_ROLES_PER_ENTITY = 128
 
 export interface OrgScope {
   readonly type: "org"
+  readonly organizationId: OrganizationId
 }
 
 export interface SpaceScope {
   readonly type: "space"
+  readonly organizationId: OrganizationId
   readonly spaceId: string
 }
 
 export interface GroupScope {
   readonly type: "group"
+  readonly organizationId: OrganizationId
   readonly groupId: string
 }
 
 export interface WorkflowTemplateScope {
   readonly type: "workflow_template"
+  readonly organizationId: OrganizationId
   readonly templateName: string
 }
 
@@ -56,13 +61,13 @@ export type ScopeType = RoleScope["type"]
 export function roleScopeToString(scope: RoleScope): string {
   switch (scope.type) {
     case "org":
-      return "org"
+      return `organization:${scope.organizationId}`
     case "space":
-      return `space:${scope.spaceId}`
+      return `organization:${scope.organizationId}:space:${scope.spaceId}`
     case "group":
-      return `group:${scope.groupId}`
+      return `organization:${scope.organizationId}:group:${scope.groupId}`
     case "workflow_template":
-      return `workflow_template:${scope.templateName}`
+      return `organization:${scope.organizationId}:workflow_template:${scope.templateName}`
   }
 }
 
@@ -221,7 +226,7 @@ export class RoleFactory {
     const consolidated: BoundRole[] = []
 
     for (const role of roles) {
-      const roleKey = `${role.name}-${JSON.stringify(role.scope)}`
+      const roleKey = RoleFactory.roleScopeKey(role.name, role.scope)
       if (!seen.has(roleKey)) {
         seen.add(roleKey)
         consolidated.push(role)
@@ -258,6 +263,7 @@ export class RoleFactory {
    */
   static isSameScope(scope1: RoleScope, scope2: RoleScope): boolean {
     if (scope1.type !== scope2.type) return false
+    if (scope1.organizationId !== scope2.organizationId) return false
 
     switch (scope1.type) {
       case "org":
@@ -268,6 +274,19 @@ export class RoleFactory {
         return scope1.groupId === (scope2 as GroupScope).groupId
       case "workflow_template":
         return scope1.templateName === (scope2 as WorkflowTemplateScope).templateName
+    }
+  }
+
+  private static roleScopeKey(roleName: string, scope: RoleScope): string {
+    switch (scope.type) {
+      case "org":
+        return JSON.stringify([roleName, scope.type, scope.organizationId])
+      case "space":
+        return JSON.stringify([roleName, scope.type, scope.organizationId, scope.spaceId])
+      case "group":
+        return JSON.stringify([roleName, scope.type, scope.organizationId, scope.groupId])
+      case "workflow_template":
+        return JSON.stringify([roleName, scope.type, scope.organizationId, scope.templateName])
     }
   }
 
@@ -331,24 +350,44 @@ export class RoleFactory {
   }
 
   private static isValidOrgRoleScope(scope: object): scope is OrgScope {
-    return "type" in scope && scope.type === "org"
+    return "type" in scope && scope.type === "org" && RoleFactory.hasValidOrganizationId(scope)
   }
 
   private static isValidSpaceRoleScope(scope: object): scope is SpaceScope {
-    return "type" in scope && scope.type === "space" && "spaceId" in scope && typeof scope.spaceId === "string"
+    return (
+      "type" in scope &&
+      scope.type === "space" &&
+      RoleFactory.hasValidOrganizationId(scope) &&
+      "spaceId" in scope &&
+      typeof scope.spaceId === "string" &&
+      isUUIDv7(scope.spaceId)
+    )
   }
 
   private static isValidGroupRoleScope(scope: object): scope is GroupScope {
-    return "type" in scope && scope.type === "group" && "groupId" in scope && typeof scope.groupId === "string"
+    return (
+      "type" in scope &&
+      scope.type === "group" &&
+      RoleFactory.hasValidOrganizationId(scope) &&
+      "groupId" in scope &&
+      typeof scope.groupId === "string" &&
+      isUUIDv7(scope.groupId)
+    )
   }
 
   private static isValidWorkflowTemplateRoleScope(scope: object): scope is WorkflowTemplateScope {
     return (
       "type" in scope &&
       scope.type === "workflow_template" &&
+      RoleFactory.hasValidOrganizationId(scope) &&
       "templateName" in scope &&
-      typeof scope.templateName === "string"
+      typeof scope.templateName === "string" &&
+      scope.templateName.trim().length > 0
     )
+  }
+
+  private static hasValidOrganizationId(scope: object): scope is {readonly organizationId: OrganizationId} {
+    return "organizationId" in scope && isOrganizationId(scope.organizationId)
   }
 
   private static validatePermissionsForResourceType(

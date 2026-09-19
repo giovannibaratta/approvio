@@ -1,3 +1,4 @@
+import {randomOrgId} from "@test/organization-id"
 import {
   evaluateWorkflowStatus,
   WorkflowStatus,
@@ -13,19 +14,21 @@ import "@utils/matchers"
 import {unwrapRight} from "@utils/either"
 
 describe("Workflow Status Evaluator (Chronological)", () => {
+  const organizationId = randomOrgId()
   const groupId1 = uuidv7()
   const userId1 = uuidv7()
   const userId2 = uuidv7()
   const workflowTemplateId = uuidv7()
 
-  const voter1: EntityReference = {entityId: userId1, entityType: "user"}
-  const voter2: EntityReference = {entityId: userId2, entityType: "user"}
+  const voter1: EntityReference = {entityId: userId1, entityType: "user", organizationId}
+  const voter2: EntityReference = {entityId: userId2, entityType: "user", organizationId}
 
   let decoratedWorkflow: DecoratedWorkflow<{workflowTemplate: true}>
 
   beforeEach(() => {
     const templateResult = unwrapRight(
       WorkflowTemplateFactory.newWorkflowTemplate({
+        organizationId,
         name: "Test Template",
         description: "A test template",
         approvalRule: {
@@ -46,6 +49,7 @@ describe("Workflow Status Evaluator (Chronological)", () => {
 
     const workflowResult = unwrapRight(
       WorkflowFactory.newWorkflow({
+        organizationId,
         name: "Test-Workflow",
         description: "Test description",
         workflowTemplateId: template.id,
@@ -67,6 +71,7 @@ describe("Workflow Status Evaluator (Chronological)", () => {
 
       const approvalVote: Vote = {
         id: uuidv7(),
+        organizationId,
         workflowId: decoratedWorkflow.id,
         voter: voter1,
         type: "APPROVE",
@@ -76,6 +81,7 @@ describe("Workflow Status Evaluator (Chronological)", () => {
 
       const vetoVote: Vote = {
         id: uuidv7(),
+        organizationId,
         workflowId: decoratedWorkflow.id,
         voter: voter2,
         type: "VETO",
@@ -97,6 +103,7 @@ describe("Workflow Status Evaluator (Chronological)", () => {
 
       const approvalVote: Vote = {
         id: uuidv7(),
+        organizationId,
         workflowId: decoratedWorkflow.id,
         voter: voter1,
         type: "APPROVE",
@@ -106,6 +113,7 @@ describe("Workflow Status Evaluator (Chronological)", () => {
 
       const vetoVote: Vote = {
         id: uuidv7(),
+        organizationId,
         workflowId: decoratedWorkflow.id,
         voter: voter2,
         type: "VETO",
@@ -128,6 +136,7 @@ describe("Workflow Status Evaluator (Chronological)", () => {
 
       const vetoVote: Vote = {
         id: uuidv7(),
+        organizationId,
         workflowId: decoratedWorkflow.id,
         voter: voter1,
         type: "VETO",
@@ -136,6 +145,7 @@ describe("Workflow Status Evaluator (Chronological)", () => {
 
       const withdrawVote: Vote = {
         id: uuidv7(),
+        organizationId,
         workflowId: decoratedWorkflow.id,
         voter: voter1,
         type: "WITHDRAW",

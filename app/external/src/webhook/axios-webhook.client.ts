@@ -134,6 +134,9 @@ export class AxiosWebhookClient implements HttpClient {
           headers: requestHeaders,
           data: payload,
           timeout: TIMEOUT,
+          // A redirect is a new destination. Do not follow it without applying
+          // the full destination policy again.
+          maxRedirects: 0,
           maxContentLength: MAX_CONTENT_LENGTH,
           maxBodyLength: MAX_CONTENT_LENGTH,
           // Use the custom agents which override DNS lookup to prevent TOCTOU DNS rebinding SSRF

@@ -1,3 +1,4 @@
+import {randomOrgId, toOrganizationId} from "@test/organization-id"
 import {WorkflowExpirationSweepProcessor} from "../../src/processor/workflow-expiration-sweep.processor"
 import {TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
@@ -9,12 +10,21 @@ import {
   createMockWorkflowInDb
 } from "@test/mock-data"
 import {WorkflowStatus} from "@domain"
-import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "@test/database"
-import {DatabaseClient, WORKFLOW_EXPIRATION_SWEEP_QUEUE, WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"
+import {
+  createFixturePrismaClient,
+  cleanDatabase,
+  prepareDatabase,
+  prepareRedisPrefix,
+  cleanRedisByPrefix
+} from "@test/database"
+import {WORKFLOW_EXPIRATION_SWEEP_QUEUE} from "@external"
 import {PrismaClient} from "@prisma/client"
 import {getQueueToken} from "@nestjs/bull"
 import {Queue} from "bull"
 import {setupWorkerTestModule} from "./test-helpers"
+import {WorkflowRecalculationService} from "@services/workflow/workflow-recalculation.service"
+import {unwrapRight} from "@utils/either"
+import "@utils/matchers"
 
 describe("WorkflowExpirationSweepProcessor Integration", () => {
   let processor: WorkflowExpirationSweepProcessor
@@ -22,7 +32,6 @@ describe("WorkflowExpirationSweepProcessor Integration", () => {
   let redisPrefix: string
   let module: TestingModule
   let sweepQueue: Queue
-  let recalcQueue: Queue
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -31,7 +40,7 @@ describe("WorkflowExpirationSweepProcessor Integration", () => {
     try {
       const moduleBuilder = setupWorkerTestModule([WorkflowExpirationSweepProcessor])
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix))
+        .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb, redisPrefix))
 
       module = await moduleBuilder.compile()
     } catch (error) {
@@ -40,9 +49,8 @@ describe("WorkflowExpirationSweepProcessor Integration", () => {
     }
 
     processor = module.get<WorkflowExpirationSweepProcessor>(WorkflowExpirationSweepProcessor)
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     sweepQueue = module.get<Queue>(getQueueToken(WORKFLOW_EXPIRATION_SWEEP_QUEUE))
-    recalcQueue = module.get<Queue>(getQueueToken(WORKFLOW_STATUS_RECALCULATION_QUEUE))
 
     // Initialize the module to ensure all providers are ready
     await module.init()
@@ -56,7 +64,6 @@ describe("WorkflowExpirationSweepProcessor Integration", () => {
   afterEach(async () => {
     await cleanDatabase(prisma)
     await cleanRedisByPrefix(redisPrefix)
-    await recalcQueue.empty()
     await sweepQueue.empty()
   })
 
@@ -102,12 +109,14 @@ describe("WorkflowExpirationSweepProcessor Integration", () => {
       // Seed database with workflows
 
       const commonDate = new Date()
+      const organizationId = randomOrgId()
 
-      await createMockUserInDb(prisma, {orgAdmin: true})
-      const space = await createMockSpaceInDb(prisma, {name: "Test Space"})
+      await createMockUserInDb(prisma, {orgAdmin: true, organizationId})
+      const space = await createMockSpaceInDb(prisma, {name: "Test Space", organizationId})
       const spaceId = space.id
       const template = await createMockWorkflowTemplateInDb(prisma, {
         name: "Test Template",
+        organizationId,
         spaceId,
         status: "DRAFT",
         version: 1,
@@ -121,6 +130,7 @@ describe("WorkflowExpirationSweepProcessor Integration", () => {
       // Create Workflows
       const expiredWorkflow = await createMockWorkflowInDb(prisma, {
         name: "Expired",
+        organizationId,
         workflowTemplateId: templateId,
         status: WorkflowStatus.EVALUATION_IN_PROGRESS,
         expiresAt: pastDate
@@ -129,6 +139,7 @@ describe("WorkflowExpirationSweepProcessor Integration", () => {
 
       const futureWorkflow = await createMockWorkflowInDb(prisma, {
         name: "Future",
+        organizationId,
         workflowTemplateId: templateId,
         status: WorkflowStatus.EVALUATION_IN_PROGRESS,
         expiresAt: futureDate
@@ -137,6 +148,7 @@ describe("WorkflowExpirationSweepProcessor Integration", () => {
 
       const alreadyEnqueuedWorkflow = await createMockWorkflowInDb(prisma, {
         name: "Already Enqueued",
+        organizationId,
         workflowTemplateId: templateId,
         status: WorkflowStatus.EVALUATION_IN_PROGRESS,
         expiresAt: pastDate
@@ -149,14 +161,26 @@ describe("WorkflowExpirationSweepProcessor Integration", () => {
 
       const terminalWorkflow = await createMockWorkflowInDb(prisma, {
         name: "Terminal",
+        organizationId,
         workflowTemplateId: templateId,
         status: WorkflowStatus.APPROVED,
         expiresAt: pastDate
       })
       const terminalWorkflowId = terminalWorkflow.id
 
+      await prisma.workflowExpirationSchedule.create({
+        data: {organizationId, nextSweepAt: pastDate}
+      })
+
       // When: We run the processor sweep
       await processor.sweepExpired()
+
+      const scheduledJobs = await sweepQueue.getJobs(["waiting", "active", "completed"])
+      const organizationJob = scheduledJobs.find(
+        queuedJob => queuedJob.name === "sweep-organization" && queuedJob.data.organizationId === organizationId
+      )
+      if (!organizationJob) throw new Error("Expected the scheduler to enqueue the due organization")
+      await organizationJob.finished()
 
       // Then: Verify Database state
       const expiredWorkflowFromDb = await prisma.workflow.findUnique({where: {id: expiredWorkflowId}})
@@ -171,10 +195,85 @@ describe("WorkflowExpirationSweepProcessor Integration", () => {
       const terminalWorkflowFromDb = await prisma.workflow.findUnique({where: {id: terminalWorkflowId}})
       expect(terminalWorkflowFromDb?.recalculationRequired).toBe(false)
 
-      // Then: Verify Queue state (recalculation queue)
-      const jobs = await recalcQueue.getJobs(["waiting", "active", "delayed"])
-      expect(jobs).toHaveLength(1)
-      expect(jobs[0]?.data.workflowId).toBe(expiredWorkflowId)
+      const events = await prisma.tenantOutbox.findMany({
+        where: {organizationId: expiredWorkflow.organizationId, eventType: "workflow.recalculate"}
+      })
+      expect(events).toHaveLength(1)
+      expect(events.at(0)?.payload).toMatchObject({workflowId: expiredWorkflowId, type: "workflow.recalculate"})
+    })
+
+    it("advances through expired workflows in bounded stable batches", async () => {
+      // Given: Two expired workflows and a due organization schedule, with a batch size of one.
+      const organizationId = randomOrgId()
+      await createMockUserInDb(prisma, {orgAdmin: true, organizationId})
+      const space = await createMockSpaceInDb(prisma, {name: "Batched Expiration Space", organizationId})
+      const template = await createMockWorkflowTemplateInDb(prisma, {
+        name: "Batched Expiration Template",
+        organizationId,
+        spaceId: space.id,
+        actions: []
+      })
+      const now = new Date()
+      const olderWorkflow = await createMockWorkflowInDb(prisma, {
+        name: "Older Expired Workflow",
+        organizationId,
+        workflowTemplateId: template.id,
+        status: WorkflowStatus.EVALUATION_IN_PROGRESS,
+        expiresAt: new Date(now.getTime() - 2000)
+      })
+      const newerWorkflow = await createMockWorkflowInDb(prisma, {
+        name: "Newer Expired Workflow",
+        organizationId,
+        workflowTemplateId: template.id,
+        status: WorkflowStatus.EVALUATION_IN_PROGRESS,
+        expiresAt: new Date(now.getTime() - 1000)
+      })
+      await prisma.workflowExpirationSchedule.create({
+        data: {organizationId, nextSweepAt: olderWorkflow.expiresAt}
+      })
+      const recalculation = module.get(WorkflowRecalculationService)
+      const context = {organizationId: toOrganizationId(template.organizationId)}
+
+      // When: Process the first batch.
+      const firstBatchResult = await recalculation.scheduleExpiredWorkflowRecalculations(context, now, 1)()
+
+      // Expect: Only the older workflow is marked, and the schedule advances to the newer expiration.
+      expect(unwrapRight(firstBatchResult)).toBe(1)
+      const olderAfterFirstBatch = await prisma.workflow.findUniqueOrThrow({where: {id: olderWorkflow.id}})
+      const newerAfterFirstBatch = await prisma.workflow.findUniqueOrThrow({where: {id: newerWorkflow.id}})
+      expect(olderAfterFirstBatch.recalculationRequired).toBe(true)
+      expect(newerAfterFirstBatch.recalculationRequired).toBe(false)
+      const nextScheduleAfterFirstBatch = await prisma.workflowExpirationSchedule.findUniqueOrThrow({
+        where: {organizationId}
+      })
+      expect(nextScheduleAfterFirstBatch.nextSweepAt).toEqual(newerWorkflow.expiresAt)
+
+      // When: Process the next batch.
+      const secondBatchResult = await recalculation.scheduleExpiredWorkflowRecalculations(context, now, 1)()
+
+      // Expect: The newer workflow is now marked for recalculation.
+      expect(unwrapRight(secondBatchResult)).toBe(1)
+      const newerAfterSecondBatch = await prisma.workflow.findUniqueOrThrow({where: {id: newerWorkflow.id}})
+      expect(newerAfterSecondBatch.recalculationRequired).toBe(true)
+
+      // When: Sweep again after both expired workflows have been marked.
+      const emptyBatchResult = await recalculation.scheduleExpiredWorkflowRecalculations(context, now, 1)()
+
+      // Expect: No further work is scheduled, and each workflow has exactly one recalculation event.
+      expect(unwrapRight(emptyBatchResult)).toBe(0)
+      const finalSchedule = await prisma.workflowExpirationSchedule.findUniqueOrThrow({where: {organizationId}})
+      expect(finalSchedule.nextSweepAt).toBeNull()
+
+      const events = await prisma.tenantOutbox.findMany({
+        where: {organizationId: template.organizationId, eventType: "workflow.recalculate"}
+      })
+      expect(events).toHaveLength(2)
+      expect(events.map(event => event.payload)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({workflowId: olderWorkflow.id}),
+          expect.objectContaining({workflowId: newerWorkflow.id})
+        ])
+      )
     })
   })
 })

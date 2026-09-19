@@ -1,5 +1,8 @@
 import {
   DecoratedWorkflow,
+  BoundaryError,
+  OrganizationId,
+  TenantContext,
   Workflow,
   WorkflowDecoratorSelector,
   WorkflowTemplateValidationError,
@@ -8,9 +11,11 @@ import {
 import {UnknownError, EncryptionError} from "@services/error"
 import {RequestorAwareRequest} from "@services/shared/types"
 import {TaskEither} from "fp-ts/TaskEither"
+import {TransactionError} from "../transaction/interfaces"
 
 export interface WorkflowRepository {
   createWorkflow(
+    context: TenantContext,
     data: CreateWorkflowRepo
   ): TaskEither<CreateWorkflowRepoError | WorkflowValidationError | WorkflowTemplateValidationError, Workflow>
 
@@ -21,6 +26,7 @@ export interface WorkflowRepository {
    * @returns A TaskEither with the workflow or an error.
    */
   getWorkflowById<T extends WorkflowDecoratorSelector>(
+    context: TenantContext,
     workflowId: string,
     includeRef?: T
   ): TaskEither<WorkflowGetError, DecoratedWorkflow<T>>
@@ -32,6 +38,7 @@ export interface WorkflowRepository {
    * @returns A TaskEither with the workflow or an error.
    */
   getWorkflowByName<T extends WorkflowDecoratorSelector>(
+    context: TenantContext,
     workflowName: string,
     includeRef?: T
   ): TaskEither<WorkflowGetError, DecoratedWorkflow<T>>
@@ -42,6 +49,7 @@ export interface WorkflowRepository {
    * @returns A TaskEither with the workflows or an error.
    */
   listWorkflows<TInclude extends WorkflowDecoratorSelector>(
+    context: TenantContext,
     request: ListWorkflowsRequestRepo<TInclude>
   ): TaskEither<WorkflowGetError, ListWorkflowsResponse<TInclude>>
 
@@ -54,6 +62,7 @@ export interface WorkflowRepository {
    * @returns A TaskEither with the updated workflow or an error.
    */
   updateWorkflow<T extends WorkflowDecoratorSelector>(
+    context: TenantContext,
     workflowId: string,
     data: ConcurrentSafeWorkflowUpdateData,
     includeRef?: T
@@ -69,23 +78,34 @@ export interface WorkflowRepository {
    * @returns A TaskEither with the updated workflow or an error.
    */
   updateWorkflowConcurrentSafe<T extends WorkflowDecoratorSelector>(
+    context: TenantContext,
     workflowId: string,
     occCheck: bigint,
     data: ConcurrentUnsafeWorkflowUpdateData,
     includeRef?: T
   ): TaskEither<WorkflowUpdateError, DecoratedWorkflow<T>>
 
-  countActiveWorkflowsByTemplateId(templateId: string): TaskEither<UnknownError, number>
-  countActiveWorkflows(): TaskEither<UnknownError, number>
-  getParentWorkflowTemplate(workflowId: string): TaskEither<WorkflowGetParentTemplateError, string>
+  countActiveWorkflowsByTemplateId(
+    context: TenantContext,
+    templateId: string
+  ): TaskEither<UnknownError | BoundaryError, number>
+  countActiveWorkflows(context: TenantContext): TaskEither<UnknownError | BoundaryError, number>
+  getParentWorkflowTemplate(
+    context: TenantContext,
+    workflowId: string
+  ): TaskEither<WorkflowGetParentTemplateError, string>
 
   /**
    * Finds the IDs of expired workflows that are not in a terminal state and have not been enqueued.
-   * @param now Current date to compare against workflow expiresAt.
+   * @param expiresBefore Exclusive cutoff for workflow expiresAt.
    * @param limit Maximum number of records to return per batch.
    * @returns A TaskEither with an array of workflow IDs or an error.
    */
-  findExpiredWorkflows(now: Date, limit?: number): TaskEither<UnknownError, string[]>
+  findExpiredWorkflows(
+    context: TenantContext,
+    expiresBefore: Date,
+    limit?: number
+  ): TaskEither<UnknownError | BoundaryError, string[]>
 
   /**
    * Marks a list of workflows as pending recalculation.
@@ -96,23 +116,61 @@ export interface WorkflowRepository {
    * @param workflowIds The IDs of the workflows to mark.
    * @returns A TaskEither indicating success or failure.
    */
-  markWorkflowsAsRecalculationRequired(workflowIds: string[]): TaskEither<UnknownError, void>
+  markWorkflowsAsRecalculationRequired(
+    context: TenantContext,
+    workflowIds: string[]
+  ): TaskEither<UnknownError | BoundaryError, void>
 }
 
-export type WorkflowGetParentTemplateError = "workflow_not_found" | UnknownError
+/** Tenant-scoped scheduling state for workflow expiration sweeps. */
+export interface WorkflowExpirationScheduleRepository {
+  /** Select a due schedule whose previous enqueue is older than scheduledBefore. */
+  getDueExpirationSchedule(
+    context: TenantContext,
+    dueBefore: Date,
+    scheduledBefore: Date
+  ): TaskEither<UnknownError | BoundaryError, WorkflowExpirationSchedule | null>
+
+  /** Atomically record scheduledAt if the schedule is due and eligible for another enqueue. */
+  claimExpirationSchedule(
+    context: TenantContext,
+    scheduledAt: Date,
+    scheduledBefore: Date
+  ): TaskEither<UnknownError | BoundaryError, boolean>
+
+  /** Record the sweep cutoff and recompute the next pending workflow deadline. */
+  completeExpirationSchedule(context: TenantContext, sweptAt: Date): TaskEither<UnknownError | BoundaryError, void>
+}
+
+export const WORKFLOW_EXPIRATION_SCHEDULE_REPOSITORY_TOKEN = Symbol("WORKFLOW_EXPIRATION_SCHEDULE_REPOSITORY_TOKEN")
+
+export interface WorkflowExpirationSchedule {
+  readonly organizationId: OrganizationId
+  readonly lastSweptAt?: Date
+}
+
+export type WorkflowGetParentTemplateError = BoundaryError | "workflow_not_found" | UnknownError
 
 export type WorkflowGetError =
-  "workflow_not_found" | WorkflowValidationError | WorkflowTemplateValidationError | EncryptionError | UnknownError
+  | BoundaryError
+  | "workflow_not_found"
+  | WorkflowValidationError
+  | WorkflowTemplateValidationError
+  | EncryptionError
+  | UnknownError
+  | TransactionError
 
 export type WorkflowUpdateError =
+  | BoundaryError
   | "workflow_not_found"
   | "concurrency_error"
   | WorkflowValidationError
   | WorkflowTemplateValidationError
   | EncryptionError
   | UnknownError
+  | TransactionError
 
-export type CreateWorkflowRepoError = UnknownError | "workflow_already_exists"
+export type CreateWorkflowRepoError = BoundaryError | UnknownError | "workflow_already_exists"
 export type CreateWorkflowRepo = {
   workflow: Workflow
 }
@@ -123,6 +181,7 @@ export type CreateWorkflowError =
   | CreateWorkflowRepoError
   | "quota_exceeded"
   | "quota_check_error"
+  | TransactionError
 
 export interface CreateWorkflowRequest extends RequestorAwareRequest {
   workflowData: {

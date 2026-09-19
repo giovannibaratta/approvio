@@ -1,3 +1,4 @@
+import {OrganizationId, isOrganizationId} from "./shared"
 export const VOTE_REASON_MAX_LENGTH = 1024
 
 import {Either, isLeft, left, right} from "fp-ts/Either"
@@ -7,8 +8,14 @@ import {v7 as uuidv7} from "uuid"
 
 export type Vote = Readonly<ApproveVote | VetoVote | WithdrawVote>
 
+type EntityReferenceInput = Omit<EntityReference, "organizationId"> & {readonly organizationId: string}
+type VoteInput = DistributiveOmit<Vote, "organizationId" | "voter"> & {
+  readonly organizationId: string
+  readonly voter: EntityReferenceInput
+}
 interface _BaseVote {
   id: string
+  organizationId: OrganizationId
   workflowId: string
   voter: EntityReference
   reason?: string
@@ -40,6 +47,8 @@ type UnprefixedVoteValidationError =
   | "voted_for_groups_required"
   | "missing_voter_entity"
   | "conflicting_voter_entities"
+  | "invalid_organization_id"
+  | "organization_mismatch"
 
 export class VoteFactory {
   static newVote(data: DistributiveOmit<Vote, "id" | "castedAt">): Either<VoteValidationError, Vote> {
@@ -48,6 +57,7 @@ export class VoteFactory {
 
     const baseVoteProperties = {
       id,
+      organizationId: data.organizationId,
       workflowId: data.workflowId,
       voter: data.voter,
       reason: data.reason,
@@ -74,7 +84,12 @@ export class VoteFactory {
     }
   }
 
-  static validate(data: Vote): Either<VoteValidationError, Vote> {
+  static validate(data: VoteInput): Either<VoteValidationError, Vote> {
+    const organizationId = data.organizationId
+    const voterOrganizationId = data.voter.organizationId
+    if (!isOrganizationId(organizationId) || !isOrganizationId(voterOrganizationId))
+      return left("vote_invalid_organization_id")
+    if (voterOrganizationId !== organizationId) return left("vote_organization_mismatch")
     const workflowIdValidation = validateUUID(data.workflowId, "vote_invalid_workflow_id")
     const voterValidation = validateVoter(data.voter)
     const reasonValidation = data.reason ? validateReason(data.reason) : right(undefined)
@@ -88,7 +103,11 @@ export class VoteFactory {
       if (isLeft(votedForGroupsValidation)) return votedForGroupsValidation
     }
 
-    return right(data)
+    return right({
+      ...data,
+      organizationId,
+      voter: voterValidation.right
+    })
   }
 }
 
@@ -97,13 +116,14 @@ function validateUUID<T extends VoteValidationError>(id: string, error: T): Eith
   return right(id)
 }
 
-function validateVoter(voter: EntityReference): Either<VoteValidationError, EntityReference> {
+function validateVoter(voter: EntityReferenceInput): Either<VoteValidationError, EntityReference> {
   const voterIdValidation = validateUUID(voter.entityId, "vote_invalid_voter_id")
   if (isLeft(voterIdValidation)) return voterIdValidation
 
   if (voter.entityType !== "user" && voter.entityType !== "agent") return left("vote_invalid_voter_type")
+  if (!isOrganizationId(voter.organizationId)) return left("vote_invalid_organization_id")
 
-  return right(voter)
+  return right({...voter, organizationId: voter.organizationId})
 }
 
 function validateGroupIds(groupIds: ReadonlyArray<string>): Either<VoteValidationError, ReadonlyArray<string>> {

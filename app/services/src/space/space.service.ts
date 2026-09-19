@@ -10,13 +10,11 @@ import {
   UserValidationError,
   RoleValidationError,
   AuditLogFactory,
-  CreateAuditLog,
   AuditLogValidationError
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError} from "@services/error"
 import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
-import {DEFAULT_ORG_ID} from "@services/constants"
 import {QuotaService} from "@services/quota/quota.service"
 import {Versioned} from "@domain"
 import {pipe} from "fp-ts/function"
@@ -38,8 +36,9 @@ import {
 } from "./interfaces"
 import {validateUserEntity} from "@services/shared/types"
 import {extractActorDetails} from "@services/shared/actor-extractor"
-import {TransactionManager, TRANSACTION_MANAGER_TOKEN, ExecutionError} from "@services/transaction/interfaces"
+import {TenantTransactionManager, TRANSACTION_MANAGER_TOKEN, ExecutionError} from "@services/transaction/interfaces"
 import {AuditLogRepository, AUDIT_LOG_REPOSITORY_TOKEN} from "@services/audit-log/interfaces"
+import {inTransaction} from "@services/transaction/in-transaction"
 
 export type CreateSpaceError =
   | CreateSpaceRepoError
@@ -54,9 +53,9 @@ export type CreateSpaceError =
   | AuditLogValidationError
   | ExecutionError
 
-export type GetSpaceError = GetSpaceRepoError | AuthorizationError
-export type ListSpacesError = ListSpacesRepoError | AuthorizationError
-export type DeleteSpaceError = DeleteSpaceRepoError | AuthorizationError | ExecutionError
+export type GetSpaceError = GetSpaceRepoError | AuthorizationError | ExecutionError
+export type ListSpacesError = ListSpacesRepoError | AuthorizationError | ExecutionError
+export type DeleteSpaceError = DeleteSpaceRepoError | AuthorizationError | AuditLogValidationError | ExecutionError
 
 export const SPACE_MAX_LIMIT = 100
 
@@ -69,7 +68,7 @@ export class SpaceService {
     private readonly userRepo: UserRepository,
     private readonly quotaService: QuotaService,
     @Inject(TRANSACTION_MANAGER_TOKEN)
-    private readonly txManager: TransactionManager,
+    private readonly txManager: TenantTransactionManager,
     @Inject(AUDIT_LOG_REPOSITORY_TOKEN)
     private readonly auditLogRepo: AuditLogRepository
   ) {}
@@ -84,15 +83,19 @@ export class SpaceService {
     const validateSpace = (req: CreateSpaceRequest) => pipe(req.spaceData, s => SpaceFactory.newSpace(s), TE.fromEither)
 
     const fetchUser = (requestor: User): TaskEither<CreateSpaceError, Versioned<User>> =>
-      this.userRepo.getUserById(requestor.id)
+      this.userRepo.getUserById(request, requestor.id)
 
     const addManagePermissions = ({user, space}: {user: Versioned<User>; space: Space}) => {
-      const manageRole = SystemRole.createSpaceManagerRole({type: "space", spaceId: space.id})
+      const manageRole = SystemRole.createSpaceManagerRole({
+        type: "space",
+        spaceId: space.id,
+        organizationId: request.organizationId
+      })
       return pipe(UserFactory.addPermissions(user, [manageRole]), TE.fromEither)
     }
 
     const persistSpaceWithUserPermissions = (data: {space: Space; updatedUser: User; userOcc: bigint}) =>
-      this.spaceRepo.createSpaceWithUserPermissions({
+      this.spaceRepo.createSpaceWithUserPermissions(request, {
         space: data.space,
         user: data.updatedUser,
         userOcc: data.userOcc
@@ -100,7 +103,7 @@ export class SpaceService {
 
     const checkQuota = () =>
       pipe(
-        this.quotaService.isQuotaAvailable({type: "Org", identifier: DEFAULT_ORG_ID}, "MAX_SPACES", 1),
+        this.quotaService.isQuotaAvailable({type: "Org", identifier: request.organizationId}, "MAX_SPACES", request, 1),
         TE.mapLeft(() => "quota_check_error" as const),
         TE.chainW(isAvailable => (isAvailable ? TE.right(undefined) : TE.left("quota_exceeded" as const)))
       )
@@ -108,35 +111,36 @@ export class SpaceService {
     return pipe(
       TE.Do,
       TE.bindW("requestor", () => validateRequestor()),
-      TE.chainFirstW(() => checkQuota()),
       TE.bindW("actor", () => TE.right(extractActorDetails(request.requestor))),
       TE.bindW("space", () => validateSpace(request)),
-      TE.bindW("user", ({requestor}) => fetchUser(requestor)),
-      TE.bindW("updatedUser", ({user, space}) => addManagePermissions({user, space})),
-      TE.chainW(({space, updatedUser, user, actor}) =>
-        this.txManager.execute(() =>
-          pipe(
-            persistSpaceWithUserPermissions({space, updatedUser, userOcc: user.occ}),
-            TE.chainFirstW(createdSpace => {
-              return pipe(
-                AuditLogFactory.create({
-                  auditType: "SPACE_CREATED",
-                  entityType: "SPACE",
-                  entityId: createdSpace.id,
-                  actor: actor,
-                  payload: {
-                    name: createdSpace.name,
-                    description: createdSpace.description ?? null
-                  }
-                }),
-                TE.fromEither,
-                TE.chainW(log => this.auditLogRepo.persist(log))
+      TE.chainFirstW(() => checkQuota()),
+      inTransaction(this.txManager, request, ({requestor, actor, space}) =>
+        pipe(
+          fetchUser(requestor),
+          TE.bindTo("user"),
+          TE.bindW("updatedUser", ({user}) => addManagePermissions({user, space})),
+          TE.chainW(({user, updatedUser}) =>
+            pipe(
+              persistSpaceWithUserPermissions({space, updatedUser, userOcc: user.occ}),
+              TE.chainFirstW(createdSpace =>
+                pipe(
+                  AuditLogFactory.create({
+                    auditType: "SPACE_CREATED",
+                    entityType: "SPACE",
+                    organizationId: request.organizationId,
+                    entityId: createdSpace.id,
+                    actor,
+                    payload: {name: createdSpace.name, description: createdSpace.description ?? null}
+                  }),
+                  TE.fromEither,
+                  TE.chainW(log => this.auditLogRepo.persist(request, log))
+                )
               )
-            })
+            )
           )
         )
       ),
-      logSuccess("Space created", "SpaceService", space => ({id: space.id, name: space.name}))
+      logSuccess("Space created", "SpaceService", createdSpace => ({id: createdSpace.id, name: createdSpace.name}))
     )
   }
 
@@ -150,7 +154,7 @@ export class SpaceService {
       const isOrgAdmin = requestor.orgRole === OrgRole.ADMIN
       const hasReadPermission = RolePermissionChecker.hasSpacePermission(
         requestor.roles,
-        {type: "space", spaceId},
+        {type: "space", spaceId, organizationId: request.organizationId},
         "read"
       )
 
@@ -159,15 +163,17 @@ export class SpaceService {
     }
 
     const fetchSpaceData = (spaceId: string): TaskEither<GetSpaceError, Versioned<Space>> => {
-      return this.spaceRepo.getSpaceById({spaceId})
+      return this.spaceRepo.getSpaceById(request, {spaceId})
     }
 
-    return pipe(
-      TE.Do,
-      TE.bindW("requestor", () => validateRequestor()),
-      TE.bindW("authorizedSpaceId", ({requestor}) => checkPermissions(requestor, request.spaceId)),
-      TE.chainW(({authorizedSpaceId}) => fetchSpaceData(authorizedSpaceId)),
-      logSuccess("Space retrieved", "SpaceService", space => ({id: space.id}))
+    return this.txManager.execute<GetSpaceError, Versioned<Space>>(request, () =>
+      pipe(
+        TE.Do,
+        TE.bindW("requestor", () => validateRequestor()),
+        TE.bindW("authorizedSpaceId", ({requestor}) => checkPermissions(requestor, request.spaceId)),
+        TE.chainW(({authorizedSpaceId}) => fetchSpaceData(authorizedSpaceId)),
+        logSuccess("Space retrieved", "SpaceService", space => ({id: space.id}))
+      )
     )
   }
 
@@ -185,14 +191,16 @@ export class SpaceService {
     if (limit <= 0) return TE.left("invalid_limit")
     if (limit > 100) limit = SPACE_MAX_LIMIT
 
-    return pipe(
-      validateUserEntity(request.requestor),
-      TE.fromEither,
-      TE.chainW(() => this.spaceRepo.listSpaces({page, limit, search: request.search})),
-      logSuccess("Spaces listed", "SpaceService", result => ({
-        count: result.spaces.length,
-        total: result.total
-      }))
+    return this.txManager.execute<ListSpacesError, ListSpacesResult>(request, () =>
+      pipe(
+        validateUserEntity(request.requestor),
+        TE.fromEither,
+        TE.chainW(() => this.spaceRepo.listSpaces(request, {page, limit, search: request.search})),
+        logSuccess("Spaces listed", "SpaceService", result => ({
+          count: result.spaces.length,
+          total: result.total
+        }))
+      )
     )
   }
 
@@ -206,7 +214,7 @@ export class SpaceService {
       const isOrgAdmin = requestor.orgRole === OrgRole.ADMIN
       const hasManagePermission = RolePermissionChecker.hasSpacePermission(
         requestor.roles,
-        {type: "space", spaceId},
+        {type: "space", spaceId, organizationId: request.organizationId},
         "manage"
       )
 
@@ -217,19 +225,22 @@ export class SpaceService {
     const actorDetails = extractActorDetails(request.requestor)
 
     const deleteSpaceData = (spaceId: string): TaskEither<DeleteSpaceError, void> => {
-      return this.txManager.execute(() =>
+      return this.txManager.execute(request, () =>
         pipe(
-          this.spaceRepo.deleteSpace({spaceId}),
+          this.spaceRepo.deleteSpace(request, {spaceId}),
           TE.chainFirstW(() => {
-            const auditLog: CreateAuditLog = {
-              auditType: "SPACE_DELETED",
-              entityType: "SPACE",
-              entityId: spaceId,
-              actor: actorDetails,
-              payload: {},
-              createdAt: new Date()
-            }
-            return this.auditLogRepo.persist(auditLog)
+            return pipe(
+              AuditLogFactory.create({
+                auditType: "SPACE_DELETED",
+                entityType: "SPACE",
+                organizationId: request.organizationId,
+                entityId: spaceId,
+                actor: actorDetails,
+                payload: {}
+              }),
+              TE.fromEither,
+              TE.chainW(auditLog => this.auditLogRepo.persist(request, auditLog))
+            )
           })
         )
       )

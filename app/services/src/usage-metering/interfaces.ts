@@ -1,28 +1,63 @@
-import {Actor, CreateUsageEvent, MetricUnit, TierQuotaLimit, UsageEntity, UsageMetric} from "@domain"
+import {
+  BoundaryError,
+  CreateUsageEvent,
+  OriginatingActor,
+  MetricUnit,
+  TenantContext,
+  TierQuotaLimit,
+  UsageEntity,
+  UsageMetric,
+  TenantEventValidationError
+} from "@domain"
 import * as TE from "fp-ts/TaskEither"
+import {UsageCacheSnapshot, UsageError, UsageSettlementResult} from "../durable-work/interfaces"
+export type {UsageOperationValidationError} from "../durable-work/models"
 import {AuthorizationError, UnknownError} from "../error"
+import {OrganizationPlanTierError} from "../tenancy/interfaces"
 
 export interface ReservationResult {
-  readonly allowed: boolean
   readonly consumed: number
   readonly reserved: number
+}
+
+export interface UsageCacheRecoveryRequest extends TenantContext {
+  readonly metric: UsageMetric
+  readonly period: string
 }
 
 export type QuotaAdmissionError =
   | {readonly type: "admission_error"; readonly error: unknown}
   | {readonly type: "invalid_response"; readonly error: unknown}
+  | {readonly type: "operation_mismatch"}
+  | {readonly type: "cache_unavailable"}
 
 export interface QuotaAdmissionClient {
-  reserve(
+  /** Claims an empty/unready cache; a competing rebuild fails closed until its lease expires. */
+  beginRebuild(key: string, owner: string): TE.TaskEither<QuotaAdmissionError, "ready" | "claimed" | "busy">
+  /**
+   * Installs totals and replay markers together only while the caller owns an unexpired rebuild lease.
+   * Retention applies to terminal facts; outstanding reservations must keep the key alive.
+   */
+  restore(
     key: string,
-    limit: number,
+    owner: string,
+    snapshot: UsageCacheSnapshot,
+    retainUntil: Date
+  ): TE.TaskEither<QuotaAdmissionError, void>
+  reserveOperation(
+    key: string,
+    operationId: string,
+    limit: TierQuotaLimit,
+    estimate: number
+  ): TE.TaskEither<QuotaAdmissionError | "quota_exceeded", ReservationResult>
+
+  applySettlement(
+    key: string,
+    operationId: string,
+    revision: string,
     estimate: number,
-    ttlSeconds?: number
-  ): TE.TaskEither<QuotaAdmissionError, ReservationResult>
-
-  settle(key: string, estimate: number, actual: number): TE.TaskEither<QuotaAdmissionError, number>
-
-  release(key: string, estimate: number): TE.TaskEither<QuotaAdmissionError, void>
+    result: UsageSettlementResult
+  ): TE.TaskEither<QuotaAdmissionError, number>
 
   getUsage(key: string): TE.TaskEither<QuotaAdmissionError, {consumed: number; reserved: number}>
 }
@@ -32,7 +67,7 @@ export interface QuotaAdmissionClient {
  */
 export interface ActorUsageSummary {
   /** The actor (user or agent) associated with the consumed units. */
-  readonly actor: Actor
+  readonly actor: OriginatingActor
   /** Total quantity consumed by this actor for the queried metric within the date window. */
   readonly totalQuantity: bigint
 }
@@ -46,14 +81,20 @@ export interface UsageEventRepository {
    *
    * @param event - The usage event payload to persist.
    */
-  persist(event: CreateUsageEvent): TE.TaskEither<UnknownError, void>
+  persist(context: TenantContext, event: CreateUsageEvent): TE.TaskEither<UnknownError | BoundaryError, void>
+
+  persistOperation(
+    context: TenantContext,
+    operationId: string,
+    event: CreateUsageEvent
+  ): TE.TaskEither<UnknownError | BoundaryError | "event_mismatch", void>
 
   /**
    * Persists a batch of immutable usage events in a single operation.
    *
    * @param events - Array of usage event payloads to persist.
    */
-  persistBatch(events: CreateUsageEvent[]): TE.TaskEither<UnknownError, void>
+  persistBatch(context: TenantContext, events: CreateUsageEvent[]): TE.TaskEither<UnknownError | BoundaryError, void>
 
   /**
    * Calculates the total aggregate quantity consumed for a metric within the specified date window [fromDate, toDate].
@@ -63,7 +104,12 @@ export interface UsageEventRepository {
    * @param toDate - End date boundary (inclusive).
    * @returns Total consumed quantity as a bigint (0n if no records exist).
    */
-  getPeriodTotal(metric: UsageMetric, fromDate: Date, toDate: Date): TE.TaskEither<UnknownError, bigint>
+  getPeriodTotal(
+    context: TenantContext,
+    metric: UsageMetric,
+    fromDate: Date,
+    toDate: Date
+  ): TE.TaskEither<UnknownError | BoundaryError, bigint>
 
   /**
    * Aggregates usage for a metric grouped by individual actor within the specified date window [fromDate, toDate].
@@ -73,7 +119,12 @@ export interface UsageEventRepository {
    * @param toDate - End date boundary (inclusive).
    * @returns Array of actor summaries containing each actor and their total consumed quantity.
    */
-  getActorBreakdown(metric: UsageMetric, fromDate: Date, toDate: Date): TE.TaskEither<UnknownError, ActorUsageSummary[]>
+  getActorBreakdown(
+    context: TenantContext,
+    metric: UsageMetric,
+    fromDate: Date,
+    toDate: Date
+  ): TE.TaskEither<UnknownError | BoundaryError, ActorUsageSummary[]>
 }
 
 export const USAGE_EVENT_REPOSITORY_TOKEN = Symbol("USAGE_EVENT_REPOSITORY_TOKEN")
@@ -82,10 +133,10 @@ export const QUOTA_ADMISSION_CLIENT_TOKEN = Symbol("QUOTA_ADMISSION_CLIENT_TOKEN
 /**
  * Parameters for pre-flight quota reservation.
  */
-export interface AdmitAndReserveParams {
-  readonly orgId: string
+export interface AdmitAndReserveParams extends TenantContext {
+  readonly operationId: string
   readonly entity: UsageEntity
-  readonly actor: Actor
+  readonly actor: OriginatingActor
   readonly metric: UsageMetric
   readonly estimatedUnits: number
   readonly period: string
@@ -95,23 +146,16 @@ export interface AdmitAndReserveParams {
 /**
  * Parameters for post-operation quota settlement and immutable ledger entry.
  */
-export interface SettleUsageParams {
-  readonly orgId: string
-  readonly entity: UsageEntity
-  readonly actor: Actor
-  readonly metric: UsageMetric
-  readonly estimatedUnits: number
+export interface SettleUsageParams extends AdmitAndReserveParams {
   readonly actualUnits: number
-  readonly period: string
-  readonly isBillable?: boolean
   readonly metadata?: Record<string, unknown>
 }
 
 /**
  * Parameters for releasing an inflight reservation.
  */
-export interface CancelReservationParams {
-  readonly orgId: string
+export interface CancelReservationParams extends TenantContext {
+  readonly operationId: string
   readonly metric: UsageMetric
   readonly estimatedUnits: number
   readonly period: string
@@ -132,8 +176,7 @@ export interface MetricUsageSummary {
 /**
  * Organization-wide usage summary for a specific billing period.
  */
-export interface OrganizationUsageSummary {
-  readonly orgId: string
+export interface OrganizationUsageSummary extends TenantContext {
   readonly period: string
   readonly periodStartsAt: Date
   readonly periodEndsAt: Date
@@ -141,11 +184,25 @@ export interface OrganizationUsageSummary {
 }
 
 export type UsageMeteringError =
+  | TenantEventValidationError
+  | "event_not_found"
+  | UsageError
+  | QuotaAdmissionError
+  | "invalid_actual_units"
   | "quota_exceeded"
+  | "quota_cache_unavailable"
   | "quota_missing_configuration"
   | "billing_period_invalid_format"
   | "billing_period_invalid_month"
   | "billing_period_invalid_year"
   | "organization_not_found"
   | AuthorizationError
+  | BoundaryError
   | UnknownError
+  | OrganizationPlanTierError
+  | "operation_mismatch"
+  | "invalid_transition"
+  | "invalid_usage"
+  | "invalid_batch_size"
+  | "repository_dependency_error"
+  | "event_mismatch"

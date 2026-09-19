@@ -4,6 +4,7 @@ import {ConfigProvider} from "../config/config-provider"
 import {KMS_PROVIDER_TOKEN} from "./kms.provider.interface"
 import {EnvVarKmsProvider} from "./env-var-kms.provider"
 import {EncryptionService} from "./encryption.service"
+import {PlatformEncryptionService, TenantEncryptionService} from "./context-bound-encryption.service"
 
 const kmsProvider = {
   provide: KMS_PROVIDER_TOKEN,
@@ -18,7 +19,7 @@ const kmsProvider = {
 
 @Module({
   imports: [ConfigModule],
-  providers: [kmsProvider, EncryptionService],
-  exports: [kmsProvider, EncryptionService]
+  providers: [kmsProvider, EncryptionService, TenantEncryptionService, PlatformEncryptionService],
+  exports: [kmsProvider, EncryptionService, TenantEncryptionService, PlatformEncryptionService]
 })
 export class KmsModule {}

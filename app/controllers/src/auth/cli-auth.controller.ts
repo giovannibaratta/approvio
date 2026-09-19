@@ -5,9 +5,9 @@ import {isLeft} from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {PublicRoute} from "../../../main/src/auth/jwt.authguard"
-import {GetAuthenticatedEntity} from "../../../main/src/auth"
-import {AuthenticatedEntity} from "@domain"
-import {TokenResponse, PrivilegedTokenResponse} from "@approvio/api"
+import {GetAuthenticatedEntity, GetPlatformSession} from "../../../main/src/auth"
+import {AuthenticatedEntity, AuthenticatedPlatformSession} from "@domain"
+import {TokenResponse, PrivilegedTokenResponse, validateCliOrganizationSelection} from "@approvio/api"
 import {
   validateInitiateCliLoginRequest,
   validateGenerateCliTokenRequest,
@@ -18,7 +18,8 @@ import {
   generateErrorResponseForCliInitiate,
   generateErrorResponseForCliGenerateToken,
   generateErrorResponseForCliRefreshUserToken,
-  generateErrorResponseForCliExchangePrivilegeToken
+  generateErrorResponseForCliExchangePrivilegeToken,
+  generateErrorResponseForCliOrganizationSelection
 } from "./cli-auth.mappers"
 import {mapToTokenResponse, mapToPrivilegeTokenExchange} from "./auth.mappers"
 import {logSuccess} from "@utils"
@@ -60,6 +61,24 @@ export class CliAuthController {
       Logger.error("OIDC login completion failed", result.left)
       throw generateErrorResponseForCliGenerateToken(result.left, "CliAuthController")
     }
+
+    return result.right
+  }
+
+  @Post("select-organization")
+  @HttpCode(200)
+  async selectOrganization(
+    @Body() body: unknown,
+    @GetPlatformSession() principal: AuthenticatedPlatformSession
+  ): Promise<TokenResponse> {
+    const result = await pipe(
+      TE.fromEither(validateCliOrganizationSelection(body)),
+      TE.chainW(({organizationId}) => this.authService.selectCliOrganization(principal, organizationId)),
+      TE.map(mapToTokenResponse),
+      logSuccess("CLI organization selected", "CliAuthController")
+    )()
+
+    if (isLeft(result)) throw generateErrorResponseForCliOrganizationSelection(result.left)
 
     return result.right
   }

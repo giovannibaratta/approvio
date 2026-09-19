@@ -1,7 +1,7 @@
-import {Module} from "@nestjs/common"
+import {DispatchService} from "./durable-work/dispatch.service"
+import {DynamicModule, Module} from "@nestjs/common"
 import {AgentService} from "./agent"
 import {GroupService} from "./group"
-import {OrganizationAdminService} from "./organization-admin"
 import {PersistenceModule, ThirdPartyModule, QueueModule, RateLimiterModule} from "@external"
 import {GroupMembershipService} from "./group-membership"
 import {SpaceService} from "./space"
@@ -29,13 +29,23 @@ import {LeverService} from "./lever"
 import {ResourcesService} from "./resources"
 import {FeatureGateService} from "./feature-gate"
 import {UsageMeteringService} from "./usage-metering"
+import {
+  InvitationManagementService,
+  MembershipManagementService,
+  OrganizationLifecycleService,
+  OrganizationService,
+  OrganizationEntitlementService
+} from "./tenancy"
+import {JwtPrincipalService} from "./auth/jwt-principal.service"
+import {TenantOutboxService} from "./durable-work/tenant-outbox.service"
+import {TenantOutboxRelayService} from "./durable-work/tenant-outbox-relay.service"
+import {OrganizationAdmissionService} from "./tenancy/organization-admission.service"
 
 const services = [
   AgentService,
   AuditLogService,
   GroupService,
   GroupMembershipService,
-  OrganizationAdminService,
   SpaceService,
   UserService,
   WorkflowService,
@@ -46,6 +56,8 @@ const services = [
   WebhookService,
   SlackService,
   AuthService,
+  JwtPrincipalService,
+  OrganizationAdmissionService,
   RoleService,
   QueueService,
   TaskService,
@@ -57,7 +69,15 @@ const services = [
   LeverService,
   ResourcesService,
   FeatureGateService,
-  UsageMeteringService
+  UsageMeteringService,
+  OrganizationService,
+  OrganizationEntitlementService,
+  OrganizationLifecycleService,
+  MembershipManagementService,
+  InvitationManagementService,
+  TenantOutboxRelayService,
+  TenantOutboxService,
+  DispatchService
 ]
 
 const internalServices = [PkceService]
@@ -73,8 +93,20 @@ const jwtModule = JwtModule.registerAsync({
 })
 
 @Module({
-  imports: [PersistenceModule, ThirdPartyModule, ConfigModule, QueueModule, jwtModule, RateLimiterModule],
+  imports: [ThirdPartyModule, ConfigModule, QueueModule, jwtModule, RateLimiterModule],
   providers: [...internalServices, ...services],
   exports: [...services]
 })
-export class ServiceModule {}
+export class ServiceModule {
+  // Nest identifies dynamic modules by reference; repeated imports must share one definition per runtime.
+  private static readonly modules: Partial<Record<"api" | "worker", DynamicModule>> = {}
+
+  static register(options: {runtime: "api" | "worker"}): DynamicModule {
+    const module = this.modules[options.runtime] ?? {
+      module: ServiceModule,
+      imports: [PersistenceModule.register(options)]
+    }
+    this.modules[options.runtime] = module
+    return module
+  }
+}

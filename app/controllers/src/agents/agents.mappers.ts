@@ -2,9 +2,10 @@ import {
   AgentRegistrationRequest,
   AgentRegistrationResponse,
   AgentGet200Response,
+  RoleAssignmentRequest,
   RoleOperationRequestValidationError
 } from "@approvio/api"
-import {Agent, AgentWithPrivateKey, AuthenticatedEntity} from "@domain"
+import {Agent, AgentWithPrivateKey, AuthenticatedEntity, OrganizationId, RoleScope, TenantContext} from "@domain"
 import {
   BadRequestException,
   ConflictException,
@@ -13,6 +14,7 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  PreconditionFailedException,
   UnprocessableEntityException
 } from "@nestjs/common"
 import {
@@ -23,19 +25,23 @@ import {
   AgentGetError
 } from "@services"
 import {Either, right} from "fp-ts/Either"
-import {generateErrorPayload} from "../error"
+import {generateErrorPayload, isAuthorityError, mapAuthorityError} from "../error"
+
 export function agentRegistrationApiToServiceModel(data: {
   agentData: AgentRegistrationRequest
   requestor: AuthenticatedEntity
+  context: TenantContext
 }): Either<never, RegisterAgentRequest> {
   return right({
     agentName: data.agentData.agentName,
-    requestor: data.requestor
+    requestor: data.requestor,
+    context: data.context
   })
 }
 
 export function mapAgentToRegistrationResponse(agent: AgentWithPrivateKey): AgentRegistrationResponse {
   return {
+    organizationId: agent.organizationId,
     agentId: agent.id,
     agentName: agent.agentName,
     publicKey: Buffer.from(agent.publicKey).toString("base64"),
@@ -46,6 +52,7 @@ export function mapAgentToRegistrationResponse(agent: AgentWithPrivateKey): Agen
 
 export function mapAgentToApi(agent: Agent): AgentGet200Response {
   return {
+    organizationId: agent.organizationId,
     id: agent.id,
     agentName: agent.agentName,
     publicKey: Buffer.from(agent.publicKey).toString("base64"),
@@ -53,7 +60,28 @@ export function mapAgentToApi(agent: Agent): AgentGet200Response {
   }
 }
 
+/**
+ * API role scopes omit organizationId because the organization is the mandatory
+ * route context. Bind it once at the controller boundary before domain validation.
+ */
+export function bindRoleScopeToOrganization(
+  scope: RoleAssignmentRequest["roles"][number]["scope"],
+  organizationId: OrganizationId
+): RoleScope {
+  switch (scope.type) {
+    case "org":
+      return {type: "org", organizationId}
+    case "space":
+      return {type: "space", organizationId, spaceId: scope.spaceId}
+    case "group":
+      return {type: "group", organizationId, groupId: scope.groupId}
+    case "workflow_template":
+      return {type: "workflow_template", organizationId, templateName: scope.templateName}
+  }
+}
+
 export function generateErrorResponseForRegisterAgent(error: AgentRegistrationError, context: string): HttpException {
+  if (isAuthorityError(error)) return mapAuthorityError(error)
   const errorCode = error.toUpperCase()
 
   switch (error) {
@@ -91,12 +119,41 @@ export function generateErrorResponseForRegisterAgent(error: AgentRegistrationEr
     case "agent_role_scope_incompatible_with_template":
     case "agent_invalid_occ":
     case "agent_role_entity_type_role_restriction":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
+    case "invalid_organization_id":
+    case "tenant_context_required":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
     case "requestor_not_authorized":
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Requestor not authorized`))
+    case "conflicting_isolation_level":
+    case "concurrency_error":
+      Logger.error(`${context}: An expected error occurred: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
+      )
+
+    case "step_up_required":
+    case "step_up_invalid":
+    case "step_up_consumed":
+    case "invalid_reference":
+    case "resource_already_exists":
+    case "resource_in_use":
+    case "concurrent_modification_error":
+    case "organization_owner_required":
+    case "invalid_transition":
+    case "quota_exceeded":
+    case "invitation_invalid":
+    case "agent_not_found":
+      Logger.error(`${context}: Unhandled service failure: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
+      )
   }
 }
 
@@ -110,6 +167,7 @@ export function generateErrorResponseForGetAgent(error: AgentGetError, context: 
     case "agent_invalid_uuid":
     case "agent_name_empty":
     case "agent_name_too_long":
+    case "agent_name_cannot_be_uuid":
     case "agent_role_name_empty":
     case "agent_role_name_too_long":
     case "agent_role_name_invalid_characters":
@@ -126,14 +184,25 @@ export function generateErrorResponseForGetAgent(error: AgentGetError, context: 
     case "agent_role_scope_incompatible_with_template":
     case "agent_role_invalid_structure":
     case "agent_invalid_occ":
-    case "agent_name_cannot_be_uuid":
     case "agent_role_total_roles_exceed_maximum":
     case "agent_role_entity_type_role_restriction":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
     case "unknown_error":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
       Logger.error(`${context}: An expected error occurred: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
@@ -142,12 +211,17 @@ export function generateErrorResponseForGetAgent(error: AgentGetError, context: 
 }
 
 export function generateErrorResponseForAgentRoleAssignment(
-  error: AgentRoleAssignmentError | RoleOperationRequestValidationError,
+  error: AgentRoleAssignmentError | RoleOperationRequestValidationError | "invalid_etag",
   context: string
 ): HttpException {
+  if (isAuthorityError(error)) return mapAuthorityError(error)
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "invalid_etag":
+      return new PreconditionFailedException(
+        generateErrorPayload("INVALID_ETAG", "If-Match must be a current entity tag")
+      )
     case "malformed_object":
     case "missing_roles":
     case "invalid_roles":
@@ -159,6 +233,21 @@ export function generateErrorResponseForAgentRoleAssignment(
       return new BadRequestException(
         generateErrorPayload(errorCode, `${context}: Workflow template not found for role assignment`)
       )
+
+    case "organization_owner_required":
+    case "resource_already_exists":
+    case "resource_in_use":
+      return new ConflictException(generateErrorPayload(errorCode, `${context}: The resource has changed`))
+    case "invalid_reference":
+    case "invalid_transition":
+    case "invitation_invalid":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request`))
+    case "quota_exceeded":
+      return new UnprocessableEntityException(generateErrorPayload(errorCode, `${context}: Quota exceeded`))
+    case "step_up_required":
+    case "step_up_invalid":
+    case "step_up_consumed":
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Not authorized to assign roles`))
     case "requestor_not_authorized":
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Not authorized to assign roles`))
     case "role_entity_type_role_restriction":
@@ -208,7 +297,12 @@ export function generateErrorResponseForAgentRoleAssignment(
     case "agent_role_invalid_structure":
     case "agent_invalid_occ":
     case "agent_name_cannot_be_uuid":
-    case "conflicting_isolation_level":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
+    case "invalid_organization_id":
+    case "tenant_context_required":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -218,8 +312,12 @@ export function generateErrorResponseForAgentRoleAssignment(
     case "audit_log_invalid_audit_type":
     case "audit_log_invalid_entity_type":
     case "audit_log_invalid_actor_type":
+    case "audit_log_invalid_schema_version":
+    case "audit_log_organization_mismatch":
     case "audit_log_invalid_payload":
     case "audit_log_missing_required_fields":
+    case "conflicting_isolation_level":
+    case "concurrency_error":
       Logger.error(`${context}: An expected error occurred: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
@@ -239,12 +337,17 @@ export function generateErrorResponseForAgentRoleAssignment(
 }
 
 export function generateErrorResponseForAgentRoleRemoval(
-  error: AgentRoleRemovalError | RoleOperationRequestValidationError,
+  error: AgentRoleRemovalError | RoleOperationRequestValidationError | "invalid_etag",
   context: string
 ): HttpException {
+  if (isAuthorityError(error)) return mapAuthorityError(error)
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "invalid_etag":
+      return new PreconditionFailedException(
+        generateErrorPayload("INVALID_ETAG", "If-Match must be a current entity tag")
+      )
     case "malformed_object":
     case "missing_roles":
     case "invalid_roles":
@@ -256,6 +359,21 @@ export function generateErrorResponseForAgentRoleRemoval(
       return new BadRequestException(
         generateErrorPayload(errorCode, `${context}: Workflow template not found for role removal`)
       )
+
+    case "organization_owner_required":
+    case "resource_already_exists":
+    case "resource_in_use":
+      return new ConflictException(generateErrorPayload(errorCode, `${context}: The resource has changed`))
+    case "invalid_reference":
+    case "invalid_transition":
+    case "invitation_invalid":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request`))
+    case "quota_exceeded":
+      return new UnprocessableEntityException(generateErrorPayload(errorCode, `${context}: Quota exceeded`))
+    case "step_up_required":
+    case "step_up_invalid":
+    case "step_up_consumed":
+      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Not authorized to remove roles`))
     case "requestor_not_authorized":
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: Not authorized to remove roles`))
     case "role_entity_type_role_restriction":
@@ -284,6 +402,13 @@ export function generateErrorResponseForAgentRoleRemoval(
       return new BadRequestException(
         generateErrorPayload(errorCode, `${context}: the specified scope is not supported by this role`)
       )
+    case "role_name_empty":
+    case "role_name_too_long":
+    case "role_name_invalid_characters":
+    case "role_permissions_empty":
+    case "role_permission_invalid":
+    case "role_invalid_uuid":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid role removal format`))
     case "agent_invalid_uuid":
     case "agent_name_empty":
     case "agent_name_too_long":
@@ -305,6 +430,12 @@ export function generateErrorResponseForAgentRoleRemoval(
     case "agent_role_invalid_structure":
     case "agent_invalid_occ":
     case "agent_name_cannot_be_uuid":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
+    case "invalid_organization_id":
+    case "tenant_context_required":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
@@ -315,19 +446,15 @@ export function generateErrorResponseForAgentRoleRemoval(
     case "audit_log_invalid_audit_type":
     case "audit_log_invalid_entity_type":
     case "audit_log_invalid_actor_type":
+    case "audit_log_invalid_schema_version":
+    case "audit_log_organization_mismatch":
     case "audit_log_invalid_payload":
     case "audit_log_missing_required_fields":
+    case "concurrency_error":
       Logger.error(`${context}: An expected error occurred: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
-    case "role_name_empty":
-    case "role_name_too_long":
-    case "role_name_invalid_characters":
-    case "role_permissions_empty":
-    case "role_permission_invalid":
-    case "role_invalid_uuid":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid role removal format`))
     case "concurrent_modification_error":
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: The agent was affected by another request`)

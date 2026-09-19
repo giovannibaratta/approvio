@@ -1,4 +1,4 @@
-import {Vote, VoteFactory, VoteValidationError, EntityReference, getNormalizedEntityId} from "@domain"
+import {Vote, VoteFactory, VoteValidationError, EntityReference, getNormalizedEntityId, TenantContext} from "@domain"
 import {Injectable, Logger} from "@nestjs/common"
 import {Vote as PrismaVote} from "@prisma/client"
 import {PersistVoteError, GetLatestVoteError, VoteRepository, FindVotesError} from "@services"
@@ -7,13 +7,13 @@ import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
 import {none, Option, some} from "fp-ts/Option"
 import {pipe} from "fp-ts/function"
-import {DatabaseClient} from "./database-client"
+import {VoteTenantClient} from "./tenant-database-clients"
 import {isPrismaForeignKeyConstraintError} from "./errors"
 import {traverseArray} from "fp-ts/Either"
 
 @Injectable()
 export class VoteDbRepository implements VoteRepository {
-  constructor(private readonly dbClient: DatabaseClient) {}
+  constructor(private readonly dbClient: VoteTenantClient) {}
 
   /**
    * Persists a vote and marks the corresponding workflow for status recalculation.
@@ -21,14 +21,19 @@ export class VoteDbRepository implements VoteRepository {
    * @param vote The domain Vote object to persist.
    * @returns A TaskEither with the persisted vote or a persistence error.
    */
-  persistVoteAndMarkWorkflowRecalculation(vote: Vote): TaskEither<PersistVoteError, Vote> {
+  persistVoteAndMarkWorkflowRecalculation(context: TenantContext, vote: Vote): TaskEither<PersistVoteError, Vote> {
+    // TODO: This validation is not responsibility of the pesistence layer. This should be exclussively be done
+    // in the service layer.
+    if (vote.organizationId !== context.organizationId || vote.voter.organizationId !== context.organizationId)
+      return TE.left("organization_mismatch")
     return pipe(
       TE.tryCatchK(
         () =>
-          this.dbClient.transactional(async tx => {
+          this.dbClient.transactional(context.organizationId, async tx => {
             const savedVote = await tx.vote.create({
               data: {
                 id: vote.id,
+                organizationId: context.organizationId,
                 workflowId: vote.workflowId,
                 userId: vote.voter.entityType === "user" ? vote.voter.entityId : null,
                 agentId: vote.voter.entityType === "agent" ? vote.voter.entityId : null,
@@ -45,7 +50,7 @@ export class VoteDbRepository implements VoteRepository {
             // The actual OCC check is performed during status evaluation/recalculation in the background worker
             // to ensure the final status is safely committed based on a consistent snapshot of votes.
             await tx.workflow.update({
-              where: {id: vote.workflowId},
+              where: {organizationId_id: {organizationId: context.organizationId, id: vote.workflowId}},
               data: {recalculationRequired: true, occ: {increment: 1}}
             })
 
@@ -74,13 +79,17 @@ export class VoteDbRepository implements VoteRepository {
    * @returns A TaskEither with an Option of the vote or an error.
    */
   getOptionalLatestVoteByWorkflowAndVoter(
+    context: TenantContext,
     workflowId: string,
     voter: EntityReference
   ): TaskEither<GetLatestVoteError, Option<Vote>> {
+    // TODO: This validation is not responsibility of the pesistence layer. This should be exclussively be done
+    // in the service layer.
+    if (voter.organizationId !== context.organizationId) return TE.left("organization_mismatch")
     const whereClause =
       voter.entityType === "user"
-        ? {workflowId, userId: voter.entityId, agentId: null}
-        : {workflowId, agentId: voter.entityId, userId: null}
+        ? {organizationId: context.organizationId, workflowId, userId: voter.entityId, agentId: null}
+        : {organizationId: context.organizationId, workflowId, agentId: voter.entityId, userId: null}
 
     return pipe(
       TE.tryCatchK(
@@ -108,12 +117,13 @@ export class VoteDbRepository implements VoteRepository {
    * @param workflowId The ID of the workflow.
    * @returns A TaskEither with a readonly array of votes or an error.
    */
-  getVotesByWorkflowId(workflowId: string): TaskEither<FindVotesError, ReadonlyArray<Vote>> {
+  getVotesByWorkflowId(context: TenantContext, workflowId: string): TaskEither<FindVotesError, ReadonlyArray<Vote>> {
     return pipe(
       TE.tryCatchK(
         () =>
           this.dbClient.cx.vote.findMany({
             where: {
+              organizationId: context.organizationId,
               workflowId
             },
             orderBy: {
@@ -135,12 +145,13 @@ function mapPrismaVoteToDomainVote(prismaVote: PrismaVote): E.Either<VoteValidat
   if (!prismaVote.userId && !prismaVote.agentId) return E.left("vote_missing_voter_entity")
   if (prismaVote.userId && prismaVote.agentId) return E.left("vote_conflicting_voter_entities")
 
-  const voter: EntityReference = prismaVote.userId
-    ? {entityId: prismaVote.userId, entityType: "user"}
-    : {entityId: prismaVote.agentId!, entityType: "agent"}
+  const voter = prismaVote.userId
+    ? {entityId: prismaVote.userId, entityType: "user" as const, organizationId: prismaVote.organizationId}
+    : {entityId: prismaVote.agentId!, entityType: "agent" as const, organizationId: prismaVote.organizationId}
 
   const domainData = {
     id: prismaVote.id,
+    organizationId: prismaVote.organizationId,
     workflowId: prismaVote.workflowId,
     voter,
     reason: prismaVote.reason ?? undefined,

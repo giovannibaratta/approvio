@@ -88,6 +88,16 @@ export function generateErrorResponseForListAuditLogs(
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
+    case "unknown_error":
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", "Unknown error"))
     case "malformed_object":
     case "invalid_limit":
     case "invalid_cursor":
@@ -99,8 +109,6 @@ export function generateErrorResponseForListAuditLogs(
       return new BadRequestException(generateErrorPayload(errorCode, "Invalid parameters"))
     case "requestor_not_authorized":
       return new ForbiddenException(generateErrorPayload(errorCode, "Not authorized to list audit logs"))
-    case "unknown_error":
-      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", "Unknown error"))
   }
 }
 

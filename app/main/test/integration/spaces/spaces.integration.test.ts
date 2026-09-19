@@ -1,7 +1,7 @@
+import {toOrganizationId} from "@test/organization-id"
 import {SpaceCreate, ListSpaces200Response, Space as SpaceApi} from "@approvio/api"
 import {AppModule} from "@app/app.module"
 import {SPACES_ENDPOINT_ROOT} from "@controllers"
-import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
@@ -9,8 +9,8 @@ import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient} from "@prisma/client"
 
-import {cleanDatabase, prepareDatabase} from "@test/database"
-import {MockConfigProvider, createMockSpaceInDb} from "@test/mock-data"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
+import {MockConfigProvider, createMockSpaceInDb as createMockSpaceFixture} from "@test/mock-data"
 import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
@@ -28,7 +28,10 @@ describe("Spaces API", () => {
   let configProvider: ConfigProvider
   let auditLogRepo: AuditLogRepository
 
-  const endpoint = `/${SPACES_ENDPOINT_ROOT}`
+  let endpoint: string
+
+  const createMockSpaceInDb = (prisma: PrismaClient, overrides?: Parameters<typeof createMockSpaceFixture>[1]) =>
+    createMockSpaceFixture(prisma, {...overrides, defaultOrganizationId: orgAdminUser.user.organizationId})
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -39,7 +42,7 @@ describe("Spaces API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb))
         .compile()
     } catch (error) {
       console.error(error)
@@ -48,7 +51,7 @@ describe("Spaces API", () => {
 
     app = module.createNestApplication({logger: false})
 
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
     auditLogRepo = module.get(AUDIT_LOG_REPOSITORY_TOKEN)
@@ -57,7 +60,11 @@ describe("Spaces API", () => {
 
   beforeEach(async () => {
     orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
-    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+      orgAdmin: false,
+      organizationId: orgAdminUser.user.organizationId
+    })
+    endpoint = `/o/${orgAdminUser.user.organizationId}/${SPACES_ENDPOINT_ROOT}`
   })
 
   afterAll(async () => {
@@ -239,7 +246,7 @@ describe("Spaces API", () => {
         }
 
         // Intercept getUserById to trigger concurrent modification
-        spy = wrapTaskEitherWithSideEffect(userRepository, "getUserById", async userId => {
+        spy = wrapTaskEitherWithSideEffect(userRepository, "getUserById", async (_context, userId) => {
           if (userId === orgAdminUser.user.id)
             await prisma.user.update({
               where: {id: orgAdminUser.user.id},
@@ -404,13 +411,18 @@ describe("Spaces API", () => {
         // Create user with read permission on this specific space
         const {token: userToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
           orgAdmin: false,
+          organizationId: createdSpace.organizationId,
           roles: [
             {
               name: "SpaceReader",
               resourceType: "space",
               permissions: ["read"],
               scopeType: "space",
-              scope: {type: "space", spaceId: createdSpace.id}
+              scope: {
+                type: "space",
+                organizationId: toOrganizationId(createdSpace.organizationId),
+                spaceId: createdSpace.id
+              }
             }
           ]
         })
@@ -492,13 +504,18 @@ describe("Spaces API", () => {
         // Create user with manage permission on this specific space
         const {token: userToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
           orgAdmin: false,
+          organizationId: createdSpace.organizationId,
           roles: [
             {
               name: "SpaceManager",
               resourceType: "space",
               permissions: ["read", "manage"],
               scopeType: "space",
-              scope: {type: "space", spaceId: createdSpace.id}
+              scope: {
+                type: "space",
+                organizationId: toOrganizationId(createdSpace.organizationId),
+                spaceId: createdSpace.id
+              }
             }
           ]
         })

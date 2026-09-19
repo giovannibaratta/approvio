@@ -1,7 +1,9 @@
+import {randomOrgId} from "@test/organization-id"
 import {DecoratedWorkflowActionEmailTask, TaskStatus, WorkflowActionEmailTaskFactory} from "@domain"
 
 describe("WorkflowActionEmailTaskFactory", () => {
   const baseTaskData = {
+    organizationId: randomOrgId(),
     workflowId: "workflow-123",
     recipients: ["test@example.com"],
     subject: "Test Subject",
@@ -9,6 +11,20 @@ describe("WorkflowActionEmailTaskFactory", () => {
   }
 
   describe("validate", () => {
+    it("should reject a task without a valid tenant organization", () => {
+      const result = WorkflowActionEmailTaskFactory.validate({
+        ...baseTaskData,
+        organizationId: "not-an-organization",
+        id: "task-123",
+        status: TaskStatus.PENDING,
+        retryCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+
+      expect(result).toBeLeftOf("workflow_action_task_missing_or_invalid_organization_id")
+    })
+
     describe("good cases", () => {
       it("should return a valid entity when validating a plain data structure", () => {
         // Given: a plain data structure for the workflow action email task

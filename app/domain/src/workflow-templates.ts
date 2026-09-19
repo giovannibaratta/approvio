@@ -1,3 +1,4 @@
+import {OrganizationId, isOrganizationId} from "./shared"
 import * as E from "fp-ts/Either"
 import {Either, isLeft, left, right} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
@@ -38,6 +39,7 @@ export type WorkflowTemplate = Readonly<WorkflowTemplateData & WorkflowTemplateL
 
 interface WorkflowTemplateData {
   id: string
+  organizationId: OrganizationId
   name: string
   version: number
   description?: string
@@ -53,8 +55,21 @@ interface WorkflowTemplateData {
 
 export type WorkflowTemplateSummary = Pick<
   WorkflowTemplateData,
-  "id" | "name" | "version" | "description" | "status" | "createdAt" | "updatedAt"
+  | "id"
+  | "organizationId"
+  | "name"
+  | "version"
+  | "description"
+  | "status"
+  | "createdAt"
+  | "updatedAt"
+  | "defaultExpiresInHours"
 >
+
+type WorkflowTemplateSummaryInput = Omit<WorkflowTemplateSummary, "organizationId" | "status"> & {
+  readonly organizationId: string
+  readonly status: string
+}
 
 export type WorkflowTemplateCantVoteReason =
   "entity_not_in_required_group" | "workflow_template_not_active" | "entity_not_eligible_to_vote"
@@ -92,6 +107,7 @@ type UnprefixedWorkflowTemplateValidationError =
   | "version_too_long"
   | "version_invalid_format"
   | "space_id_invalid_uuid"
+  | "organization_id_invalid_uuid"
 
 export type WorkflowTemplateDeprecationError =
   "workflow_template_not_active" | "workflow_template_not_pending_deprecation"
@@ -102,6 +118,29 @@ type UserModifiableAttributes = Pick<WorkflowTemplate, "defaultExpiresInHours" |
 }
 
 export class WorkflowTemplateFactory {
+  static validateSummary(
+    data: WorkflowTemplateSummaryInput
+  ): Either<WorkflowTemplateValidationError, WorkflowTemplateSummary> {
+    return pipe(
+      E.Do,
+      E.bindW("organizationId", () => validateOrganizationId(data.organizationId)),
+      E.bindW("name", () => validateWorkflowTemplateName(data.name)),
+      E.bindW("version", () => validateWorkflowTemplateVersion(data.version)),
+      E.bindW("description", () => validateWorkflowTemplateDescription(data.description)),
+      E.bindW("status", () => validateWorkflowTemplateStatus(data.status)),
+      E.chainFirstW(() => validateExpiresInHours(data.defaultExpiresInHours)),
+      E.chainFirstW(() => validateCreatedBeforeUpdated(data.createdAt, data.updatedAt)),
+      E.map(({organizationId, name, version, description, status}) => ({
+        ...data,
+        organizationId,
+        name,
+        version,
+        description,
+        status
+      }))
+    )
+  }
+
   /**
    * Validates partial attributes for workflow template updates.
    * Only validates attributes that are defined in the partial object.
@@ -183,7 +222,8 @@ export class WorkflowTemplateFactory {
    * @returns Either a validation error or the validated WorkflowTemplate object.
    */
   private static createWorkflowTemplate(
-    data: Omit<WorkflowTemplateData, "approvalRule" | "actions" | "status"> & {
+    data: Omit<WorkflowTemplateData, "approvalRule" | "actions" | "status" | "organizationId"> & {
+      organizationId: string
       approvalRule: unknown
       actions: unknown
       status: string
@@ -192,6 +232,7 @@ export class WorkflowTemplateFactory {
     return pipe(
       E.Do,
       E.bindW("name", () => validateWorkflowTemplateName(data.name)),
+      E.bindW("organizationId", () => validateOrganizationId(data.organizationId)),
       E.bindW("version", () => validateWorkflowTemplateVersion(data.version)),
       E.bindW("description", () => validateWorkflowTemplateDescription(data.description)),
       E.bindW("approvalRule", () => ApprovalRuleFactory.validate(data.approvalRule)),
@@ -200,10 +241,10 @@ export class WorkflowTemplateFactory {
       E.bindW("status", () => validateWorkflowTemplateStatus(data.status)),
       E.bindW("spaceId", () => validateSpaceId(data.spaceId)),
       E.chainFirstW(() => validateCreatedBeforeUpdated(data.createdAt, data.updatedAt)),
-      E.map(({name, version, description, approvalRule, actions, defaultExpiresInHours, status, spaceId}) => {
-        const workflowTemplateData: WorkflowTemplateData = {
-          ...data,
+      E.map(
+        ({
           name,
+          organizationId,
           version,
           description,
           approvalRule,
@@ -211,17 +252,30 @@ export class WorkflowTemplateFactory {
           defaultExpiresInHours,
           status,
           spaceId
-        }
+        }) => {
+          const workflowTemplateData: WorkflowTemplateData = {
+            ...data,
+            organizationId,
+            name,
+            version,
+            description,
+            approvalRule,
+            actions,
+            defaultExpiresInHours,
+            status,
+            spaceId
+          }
 
-        return {
-          ...workflowTemplateData,
-          canVote: (
-            memberships: ReadonlyArray<MembershipWithGroupRef>,
-            entityRoles: ReadonlyArray<UnconstrainedBoundRole>,
-            votedForGroups?: ReadonlyArray<string>
-          ) => canVote(workflowTemplateData, memberships, entityRoles, votedForGroups)
+          return {
+            ...workflowTemplateData,
+            canVote: (
+              memberships: ReadonlyArray<MembershipWithGroupRef>,
+              entityRoles: ReadonlyArray<UnconstrainedBoundRole>,
+              votedForGroups?: ReadonlyArray<string>
+            ) => canVote(workflowTemplateData, memberships, entityRoles, votedForGroups)
+          }
         }
-      })
+      )
     )
   }
 }
@@ -235,6 +289,11 @@ function validateWorkflowTemplateName(name: string): Either<WorkflowTemplateVali
     return E.left("workflow_template_name_invalid_characters")
 
   return E.right(name)
+}
+
+function validateOrganizationId(organizationId: string): Either<WorkflowTemplateValidationError, OrganizationId> {
+  if (!isOrganizationId(organizationId)) return left("workflow_template_organization_id_invalid_uuid")
+  return right(organizationId)
 }
 
 function validateWorkflowTemplateDescription(

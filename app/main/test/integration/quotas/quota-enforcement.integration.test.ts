@@ -1,24 +1,24 @@
+import {randomOrgId} from "@test/organization-id"
 import {Test, TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
 import {NestApplication} from "@nestjs/core"
 import {AppModule} from "@app/app.module"
-import {DatabaseClient} from "@external"
-import {SPACES_ENDPOINT_ROOT, GROUPS_ENDPOINT_ROOT, USERS_ENDPOINT_ROOT, WORKFLOWS_ENDPOINT_ROOT} from "@controllers"
+import {SPACES_ENDPOINT_ROOT, GROUPS_ENDPOINT_ROOT, WORKFLOWS_ENDPOINT_ROOT} from "@controllers"
 import {PrismaClient} from "@prisma/client"
 
-import {cleanDatabase, prepareDatabase} from "@test/database"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
 import {
   createDomainMockUserInDb,
   createMockSpaceInDb,
+  createMockGroupInDb,
   createMockWorkflowTemplateInDb,
   MockConfigProvider
 } from "@test/mock-data"
 import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
-import {post, put} from "@test/requests"
+import {get, post, put} from "@test/requests"
 import {UserWithToken} from "@test/types"
-import {DEFAULT_ORG_ID} from "@services"
 import {v7 as uuidv7} from "uuid"
 
 describe("Quota Enforcement API Integration", () => {
@@ -37,7 +37,7 @@ describe("Quota Enforcement API Integration", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
+        .useValue(MockConfigProvider.fromOriginalProvider({tenantConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -45,14 +45,17 @@ describe("Quota Enforcement API Integration", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
     await app.init()
   }, 30000)
 
   beforeEach(async () => {
-    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+      orgAdmin: true,
+      organizationId: randomOrgId()
+    })
   })
 
   afterAll(async () => {
@@ -72,7 +75,8 @@ describe("Quota Enforcement API Integration", () => {
           id: uuidv7(),
           scope: "Org",
           quotaType: "MAX_SPACES",
-          targetId: DEFAULT_ORG_ID,
+          organizationId: orgAdminUser.user.organizationId,
+          targetId: orgAdminUser.user.organizationId,
           limit: 1,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -81,17 +85,12 @@ describe("Quota Enforcement API Integration", () => {
       })
 
       // Create first space (success)
-      const resp1 = await post(app, `/${SPACES_ENDPOINT_ROOT}`)
-        .withToken(orgAdminUser.token)
-        .build()
-        .send({name: "Space 1"})
+      const spacesEndpoint = `/o/${orgAdminUser.user.organizationId}/${SPACES_ENDPOINT_ROOT}`
+      const resp1 = await post(app, spacesEndpoint).withToken(orgAdminUser.token).build().send({name: "Space 1"})
       expect(resp1).toHaveStatusCode(HttpStatus.CREATED)
 
       // Create second space (failure)
-      const resp2 = await post(app, `/${SPACES_ENDPOINT_ROOT}`)
-        .withToken(orgAdminUser.token)
-        .build()
-        .send({name: "Space 2"})
+      const resp2 = await post(app, spacesEndpoint).withToken(orgAdminUser.token).build().send({name: "Space 2"})
 
       expect(resp2).toHaveStatusCode(HttpStatus.FORBIDDEN)
       expect(resp2.body).toHaveErrorCode("QUOTA_EXCEEDED")
@@ -106,7 +105,8 @@ describe("Quota Enforcement API Integration", () => {
           id: uuidv7(),
           scope: "Org",
           quotaType: "MAX_GROUPS",
-          targetId: DEFAULT_ORG_ID,
+          organizationId: orgAdminUser.user.organizationId,
+          targetId: orgAdminUser.user.organizationId,
           limit: 1,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -115,17 +115,12 @@ describe("Quota Enforcement API Integration", () => {
       })
 
       // Create first group (success)
-      const resp1 = await post(app, `/${GROUPS_ENDPOINT_ROOT}`)
-        .withToken(orgAdminUser.token)
-        .build()
-        .send({name: "Group-1"})
+      const groupsEndpoint = `/o/${orgAdminUser.user.organizationId}/${GROUPS_ENDPOINT_ROOT}`
+      const resp1 = await post(app, groupsEndpoint).withToken(orgAdminUser.token).build().send({name: "Group-1"})
       expect(resp1).toHaveStatusCode(HttpStatus.CREATED)
 
       // Create second group (failure)
-      const resp2 = await post(app, `/${GROUPS_ENDPOINT_ROOT}`)
-        .withToken(orgAdminUser.token)
-        .build()
-        .send({name: "Group-2"})
+      const resp2 = await post(app, groupsEndpoint).withToken(orgAdminUser.token).build().send({name: "Group-2"})
 
       expect(resp2).toHaveStatusCode(HttpStatus.FORBIDDEN)
       expect(resp2.body).toHaveErrorCode("QUOTA_EXCEEDED")
@@ -140,7 +135,8 @@ describe("Quota Enforcement API Integration", () => {
           id: uuidv7(),
           scope: "Org",
           quotaType: "MAX_ROLES_PER_USER",
-          targetId: DEFAULT_ORG_ID,
+          organizationId: orgAdminUser.user.organizationId,
+          targetId: orgAdminUser.user.organizationId,
           limit: 1,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -148,31 +144,37 @@ describe("Quota Enforcement API Integration", () => {
         }
       })
 
-      const targetUser = await createDomainMockUserInDb(prisma, {orgAdmin: false})
+      const targetUser = await createDomainMockUserInDb(prisma, {
+        orgAdmin: false,
+        organizationId: orgAdminUser.user.organizationId
+      })
 
-      const userToUpdate = await prisma.user.findUniqueOrThrow({where: {id: targetUser.id}})
+      const userEndpoint = `/o/${orgAdminUser.user.organizationId}/users/${targetUser.id}`
+      const userToUpdate = await get(app, userEndpoint).withToken(orgAdminUser.token).build()
+      expect(userToUpdate).toHaveStatusCode(HttpStatus.OK)
+      expect(userToUpdate.headers.etag).toBeDefined()
 
       // Add first role (success)
-      const resp1 = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.id}/roles`)
+      const userRolesEndpoint = `${userEndpoint}/roles`
+      const resp1 = await put(app, userRolesEndpoint)
         .withToken(orgAdminUser.token)
+        .withHeader("If-Match", userToUpdate.headers.etag ?? "")
         .build()
-        .send({
-          roles: [{roleName: "OrgWideSpaceReadOnly", scope: {type: "org"}}],
-          concurrencyControl: {version: userToUpdate.occ.toString()}
-        })
+        .send({roles: [{roleName: "OrgWideSpaceReadOnly", scope: {type: "org"}}]})
       expect(resp1).toHaveStatusCode(HttpStatus.NO_CONTENT)
 
-      // Fetch updated user to get new OCC version
-      const updatedUser = await prisma.user.findUniqueOrThrow({where: {id: targetUser.id}})
+      // Fetch updated user to get the new ETag
+      const updatedUser = await get(app, userEndpoint).withToken(orgAdminUser.token).build()
+      expect(updatedUser).toHaveStatusCode(HttpStatus.OK)
+      expect(updatedUser.headers.etag).toBe(resp1.headers.etag)
+      expect(updatedUser.headers.etag).not.toBe(userToUpdate.headers.etag)
 
       // Add second role (failure)
-      const resp2 = await put(app, `/${USERS_ENDPOINT_ROOT}/${targetUser.id}/roles`)
+      const resp2 = await put(app, userRolesEndpoint)
         .withToken(orgAdminUser.token)
+        .withHeader("If-Match", updatedUser.headers.etag ?? "")
         .build()
-        .send({
-          roles: [{roleName: "OrgWideWorkflowTemplateReadOnly", scope: {type: "org"}}],
-          concurrencyControl: {version: updatedUser.occ.toString()}
-        })
+        .send({roles: [{roleName: "OrgWideWorkflowTemplateReadOnly", scope: {type: "org"}}]})
 
       expect(resp2).toHaveStatusCode(HttpStatus.FORBIDDEN)
       expect(resp2.body).toHaveErrorCode("QUOTA_EXCEEDED")
@@ -187,7 +189,8 @@ describe("Quota Enforcement API Integration", () => {
           id: uuidv7(),
           scope: "Org",
           quotaType: "MAX_CONCURRENT_WORKFLOWS",
-          targetId: DEFAULT_ORG_ID,
+          organizationId: orgAdminUser.user.organizationId,
+          targetId: orgAdminUser.user.organizationId,
           limit: 1,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -195,18 +198,22 @@ describe("Quota Enforcement API Integration", () => {
         }
       })
 
-      const space = await createMockSpaceInDb(prisma)
-      const template = await createMockWorkflowTemplateInDb(prisma, {spaceId: space.id})
+      const space = await createMockSpaceInDb(prisma, {organizationId: orgAdminUser.user.organizationId})
+      const template = await createMockWorkflowTemplateInDb(prisma, {
+        organizationId: orgAdminUser.user.organizationId,
+        spaceId: space.id
+      })
 
       // Create first workflow (success)
-      const resp1 = await post(app, `/${WORKFLOWS_ENDPOINT_ROOT}`).withToken(orgAdminUser.token).build().send({
+      const workflowEndpoint = `/o/${orgAdminUser.user.organizationId}/${WORKFLOWS_ENDPOINT_ROOT}`
+      const resp1 = await post(app, workflowEndpoint).withToken(orgAdminUser.token).build().send({
         name: "Workflow-1",
         workflowTemplateId: template.id
       })
       expect(resp1).toHaveStatusCode(HttpStatus.CREATED)
 
       // Create second workflow (failure)
-      const resp2 = await post(app, `/${WORKFLOWS_ENDPOINT_ROOT}`).withToken(orgAdminUser.token).build().send({
+      const resp2 = await post(app, workflowEndpoint).withToken(orgAdminUser.token).build().send({
         name: "Workflow-2",
         workflowTemplateId: template.id
       })
@@ -216,11 +223,13 @@ describe("Quota Enforcement API Integration", () => {
     })
   })
 
-  const workflowTemplatesEndpoint: string = "workflow-templates"
+  const workflowTemplatesEndpoint = () => `/o/${orgAdminUser.user.organizationId}/workflow-templates`
 
   describe("MAX_WORKFLOW_TEMPLATES_PER_SPACE enforcement", () => {
     it("should return 403 quota_exceeded when MAX_WORKFLOW_TEMPLATES_PER_SPACE limit is reached", async () => {
-      const space = await createMockSpaceInDb(prisma)
+      const space = await createMockSpaceInDb(prisma, {organizationId: orgAdminUser.user.organizationId})
+
+      const group = await createMockGroupInDb(prisma, {organizationId: orgAdminUser.user.organizationId})
 
       // Set quota limit to 1 for this space
       await prisma.quota.create({
@@ -228,6 +237,7 @@ describe("Quota Enforcement API Integration", () => {
           id: uuidv7(),
           scope: "Space",
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE",
+          organizationId: orgAdminUser.user.organizationId,
           targetId: space.id,
           limit: 1,
           createdAt: new Date(),
@@ -237,7 +247,7 @@ describe("Quota Enforcement API Integration", () => {
       })
 
       // Create first template (success)
-      const resp1 = await post(app, `/${workflowTemplatesEndpoint}`)
+      const resp1 = await post(app, workflowTemplatesEndpoint())
         .withToken(orgAdminUser.token)
         .build()
         .send({
@@ -246,14 +256,14 @@ describe("Quota Enforcement API Integration", () => {
           spaceId: space.id,
           approvalRule: {
             type: "GROUP_REQUIREMENT",
-            groupId: uuidv7(),
+            groupId: group.id,
             minCount: 1
           }
         })
       expect(resp1).toHaveStatusCode(HttpStatus.CREATED)
 
       // Create second template (failure)
-      const resp2 = await post(app, `/${workflowTemplatesEndpoint}`)
+      const resp2 = await post(app, workflowTemplatesEndpoint())
         .withToken(orgAdminUser.token)
         .build()
         .send({
@@ -262,7 +272,7 @@ describe("Quota Enforcement API Integration", () => {
           spaceId: space.id,
           approvalRule: {
             type: "GROUP_REQUIREMENT",
-            groupId: uuidv7(),
+            groupId: group.id,
             minCount: 1
           }
         })

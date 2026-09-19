@@ -1,5 +1,4 @@
-import {ListUsers200Response, User as UserApi, UserCreate, RoleOperationRequestValidationError} from "@approvio/api"
-import {AuthenticatedEntity, User as UserDomain, Group, Versioned} from "@domain"
+import {ListUsers200Response, RoleOperationRequestValidationError} from "@approvio/api"
 import {
   BadRequestException,
   ConflictException,
@@ -11,15 +10,11 @@ import {
   UnprocessableEntityException
 } from "@nestjs/common"
 import {
-  AuthorizationError,
-  CreateUserRequest,
   ListUsersRequest,
   PaginatedUsersList,
-  UserCreateError,
   UserListError,
   UserRoleAssignmentError,
-  UserRoleRemovalError,
-  UserService
+  UserRoleRemovalError
 } from "@services"
 import {bindW, Do, Either, map, right, left} from "fp-ts/Either"
 import {generateErrorPayload} from "../error"
@@ -168,8 +163,10 @@ export function mapUsersToApi(paginatedUsers: PaginatedUsersList): ListUsers200R
   return {
     users: users.map(user => ({
       id: user.id,
+      organizationId: user.organizationId,
+      accountId: user.accountId,
       displayName: user.displayName,
-      email: user.email
+      orgRole: user.orgRole
     })),
     pagination: {
       page,
@@ -180,12 +177,17 @@ export function mapUsersToApi(paginatedUsers: PaginatedUsersList): ListUsers200R
 }
 
 export function generateErrorResponseForUserRoleAssignment(
-  error: UserRoleAssignmentError | RoleOperationRequestValidationError,
+  error: UserRoleAssignmentError | RoleOperationRequestValidationError | "invalid_etag",
   context: string
 ): HttpException {
+  if (isAuthorityError(error)) return mapAuthorityError(error)
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "invalid_etag":
+      return new PreconditionFailedException(
+        generateErrorPayload("INVALID_ETAG", "If-Match must be a current entity tag")
+      )
     case "quota_exceeded":
       throw new ForbiddenException(
         generateErrorPayload(errorCode, `${context}: quota exceeded for assigning roles to user`)
@@ -230,9 +232,6 @@ export function generateErrorResponseForUserRoleAssignment(
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "user_org_role_invalid":
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":
@@ -264,16 +263,74 @@ export function generateErrorResponseForUserRoleAssignment(
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: The user was affected by another request`)
       )
+
+    case "agent_name_empty":
+    case "agent_name_too_long":
+    case "agent_name_cannot_be_uuid":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "concurrency_error":
+    case "agent_key_decode_error":
+    case "agent_invalid_uuid":
+    case "agent_invalid_occ":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
+    case "agent_role_invalid_uuid":
+    case "agent_role_name_empty":
+    case "agent_role_name_too_long":
+    case "agent_role_name_invalid_characters":
+    case "agent_role_permissions_empty":
+    case "agent_role_permission_invalid":
+    case "agent_role_invalid_scope":
+    case "agent_role_resource_id_invalid":
+    case "agent_role_resource_required_for_scope":
+    case "agent_role_resource_not_allowed_for_scope":
+    case "agent_role_assignments_empty":
+    case "agent_role_assignments_exceed_maximum":
+    case "agent_role_total_roles_exceed_maximum":
+    case "agent_role_unknown_role_name":
+    case "agent_role_scope_incompatible_with_template":
+    case "agent_role_entity_type_role_restriction":
+    case "agent_role_invalid_structure":
+    case "step_up_required":
+    case "step_up_invalid":
+    case "step_up_consumed":
+    case "invalid_reference":
+    case "resource_already_exists":
+    case "resource_in_use":
+    case "organization_owner_required":
+    case "invalid_transition":
+    case "invitation_invalid":
+    case "agent_not_found":
+    case "audit_log_organization_mismatch":
+    case "audit_log_invalid_schema_version":
+    case "user_role_organization_mismatch":
+    case "user_update_before_create":
+    case "user_invalid_organization_id":
+    case "user_invalid_account_id":
+    case "user_status_invalid":
+    case "user_membership_roles_invalid":
+      Logger.error(`${context}: Unhandled service failure: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
+      )
   }
 }
 
 export function generateErrorResponseForUserRoleRemoval(
-  error: UserRoleRemovalError | RoleOperationRequestValidationError,
+  error: UserRoleRemovalError | RoleOperationRequestValidationError | "invalid_etag",
   context: string
 ): HttpException {
+  if (isAuthorityError(error)) return mapAuthorityError(error)
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "invalid_etag":
+      return new PreconditionFailedException(
+        generateErrorPayload("INVALID_ETAG", "If-Match must be a current entity tag")
+      )
     case "malformed_object":
     case "missing_roles":
     case "invalid_roles":
@@ -314,9 +371,6 @@ export function generateErrorResponseForUserRoleRemoval(
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "user_org_role_invalid":
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":
@@ -347,6 +401,60 @@ export function generateErrorResponseForUserRoleRemoval(
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: The user was affected by another request`)
       )
+
+    case "agent_name_empty":
+    case "agent_name_too_long":
+    case "agent_name_cannot_be_uuid":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "concurrency_error":
+    case "agent_key_decode_error":
+    case "agent_invalid_uuid":
+    case "agent_invalid_occ":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
+    case "agent_role_invalid_uuid":
+    case "agent_role_name_empty":
+    case "agent_role_name_too_long":
+    case "agent_role_name_invalid_characters":
+    case "agent_role_permissions_empty":
+    case "agent_role_permission_invalid":
+    case "agent_role_invalid_scope":
+    case "agent_role_resource_id_invalid":
+    case "agent_role_resource_required_for_scope":
+    case "agent_role_resource_not_allowed_for_scope":
+    case "agent_role_assignments_empty":
+    case "agent_role_assignments_exceed_maximum":
+    case "agent_role_total_roles_exceed_maximum":
+    case "agent_role_unknown_role_name":
+    case "agent_role_scope_incompatible_with_template":
+    case "agent_role_entity_type_role_restriction":
+    case "agent_role_invalid_structure":
+    case "step_up_required":
+    case "step_up_invalid":
+    case "step_up_consumed":
+    case "invalid_reference":
+    case "resource_already_exists":
+    case "resource_in_use":
+    case "organization_owner_required":
+    case "invalid_transition":
+    case "quota_exceeded":
+    case "invitation_invalid":
+    case "agent_not_found":
+    case "audit_log_organization_mismatch":
+    case "audit_log_invalid_schema_version":
+    case "user_role_organization_mismatch":
+    case "user_update_before_create":
+    case "user_invalid_organization_id":
+    case "user_invalid_account_id":
+    case "user_status_invalid":
+    case "user_membership_roles_invalid":
+      Logger.error(`${context}: Unhandled service failure: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
+      )
   }
 }
 
@@ -360,15 +468,24 @@ export function generateErrorResponseForListUsers(error: UserListError, context:
     case "search_term_invalid_characters":
       return new BadRequestException(generateErrorPayload(errorCode, "Invalid search conditions"))
     case "unknown_error":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred while listing users`)
       )
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
+    case "user_invalid_organization_id":
+    case "user_invalid_account_id":
+    case "user_org_role_invalid":
+    case "user_status_invalid":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
@@ -379,8 +496,10 @@ export function mapToServiceRequest(request: {
   search?: string
   page?: string
   limit?: string
+  organizationId: OrganizationId
+  requestor: AuthenticatedEntity
 }): Either<"invalid_page_number" | "invalid_limit_number", ListUsersRequest> {
-  const {search, page, limit} = request
+  const {search, page, limit, organizationId, requestor} = request
 
   const validateInteger = <LValue>(value: string | undefined, lValue: LValue): Either<LValue, Option<number>> => {
     if (!value) return right(O.none)
@@ -400,7 +519,9 @@ export function mapToServiceRequest(request: {
     map(request => ({
       search: request.search,
       page: O.isSome(request.page) ? request.page.value : undefined,
-      limit: O.isSome(request.limit) ? request.limit.value : undefined
+      limit: O.isSome(request.limit) ? request.limit.value : undefined,
+      organizationId,
+      requestor
     }))
   )
 }

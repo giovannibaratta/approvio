@@ -1,3 +1,4 @@
+import {randomOrgId} from "@test/organization-id"
 import {
   ApprovalRule,
   MembershipWithGroupRef,
@@ -12,11 +13,14 @@ import {isRight} from "fp-ts/Either"
 import "@utils/matchers"
 import {v7 as uuidv7} from "uuid"
 
+const organizationId = randomOrgId()
+
 /**
  * Helper function to create a workflow template instance for testing.
  */
 const getWorkflowTemplate = (rule: ApprovalRule): WorkflowTemplate => {
   const result = WorkflowTemplateFactory.newWorkflowTemplate({
+    organizationId,
     name: "Test Template",
     description: "A test template",
     approvalRule: rule,
@@ -35,6 +39,7 @@ const getWorkflowTemplate = (rule: ApprovalRule): WorkflowTemplate => {
 const createVoterRole = (templateName: string): BoundRole<"workflow_template"> => {
   return SystemRole.createWorkflowTemplateVoterRole({
     type: "workflow_template",
+    organizationId,
     templateName
   })
 }
@@ -45,13 +50,13 @@ describe("WorkflowTemplate - canVote method", () => {
   const group3Id = uuidv7()
   const unrelatedGroupId = uuidv7()
 
-  const membershipG1Approver = createMembership(group1Id, "user-1")
-  const membershipG1Admin = createMembership(group1Id, "user-1")
-  const membershipG1Owner = createMembership(group1Id, "user-1")
-  const membershipG1Auditor = createMembership(group1Id, "user-1")
-  const membershipG2Approver = createMembership(group2Id, "user-1")
-  const membershipG3Approver = createMembership(group3Id, "user-1")
-  const membershipUnrelatedApprover = createMembership(unrelatedGroupId, "user-1")
+  const membershipG1Approver = createMembership(group1Id, {organizationId, userId: "user-1"})
+  const membershipG1Admin = createMembership(group1Id, {organizationId, userId: "user-1"})
+  const membershipG1Owner = createMembership(group1Id, {organizationId, userId: "user-1"})
+  const membershipG1Auditor = createMembership(group1Id, {organizationId, userId: "user-1"})
+  const membershipG2Approver = createMembership(group2Id, {organizationId, userId: "user-1"})
+  const membershipG3Approver = createMembership(group3Id, {organizationId, userId: "user-1"})
+  const membershipUnrelatedApprover = createMembership(unrelatedGroupId, {organizationId, userId: "user-1"})
 
   describe("good cases", () => {
     it("should return true for GROUP_REQUIREMENT rule when user is in the required group with APPROVER role", () => {
@@ -230,7 +235,10 @@ describe("WorkflowTemplate - canVote method", () => {
       // Given: a rule and memberships for different users
       const rule = createGroupRequirementRule(group1Id)
       const workflowTemplate = getWorkflowTemplate(rule)
-      const memberships = [createMembership(group1Id, "user-1"), createMembership(group2Id, "user-2")]
+      const memberships = [
+        createMembership(group1Id, {organizationId, userId: "user-1"}),
+        createMembership(group2Id, {organizationId, userId: "user-2"})
+      ]
       const voterRoles = [createVoterRole(workflowTemplate.name)]
 
       // When: canVote is called

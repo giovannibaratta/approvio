@@ -3,7 +3,9 @@ import {
   WorkflowTemplateValidationError,
   ApprovalRule,
   WorkflowTemplateSummary,
-  WorkflowTemplateStatus
+  WorkflowTemplateStatus,
+  BoundaryError,
+  TenantContext
 } from "@domain"
 import {EncryptionError, UnknownError} from "@services/error"
 import {RequestorAwareRequest} from "@services/shared/types"
@@ -11,63 +13,97 @@ import {TaskEither} from "fp-ts/TaskEither"
 import {Option} from "fp-ts/Option"
 import {Versioned} from "@domain"
 import {SortBy, SortDirection} from "@approvio/api"
+import {TransactionError} from "../transaction/interfaces"
+
+/** A database-only write prepared before opening the caller's retryable transaction. */
+export type DeferredWorkflowTemplateWrite<Error extends string> = () => TaskEither<Error, Versioned<WorkflowTemplate>>
+
+/**
+ * A fetched snapshot resolved outside the transaction; successful resolution is cached per object.
+ * Callers share the resolved reference and must treat it as immutable. OCC remains the fetched version.
+ */
+export interface DeferredWorkflowTemplate<Result> {
+  readonly resolve: TaskEither<EncryptionError | WorkflowTemplateValidationError, Result>
+}
 
 export interface WorkflowTemplateRepository {
   /**
-   * Creates a new workflow template.
+   * Prepares a new workflow template for persistence outside the caller transaction.
+   * Execute the returned database-only write inside the quota-checked tenant transaction.
    * @param data The workflow template to create
-   * @returns The created workflow template or validation/creation errors
+   * @returns A database-only create execution, or encryption/validation errors
    */
-  createWorkflowTemplate(
+  createDeferredCreateExecution(
+    context: TenantContext,
     data: WorkflowTemplate
-  ): TaskEither<CreateWorkflowTemplateRepoError | WorkflowTemplateValidationError, Versioned<WorkflowTemplate>>
-  getParentSpace(templateId: string): TaskEither<WorkflowTemplateGetParentSpaceError, string>
+  ): TaskEither<
+    WorkflowTemplateCreateExecutionError | WorkflowTemplateValidationError,
+    DeferredWorkflowTemplateWrite<WorkflowTemplateCreateExecutionError | WorkflowTemplateValidationError>
+  >
+  /** Reads validated template metadata without fetching or decrypting actions. */
+  getWorkflowTemplateSummaryById(
+    context: TenantContext,
+    templateId: string
+  ): TaskEither<WorkflowTemplateSummaryGetError, WorkflowTemplateSummary>
+  getParentSpace(context: TenantContext, templateId: string): TaskEither<WorkflowTemplateGetParentSpaceError, string>
 
   /**
-   * Retrieves a workflow template by its unique identifier.
+   * Loads a tenant-scoped snapshot by ID in the caller transaction.
+   * Call resolve after the transaction to decrypt and validate the fetched snapshot.
    * @param templateId The unique ID of the workflow template
-   * @returns The versioned workflow template or an error if not found
+   * @returns A deferred snapshot, or an error if not found
    */
-  getWorkflowTemplateById(templateId: string): TaskEither<WorkflowTemplateGetError, Versioned<WorkflowTemplate>>
+  getWorkflowTemplateById(
+    context: TenantContext,
+    templateId: string
+  ): TaskEither<WorkflowTemplateGetError, DeferredWorkflowTemplate<Versioned<WorkflowTemplate>>>
 
   /**
-   * Retrieves a workflow template by its name and version.
+   * Loads a tenant-scoped name/version snapshot. Resolve it after the caller transaction.
    * @param templateName The name of the workflow template
    * @param version The version of the workflow template
-   * @returns The versioned workflow template or an error if not found
+   * @returns A deferred snapshot, or an error if not found
    */
   getWorkflowTemplateByNameAndVersion(
+    context: TenantContext,
     templateName: string,
     version: number
-  ): TaskEither<WorkflowTemplateGetError, Versioned<WorkflowTemplate>>
+  ): TaskEither<WorkflowTemplateGetError, DeferredWorkflowTemplate<Versioned<WorkflowTemplate>>>
 
   /**
-   * Retrieves the active workflow template by its name.
+   * Loads the active tenant-scoped snapshot. Resolve it after the caller transaction.
    * @param templateName The name of the workflow template
-   * @returns The versioned workflow template or an error if not found
+   * @returns A deferred snapshot, or an error if not found
    */
   getActiveWorkflowTemplateByName(
+    context: TenantContext,
     templateName: string
-  ): TaskEither<WorkflowTemplateGetActiveError, Versioned<WorkflowTemplate>>
+  ): TaskEither<WorkflowTemplateGetActiveError, DeferredWorkflowTemplate<Versioned<WorkflowTemplate>>>
 
   /**
-   * Finds the most recent non-active workflow template for a given name.
+   * Loads the most recent non-active snapshot. Resolve the optional result after the caller transaction.
    * Non-active templates are those not in ACTIVE status.
    * @param templateName The name of the workflow template to search for
-   * @returns An optional versioned workflow template (None if no non-active templates exist)
+   * @returns A deferred optional snapshot (None if no non-active templates exist)
    */
   getMostRecentNonActiveWorkflowTemplateByName(
+    context: TenantContext,
     templateName: string
-  ): TaskEither<WorkflowTemplateGetError, Option<Versioned<WorkflowTemplate>>>
+  ): TaskEither<WorkflowTemplateGetError, DeferredWorkflowTemplate<Option<Versioned<WorkflowTemplate>>>>
 
   /**
-   * Updates an existing workflow template with optimistic concurrency control.
+   * Prepares an update outside the caller transaction. The returned write checks OCC
+   * when executed in the caller transaction; preparation does not reserve a version.
    * @param template The versioned workflow template with updates to apply
-   * @returns The updated versioned workflow template or concurrency/validation errors
+   * @returns A database-only update execution; OCC is checked when it runs
    */
-  updateWorkflowTemplate(
+  createDeferredUpdateExecution(
+    context: TenantContext,
     template: Versioned<WorkflowTemplate>
-  ): TaskEither<WorkflowTemplateUpdateError, Versioned<WorkflowTemplate>>
+  ): TaskEither<
+    WorkflowTemplateUpdateExecutionError,
+    DeferredWorkflowTemplateWrite<WorkflowTemplateUpdateExecutionError>
+  >
 
   /**
    * Retrieves a paginated list of workflow template summaries.
@@ -75,19 +111,27 @@ export interface WorkflowTemplateRepository {
    * @returns A paginated response containing workflow template summaries
    */
   listWorkflowTemplates(
+    context: TenantContext,
     request: ListWorkflowTemplatesRequestRepo
-  ): TaskEither<WorkflowTemplateValidationError | UnknownError, ListWorkflowTemplatesResponse>
+  ): TaskEither<BoundaryError | WorkflowTemplateValidationError | UnknownError, ListWorkflowTemplatesResponse>
 
   /**
-   * Atomically updates an existing workflow template and creates a new one.
+   * Prepares both revisions outside the caller transaction. Execute the returned write
+   * inside one tenant transaction to update and create atomically.
    * This operation ensures both actions succeed or fail together.
    * @param data Contains the template to update and the new template to create
-   * @returns The newly created workflow template or transaction errors
+   * @returns A database-only execution that updates and creates both revisions atomically
    */
-  atomicUpdateAndCreate(data: {
-    existingTemplate: Versioned<WorkflowTemplate>
-    newTemplate: WorkflowTemplate
-  }): TaskEither<WorkflowTemplateUpdateError | CreateWorkflowTemplateRepoError, Versioned<WorkflowTemplate>>
+  createDeferredUpdateAndCreateExecution(
+    context: TenantContext,
+    data: {
+      existingTemplate: Versioned<WorkflowTemplate>
+      newTemplate: WorkflowTemplate
+    }
+  ): TaskEither<
+    WorkflowTemplateUpdateExecutionError | WorkflowTemplateCreateExecutionError,
+    DeferredWorkflowTemplateWrite<WorkflowTemplateUpdateExecutionError | WorkflowTemplateCreateExecutionError>
+  >
 
   /**
    * Retrieves space mappings for a batch of workflow template IDs.
@@ -95,15 +139,19 @@ export interface WorkflowTemplateRepository {
    * @returns A map of templateName to spaceId, or an error if any template is not found or missing spaceId
    */
   getWorkflowTemplatesParentsByNames(
+    context: TenantContext,
     templateNames: ReadonlyArray<string>
-  ): TaskEither<"workflow_template_not_found", ReadonlyMap<string, string>>
+  ): TaskEither<BoundaryError | "workflow_template_not_found", ReadonlyMap<string, string>>
 
   /**
    * Counts the number of unique workflow templates in a space, revision of a template are not counted as separate templates.
    * @param spaceId The ID of the space to count unique workflow templates in
    * @returns The number of unique workflow templates in the space or an error
    */
-  countUniqueWorkflowTemplatesBySpaceId(spaceId: string): TaskEither<UnknownError, number>
+  countUniqueWorkflowTemplatesBySpaceId(
+    context: TenantContext,
+    spaceId: string
+  ): TaskEither<UnknownError | BoundaryError, number>
 }
 
 export interface Sort {
@@ -146,7 +194,11 @@ export interface ListWorkflowTemplatesResponse {
 }
 
 export type CreateWorkflowTemplateError =
-  WorkflowTemplateValidationError | CreateWorkflowTemplateRepoError | "quota_exceeded" | "quota_check_error"
+  | WorkflowTemplateValidationError
+  | WorkflowTemplateCreateExecutionError
+  | TransactionError
+  | "quota_exceeded"
+  | "quota_check_error"
 
 export interface CreateWorkflowTemplateRequest extends RequestorAwareRequest {
   workflowTemplateData: {
@@ -172,7 +224,12 @@ export interface DeprecateWorkflowTemplateRequest extends RequestorAwareRequest 
   cancelWorkflows?: boolean
 }
 
-export type CreateWorkflowTemplateRepoError = UnknownError | "workflow_template_already_exists" | EncryptionError
+export type WorkflowTemplateCreateExecutionError =
+  | BoundaryError
+  | UnknownError
+  | "workflow_template_already_exists"
+  | "workflow_template_approval_group_not_found"
+  | EncryptionError
 
 export interface CreateWorkflowTemplateRepo {
   workflowTemplate: WorkflowTemplate
@@ -181,14 +238,27 @@ export interface CreateWorkflowTemplateRepo {
 export const WORKFLOW_TEMPLATE_REPOSITORY_TOKEN = Symbol("WORKFLOW_TEMPLATE_REPOSITORY_TOKEN")
 
 export type WorkflowTemplateGetActiveError =
-  "active_workflow_template_not_found" | WorkflowTemplateValidationError | EncryptionError | UnknownError
+  | BoundaryError
+  | TransactionError
+  | "active_workflow_template_not_found"
+  | WorkflowTemplateValidationError
+  | EncryptionError
+  | UnknownError
 
-export type WorkflowTemplateGetParentSpaceError = "workflow_template_not_found" | UnknownError
+export type WorkflowTemplateGetParentSpaceError = BoundaryError | "workflow_template_not_found" | UnknownError
+
+export type WorkflowTemplateSummaryGetError = Exclude<WorkflowTemplateGetError, EncryptionError>
 
 export type WorkflowTemplateGetError =
-  "workflow_template_not_found" | WorkflowTemplateValidationError | EncryptionError | UnknownError
+  | BoundaryError
+  | TransactionError
+  | "workflow_template_not_found"
+  | WorkflowTemplateValidationError
+  | EncryptionError
+  | UnknownError
 
-export type WorkflowTemplateUpdateError =
+export type WorkflowTemplateUpdateExecutionError =
+  | BoundaryError
   | "concurrency_error"
   | "workflow_template_already_exists"
   | UnknownError
@@ -200,4 +270,4 @@ export type WorkflowTemplateDeprecateError =
   | "workflow_template_not_pending_deprecation"
   | UnknownError
   | WorkflowTemplateValidationError
-  | WorkflowTemplateUpdateError
+  | WorkflowTemplateUpdateExecutionError

@@ -1,3 +1,4 @@
+import {TenantOutboxService} from "@services/durable-work/tenant-outbox.service"
 import {Test, TestingModuleBuilder} from "@nestjs/testing"
 import {WorkerModule} from "../../src/worker.module"
 import {WorkflowEventsProcessor} from "../../src/processor/workflow-events.processor"
@@ -9,6 +10,31 @@ import {WorkflowExpirationSweepProcessor} from "../../src/processor/workflow-exp
 import {Process} from "@nestjs/bull"
 import {Injectable} from "@nestjs/common/interfaces"
 import {SilentLogger} from "@test/logger-helpers"
+import {TenantEvent} from "@domain"
+import {OutboxRepository, TenantTransactionManager} from "@services"
+import {QueueProvider} from "@services/queue/interface"
+import * as TE from "fp-ts/TaskEither"
+
+/**
+ * Direct processor tests create tasks through services, which also publish queue events.
+ * Suppress delivery so a Bull consumer cannot race the test's explicit processor call.
+ * This provider reports success without exercising queue transport or recovery scheduling.
+ */
+export class InertQueueProvider implements QueueProvider {
+  enqueue(..._args: Parameters<QueueProvider["enqueue"]>): ReturnType<QueueProvider["enqueue"]> {
+    return TE.right(undefined)
+  }
+
+  requestUsageCacheRecovery(
+    ..._args: Parameters<QueueProvider["requestUsageCacheRecovery"]>
+  ): ReturnType<QueueProvider["requestUsageCacheRecovery"]> {
+    return TE.right(undefined)
+  }
+
+  checkHealth(): ReturnType<QueueProvider["checkHealth"]> {
+    return TE.right(undefined)
+  }
+}
 
 /**
  * All worker processors that should be considered for mocking
@@ -56,4 +82,15 @@ export function setupWorkerTestModule(processorsToKeep: Array<Injectable> = []):
   })
 
   return builder
+}
+
+export function appendTenantEvent(
+  transactionManager: TenantTransactionManager,
+  outbox: OutboxRepository,
+  event: TenantEvent
+) {
+  const context = {organizationId: event.organizationId}
+  return transactionManager.execute(context, () =>
+    new TenantOutboxService(outbox, transactionManager).append(context, event)
+  )
 }

@@ -1,4 +1,12 @@
-import {AuthError, RefreshTokenCreateError, RefreshTokenRefreshError, HighPrivilegeAuthError} from "@services"
+import {
+  AuthError,
+  AuthService,
+  RefreshTokenCreateError,
+  RefreshTokenRefreshError,
+  HighPrivilegeAuthError
+} from "@services"
+import {CliOrganizationSelectionValidationError} from "@approvio/api"
+import {ExtractLeftFromMethod} from "@utils"
 import {
   CliInitiateLoginRequestValidationError,
   CliGenerateTokenRequestValidationError,
@@ -13,6 +21,8 @@ import {
   UnauthorizedException,
   ForbiddenException,
   ServiceUnavailableException,
+  HttpStatus,
+  NotFoundException,
   Logger
 } from "@nestjs/common"
 import {generateErrorPayload} from "@controllers/error"
@@ -30,7 +40,7 @@ export type CliAuthError =
 export function generateErrorResponseForCliInitiate(error: CliAuthError, context: string): HttpException {
   const errorCode = error.toUpperCase()
 
-  switch (error) {
+  switch (String(error)) {
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -215,12 +225,15 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
   }
+
+  // TODO: No Default case
+  return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
 }
 
 export function generateErrorResponseForCliGenerateToken(error: CliAuthError, context: string): HttpException {
   const errorCode = error.toUpperCase()
 
-  switch (error) {
+  switch (String(error)) {
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -405,12 +418,14 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
   }
+  // TODO: No Default case
+  return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
 }
 
 export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError, context: string): HttpException {
   const errorCode = error.toUpperCase()
 
-  switch (error) {
+  switch (String(error)) {
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -595,12 +610,14 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
   }
+  // TODO: No Default case
+  return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
 }
 
 export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuthError, context: string): HttpException {
   const errorCode = error.toUpperCase()
 
-  switch (error) {
+  switch (String(error)) {
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -784,4 +801,6 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
   }
+  // TODO: No Default case
+  return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
 }

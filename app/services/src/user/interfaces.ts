@@ -1,17 +1,28 @@
-import {User, UserSummary, UserSummaryValidationError, UserValidationError} from "@domain"
+import {
+  BoundaryError,
+  Group,
+  TenantContext,
+  User,
+  UserSummary,
+  UserSummaryValidationError,
+  UserValidationError
+} from "@domain"
 import {AuthorizationError, ConcurrentModificationError, UnknownError} from "@services/error"
 import {Versioned} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
-import {UserIdentityCreate} from "../user-identity/interfaces"
+import {GetGroupRepoError} from "../group/interfaces"
+import {TransactionError} from "../transaction/interfaces"
 
 export type UserCreateError =
-  "user_already_exists" | AuthorizationError | UserValidationError | UnknownError | "quota_check_error"
-export type UserGetError = "user_not_found" | "request_invalid_user_identifier" | UserValidationError | UnknownError
+  BoundaryError | "user_already_exists" | AuthorizationError | UserValidationError | UnknownError | "quota_check_error"
+export type UserGetError =
+  BoundaryError | "user_not_found" | "request_invalid_user_identifier" | UserValidationError | UnknownError
 export type UserUpdateError = UserGetError | ConcurrentModificationError
 
 export type UserListValidationError =
   "invalid_page_number" | "invalid_limit_number" | "search_too_long" | "search_term_invalid_characters"
-export type UserListError = UserListValidationError | UserSummaryValidationError | UnknownError
+export type UserListError =
+  BoundaryError | UserListValidationError | UserSummaryValidationError | UnknownError | TransactionError
 
 export interface PaginatedUsersList {
   readonly users: ReadonlyArray<UserSummary>
@@ -23,19 +34,21 @@ export interface PaginatedUsersList {
 export const USER_REPOSITORY_TOKEN = "USER_REPOSITORY_TOKEN"
 
 export interface UserRepository {
-  createUser(user: User): TaskEither<UserCreateError, User>
-  createUserWithOrgAdmin(user: User): TaskEither<UserCreateError, User>
-  createUserWithIdentity(user: User, identity: UserIdentityCreate): TaskEither<UserCreateError, User>
-  createUserWithOrgAdminAndIdentity(user: User, identity: UserIdentityCreate): TaskEither<UserCreateError, User>
-  getUserById(userId: string): TaskEither<UserGetError, Versioned<User>>
-  getUserByEmail(email: string): TaskEither<UserGetError, Versioned<User>>
-  listUsers(params: ListUsersRepoRequest): TaskEither<UserListError, PaginatedUsersList>
-  hasAnyOrganizationAdmins(): TaskEither<UnknownError, boolean>
-  updateUser(user: Versioned<User>): TaskEither<UserUpdateError, User>
+  createUser(context: TenantContext, user: User): TaskEither<UserCreateError, User>
+  getUserById(context: TenantContext, userId: string): TaskEither<UserGetError, Versioned<User>>
+  listUsers(context: TenantContext, params: ListUsersRepoRequest): TaskEither<UserListError, PaginatedUsersList>
+  updateUser(context: TenantContext, user: Versioned<User>): TaskEither<UserUpdateError, Versioned<User>>
 }
 
 export interface ListUsersRepoRequest {
   readonly search?: string
   readonly page: number
   readonly limit: number
+}
+
+export type GetUserError = UserGetError | TransactionError | GetGroupRepoError
+
+export interface UserDetails {
+  readonly user: Versioned<User>
+  readonly groups: Group[]
 }

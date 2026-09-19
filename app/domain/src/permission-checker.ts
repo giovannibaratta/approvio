@@ -40,6 +40,8 @@ export class RolePermissionChecker {
    * Org-level permissions apply to all resources (hierarchical)
    */
   private static scopeMatches(roleScope: RoleScope, requestedScope: RoleScope): boolean {
+    if (roleScope.organizationId !== requestedScope.organizationId) return false
+
     // Org-level permissions apply to everything
     if (roleScope.type === "org") return true
 
@@ -127,7 +129,8 @@ export class RoleAuthorizationChecker {
     boundRole: BoundRole,
     workflowTemplatesParents?: ReadonlyMap<string, string>
   ): boolean {
-    if (requestor.orgRole === OrgRole.ADMIN) return true
+    if (boundRole.scope.organizationId !== requestor.organizationId) return false
+    if (requestor.orgRole === OrgRole.OWNER || requestor.orgRole === OrgRole.ADMIN) return true
 
     const scope = boundRole.scope
 
@@ -147,7 +150,11 @@ export class RoleAuthorizationChecker {
         const parentSpaceId = workflowTemplatesParents.get(scope.templateName)
         if (!parentSpaceId) return false
 
-        const parentSpaceScope: SpaceScope = {type: "space", spaceId: parentSpaceId}
+        const parentSpaceScope: SpaceScope = {
+          type: "space",
+          organizationId: scope.organizationId,
+          spaceId: parentSpaceId
+        }
         return RolePermissionChecker.hasSpacePermission(requestor.roles, parentSpaceScope, "manage")
       }
     }

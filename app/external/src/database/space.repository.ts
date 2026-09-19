@@ -1,36 +1,35 @@
-import {Space} from "@domain"
-import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "@external/database/errors"
 import {Injectable, Logger} from "@nestjs/common"
-import {Prisma, Space as PrismaSpace} from "@prisma/client"
+import {Space, SpaceFactory, TenantContext, Versioned} from "@domain"
 import {
   CreateSpaceRepoError,
   CreateSpaceWithUserPermissionsRepo,
+  DeleteSpaceRepo,
+  DeleteSpaceRepoError,
   GetSpaceByIdRepo,
   GetSpaceByNameRepo,
   GetSpaceRepoError,
-  SpaceRepository,
   ListSpacesRepo,
   ListSpacesRepoError,
   ListSpacesResult,
-  DeleteSpaceRepoError,
-  DeleteSpaceRepo
+  SpaceRepository
 } from "@services"
-import {Versioned} from "@domain"
+import {Prisma, Space as PrismaSpace} from "@prisma/client"
 import * as E from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
-import {TaskEither} from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
-import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
-import {DatabaseClient} from "./database-client"
-import {mapToDomainVersionedSpace} from "./shared"
-import {persistExistingUserRaceConditionFree} from "./shared/user-operations"
-import {areAllRights, chainNullableToLeft} from "./utils"
+import {SpaceTenantClient} from "./tenant-database-clients"
+import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "./errors"
+import {mapRolesToPrisma} from "./shared"
+import {chainNullableToLeft} from "./utils"
 
 @Injectable()
 export class SpaceDbRepository implements SpaceRepository {
-  constructor(private readonly dbClient: DatabaseClient) {}
+  constructor(private readonly dbClient: SpaceTenantClient) {}
 
-  createSpaceWithUserPermissions(data: CreateSpaceWithUserPermissionsRepo): TaskEither<CreateSpaceRepoError, Space> {
+  createSpaceWithUserPermissions(
+    context: TenantContext,
+    data: CreateSpaceWithUserPermissionsRepo
+  ): TE.TaskEither<CreateSpaceRepoError, Space> {
     return pipe(
       data,
       TE.right,
@@ -174,14 +173,10 @@ export class SpaceDbRepository implements SpaceRepository {
       TE.map(() => undefined)
     )
   }
-
-  countSpaces(): TaskEither<"unknown_error", number> {
+  countSpaces(context: TenantContext): TE.TaskEither<"unknown_error", number> {
     return TE.tryCatch(
-      () => this.dbClient.cx.space.count(),
-      error => {
-        Logger.error("Error counting spaces", error)
-        return "unknown_error"
-      }
+      () => this.dbClient.cx.space.count({where: {organizationId: context.organizationId}}),
+      error => this.unknown(error, "count")
     )
   }
 

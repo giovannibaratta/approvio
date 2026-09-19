@@ -1,17 +1,19 @@
-import {OrgRole, User, UserFactory, Group, Versioned} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
-import {AuthorizationError, UnknownError} from "@services/error"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
-import * as E from "fp-ts/Either"
 import {TaskEither} from "fp-ts/TaskEither"
-import {USER_REPOSITORY_TOKEN, UserCreateError, UserGetError, UserRepository} from "./interfaces"
-import {isEmail, isUUIDv7, logSuccess} from "@utils"
-import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
-import {PaginatedUsersList, UserListError} from "./interfaces"
-import {GroupService} from "../group/group.service"
-import {sequenceS} from "fp-ts/Apply"
-import {GetGroupRepoError} from "@services/group"
+import {
+  USER_REPOSITORY_TOKEN,
+  UserRepository,
+  GetUserError,
+  UserDetails,
+  PaginatedUsersList,
+  UserListError
+} from "./interfaces"
+import {isUUIDv7, logSuccess} from "@utils"
+import {RequestorAwareRequest} from "@services/shared/types"
+import {TRANSACTION_MANAGER_TOKEN, TenantTransactionManager} from "@services/transaction/interfaces"
+import {GROUP_REPOSITORY_TOKEN, GroupRepository} from "../group/interfaces"
 
 const MIN_PAGE = 1
 const MIN_LIMIT = 1
@@ -22,65 +24,20 @@ const MAX_SEARCH_LENGTH = 100
 @Injectable()
 export class UserService {
   constructor(
-    @Inject(USER_REPOSITORY_TOKEN)
-    private readonly userRepo: UserRepository,
-    private readonly groupService: GroupService
+    @Inject(USER_REPOSITORY_TOKEN) private readonly userRepo: UserRepository,
+    @Inject(GROUP_REPOSITORY_TOKEN) private readonly groupRepo: GroupRepository,
+    @Inject(TRANSACTION_MANAGER_TOKEN) private readonly transactionManager: TenantTransactionManager
   ) {}
 
-  createUser(request: CreateUserRequest): TaskEither<UserCreateError | AuthorizationError, User> {
-    // Wrap repository call in a lambda to preserve "this" context
-    const persistUser = (user: User) => this.userRepo.createUser(user)
+  getUser(request: GetUserRequest): TaskEither<GetUserError, UserDetails> {
+    if (!isUUIDv7(request.userId)) return TE.left("request_invalid_user_identifier")
 
-    const validateRequest = (req: CreateUserRequest, requestor: User) => {
-      if (requestor.orgRole !== OrgRole.ADMIN) return E.left("requestor_not_authorized" as const)
-      return UserFactory.newUser(req.userData)
-    }
-
-    return pipe(
-      validateUserEntity(request.requestor),
-      E.chainW(requestor => validateRequest(request, requestor)),
-      TE.fromEither,
-      TE.chainW(persistUser),
-      logSuccess("User created", "UserService", user => ({id: user.id}))
-    )
-  }
-
-  getUserByIdentifier(userIdentifier: string): TaskEither<UserGetError, Versioned<User>> {
-    const isUuid = isUUIDv7(userIdentifier)
-    const isValidEmail = isEmail(userIdentifier)
-
-    if (!isUuid && !isValidEmail) return TE.left("request_invalid_user_identifier")
-
-    const query = isUuid ? this.userRepo.getUserById(userIdentifier) : this.userRepo.getUserByEmail(userIdentifier)
-
-    return pipe(
-      query,
-      logSuccess("User retrieved", "UserService", user => ({id: user.id}))
-    )
-  }
-
-  getUserWithGroupsByIdentifier(
-    userIdentifier: string
-  ): TaskEither<UserGetError | GetGroupRepoError, {user: Versioned<User>; groups: Group[]}> {
-    const isUuid = isUUIDv7(userIdentifier)
-    const isValidEmail = isEmail(userIdentifier)
-
-    if (!isUuid && !isValidEmail) return TE.left("request_invalid_user_identifier")
-
-    if (isUuid)
-      return pipe(
-        sequenceS(TE.ApplicativePar)({
-          user: this.userRepo.getUserById(userIdentifier),
-          groups: this.groupService.getUserGroups(userIdentifier)
-        }),
-        logSuccess("User retrieved with groups", "UserService", ({user}) => ({id: user.id}))
+    return this.transactionManager.execute(request, () =>
+      pipe(
+        TE.Do,
+        TE.bindW("user", () => this.userRepo.getUserById(request, request.userId)),
+        TE.bindW("groups", () => this.groupRepo.getGroupsByUserId(request, request.userId))
       )
-
-    return pipe(
-      this.userRepo.getUserByEmail(userIdentifier),
-      TE.bindTo("user"),
-      TE.bindW("groups", ({user}) => this.groupService.getUserGroups(user.id)),
-      logSuccess("User retrieved with groups", "UserService", ({user}) => ({id: user.id}))
     )
   }
 
@@ -99,77 +56,21 @@ export class UserService {
       if (!search.match(/^[a-zA-Z0-9@.%_+.\s-]+$/)) return TE.left("search_term_invalid_characters")
     }
 
-    return pipe(
-      this.userRepo.listUsers({search, page, limit}),
-      logSuccess("Users listed", "UserService", result => ({count: result.users.length}))
-    )
-  }
-
-  /**
-   * Auto-registers a new user from OIDC provider claims with automatic role assignment.
-   * Implements the "first user becomes admin" pattern for initial system setup.
-   *
-   * @param request - User registration data containing email and display name from OIDC provider
-   * @returns TaskEither with AutoRegisterError on failure or User domain object on success
-   *
-   * Business Rules:
-   * 1. First registered user automatically becomes organization admin
-   * 2. Subsequent users are registered as regular users
-   *
-   * Flow:
-   * 1. Check if any organization admins exist in the system
-   * 2. Create user with admin role if no admins exist (first user scenario)
-   * 3. Create regular user if admins already exist
-   * 4. Persist user with appropriate privileges based on role
-   */
-  autoRegisterOidcUser(request: AutoRegisterOidcUserRequest): TaskEither<AutoRegisterError, User> {
-    const persistUser = (user: User) => {
-      const identity = {
-        userId: user.id,
-        providerId: request.providerId,
-        subjectId: request.subjectId,
-        email: request.email
-      }
-      if (user.orgRole === OrgRole.ADMIN) return this.userRepo.createUserWithOrgAdminAndIdentity(user, identity)
-      return this.userRepo.createUserWithIdentity(user, identity)
-    }
-
-    const createUserFromOidcClaims = (isFirstUser: boolean) => {
-      return TE.fromEither(
-        UserFactory.newUserFromOidc(
-          {
-            email: request.email,
-            displayName: request.displayName
-          },
-          isFirstUser
-        )
+    return this.transactionManager.execute<UserListError, PaginatedUsersList>(request, () =>
+      pipe(
+        this.userRepo.listUsers({organizationId: request.organizationId}, {search, page, limit}),
+        logSuccess("Users listed", "UserService", result => ({count: result.users.length}))
       )
-    }
-
-    return pipe(
-      this.userRepo.hasAnyOrganizationAdmins(),
-      TE.chainW(hasAdmins => createUserFromOidcClaims(!hasAdmins)),
-      TE.chainW(user => persistUser(user)),
-      logSuccess("User auto-registered", "UserService", user => ({id: user.id}))
     )
   }
 }
 
-export interface CreateUserRequest extends RequestorAwareRequest {
-  userData: Parameters<typeof UserFactory.newUser>[0]
-}
-
-export interface ListUsersRequest {
+export interface ListUsersRequest extends RequestorAwareRequest {
   readonly search?: string
   readonly page?: number
   readonly limit?: number
 }
 
-export interface AutoRegisterOidcUserRequest {
-  readonly email: string
-  readonly displayName: string
-  readonly providerId: string
-  readonly subjectId: string
+export interface GetUserRequest extends RequestorAwareRequest {
+  readonly userId: string
 }
-
-export type AutoRegisterError = UserCreateError | UnknownError

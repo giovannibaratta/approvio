@@ -1,5 +1,7 @@
-import {PlanTier, TierFeatures} from "@domain"
-import {UnknownError} from "../error"
+import {BoundaryError, PlanTier, TenantContext, TierFeatures} from "@domain"
+import {TaskEither} from "fp-ts/TaskEither"
+import {OrganizationPlanTierError} from "../tenancy/interfaces"
+import {UnknownError} from "@services/error"
 
 export type FeatureKey = keyof TierFeatures
 
@@ -11,4 +13,9 @@ export interface EffectiveEntitlements {
   readonly features: TierFeatures
 }
 
-export type FeatureGateError = UnknownError
+export type FeatureGateError = OrganizationPlanTierError | UnknownError
+
+export interface FeatureGate {
+  isFeatureEnabled(context: TenantContext, feature: FeatureKey): TaskEither<FeatureGateError | BoundaryError, boolean>
+  getEffectiveEntitlements(context: TenantContext): TaskEither<FeatureGateError | BoundaryError, EffectiveEntitlements>
+}

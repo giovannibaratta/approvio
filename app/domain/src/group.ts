@@ -1,3 +1,4 @@
+import {OrganizationId, isOrganizationId} from "./shared"
 import {Either, left, right, isLeft} from "fp-ts/Either"
 
 import {hasOwnProperty} from "@utils/validation"
@@ -10,8 +11,12 @@ export const DESCRIPTION_MAX_LENGTH = 2048
 
 export type Group = Readonly<PrivateGroup>
 
+type GroupInput = Omit<Group, "organizationId"> & {readonly organizationId: string}
+type ValidatedGroup<T extends GroupInput> = Omit<T, "organizationId"> & {readonly organizationId: OrganizationId}
+
 interface PrivateGroup {
   id: string
+  organizationId: OrganizationId
   name: string
   description: string | null
   createdAt: Date
@@ -27,21 +32,25 @@ export type GroupProps = keyof Group | keyof GroupWithEntitiesCount
 export type GroupValidationError = PrefixUnion<"group", UnprefixedGroupValidationError>
 
 type UnprefixedGroupValidationError =
-  NameValidationError | TimestampValidationError | DescriptionValidationError | "entities_count_invalid"
+  | NameValidationError
+  | TimestampValidationError
+  | DescriptionValidationError
+  | "entities_count_invalid"
+  | "invalid_organization_id"
 
 type TimestampValidationError = "update_before_create"
 type NameValidationError = "name_empty" | "name_too_long" | "name_invalid_characters"
 type DescriptionValidationError = "description_too_long"
 
 export class GroupFactory {
-  static validate<T extends Group>(data: T): Either<GroupValidationError, T> {
+  static validate<T extends GroupInput>(data: T): Either<GroupValidationError, ValidatedGroup<T>> {
     return GroupFactory.createGroup(data)
   }
 
-  static newGroup(data: Omit<Group, "id" | "createdAt" | "updatedAt">): Either<GroupValidationError, Group> {
+  static newGroup(data: Omit<GroupInput, "id" | "createdAt" | "updatedAt">): Either<GroupValidationError, Group> {
     const uuid = uuidv7()
     const now = new Date()
-    const group: Group = {
+    const group = {
       ...data,
       id: uuid,
       createdAt: now,
@@ -51,10 +60,11 @@ export class GroupFactory {
     return GroupFactory.validate(group)
   }
 
-  private static createGroup<T extends Group>(data: T): Either<GroupValidationError, T> {
+  private static createGroup<T extends GroupInput>(data: T): Either<GroupValidationError, ValidatedGroup<T>> {
+    const organizationId = data.organizationId
+    if (!isOrganizationId(organizationId)) return left("group_invalid_organization_id")
     const nameValidation = validateGroupName(data.name)
     const descriptionValidation = data.description ? validateGroupDescription(data.description) : right(null)
-    const additionalProps: Partial<Record<GroupProps, unknown>> = {}
 
     if (isLeft(nameValidation)) return nameValidation
     if (isLeft(descriptionValidation)) return descriptionValidation
@@ -62,14 +72,20 @@ export class GroupFactory {
 
     if (isGroupWithEntitiesCount(data)) {
       if (data.entitiesCount < 0) return left("group_entities_count_invalid")
-      additionalProps.entitiesCount = data.entitiesCount
+      return right({
+        ...data,
+        organizationId,
+        name: nameValidation.right,
+        description: descriptionValidation.right,
+        entitiesCount: data.entitiesCount
+      })
     }
 
-    return right({...data, name: nameValidation.right, description: descriptionValidation.right, ...additionalProps})
+    return right({...data, organizationId, name: nameValidation.right, description: descriptionValidation.right})
   }
 }
 
-function isGroupWithEntitiesCount(group: Group): group is GroupWithEntitiesCount {
+function isGroupWithEntitiesCount(group: GroupInput): group is GroupInput & {readonly entitiesCount: number} {
   return hasOwnProperty(group, "entitiesCount") && typeof group.entitiesCount === "number"
 }
 
@@ -108,6 +124,7 @@ interface ListGroupsWhereRequestorIsMemberFilter {
 export class ListFilterFactory {
   static generateListFiltersForRequestor(requestor: User, search?: string): ListGroupsFilter {
     switch (requestor.orgRole) {
+      case OrgRole.OWNER:
       case OrgRole.ADMIN:
         return {type: "all", search}
       case OrgRole.MEMBER:
