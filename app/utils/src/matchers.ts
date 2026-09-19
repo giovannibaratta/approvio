@@ -1,6 +1,7 @@
 import {ErrorPayload} from "@controllers/error"
 
-import {Either, isLeft, isRight} from "fp-ts/Either"
+import {isLeft, isRight} from "fp-ts/Either"
+import {isEither} from "./either"
 
 import {format} from "pretty-format"
 
@@ -29,7 +30,7 @@ declare global {
         expectedStatusCode: number
       ) => CustomMatcherResult
       toBeLeft: (received: unknown) => CustomMatcherResult
-      toBeLeftOf: (received: unknown, expected: unknown) => CustomMatcherResult
+      toBeLeftOf: (this: MatcherContext, received: unknown, expected: unknown) => CustomMatcherResult
       toBeRight: (received: unknown) => CustomMatcherResult
       toBeRightOf: (this: MatcherContext, received: unknown, expected: unknown) => CustomMatcherResult
     }
@@ -37,22 +38,6 @@ declare global {
 }
 
 export {}
-
-function isEither(received: unknown): received is Either<unknown, unknown> {
-  const has_tag =
-    typeof received === "object" &&
-    received !== null &&
-    "_tag" in received &&
-    typeof received._tag === "string" &&
-    (received._tag === "Left" || received._tag === "Right")
-
-  if (!has_tag) return false
-
-  if (received._tag === "Left" && "left" in received) return true
-  if (received._tag === "Right" && "right" in received) return true
-
-  return false
-}
 
 export function toBeLeft(received: unknown): jest.CustomMatcherResult {
   if (!isEither(received))
@@ -67,7 +52,7 @@ export function toBeLeft(received: unknown): jest.CustomMatcherResult {
   }
 }
 
-export function toBeLeftOf(received: unknown, expected: unknown): jest.CustomMatcherResult {
+export function toBeLeftOf(this: jest.MatcherContext, received: unknown, expected: unknown): jest.CustomMatcherResult {
   if (!isEither(received))
     return {
       pass: false,
@@ -80,7 +65,7 @@ export function toBeLeftOf(received: unknown, expected: unknown): jest.CustomMat
       message: () => `Expected ${format(received)} to be left`
     }
 
-  const pass = received.left === expected
+  const pass = this.equals(received.left, expected)
 
   return {
     pass,

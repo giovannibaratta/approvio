@@ -133,8 +133,39 @@ export function mapToLeftWithPrefix<T extends string, E extends string>(error: T
   return E.left(`${prefix}_${error}` as E)
 }
 
+/** Runs a side effect after success, reporting its Left failures while preserving the preceding result. */
+export const bestEffort =
+  <Input, Error, Result>(
+    operation: (value: Input) => TaskEither<Error, Result>,
+    onFailure: (error: Error, value: Input) => void
+  ) =>
+  <PreviousError, Previous extends Input>(
+    previous: TaskEither<PreviousError, Previous>
+  ): TaskEither<PreviousError, Previous> =>
+  async () => {
+    const result = await previous()
+    if (E.isLeft(result)) return result
+
+    const effect = await operation(result.right)()
+    if (E.isLeft(effect)) onFailure(effect.left, result.right)
+    return result
+  }
+
 /**
  * Overwrites the properties of type T with the properties of type U.
  * This is a distributive type that works with unions.
  */
 export type Overwrite<T, U> = Omit<T, keyof U> & U
+
+/**
+ * Generic branded type helper.
+ * Attaches a nominal phantom brand to an underlying data shape.
+ */
+export type Brand<T, TBrand extends symbol> = T & {readonly [K in TBrand]: true}
+
+/**
+ * Attaches a phantom brand to an already validated data structure.
+ */
+export function brand<T, TBrand extends symbol>(data: T): Brand<T, TBrand> {
+  return data as Brand<T, TBrand>
+}

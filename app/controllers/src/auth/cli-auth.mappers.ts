@@ -1,4 +1,12 @@
-import {AuthError, RefreshTokenCreateError, RefreshTokenRefreshError, HighPrivilegeAuthError} from "@services"
+import {
+  AuthError,
+  AuthService,
+  RefreshTokenCreateError,
+  RefreshTokenRefreshError,
+  HighPrivilegeAuthError
+} from "@services"
+import {CliOrganizationSelectionValidationError} from "@approvio/api"
+import {ExtractLeftFromMethod} from "@utils"
 import {
   CliInitiateLoginRequestValidationError,
   CliGenerateTokenRequestValidationError,
@@ -13,6 +21,8 @@ import {
   UnauthorizedException,
   ForbiddenException,
   ServiceUnavailableException,
+  HttpStatus,
+  NotFoundException,
   Logger
 } from "@nestjs/common"
 import {generateErrorPayload} from "@controllers/error"
@@ -27,10 +37,137 @@ export type CliAuthError =
   | CliRefreshTokenRequestValidationError
   | CliPrivilegedTokenExchangeRequestValidationError
 
+export type CliOrganizationSelectionError =
+  ExtractLeftFromMethod<typeof AuthService, "selectCliOrganization"> | CliOrganizationSelectionValidationError
+
+export function generateErrorResponseForCliOrganizationSelection(error: CliOrganizationSelectionError): HttpException {
+  switch (error) {
+    case "malformed_object":
+    case "missing_organization_id":
+    case "invalid_organization_id":
+      return new BadRequestException(generateErrorPayload("INVALID_ORGANIZATION", "Invalid organization"))
+    case "session_not_found":
+    case "invalid_credential":
+      return new UnauthorizedException(generateErrorPayload("INVALID_SESSION", "Session is no longer active"))
+    case "account_not_found":
+      return new UnauthorizedException(generateErrorPayload("ACCOUNT_NOT_FOUND", "Account not found"))
+    case "permission_denied":
+    case "organization_mismatch":
+    case "resource_not_found":
+      return new ForbiddenException(generateErrorPayload("PERMISSION_DENIED", "Organization access denied"))
+    case "organization_not_found":
+    case "organization_deleting":
+      return new NotFoundException(generateErrorPayload("RESOURCE_NOT_FOUND", "Organization not found"))
+    case "organization_suspended":
+      return new HttpException(
+        generateErrorPayload("ORGANIZATION_SUSPENDED", "Organization is suspended"),
+        HttpStatus.LOCKED
+      )
+    case "step_up_required":
+    case "step_up_invalid":
+    case "step_up_consumed":
+    case "organization_owner_required":
+    case "quota_exceeded":
+      return new ForbiddenException(generateErrorPayload(error.toUpperCase(), "Organization selection not authorized"))
+    case "invalid_reference":
+    case "invitation_invalid":
+      return new BadRequestException(
+        generateErrorPayload(error.toUpperCase(), "Invalid organization selection request")
+      )
+    case "concurrent_modification_error":
+      return new ConflictException(generateErrorPayload("ORGANIZATION_CONTEXT_CHANGED", "Organization context changed"))
+    case "organization_context_changed":
+    case "resource_already_exists":
+    case "resource_in_use":
+    case "invalid_transition":
+    case "concurrency_error":
+      return new ConflictException(generateErrorPayload(error.toUpperCase(), "Organization selection conflict"))
+    case "tenant_context_required":
+    case "session_invalid_id":
+    case "session_invalid_account_id":
+    case "user_invalid_uuid":
+    case "user_invalid_organization_id":
+    case "user_invalid_account_id":
+    case "user_display_name_empty":
+    case "user_display_name_too_long":
+    case "user_org_role_invalid":
+    case "user_status_invalid":
+    case "user_update_before_create":
+    case "user_role_assignments_invalid_format":
+    case "user_duplicate_roles":
+    case "user_role_organization_mismatch":
+    case "user_membership_roles_invalid":
+    case "role_invalid_uuid":
+    case "role_name_empty":
+    case "role_name_too_long":
+    case "role_name_invalid_characters":
+    case "role_permissions_empty":
+    case "role_permission_invalid":
+    case "role_invalid_scope":
+    case "role_resource_id_invalid":
+    case "role_resource_required_for_scope":
+    case "role_resource_not_allowed_for_scope":
+    case "role_assignments_empty":
+    case "role_assignments_exceed_maximum":
+    case "role_total_roles_exceed_maximum":
+    case "role_unknown_role_name":
+    case "role_scope_incompatible_with_template":
+    case "role_entity_type_role_restriction":
+    case "role_invalid_structure":
+    case "account_malformed_object":
+    case "account_invalid_uuid":
+    case "account_display_name_empty":
+    case "account_display_name_too_long":
+    case "account_invalid_profile_email":
+    case "account_invalid_status":
+    case "account_update_before_create":
+    case "repository_dependency_error":
+    case "auth_token_generation_failed":
+    case "refresh_token_invalid_organization_id":
+    case "refresh_token_invalid_structure":
+    case "refresh_token_invalid_id":
+    case "refresh_token_invalid_token_hash":
+    case "refresh_token_invalid_family_id":
+    case "refresh_token_invalid_account_id":
+    case "refresh_token_invalid_session_id":
+    case "refresh_token_invalid_provider_id":
+    case "refresh_token_invalid_agent_id":
+    case "refresh_token_invalid_status":
+    case "refresh_token_invalid_created_at":
+    case "refresh_token_invalid_expires_at":
+    case "refresh_token_expire_before_create":
+    case "refresh_token_invalid_used_at":
+    case "refresh_token_used_before_create":
+    case "refresh_token_invalid_next_token_id":
+    case "refresh_token_missing_occ":
+    case "unknown_error":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "storage_unavailable":
+      Logger.error(`CLI organization selection failed: ${error}`, "CliAuthController")
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", "Organization selection failed"))
+  }
+}
+
 export function generateErrorResponseForCliInitiate(error: CliAuthError, context: string): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "session_not_found":
+    case "invalid_credential":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
+    case "account_display_name_empty":
+    case "account_display_name_too_long":
+    case "account_invalid_profile_email":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid account profile`))
+    case "session_invalid_id":
+    case "session_invalid_account_id":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid session data`))
+    case "account_malformed_object":
+    case "account_invalid_uuid":
+    case "account_invalid_status":
+    case "account_update_before_create":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid account data`))
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -56,11 +193,9 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
     case "auth_identity_conflict":
+    case "identity_already_linked":
     case "auth_invalid_oidc_provider":
     case "auth_missing_oidc_provider":
-    case "user_identity_already_exists":
-    case "user_not_found":
-    case "request_invalid_user_identifier":
     case "auth_invalid_redirect_uri":
     case "request_missing_redirect_uri":
     case "request_invalid_redirect_uri":
@@ -81,18 +216,11 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
     case "refresh_token_concurrent_update":
     case "pkce_code_concurrency_conflict":
     case "agent_challenge_concurrent_update":
-    case "organization_admin_already_exists":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: concurrent update. Try again`))
-    case "requestor_not_authorized":
-      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: insufficient permissions`))
     case "dpop_jti_reused":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: unauthorized request`))
     case "auth_invalid_entity":
     case "organization_not_found":
-    case "organization_admin_invalid_uuid":
-    case "organization_admin_email_empty":
-    case "organization_admin_email_too_long":
-    case "organization_admin_email_invalid":
     case "role_invalid_uuid":
     case "role_name_empty":
     case "role_name_too_long":
@@ -113,13 +241,9 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "user_org_role_invalid":
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":
-    case "user_already_exists":
       Logger.error(`Internal data inconsistency: ${errorCode}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
@@ -128,8 +252,20 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
       return new ServiceUnavailableException(
         generateErrorPayload(errorCode, `${context}: functionality is not enabled`)
       )
+    case "step_up_receipt_malformed_object":
+    case "step_up_receipt_invalid_id":
+    case "step_up_receipt_invalid_organization_id":
+    case "step_up_receipt_invalid_jti":
+    case "step_up_receipt_invalid_user_id":
+    case "step_up_receipt_invalid_session_id":
+    case "step_up_receipt_invalid_provider_id":
+    case "step_up_receipt_invalid_context_version":
+    case "step_up_receipt_invalid_operation":
+    case "step_up_receipt_invalid_resource_id":
+    case "step_up_receipt_invalid_expires_at":
+    case "step_up_receipt_invalid_created_at":
+    case "step_up_receipt_invalid_consumed_at":
     case "unknown_error":
-    case "quota_check_error":
     case "agent_token_generation_failed":
     case "oidc_unknown_error":
     case "oidc_provider_not_found":
@@ -148,8 +284,6 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
     case "refresh_token_expire_before_create":
     case "refresh_token_invalid_agent_id":
     case "refresh_token_invalid_created_at":
-    case "refresh_token_invalid_dpop_jkt":
-    case "refresh_token_invalid_entity_type":
     case "refresh_token_invalid_expires_at":
     case "refresh_token_invalid_family_id":
     case "refresh_token_invalid_id":
@@ -157,10 +291,6 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
     case "refresh_token_invalid_status":
     case "refresh_token_invalid_token_hash":
     case "refresh_token_invalid_used_at":
-    case "refresh_token_invalid_user_id":
-    case "refresh_token_missing_entity_id":
-    case "refresh_token_missing_entity_type":
-    case "refresh_token_missing_provider_id":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_key_decode_error":
@@ -203,8 +333,6 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
     case "agent_challenge_challenge_already_used":
     case "agent_challenge_update_failed":
     case "agent_challenge_invalid_uuid":
-    case "agent_challenge_agent_name_empty":
-    case "agent_challenge_agent_name_invalid":
     case "agent_challenge_nonce_empty":
     case "agent_challenge_nonce_invalid_length":
     case "agent_challenge_invalid_occ":
@@ -214,6 +342,72 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "account_not_found":
+    case "ciphertext_context_mismatch":
+    case "invalid_encryption_context":
+    case "cross_organization_reencryption_forbidden":
+    case "incompatible_reencryption_context":
+    case "unsupported_format":
+    case "pkce_session_malformed_object":
+    case "pkce_session_invalid_state":
+    case "pkce_session_invalid_code_verifier":
+    case "pkce_session_invalid_redirect_uri":
+    case "pkce_session_invalid_oidc_state":
+    case "pkce_session_invalid_provider_id":
+    case "pkce_session_invalid_created_at":
+    case "pkce_session_invalid_expires_at":
+    case "pkce_session_invalid_occ":
+    case "pkce_session_invalid_used_at":
+    case "pkce_session_invalid_flow":
+    case "pkce_session_unexpected_step_up_context":
+    case "pkce_session_invalid_session_id":
+    case "pkce_session_invalid_step_up_target":
+    case "pkce_session_invalid_organization_id":
+    case "pkce_session_invalid_operation":
+    case "pkce_session_invalid_resource_id":
+    case "pkce_session_invalid_context_version":
+    case "repository_dependency_error":
+    case "refresh_token_invalid_organization_id":
+    case "refresh_token_invalid_account_id":
+    case "refresh_token_invalid_session_id":
+    case "refresh_token_invalid_provider_id":
+    case "user_invalid_organization_id":
+    case "user_invalid_account_id":
+    case "user_status_invalid":
+    case "user_update_before_create":
+    case "user_role_organization_mismatch":
+    case "user_membership_roles_invalid":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "storage_unavailable":
+    case "concurrency_error":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
+    case "agent_challenge_agent_id_invalid":
+    case "agent_challenge_organization_id_invalid":
+    case "organization_context_changed":
+    case "organization_suspended":
+    case "organization_deleting":
+    case "permission_denied":
+    case "step_up_required":
+    case "step_up_invalid":
+    case "step_up_consumed":
+    case "invalid_reference":
+    case "resource_not_found":
+    case "resource_already_exists":
+    case "resource_in_use":
+    case "concurrent_modification_error":
+    case "organization_owner_required":
+    case "invalid_transition":
+    case "quota_exceeded":
+    case "invitation_invalid":
+    case "request_missing_resource_id":
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
   }
 }
 
@@ -221,6 +415,21 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "session_not_found":
+    case "invalid_credential":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
+    case "account_display_name_empty":
+    case "account_display_name_too_long":
+    case "account_invalid_profile_email":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid account profile`))
+    case "session_invalid_id":
+    case "session_invalid_account_id":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid session data`))
+    case "account_malformed_object":
+    case "account_invalid_uuid":
+    case "account_invalid_status":
+    case "account_update_before_create":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid account data`))
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -246,11 +455,9 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
     case "auth_identity_conflict":
+    case "identity_already_linked":
     case "auth_invalid_oidc_provider":
     case "auth_missing_oidc_provider":
-    case "user_identity_already_exists":
-    case "user_not_found":
-    case "request_invalid_user_identifier":
     case "auth_invalid_redirect_uri":
     case "request_missing_redirect_uri":
     case "request_invalid_redirect_uri":
@@ -271,18 +478,11 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
     case "refresh_token_concurrent_update":
     case "pkce_code_concurrency_conflict":
     case "agent_challenge_concurrent_update":
-    case "organization_admin_already_exists":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: concurrent update. Try again`))
-    case "requestor_not_authorized":
-      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: insufficient permissions`))
     case "dpop_jti_reused":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: unauthorized request`))
     case "auth_invalid_entity":
     case "organization_not_found":
-    case "organization_admin_invalid_uuid":
-    case "organization_admin_email_empty":
-    case "organization_admin_email_too_long":
-    case "organization_admin_email_invalid":
     case "role_invalid_uuid":
     case "role_name_empty":
     case "role_name_too_long":
@@ -303,13 +503,9 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "user_org_role_invalid":
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":
-    case "user_already_exists":
       Logger.error(`Internal data inconsistency: ${errorCode}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
@@ -318,8 +514,20 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
       return new ServiceUnavailableException(
         generateErrorPayload(errorCode, `${context}: functionality is not enabled`)
       )
+    case "step_up_receipt_malformed_object":
+    case "step_up_receipt_invalid_id":
+    case "step_up_receipt_invalid_organization_id":
+    case "step_up_receipt_invalid_jti":
+    case "step_up_receipt_invalid_user_id":
+    case "step_up_receipt_invalid_session_id":
+    case "step_up_receipt_invalid_provider_id":
+    case "step_up_receipt_invalid_context_version":
+    case "step_up_receipt_invalid_operation":
+    case "step_up_receipt_invalid_resource_id":
+    case "step_up_receipt_invalid_expires_at":
+    case "step_up_receipt_invalid_created_at":
+    case "step_up_receipt_invalid_consumed_at":
     case "unknown_error":
-    case "quota_check_error":
     case "agent_token_generation_failed":
     case "oidc_unknown_error":
     case "oidc_provider_not_found":
@@ -338,8 +546,6 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
     case "refresh_token_expire_before_create":
     case "refresh_token_invalid_agent_id":
     case "refresh_token_invalid_created_at":
-    case "refresh_token_invalid_dpop_jkt":
-    case "refresh_token_invalid_entity_type":
     case "refresh_token_invalid_expires_at":
     case "refresh_token_invalid_family_id":
     case "refresh_token_invalid_id":
@@ -347,10 +553,6 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
     case "refresh_token_invalid_status":
     case "refresh_token_invalid_token_hash":
     case "refresh_token_invalid_used_at":
-    case "refresh_token_invalid_user_id":
-    case "refresh_token_missing_entity_id":
-    case "refresh_token_missing_entity_type":
-    case "refresh_token_missing_provider_id":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_key_decode_error":
@@ -393,8 +595,6 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
     case "agent_challenge_challenge_already_used":
     case "agent_challenge_update_failed":
     case "agent_challenge_invalid_uuid":
-    case "agent_challenge_agent_name_empty":
-    case "agent_challenge_agent_name_invalid":
     case "agent_challenge_nonce_empty":
     case "agent_challenge_nonce_invalid_length":
     case "agent_challenge_invalid_occ":
@@ -404,6 +604,72 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "account_not_found":
+    case "ciphertext_context_mismatch":
+    case "invalid_encryption_context":
+    case "cross_organization_reencryption_forbidden":
+    case "incompatible_reencryption_context":
+    case "unsupported_format":
+    case "pkce_session_malformed_object":
+    case "pkce_session_invalid_state":
+    case "pkce_session_invalid_code_verifier":
+    case "pkce_session_invalid_redirect_uri":
+    case "pkce_session_invalid_oidc_state":
+    case "pkce_session_invalid_provider_id":
+    case "pkce_session_invalid_created_at":
+    case "pkce_session_invalid_expires_at":
+    case "pkce_session_invalid_occ":
+    case "pkce_session_invalid_used_at":
+    case "pkce_session_invalid_flow":
+    case "pkce_session_unexpected_step_up_context":
+    case "pkce_session_invalid_session_id":
+    case "pkce_session_invalid_step_up_target":
+    case "pkce_session_invalid_organization_id":
+    case "pkce_session_invalid_operation":
+    case "pkce_session_invalid_resource_id":
+    case "pkce_session_invalid_context_version":
+    case "repository_dependency_error":
+    case "refresh_token_invalid_organization_id":
+    case "refresh_token_invalid_account_id":
+    case "refresh_token_invalid_session_id":
+    case "refresh_token_invalid_provider_id":
+    case "user_invalid_organization_id":
+    case "user_invalid_account_id":
+    case "user_status_invalid":
+    case "user_update_before_create":
+    case "user_role_organization_mismatch":
+    case "user_membership_roles_invalid":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "storage_unavailable":
+    case "concurrency_error":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
+    case "agent_challenge_agent_id_invalid":
+    case "agent_challenge_organization_id_invalid":
+    case "organization_context_changed":
+    case "organization_suspended":
+    case "organization_deleting":
+    case "permission_denied":
+    case "step_up_required":
+    case "step_up_invalid":
+    case "step_up_consumed":
+    case "invalid_reference":
+    case "resource_not_found":
+    case "resource_already_exists":
+    case "resource_in_use":
+    case "concurrent_modification_error":
+    case "organization_owner_required":
+    case "invalid_transition":
+    case "quota_exceeded":
+    case "invitation_invalid":
+    case "request_missing_resource_id":
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
   }
 }
 
@@ -411,6 +677,21 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "session_not_found":
+    case "invalid_credential":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
+    case "account_display_name_empty":
+    case "account_display_name_too_long":
+    case "account_invalid_profile_email":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid account profile`))
+    case "session_invalid_id":
+    case "session_invalid_account_id":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid session data`))
+    case "account_malformed_object":
+    case "account_invalid_uuid":
+    case "account_invalid_status":
+    case "account_update_before_create":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid account data`))
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -436,11 +717,9 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
     case "auth_identity_conflict":
+    case "identity_already_linked":
     case "auth_invalid_oidc_provider":
     case "auth_missing_oidc_provider":
-    case "user_identity_already_exists":
-    case "user_not_found":
-    case "request_invalid_user_identifier":
     case "auth_invalid_redirect_uri":
     case "request_missing_redirect_uri":
     case "request_invalid_redirect_uri":
@@ -461,18 +740,11 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
     case "refresh_token_concurrent_update":
     case "pkce_code_concurrency_conflict":
     case "agent_challenge_concurrent_update":
-    case "organization_admin_already_exists":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: concurrent update. Try again`))
-    case "requestor_not_authorized":
-      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: insufficient permissions`))
     case "dpop_jti_reused":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: unauthorized request`))
     case "auth_invalid_entity":
     case "organization_not_found":
-    case "organization_admin_invalid_uuid":
-    case "organization_admin_email_empty":
-    case "organization_admin_email_too_long":
-    case "organization_admin_email_invalid":
     case "role_invalid_uuid":
     case "role_name_empty":
     case "role_name_too_long":
@@ -493,13 +765,9 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "user_org_role_invalid":
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":
-    case "user_already_exists":
       Logger.error(`Internal data inconsistency: ${errorCode}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
@@ -508,8 +776,20 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
       return new ServiceUnavailableException(
         generateErrorPayload(errorCode, `${context}: functionality is not enabled`)
       )
+    case "step_up_receipt_malformed_object":
+    case "step_up_receipt_invalid_id":
+    case "step_up_receipt_invalid_organization_id":
+    case "step_up_receipt_invalid_jti":
+    case "step_up_receipt_invalid_user_id":
+    case "step_up_receipt_invalid_session_id":
+    case "step_up_receipt_invalid_provider_id":
+    case "step_up_receipt_invalid_context_version":
+    case "step_up_receipt_invalid_operation":
+    case "step_up_receipt_invalid_resource_id":
+    case "step_up_receipt_invalid_expires_at":
+    case "step_up_receipt_invalid_created_at":
+    case "step_up_receipt_invalid_consumed_at":
     case "unknown_error":
-    case "quota_check_error":
     case "agent_token_generation_failed":
     case "oidc_unknown_error":
     case "oidc_provider_not_found":
@@ -528,8 +808,6 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
     case "refresh_token_expire_before_create":
     case "refresh_token_invalid_agent_id":
     case "refresh_token_invalid_created_at":
-    case "refresh_token_invalid_dpop_jkt":
-    case "refresh_token_invalid_entity_type":
     case "refresh_token_invalid_expires_at":
     case "refresh_token_invalid_family_id":
     case "refresh_token_invalid_id":
@@ -537,10 +815,6 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
     case "refresh_token_invalid_status":
     case "refresh_token_invalid_token_hash":
     case "refresh_token_invalid_used_at":
-    case "refresh_token_invalid_user_id":
-    case "refresh_token_missing_entity_id":
-    case "refresh_token_missing_entity_type":
-    case "refresh_token_missing_provider_id":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_key_decode_error":
@@ -583,8 +857,6 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
     case "agent_challenge_challenge_already_used":
     case "agent_challenge_update_failed":
     case "agent_challenge_invalid_uuid":
-    case "agent_challenge_agent_name_empty":
-    case "agent_challenge_agent_name_invalid":
     case "agent_challenge_nonce_empty":
     case "agent_challenge_nonce_invalid_length":
     case "agent_challenge_invalid_occ":
@@ -594,6 +866,72 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "account_not_found":
+    case "ciphertext_context_mismatch":
+    case "invalid_encryption_context":
+    case "cross_organization_reencryption_forbidden":
+    case "incompatible_reencryption_context":
+    case "unsupported_format":
+    case "pkce_session_malformed_object":
+    case "pkce_session_invalid_state":
+    case "pkce_session_invalid_code_verifier":
+    case "pkce_session_invalid_redirect_uri":
+    case "pkce_session_invalid_oidc_state":
+    case "pkce_session_invalid_provider_id":
+    case "pkce_session_invalid_created_at":
+    case "pkce_session_invalid_expires_at":
+    case "pkce_session_invalid_occ":
+    case "pkce_session_invalid_used_at":
+    case "pkce_session_invalid_flow":
+    case "pkce_session_unexpected_step_up_context":
+    case "pkce_session_invalid_session_id":
+    case "pkce_session_invalid_step_up_target":
+    case "pkce_session_invalid_organization_id":
+    case "pkce_session_invalid_operation":
+    case "pkce_session_invalid_resource_id":
+    case "pkce_session_invalid_context_version":
+    case "repository_dependency_error":
+    case "refresh_token_invalid_organization_id":
+    case "refresh_token_invalid_account_id":
+    case "refresh_token_invalid_session_id":
+    case "refresh_token_invalid_provider_id":
+    case "user_invalid_organization_id":
+    case "user_invalid_account_id":
+    case "user_status_invalid":
+    case "user_update_before_create":
+    case "user_role_organization_mismatch":
+    case "user_membership_roles_invalid":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "storage_unavailable":
+    case "concurrency_error":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
+    case "agent_challenge_agent_id_invalid":
+    case "agent_challenge_organization_id_invalid":
+    case "organization_context_changed":
+    case "organization_suspended":
+    case "organization_deleting":
+    case "permission_denied":
+    case "step_up_required":
+    case "step_up_invalid":
+    case "step_up_consumed":
+    case "invalid_reference":
+    case "resource_not_found":
+    case "resource_already_exists":
+    case "resource_in_use":
+    case "concurrent_modification_error":
+    case "organization_owner_required":
+    case "invalid_transition":
+    case "quota_exceeded":
+    case "invitation_invalid":
+    case "request_missing_resource_id":
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
   }
 }
 
@@ -601,6 +939,21 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "session_not_found":
+    case "invalid_credential":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
+    case "account_display_name_empty":
+    case "account_display_name_too_long":
+    case "account_invalid_profile_email":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid account profile`))
+    case "session_invalid_id":
+    case "session_invalid_account_id":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid session data`))
+    case "account_malformed_object":
+    case "account_invalid_uuid":
+    case "account_invalid_status":
+    case "account_update_before_create":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid account data`))
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -626,11 +979,9 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
     case "auth_identity_conflict":
+    case "identity_already_linked":
     case "auth_invalid_oidc_provider":
     case "auth_missing_oidc_provider":
-    case "user_identity_already_exists":
-    case "user_not_found":
-    case "request_invalid_user_identifier":
     case "auth_invalid_redirect_uri":
     case "request_missing_redirect_uri":
     case "request_invalid_redirect_uri":
@@ -640,6 +991,7 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "request_missing_state":
     case "request_invalid_state":
     case "request_invalid_resource_id":
+    case "request_missing_resource_id":
     case "request_missing_operation":
     case "request_invalid_operation":
     case "pkce_code_verification_failed":
@@ -651,18 +1003,11 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "refresh_token_concurrent_update":
     case "pkce_code_concurrency_conflict":
     case "agent_challenge_concurrent_update":
-    case "organization_admin_already_exists":
       return new ConflictException(generateErrorPayload(errorCode, `${context}: concurrent update. Try again`))
-    case "requestor_not_authorized":
-      return new ForbiddenException(generateErrorPayload(errorCode, `${context}: insufficient permissions`))
     case "dpop_jti_reused":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: unauthorized request`))
     case "auth_invalid_entity":
     case "organization_not_found":
-    case "organization_admin_invalid_uuid":
-    case "organization_admin_email_empty":
-    case "organization_admin_email_too_long":
-    case "organization_admin_email_invalid":
     case "role_invalid_uuid":
     case "role_name_empty":
     case "role_name_too_long":
@@ -683,13 +1028,9 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "user_org_role_invalid":
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":
-    case "user_already_exists":
       return new InternalServerErrorException(
         generateErrorPayload(errorCode, `${context}: OIDC step-up token verification failed`)
       )
@@ -697,8 +1038,20 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
       return new ServiceUnavailableException(
         generateErrorPayload(errorCode, `${context}: functionality is not enabled`)
       )
+    case "step_up_receipt_malformed_object":
+    case "step_up_receipt_invalid_id":
+    case "step_up_receipt_invalid_organization_id":
+    case "step_up_receipt_invalid_jti":
+    case "step_up_receipt_invalid_user_id":
+    case "step_up_receipt_invalid_session_id":
+    case "step_up_receipt_invalid_provider_id":
+    case "step_up_receipt_invalid_context_version":
+    case "step_up_receipt_invalid_operation":
+    case "step_up_receipt_invalid_resource_id":
+    case "step_up_receipt_invalid_expires_at":
+    case "step_up_receipt_invalid_created_at":
+    case "step_up_receipt_invalid_consumed_at":
     case "unknown_error":
-    case "quota_check_error":
     case "agent_token_generation_failed":
     case "oidc_unknown_error":
     case "oidc_provider_not_found":
@@ -717,8 +1070,6 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "refresh_token_expire_before_create":
     case "refresh_token_invalid_agent_id":
     case "refresh_token_invalid_created_at":
-    case "refresh_token_invalid_dpop_jkt":
-    case "refresh_token_invalid_entity_type":
     case "refresh_token_invalid_expires_at":
     case "refresh_token_invalid_family_id":
     case "refresh_token_invalid_id":
@@ -726,10 +1077,6 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "refresh_token_invalid_status":
     case "refresh_token_invalid_token_hash":
     case "refresh_token_invalid_used_at":
-    case "refresh_token_invalid_user_id":
-    case "refresh_token_missing_entity_id":
-    case "refresh_token_missing_entity_type":
-    case "refresh_token_missing_provider_id":
     case "refresh_token_used_before_create":
     case "refresh_token_missing_occ":
     case "agent_key_decode_error":
@@ -772,8 +1119,6 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "agent_challenge_challenge_already_used":
     case "agent_challenge_update_failed":
     case "agent_challenge_invalid_uuid":
-    case "agent_challenge_agent_name_empty":
-    case "agent_challenge_agent_name_invalid":
     case "agent_challenge_nonce_empty":
     case "agent_challenge_nonce_invalid_length":
     case "agent_challenge_invalid_occ":
@@ -783,5 +1128,70 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "account_not_found":
+    case "ciphertext_context_mismatch":
+    case "invalid_encryption_context":
+    case "cross_organization_reencryption_forbidden":
+    case "incompatible_reencryption_context":
+    case "unsupported_format":
+    case "pkce_session_malformed_object":
+    case "pkce_session_invalid_state":
+    case "pkce_session_invalid_code_verifier":
+    case "pkce_session_invalid_redirect_uri":
+    case "pkce_session_invalid_oidc_state":
+    case "pkce_session_invalid_provider_id":
+    case "pkce_session_invalid_created_at":
+    case "pkce_session_invalid_expires_at":
+    case "pkce_session_invalid_occ":
+    case "pkce_session_invalid_used_at":
+    case "pkce_session_invalid_flow":
+    case "pkce_session_unexpected_step_up_context":
+    case "pkce_session_invalid_session_id":
+    case "pkce_session_invalid_step_up_target":
+    case "pkce_session_invalid_organization_id":
+    case "pkce_session_invalid_operation":
+    case "pkce_session_invalid_resource_id":
+    case "pkce_session_invalid_context_version":
+    case "repository_dependency_error":
+    case "refresh_token_invalid_organization_id":
+    case "refresh_token_invalid_account_id":
+    case "refresh_token_invalid_session_id":
+    case "refresh_token_invalid_provider_id":
+    case "user_invalid_organization_id":
+    case "user_invalid_account_id":
+    case "user_status_invalid":
+    case "user_update_before_create":
+    case "user_role_organization_mismatch":
+    case "user_membership_roles_invalid":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "storage_unavailable":
+    case "concurrency_error":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
+    case "agent_challenge_agent_id_invalid":
+    case "agent_challenge_organization_id_invalid":
+    case "organization_context_changed":
+    case "organization_suspended":
+    case "organization_deleting":
+    case "permission_denied":
+    case "step_up_required":
+    case "step_up_invalid":
+    case "step_up_consumed":
+    case "invalid_reference":
+    case "resource_not_found":
+    case "resource_already_exists":
+    case "resource_in_use":
+    case "concurrent_modification_error":
+    case "organization_owner_required":
+    case "invalid_transition":
+    case "quota_exceeded":
+    case "invitation_invalid":
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
   }
 }

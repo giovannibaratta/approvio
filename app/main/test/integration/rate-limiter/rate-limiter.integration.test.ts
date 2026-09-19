@@ -5,8 +5,13 @@ import {NestApplication} from "@nestjs/core"
 import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient} from "@prisma/client"
-import {DatabaseClient} from "@external"
-import {cleanDatabase, cleanRedisByPrefix, prepareDatabase, prepareRedisPrefix} from "@test/database"
+import {
+  createFixturePrismaClient,
+  cleanDatabase,
+  cleanRedisByPrefix,
+  prepareDatabase,
+  prepareRedisPrefix
+} from "@test/database"
 import {MockConfigProvider} from "@test/mock-data"
 import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {get} from "@test/requests"
@@ -19,7 +24,7 @@ const RATE_LIMIT_DURATION_SECONDS = 600
 // Use an authenticated endpoint to test the rate limiter.
 // Public routes (e.g. /health) bypass the JwtAuthGuard and never set request.user,
 // so the rate limiter guard skips them.
-const AUTHENTICATED_ENDPOINT = "/auth/info"
+const authenticatedEndpoint = (organizationId: string) => `/o/${organizationId}/auth/info`
 
 describe("Rate Limiter Integration", () => {
   let app: NestApplication
@@ -44,7 +49,7 @@ describe("Rate Limiter Integration", () => {
       .overrideProvider(ConfigProvider)
       .useValue(
         MockConfigProvider.fromOriginalProvider({
-          dbConnectionUrl: isolatedDb,
+          tenantConnectionUrl: isolatedDb,
           redisPrefix,
           rateLimitConfig: {
             points: RATE_LIMIT_POINTS,
@@ -64,7 +69,7 @@ describe("Rate Limiter Integration", () => {
       .compile()
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
     await app.init()
@@ -93,7 +98,9 @@ describe("Rate Limiter Integration", () => {
   })
 
   it("should allow authenticated requests within the limit and return IETF rate limit headers", async () => {
-    const response = await get(app, AUTHENTICATED_ENDPOINT).withToken(authenticatedUser.token).build()
+    const response = await get(app, authenticatedEndpoint(authenticatedUser.user.organizationId))
+      .withToken(authenticatedUser.token)
+      .build()
 
     expect(response).toHaveStatusCode(HttpStatus.OK)
 
@@ -109,12 +116,16 @@ describe("Rate Limiter Integration", () => {
   it("should return 429 TOO_MANY_REQUESTS when exceeding the limit", async () => {
     // Exhaust the rate limit quota
     for (let i = 0; i < RATE_LIMIT_POINTS; i++) {
-      const response = await get(app, AUTHENTICATED_ENDPOINT).withToken(authenticatedUser.token).build()
+      const response = await get(app, authenticatedEndpoint(authenticatedUser.user.organizationId))
+        .withToken(authenticatedUser.token)
+        .build()
       expect(response).toHaveStatusCode(HttpStatus.OK)
     }
 
     // The next request should be rejected
-    const blockedResponse = await get(app, AUTHENTICATED_ENDPOINT).withToken(authenticatedUser.token).build()
+    const blockedResponse = await get(app, authenticatedEndpoint(authenticatedUser.user.organizationId))
+      .withToken(authenticatedUser.token)
+      .build()
 
     expect(blockedResponse).toHaveStatusCode(HttpStatus.TOO_MANY_REQUESTS)
     expect(blockedResponse.body).toHaveErrorCode("TOO_MANY_REQUESTS")
@@ -127,14 +138,20 @@ describe("Rate Limiter Integration", () => {
 
     // When: Exhaust the first user's quota
     for (let i = 0; i < RATE_LIMIT_POINTS; i++)
-      await get(app, AUTHENTICATED_ENDPOINT).withToken(authenticatedUser.token).build()
+      await get(app, authenticatedEndpoint(authenticatedUser.user.organizationId))
+        .withToken(authenticatedUser.token)
+        .build()
 
     // Expect: First user is blocked
-    const blockedResponse = await get(app, AUTHENTICATED_ENDPOINT).withToken(authenticatedUser.token).build()
+    const blockedResponse = await get(app, authenticatedEndpoint(authenticatedUser.user.organizationId))
+      .withToken(authenticatedUser.token)
+      .build()
     expect(blockedResponse).toHaveStatusCode(HttpStatus.TOO_MANY_REQUESTS)
 
     // Expect: Second user is still allowed
-    const secondUserResponse = await get(app, AUTHENTICATED_ENDPOINT).withToken(secondUserToken).build()
+    const secondUserResponse = await get(app, authenticatedEndpoint(secondUser.user.organizationId))
+      .withToken(secondUserToken)
+      .build()
     expect(secondUserResponse).toHaveStatusCode(HttpStatus.OK)
   })
 })

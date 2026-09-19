@@ -1,25 +1,22 @@
-import {
-  ApprovalRule,
-  ApprovalRuleType,
-  ApprovalRuleFactory,
-  User,
-  UserFactory,
-  createUserMembershipEntity
-} from "@domain"
+import {randomOrgId, toOrganizationId} from "@test/organization-id"
+import {ApprovalRule, ApprovalRuleType, ApprovalRuleFactory, OrgRole, User, createUserMembershipEntity} from "@domain"
 import {MembershipWithGroupRef} from "../src"
 import * as E from "fp-ts/Either"
+import {v7 as uuidv7} from "uuid"
+import {createTestUser as createTenantUser} from "../../test/user"
+import {unwrapRight} from "@utils/either"
 
 // Helper to create a test user
-const createTestUser = (userId = "test-user"): User => {
-  const result = UserFactory.newUser({
-    displayName: "Test User",
-    email: "test@example.com",
-    orgRole: "member"
-  })
-  if (E.isLeft(result)) throw new Error("Failed to create test user")
-
-  // For test purposes, we'll override the ID after validation
-  const user = result.right
+const createTestUser = (organizationId: string, userId = "test-user"): User => {
+  const user = unwrapRight(
+    createTenantUser({
+      organizationId,
+      accountId: uuidv7(),
+      displayName: "Test User",
+      orgRole: OrgRole.MEMBER
+    })
+  )
+  // For test purposes, we'll override the ID after validation.
   return {
     ...user,
     id: userId
@@ -27,14 +24,23 @@ const createTestUser = (userId = "test-user"): User => {
 }
 
 // Helper to create MembershipWithGroupRef
-export const createMembership = (groupId: string, userId = "test-user"): MembershipWithGroupRef => ({
-  entity: createUserMembershipEntity(createTestUser(userId)),
-  groupId,
-  createdAt: new Date(),
-  updatedAt: new Date(),
-  getEntityId: () => userId,
-  getEntityType: () => "user"
-})
+export const createMembership = (
+  groupId: string,
+  overrides?: {organizationId?: string; userId?: string}
+): MembershipWithGroupRef => {
+  const organizationId =
+    overrides?.organizationId === undefined ? randomOrgId() : toOrganizationId(overrides.organizationId)
+  const userId = overrides?.userId ?? "test-user"
+  return {
+    organizationId,
+    entity: createUserMembershipEntity(createTestUser(organizationId, userId)),
+    groupId,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    getEntityId: () => userId,
+    getEntityType: () => "user"
+  }
+}
 
 // Helper to create a GROUP_REQUIREMENT rule
 export const createGroupRequirementRule = (groupId: string, optionalMinCount?: number): ApprovalRule => {

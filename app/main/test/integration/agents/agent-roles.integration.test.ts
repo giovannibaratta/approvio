@@ -2,16 +2,19 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
 import {NestApplication} from "@nestjs/core"
 import {AppModule} from "@app/app.module"
-import {DatabaseClient} from "@external"
-import {AGENTS_ENDPOINT_ROOT} from "@controllers"
 import {PrismaClient} from "@prisma/client"
 
-import {cleanDatabase, prepareDatabase} from "@test/database"
-import {createMockAgentInDb, createTestGroup, createMockWorkflowTemplateInDb, MockConfigProvider} from "@test/mock-data"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
+import {
+  createMockAgentInDb,
+  createTestGroup as createTestGroupFixture,
+  createMockWorkflowTemplateInDb as createMockWorkflowTemplateFixture,
+  MockConfigProvider
+} from "@test/mock-data"
 import {createAuthenticatedUserInDb, TestTokenBuilder} from "@test/token-helpers"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
-import {put, del} from "@test/requests"
+import {get, put, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import "expect-more-jest"
 import "@utils/matchers"
@@ -27,10 +30,24 @@ describe("Agent Roles API", () => {
   let app: NestApplication
   let prisma: PrismaClient
   let orgAdminUser: UserWithToken
-  let targetAgent: {id: string; agentName: string}
+  let targetAgent: {id: string; agentName: string; organizationId: string}
   let agentToken: string
   let jwtService: JwtService
   let configProvider: ConfigProvider
+
+  const createTestGroup = (prisma: PrismaClient, overrides?: Parameters<typeof createTestGroupFixture>[1]) =>
+    createTestGroupFixture(prisma, {
+      ...overrides,
+      organizationId: overrides?.organizationId ?? orgAdminUser.user.organizationId
+    })
+  const createMockWorkflowTemplateInDb = (
+    prisma: PrismaClient,
+    overrides?: Parameters<typeof createMockWorkflowTemplateFixture>[1]
+  ) =>
+    createMockWorkflowTemplateFixture(prisma, {
+      ...overrides,
+      organizationId: overrides?.organizationId ?? orgAdminUser.user.organizationId
+    })
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -41,7 +58,7 @@ describe("Agent Roles API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
+        .useValue(MockConfigProvider.fromOriginalProvider({tenantConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -49,7 +66,7 @@ describe("Agent Roles API", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
 
@@ -58,12 +75,27 @@ describe("Agent Roles API", () => {
 
   beforeEach(async () => {
     orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
-    const agent = await createMockAgentInDb(prisma, {agentName: "test-agent"})
+    const agent = await createMockAgentInDb(prisma, {
+      agentName: "test-agent",
+      organizationId: orgAdminUser.user.organizationId
+    })
     const domainAgent = unwrapRight(mapAgentToDomain(agent))
 
-    targetAgent = {id: agent.id, agentName: agent.agentName}
+    targetAgent = {id: agent.id, agentName: agent.agentName, organizationId: agent.organizationId}
     agentToken = TestTokenBuilder.signAgentToken(jwtService, configProvider, domainAgent)
   })
+
+  const agentRolesEndpoint = (agentId: string): string => `/o/${targetAgent.organizationId}/agents/${agentId}/roles`
+
+  const ifMatchFor = async (agentId: string): Promise<string> => {
+    const response = await get(app, `/o/${targetAgent.organizationId}/agents/${agentId}`)
+      .withToken(orgAdminUser.token)
+      .build()
+      .expect(HttpStatus.OK)
+    const etag: unknown = response.headers.etag
+    if (typeof etag !== "string") throw new Error("Agent GET response is missing its ETag")
+    return etag
+  }
 
   afterAll(async () => {})
 
@@ -76,8 +108,7 @@ describe("Agent Roles API", () => {
     await prisma.$disconnect()
   })
 
-  const createOrgScopeRequest = (roleName: string, occVersion = "-9223372036854775808"): RoleAssignmentRequest => ({
-    concurrencyControl: {version: occVersion},
+  const createOrgScopeRequest = (roleName: string): RoleAssignmentRequest => ({
     roles: [
       {
         roleName,
@@ -86,12 +117,7 @@ describe("Agent Roles API", () => {
     ]
   })
 
-  const createWorkflowTemplateRequest = (
-    roleName: string,
-    templateName: string,
-    occVersion = "-9223372036854775808"
-  ): RoleAssignmentRequest => ({
-    concurrencyControl: {version: occVersion},
+  const createWorkflowTemplateRequest = (roleName: string, templateName: string): RoleAssignmentRequest => ({
     roles: [
       {
         roleName,
@@ -101,10 +127,8 @@ describe("Agent Roles API", () => {
   })
 
   const createMultipleWorkflowTemplateRequest = (
-    roles: Array<{roleName: string; templateName: string}>,
-    occVersion = "-9223372036854775808"
+    roles: Array<{roleName: string; templateName: string}>
   ): RoleAssignmentRequest => ({
-    concurrencyControl: {version: occVersion},
     roles: roles.map(({roleName, templateName}) => ({
       roleName,
       scope: {type: "workflow_template", templateName}
@@ -112,9 +136,52 @@ describe("Agent Roles API", () => {
   })
 
   const emptyRolesRequest: RoleAssignmentRequest = {
-    concurrencyControl: {version: "-9223372036854775808"},
     roles: []
   }
+
+  it("returns the ETag exposed by GET after role assignment", async () => {
+    // Given
+    const roles = {roles: [{roleName: "OrgWideWorkflowTemplateInstantiator", scope: {type: "org"}}]}
+    const endpoint = agentRolesEndpoint(targetAgent.id)
+    const previousTag = await ifMatchFor(targetAgent.id)
+
+    // When
+    const response = await put(app, endpoint)
+      .withToken(orgAdminUser.token)
+      .withHeader("If-Match", previousTag)
+      .build()
+      .send(roles)
+
+    // Expect
+    expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+    expect(response.headers.etag).toBe(await ifMatchFor(targetAgent.id))
+    expect(response.headers.etag).not.toBe(previousTag)
+  })
+
+  it("returns the ETag exposed by GET after role removal", async () => {
+    // Given
+    const roles = {roles: [{roleName: "OrgWideWorkflowTemplateInstantiator", scope: {type: "org"}}]}
+    const endpoint = agentRolesEndpoint(targetAgent.id)
+    await put(app, endpoint)
+      .withToken(orgAdminUser.token)
+      .withHeader("If-Match", await ifMatchFor(targetAgent.id))
+      .build()
+      .send(roles)
+      .expect(HttpStatus.NO_CONTENT)
+    const previousTag = await ifMatchFor(targetAgent.id)
+
+    // When
+    const response = await del(app, endpoint)
+      .withToken(orgAdminUser.token)
+      .withHeader("If-Match", previousTag)
+      .build()
+      .send(roles)
+
+    // Expect
+    expect(response).toHaveStatusCode(HttpStatus.NO_CONTENT)
+    expect(response.headers.etag).toBe(await ifMatchFor(targetAgent.id))
+    expect(response.headers.etag).not.toBe(previousTag)
+  })
 
   describe("PUT /agents/{agentId}/roles", () => {
     describe("good cases", () => {
@@ -123,8 +190,9 @@ describe("Agent Roles API", () => {
         const roleAssignmentRequest = createOrgScopeRequest("OrgWideWorkflowTemplateInstantiator")
 
         // When: Admin assigns workflow template role to agent
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(roleAssignmentRequest)
 
@@ -153,8 +221,9 @@ describe("Agent Roles API", () => {
         const roleAssignmentRequest = createWorkflowTemplateRequest("WorkflowTemplateVoter", workflowTemplate.name)
 
         // When: Admin assigns workflow template role to agent
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(roleAssignmentRequest)
 
@@ -182,8 +251,9 @@ describe("Agent Roles API", () => {
         const roleAssignmentRequest = createWorkflowTemplateRequest("WorkflowReadOnly", workflowTemplate.name)
 
         // When: Admin assigns workflow read role to agent
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(roleAssignmentRequest)
 
@@ -216,8 +286,9 @@ describe("Agent Roles API", () => {
         ])
 
         // When: Admin assigns multiple workflow roles to agent
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(roleAssignmentRequest)
 
@@ -253,21 +324,18 @@ describe("Agent Roles API", () => {
         // First assignment
         const firstAssignment = createWorkflowTemplateRequest("WorkflowTemplateVoter", workflowTemplate1.name)
 
-        await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(firstAssignment)
 
-        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
-        const secondAssignment = createWorkflowTemplateRequest(
-          "WorkflowTemplateInstantiator",
-          workflowTemplate2.name,
-          agentToUpdate.occ.toString()
-        )
+        const secondAssignment = createWorkflowTemplateRequest("WorkflowTemplateInstantiator", workflowTemplate2.name)
         // When: Admin adds additional workflow roles
 
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(secondAssignment)
 
@@ -295,9 +363,7 @@ describe("Agent Roles API", () => {
         // Given: Role assignment request with duplicate workflow roles (should be consolidated)
         const workflowTemplate = await createMockWorkflowTemplateInDb(prisma)
 
-        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
-          concurrencyControl: {version: agentToUpdate.occ.toString()},
           roles: [
             {
               roleName: "WorkflowTemplateVoter",
@@ -315,8 +381,9 @@ describe("Agent Roles API", () => {
         }
 
         // When: Admin assigns workflow roles with duplicates
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(roleAssignmentRequest)
 
@@ -347,9 +414,7 @@ describe("Agent Roles API", () => {
         const roleAssignmentRequest = createOrgScopeRequest("WorkflowTemplateVoter")
 
         // When: Making request without token
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
-          .build()
-          .send(roleAssignmentRequest)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id)).build().send(roleAssignmentRequest)
 
         // Then: Should receive unauthorized response
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
@@ -360,7 +425,7 @@ describe("Agent Roles API", () => {
         const roleAssignmentRequest = createOrgScopeRequest("WorkflowTemplateVoter")
 
         // When: Making request with invalid token
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken("invalid-token")
           .build()
           .send(roleAssignmentRequest)
@@ -374,8 +439,9 @@ describe("Agent Roles API", () => {
         const roleAssignmentRequest = createOrgScopeRequest("WorkflowTemplateVoter")
 
         // When: Agent tries to assign roles (forbidden - only humans allowed)
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(agentToken)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(roleAssignmentRequest)
 
@@ -386,8 +452,9 @@ describe("Agent Roles API", () => {
       it("should return 400 for empty roles array", async () => {
         // Given: Empty roles assignment request
         // When: Admin tries to assign empty roles
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(emptyRolesRequest)
 
@@ -400,8 +467,9 @@ describe("Agent Roles API", () => {
         const roleAssignmentRequest = createOrgScopeRequest("SpaceManager")
 
         // When: Admin tries to assign space role to agent
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(roleAssignmentRequest)
 
@@ -413,9 +481,7 @@ describe("Agent Roles API", () => {
         // Given: Role assignment request with group role (not allowed for agents)
         const group = await createTestGroup(prisma, {name: "Test Group"})
 
-        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
-          concurrencyControl: {version: agentToUpdate.occ.toString()},
           roles: [
             {
               roleName: "GroupManager",
@@ -425,8 +491,9 @@ describe("Agent Roles API", () => {
         }
 
         // When: Admin tries to assign group role to agent
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(roleAssignmentRequest)
 
@@ -439,8 +506,9 @@ describe("Agent Roles API", () => {
         const roleAssignmentRequest = createOrgScopeRequest("UnknownWorkflowRole")
 
         // When: Admin tries to assign unknown role
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(roleAssignmentRequest)
 
@@ -463,8 +531,9 @@ describe("Agent Roles API", () => {
         }
 
         // When: Admin tries to assign role with invalid scope
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(roleAssignmentRequest)
 
@@ -474,9 +543,7 @@ describe("Agent Roles API", () => {
 
       it("should return 400 for empty template name in scope", async () => {
         // Given: Role assignment request with empty template name
-        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
         const roleAssignmentRequest: RoleAssignmentRequest = {
-          concurrencyControl: {version: agentToUpdate.occ.toString()},
           roles: [
             {
               roleName: "WorkflowTemplateVoter",
@@ -489,8 +556,9 @@ describe("Agent Roles API", () => {
         }
 
         // When: Admin tries to assign role with invalid UUID format
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(roleAssignmentRequest)
 
@@ -498,15 +566,16 @@ describe("Agent Roles API", () => {
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
       })
 
-      it("should return 404 for non-existent agent", async () => {
-        // Given: Valid role assignment request but non-existent agent ID
+      it("should return 404 for an agent deleted after reading its ETag", async () => {
+        // Given
         const roleAssignmentRequest = createOrgScopeRequest("OrgWideWorkflowTemplateVoter")
-
-        const nonExistentAgentId = uuidv7()
+        const etag = await ifMatchFor(targetAgent.id)
+        await prisma.agent.delete({where: {id: targetAgent.id}})
 
         // When: Admin tries to assign role to non-existent agent
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${nonExistentAgentId}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", etag)
           .build()
           .send(roleAssignmentRequest)
 
@@ -521,8 +590,9 @@ describe("Agent Roles API", () => {
         }
 
         // When: Admin sends invalid request body
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(invalidRequest)
 
@@ -542,13 +612,13 @@ describe("Agent Roles API", () => {
           })
 
         const roleAssignmentRequest: RoleAssignmentRequest = {
-          roles,
-          concurrencyControl: {version: "-9223372036854775808"}
+          roles
         }
 
         // When: Admin tries to assign more than maximum allowed roles in single request
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(roleAssignmentRequest)
 
@@ -572,11 +642,11 @@ describe("Agent Roles API", () => {
           })
 
         // Assign existing roles
-        await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send({
-            concurrencyControl: {version: "-9223372036854775808"},
             roles: existingRoles
           })
 
@@ -591,12 +661,11 @@ describe("Agent Roles API", () => {
             }
           })
 
-        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send({
-            concurrencyControl: {version: agentToUpdate.occ.toString()},
             roles: additionalRoles
           })
 
@@ -617,9 +686,10 @@ describe("Agent Roles API", () => {
 
         // Given: Valid role assignment request
         const roleAssignmentRequest = createOrgScopeRequest("WorkflowTemplateVoter")
+        const etag = await ifMatchFor(targetAgent.id)
 
         // Intercept getAgentById to trigger concurrent modification
-        spy = wrapTaskEitherWithSideEffect(agentRepository, "getAgentById", async agentId => {
+        spy = wrapTaskEitherWithSideEffect(agentRepository, "getAgentById", async (_context, agentId) => {
           // Only trigger side effect if fetching the target agent
           if (agentId === targetAgent.id)
             // Manually increment the OCC in the database via raw prisma query
@@ -631,8 +701,9 @@ describe("Agent Roles API", () => {
         })
 
         // When: Admin assigns role to agent
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", etag)
           .build()
           .send(roleAssignmentRequest)
 
@@ -648,8 +719,9 @@ describe("Agent Roles API", () => {
         const roleAssignmentRequest = createOrgScopeRequest("OrgWideWorkflowTemplateInstantiator")
 
         // When: Admin assigns role to agent
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(roleAssignmentRequest)
 
@@ -677,11 +749,12 @@ describe("Agent Roles API", () => {
       it("should only log newly assigned roles and ignore already existing ones", async () => {
         // Given: Agent already has a role assigned
         const workflowTemplate1 = await createMockWorkflowTemplateInDb(prisma)
-        await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const workflowTemplate2 = await createMockWorkflowTemplateInDb(prisma)
+        await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send({
-            concurrencyControl: {version: "-9223372036854775808"},
             roles: [
               {
                 roleName: "WorkflowTemplateVoter",
@@ -690,21 +763,20 @@ describe("Agent Roles API", () => {
             ]
           })
 
-        // When: Admin assigns both the existing role and a new one
-        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
-        const response = await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        // When: Admin assigns the same role in an existing and a new template scope
+        const response = await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send({
-            concurrencyControl: {version: agentToUpdate.occ.toString()},
             roles: [
               {
                 roleName: "WorkflowTemplateVoter",
                 scope: {type: "workflow_template", templateName: workflowTemplate1.name}
               },
               {
-                roleName: "OrgWideWorkflowTemplateInstantiator",
-                scope: {type: "org"}
+                roleName: "WorkflowTemplateVoter",
+                scope: {type: "workflow_template", templateName: workflowTemplate2.name}
               }
             ]
           })
@@ -726,8 +798,8 @@ describe("Agent Roles API", () => {
         expect(auditLogs[0]!.payload).toMatchObject({
           roles: [
             {
-              roleName: "OrgWideWorkflowTemplateInstantiator",
-              scope: {type: "org"}
+              roleName: "WorkflowTemplateVoter",
+              scope: {type: "workflow_template", templateName: workflowTemplate2.name}
             }
           ]
         })
@@ -743,7 +815,6 @@ describe("Agent Roles API", () => {
         const workflowTemplate2 = await createMockWorkflowTemplateInDb(prisma)
 
         const rolePutRequest: RoleAssignmentRequest = {
-          concurrencyControl: {version: "-9223372036854775808"},
           roles: [
             {
               roleName: "WorkflowTemplateVoter",
@@ -756,14 +827,13 @@ describe("Agent Roles API", () => {
           ]
         }
 
-        await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(rolePutRequest)
 
-        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
         const delRequest: RoleRemovalRequest = {
-          concurrencyControl: {version: agentToUpdate.occ.toString()},
           roles: [
             {
               roleName: "WorkflowTemplateInstantiator",
@@ -773,8 +843,9 @@ describe("Agent Roles API", () => {
         }
 
         // When: Admin removes one role
-        const response = await del(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await del(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(delRequest)
 
@@ -797,11 +868,11 @@ describe("Agent Roles API", () => {
       it("should remove all roles from agent", async () => {
         // Given: Agent has roles assigned
         const workflowTemplate = await createMockWorkflowTemplateInDb(prisma)
-        await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send({
-            concurrencyControl: {version: "-9223372036854775808"},
             roles: [
               {
                 roleName: "WorkflowTemplateVoter",
@@ -811,12 +882,11 @@ describe("Agent Roles API", () => {
           })
 
         // When: Admin removes all roles
-        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
-        const response = await del(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await del(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send({
-            concurrencyControl: {version: agentToUpdate.occ.toString()},
             roles: [
               {
                 roleName: "WorkflowTemplateVoter",
@@ -839,11 +909,11 @@ describe("Agent Roles API", () => {
         // Given: Agent has one role assigned
         const workflowTemplate1 = await createMockWorkflowTemplateInDb(prisma)
         const workflowTemplate2 = await createMockWorkflowTemplateInDb(prisma)
-        await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send({
-            concurrencyControl: {version: "-9223372036854775808"},
             roles: [
               {
                 roleName: "WorkflowTemplateVoter",
@@ -853,15 +923,14 @@ describe("Agent Roles API", () => {
           })
 
         // When: Admin tries to remove a different role
-        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
-        const response = await del(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await del(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send({
-            concurrencyControl: {version: agentToUpdate.occ.toString()},
             roles: [
               {
-                roleName: "WorkflowTemplateInstantiator",
+                roleName: "WorkflowTemplateVoter",
                 scope: {type: "workflow_template", templateName: workflowTemplate2.name}
               }
             ]
@@ -888,11 +957,11 @@ describe("Agent Roles API", () => {
       it("should persist audit log when roles are removed", async () => {
         // Given: Agent has roles assigned
         const workflowTemplate = await createMockWorkflowTemplateInDb(prisma)
-        await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send({
-            concurrencyControl: {version: "-9223372036854775808"},
             roles: [
               {
                 roleName: "WorkflowTemplateVoter",
@@ -902,12 +971,11 @@ describe("Agent Roles API", () => {
           })
 
         // When: Admin removes role
-        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
-        const response = await del(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await del(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send({
-            concurrencyControl: {version: agentToUpdate.occ.toString()},
             roles: [
               {
                 roleName: "WorkflowTemplateVoter",
@@ -941,11 +1009,11 @@ describe("Agent Roles API", () => {
         // Given: Agent has a role assigned
         const workflowTemplate1 = await createMockWorkflowTemplateInDb(prisma)
         const workflowTemplate2 = await createMockWorkflowTemplateInDb(prisma)
-        await put(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        await put(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send({
-            concurrencyControl: {version: "-9223372036854775808"},
             roles: [
               {
                 roleName: "WorkflowTemplateVoter",
@@ -954,20 +1022,19 @@ describe("Agent Roles API", () => {
             ]
           })
 
-        // When: Admin requests to remove one existing role and one non-existent role
-        const agentToUpdate = await prisma.agent.findUniqueOrThrow({where: {id: targetAgent.id}})
-        const response = await del(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        // When: Admin requests to remove the same role from an existing and an unassigned template scope
+        const response = await del(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send({
-            concurrencyControl: {version: agentToUpdate.occ.toString()},
             roles: [
               {
                 roleName: "WorkflowTemplateVoter",
                 scope: {type: "workflow_template", templateName: workflowTemplate1.name}
               },
               {
-                roleName: "WorkflowTemplateInstantiator",
+                roleName: "WorkflowTemplateVoter",
                 scope: {type: "workflow_template", templateName: workflowTemplate2.name}
               }
             ]
@@ -1001,9 +1068,7 @@ describe("Agent Roles API", () => {
         const roleRemovalRequest: RoleRemovalRequest = createOrgScopeRequest("WorkflowTemplateVoter")
 
         // When: Making request without token
-        const response = await del(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
-          .build()
-          .send(roleRemovalRequest)
+        const response = await del(app, agentRolesEndpoint(targetAgent.id)).build().send(roleRemovalRequest)
 
         // Then: Should receive unauthorized response
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
@@ -1014,7 +1079,7 @@ describe("Agent Roles API", () => {
         const roleRemovalRequest: RoleRemovalRequest = createOrgScopeRequest("WorkflowTemplateVoter")
 
         // When: Making request with invalid token
-        const response = await del(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await del(app, agentRolesEndpoint(targetAgent.id))
           .withToken("invalid-token")
           .build()
           .send(roleRemovalRequest)
@@ -1026,8 +1091,9 @@ describe("Agent Roles API", () => {
       it("should return 400 for empty roles array", async () => {
         // Given: Empty roles removal request
         // When: Admin tries to remove empty roles
-        const response = await del(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await del(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(emptyRolesRequest)
 
@@ -1035,15 +1101,16 @@ describe("Agent Roles API", () => {
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
       })
 
-      it("should return 404 for non-existent agent", async () => {
-        // Given: Valid role removal request but non-existent agent ID
+      it("should return 404 for an agent deleted after reading its ETag", async () => {
+        // Given
         const roleRemovalRequest: RoleRemovalRequest = createOrgScopeRequest("OrgWideWorkflowTemplateVoter")
-
-        const nonExistentAgentId = uuidv7()
+        const etag = await ifMatchFor(targetAgent.id)
+        await prisma.agent.delete({where: {id: targetAgent.id}})
 
         // When: Admin tries to remove role from non-existent agent
-        const response = await del(app, `/${AGENTS_ENDPOINT_ROOT}/${nonExistentAgentId}/roles`)
+        const response = await del(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", etag)
           .build()
           .send(roleRemovalRequest)
 
@@ -1058,8 +1125,9 @@ describe("Agent Roles API", () => {
         }
 
         // When: Admin sends invalid request body
-        const response = await del(app, `/${AGENTS_ENDPOINT_ROOT}/${targetAgent.id}/roles`)
+        const response = await del(app, agentRolesEndpoint(targetAgent.id))
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", await ifMatchFor(targetAgent.id))
           .build()
           .send(invalidRequest)
 

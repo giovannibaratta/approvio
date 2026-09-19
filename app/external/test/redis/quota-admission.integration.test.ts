@@ -2,9 +2,11 @@ import {ConfigModule, RedisClient, RedisQuotaAdmissionClient, buildQuotaUsageKey
 import {ConfigProvider} from "@external/config"
 import {Test, TestingModule} from "@nestjs/testing"
 import {ReservationResult} from "@services/usage-metering"
+import * as E from "fp-ts/Either"
 import {cleanRedisByPrefix, prepareDatabase, prepareRedisPrefix} from "@test/database"
 import {MockConfigProvider} from "@test/mock-data"
 import {unwrapRight} from "@utils/either"
+import {v7 as uuidv7} from "uuid"
 
 describe("RedisQuotaAdmissionClient Integration", () => {
   let admissionClient: RedisQuotaAdmissionClient
@@ -22,7 +24,7 @@ describe("RedisQuotaAdmissionClient Integration", () => {
       .overrideProvider(ConfigProvider)
       .useValue(
         MockConfigProvider.fromOriginalProvider({
-          dbConnectionUrl: isolatedDb,
+          tenantConnectionUrl: isolatedDb,
           redisPrefix
         })
       )

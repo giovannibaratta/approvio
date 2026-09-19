@@ -12,6 +12,18 @@ The application follows a clean architecture pattern with clear separation of co
 
 > The core application logic should be implemented in the domain and service layer, but due to performance implication some operation might be delegated to the external layer.
 
+## Multi-Tenancy & Repository Conventions
+
+Tenant isolation is enforced across application scoping and PostgreSQL Row-Level Security (RLS):
+
+- **Explicit Context Parameter:** Every tenant-scoped repository method must accept `context: TenantContext` as its first parameter (for both queries like `getById(context, id)` and mutations like `persist(context, entity)`).
+- **Read/Write Symmetry:** Do not rely on entity decoration for tenant context. Explicit context parameters ensure consistent signatures across mutations and reads (where no entity exists prior to query execution).
+- **Separation of Responsibilities:**
+  - The **Service Layer** verifies that entity payload identifiers match the requestor's `context.organizationId`.
+  - The **Repository Layer** uses `context.organizationId` to scope database queries, enforce transaction boundaries, and configure the RLS session.
+
+For detailed security boundaries and trade-offs, refer to [ADR 010: Tenancy Security Boundaries](./docs/ADR/010-tenancy-security-boundaries.md).
+
 ## Technology Stack
 
 - **Framework**: NestJS with Express

@@ -1,262 +1,243 @@
+import {fromPromise} from "./repository-operation"
 import {Injectable, Logger} from "@nestjs/common"
-import * as TE from "fp-ts/TaskEither"
-import {TaskEither} from "fp-ts/TaskEither"
-import {pipe} from "fp-ts/function"
-import * as E from "fp-ts/Either"
-import {Prisma, RefreshToken as PrismaRefreshToken} from "@prisma/client"
 import {
-  RefreshToken,
-  RefreshTokenFactory,
-  DecoratedRefreshToken,
+  AccountRefreshToken,
+  AccountRefreshTokenFactory,
+  AgentRefreshToken,
+  AgentRefreshTokenFactory,
   RefreshTokenStatus,
-  EntityType,
-  UsedUserRefreshToken,
-  DecoratedActiveUserRefreshToken,
-  DecoratedActiveAgentRefreshToken,
-  UsedAgentRefreshToken,
   RefreshTokenValidationError,
-  RefreshTokenDecoratorSelector
+  TenantContext,
+  UsedAccountRefreshToken,
+  UsedAgentRefreshToken,
+  DecoratedAccountRefreshToken,
+  DecoratedActiveAccountRefreshToken,
+  DecoratedActiveAgentRefreshToken,
+  DecoratedAgentRefreshToken
 } from "@domain"
 import {
+  AccountRefreshTokenRepository,
+  AgentRefreshTokenRepository,
   RefreshTokenCreateError,
   RefreshTokenGetError,
-  RefreshTokenRepository,
   RefreshTokenUpdateError
 } from "@services/auth"
-import {DatabaseClient} from "./database-client"
+import {
+  RefreshToken as PrismaAccountRefreshToken,
+  AgentRefreshToken as PrismaAgentRefreshToken,
+  Prisma
+} from "@prisma/client"
+import * as E from "fp-ts/Either"
+import * as TE from "fp-ts/TaskEither"
+import {pipe} from "fp-ts/function"
+import {SessionDatabaseClient} from "./capability-database-client"
+import {AgentRefreshTokenTenantClient} from "./tenant-database-clients"
+import {chainNullableToLeft} from "./utils"
+import {isPrismaRecordNotFoundError} from "./errors"
+import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 
 @Injectable()
-export class RefreshTokenDbRepository implements RefreshTokenRepository {
-  constructor(private readonly dbClient: DatabaseClient) {}
+export class AccountRefreshTokenDbRepository implements AccountRefreshTokenRepository {
+  constructor(private readonly sessions: SessionDatabaseClient) {}
 
-  createToken(token: DecoratedRefreshToken<{occ: true}>): TaskEither<RefreshTokenCreateError, RefreshToken> {
+  createToken(token: AccountRefreshToken): TE.TaskEither<RefreshTokenCreateError, AccountRefreshToken> {
     return pipe(
-      TE.tryCatch(
-        async () => {
-          const prismaData = mapDomainTokenToPrismaForCreate(token)
-          const created = await this.dbClient.cx.refreshToken.create({
-            data: prismaData
-          })
-          return created
-        },
-        error => {
-          Logger.error("Error creating refresh token")
-          Logger.error(error)
-          return "unknown_error" as const
-        }
+      fromPromise(
+        () => this.sessions.transactional(tx => tx.refreshToken.create({data: accountData(token)})),
+        error => mapCreateError(error, "account refresh create")
       ),
-      TE.chainEitherKW(prismaToken => mapPrismaTokenToDomain(prismaToken, {occ: true}))
+      TE.chainEitherKW(mapAccountToken)
     )
   }
 
-  getByTokenHash(tokenHash: string): TaskEither<RefreshTokenGetError, DecoratedRefreshToken<{occ: true}>> {
+  getByTokenHash(tokenHash: string): TE.TaskEither<RefreshTokenGetError, DecoratedAccountRefreshToken<{occ: true}>> {
     return pipe(
-      TE.tryCatch(
-        async () => {
-          const token = await this.dbClient.cx.refreshToken.findUnique({
-            where: {tokenHash}
-          })
-          if (!token) throw new RefreshTokenNotFoundError()
-          return token
-        },
-        error => {
-          if (error instanceof RefreshTokenNotFoundError) return "refresh_token_not_found" as const
-          Logger.error("Error retrieving refresh token", error)
-          return "unknown_error" as const
-        }
+      fromPromise(
+        () => this.sessions.transactional(tx => tx.refreshToken.findUnique({where: {tokenHash}})),
+        error => mapGetError(error, "account refresh lookup")
       ),
-      TE.chainEitherKW(prismaToken => mapPrismaTokenToDomain(prismaToken, {occ: true}))
+      chainNullableToLeft("refresh_token_not_found" as const),
+      TE.chainEitherKW(mapAccountToken)
     )
   }
 
-  persistNewTokenUpdateOldForUser(
-    newTokenToPersist: DecoratedActiveUserRefreshToken<{occ: true}>,
-    oldTokenToUpdate: UsedUserRefreshToken,
-    occCheckOldToken: bigint
-  ): TaskEither<RefreshTokenUpdateError, void> {
-    return this.persistNewTokenUpdateOldToken(oldTokenToUpdate, occCheckOldToken, newTokenToPersist)
-  }
-
-  persistNewTokenUpdateOldForAgent(
-    newTokenToPersist: DecoratedActiveAgentRefreshToken<{occ: true}>,
-    oldTokenToUpdate: UsedAgentRefreshToken,
-    occCheckOldToken: bigint
-  ): TaskEither<RefreshTokenUpdateError, void> {
-    return this.persistNewTokenUpdateOldToken(oldTokenToUpdate, occCheckOldToken, newTokenToPersist)
-  }
-
-  private persistNewTokenUpdateOldToken(
-    oldTokenToUpdate: RefreshToken,
-    occCheckOldToken: bigint,
-    newTokenToPersist: DecoratedRefreshToken<{occ: true}>
-  ): TaskEither<RefreshTokenUpdateError, void> {
-    const oldTokenData = mapDomainTokenToPrismaForUpdate(oldTokenToUpdate)
-    const newTokenData = mapDomainTokenToPrismaForCreate(newTokenToPersist)
-
-    return TE.tryCatch(
+  persistNewTokenUpdateOld(
+    newToken: DecoratedActiveAccountRefreshToken<{occ: true}>,
+    oldToken: UsedAccountRefreshToken,
+    expectedOcc: bigint
+  ): TE.TaskEither<RefreshTokenUpdateError, void> {
+    return fromPromise(
       async () => {
-        await this.dbClient.transactional(async tx => {
-          // Update existing token
-          const updated = await tx.refreshToken.update({
-            where: {
-              id: oldTokenToUpdate.id,
-              occ: occCheckOldToken
-            },
+        return this.sessions.transactional(async tx => {
+          // The used token references its successor. Insert that successor before
+          // updating nextTokenId so the self-referential FK remains valid.
+          await tx.refreshToken.create({data: accountData(newToken)})
+
+          await tx.refreshToken.update({
+            where: {id: oldToken.id, occ: expectedOcc},
             data: {
-              ...oldTokenData,
-              occ: {
-                increment: 1
-              }
+              status: oldToken.status,
+              usedAt: oldToken.usedAt,
+              nextTokenId: oldToken.nextTokenId,
+              occ: {increment: 1}
             }
-          })
-
-          // Validate that a token was updated
-          if (!updated) throw new RefreshTokenNotFoundError()
-
-          // Create new token
-          await tx.refreshToken.create({
-            data: newTokenData
           })
         })
       },
-      error => {
-        if (error instanceof RefreshTokenNotFoundError) return "refresh_token_concurrent_update" as const
-
-        Logger.error("Error updating refresh token")
-        Logger.error(error)
-        return "unknown_error" as const
-      }
+      error => mapRotationError(error, Prisma.ModelName.RefreshToken, "account refresh rotate")
     )
   }
 
-  revokeFamily(familyId: string): TaskEither<RefreshTokenUpdateError, void> {
-    return TE.tryCatch(
+  revokeFamily(familyId: string): TE.TaskEither<RefreshTokenUpdateError, void> {
+    return fromPromise(
+      () =>
+        this.sessions.transactional(tx =>
+          tx.refreshToken
+            .updateMany({where: {familyId}, data: {status: RefreshTokenStatus.REVOKED, occ: {increment: 1}}})
+            .then(() => undefined)
+        ),
+      error => mapUpdateError(error, "account refresh revoke family")
+    )
+  }
+}
+
+@Injectable()
+export class AgentRefreshTokenDbRepository implements AgentRefreshTokenRepository {
+  constructor(private readonly dbClient: AgentRefreshTokenTenantClient) {}
+
+  createToken(token: AgentRefreshToken): TE.TaskEither<RefreshTokenCreateError, AgentRefreshToken> {
+    return pipe(
+      fromPromise(
+        async () => {
+          return this.dbClient.cx.agentRefreshToken.create({data: agentData(token)})
+        },
+        error => mapCreateError(error, "agent refresh create")
+      ),
+      TE.chainEitherKW(mapAgentToken)
+    )
+  }
+
+  getByTokenHash(
+    context: TenantContext,
+    tokenHash: string
+  ): TE.TaskEither<RefreshTokenGetError, DecoratedAgentRefreshToken<{occ: true}>> {
+    return pipe(
+      fromPromise(
+        () =>
+          this.dbClient.cx.agentRefreshToken.findUnique({
+            where: {organizationId_tokenHash: {organizationId: context.organizationId, tokenHash}}
+          }),
+        error => mapGetError(error, "agent refresh lookup")
+      ),
+      chainNullableToLeft("refresh_token_not_found" as const),
+      TE.chainEitherKW(mapAgentToken)
+    )
+  }
+
+  persistNewTokenUpdateOld(
+    context: TenantContext,
+    newToken: DecoratedActiveAgentRefreshToken<{occ: true}>,
+    oldToken: UsedAgentRefreshToken,
+    expectedOcc: bigint
+  ): TE.TaskEither<RefreshTokenUpdateError, void> {
+    return fromPromise(
       async () => {
-        await this.dbClient.cx.refreshToken.updateMany({
-          where: {familyId},
+        await this.dbClient.cx.agentRefreshToken.create({data: agentData(newToken)})
+        await this.dbClient.cx.agentRefreshToken.update({
+          where: {
+            organizationId: context.organizationId,
+            id: oldToken.id,
+            occ: expectedOcc
+          },
           data: {
-            status: RefreshTokenStatus.REVOKED,
-            occ: {
-              increment: 1
-            }
+            status: oldToken.status,
+            usedAt: oldToken.usedAt,
+            nextTokenId: oldToken.nextTokenId,
+            occ: {increment: 1}
           }
         })
       },
-      error => {
-        Logger.error("Error revoking token family", error)
-        return "unknown_error" as const
-      }
+      error => mapRotationError(error, Prisma.ModelName.AgentRefreshToken, "agent refresh rotate")
+    )
+  }
+
+  revokeFamily(context: TenantContext, familyId: string): TE.TaskEither<RefreshTokenUpdateError, void> {
+    return fromPromise(
+      () =>
+        this.dbClient.cx.agentRefreshToken
+          .updateMany({
+            where: {organizationId: context.organizationId, familyId},
+            data: {status: RefreshTokenStatus.REVOKED, occ: {increment: 1}}
+          })
+          .then(() => undefined),
+      error => mapUpdateError(error, "agent refresh revoke family")
     )
   }
 }
 
-function getUsedTokenProp(token: RefreshToken): {usedAt: Date | null; nextTokenId: string | null} {
-  if (token.status !== RefreshTokenStatus.USED)
-    return {
-      usedAt: null,
-      nextTokenId: null
-    }
-
+function accountData(token: AccountRefreshToken) {
   return {
-    usedAt: token.usedAt,
-    nextTokenId: token.nextTokenId
-  }
-}
-
-function mapDomainTokenToPrismaForUpdate(token: RefreshToken): Prisma.RefreshTokenUpdateInput {
-  const {usedAt, nextTokenId} = getUsedTokenProp(token)
-
-  const baseData = {
     id: token.id,
     tokenHash: token.tokenHash,
     familyId: token.familyId,
+    accountId: token.accountId,
+    sessionId: token.sessionId,
+    providerId: token.providerId,
     status: token.status,
-    usedAt,
-    nextTokenId,
+    usedAt: token.status === RefreshTokenStatus.USED ? token.usedAt : null,
+    nextTokenId: token.status === RefreshTokenStatus.USED ? token.nextTokenId : null,
     expiresAt: token.expiresAt,
     createdAt: token.createdAt,
-    providerId: token.entityType === EntityType.USER ? token.providerId : null
-  }
-
-  let userRef: Prisma.UserCreateNestedOneWithoutRefreshTokensInput | undefined = undefined
-  let agentRef: Prisma.AgentCreateNestedOneWithoutRefreshTokensInput | undefined = undefined
-
-  if (token.entityType === EntityType.USER)
-    userRef = {
-      connect: {id: token.userId}
-    }
-  else
-    agentRef = {
-      connect: {id: token.agentId}
-    }
-
-  return {
-    ...baseData,
-    ...(userRef !== undefined && {users: userRef}),
-    ...(agentRef !== undefined && {agents: agentRef})
+    occ: POSTGRES_BIGINT_LOWER_BOUND
   }
 }
 
-function mapDomainTokenToPrismaForCreate(token: DecoratedRefreshToken<{occ: true}>): Prisma.RefreshTokenCreateInput {
-  const {usedAt, nextTokenId} = getUsedTokenProp(token)
-
-  const baseData = {
+function agentData(token: AgentRefreshToken) {
+  return {
     id: token.id,
+    organizationId: token.organizationId,
+    agentId: token.agentId,
     tokenHash: token.tokenHash,
     familyId: token.familyId,
     status: token.status,
-    usedAt,
-    nextTokenId,
+    usedAt: token.status === RefreshTokenStatus.USED ? token.usedAt : null,
+    nextTokenId: token.status === RefreshTokenStatus.USED ? token.nextTokenId : null,
     expiresAt: token.expiresAt,
     createdAt: token.createdAt,
-    occ: token.occ,
-    providerId: token.entityType === EntityType.USER ? token.providerId : null
-  }
-
-  let userRef: Prisma.UserCreateNestedOneWithoutRefreshTokensInput | undefined = undefined
-  let agentRef: Prisma.AgentCreateNestedOneWithoutRefreshTokensInput | undefined = undefined
-
-  if (token.entityType === EntityType.USER)
-    userRef = {
-      connect: {id: token.userId}
-    }
-  else
-    agentRef = {
-      connect: {id: token.agentId}
-    }
-
-  return {
-    ...baseData,
-    ...(userRef !== undefined && {users: userRef}),
-    ...(agentRef !== undefined && {agents: agentRef})
+    occ: POSTGRES_BIGINT_LOWER_BOUND
   }
 }
 
-function mapPrismaTokenToDomain<T extends RefreshTokenDecoratorSelector>(
-  prismaToken: PrismaRefreshToken,
-  selectors?: T
-): E.Either<RefreshTokenValidationError, DecoratedRefreshToken<T>> {
-  const data = {
-    createdAt: prismaToken.createdAt,
-    expiresAt: prismaToken.expiresAt,
-    id: prismaToken.id,
-    tokenHash: prismaToken.tokenHash,
-    familyId: prismaToken.familyId,
-    status: prismaToken.status as RefreshTokenStatus,
-    usedAt: prismaToken.usedAt || undefined,
-    nextTokenId: prismaToken.nextTokenId || undefined,
-    entityType: prismaToken.userId ? "user" : "agent",
-    userId: prismaToken.userId || undefined,
-    agentId: prismaToken.agentId || undefined,
-    providerId: prismaToken.providerId || undefined,
-    occ: prismaToken.occ
-  }
-
-  return RefreshTokenFactory.validate<T>(data, selectors)
+function mapAccountToken(
+  record: PrismaAccountRefreshToken
+): E.Either<RefreshTokenValidationError, DecoratedAccountRefreshToken<{occ: true}>> {
+  return AccountRefreshTokenFactory.validate({...record, entityType: "account"}, {occ: true})
 }
 
-class RefreshTokenNotFoundError extends Error {
-  constructor() {
-    super("refresh_token_not_found")
-  }
+function mapAgentToken(
+  record: PrismaAgentRefreshToken
+): E.Either<RefreshTokenValidationError, DecoratedAgentRefreshToken<{occ: true}>> {
+  const result = AgentRefreshTokenFactory.validate({...record, entityType: "agent"}, {occ: true})
+  if (E.isLeft(result)) Logger.error("Agent refresh token mapping failed", result.left)
+  return result
+}
+
+function mapCreateError(error: unknown, operation: string): RefreshTokenCreateError {
+  Logger.error(`${operation} failed`, error instanceof Error ? error.name : "non_error")
+  return "unknown_error"
+}
+
+function mapGetError(error: unknown, operation: string): RefreshTokenGetError {
+  Logger.error(`${operation} failed`, error instanceof Error ? error.name : "non_error")
+  return "unknown_error"
+}
+
+function mapUpdateError(error: unknown, operation: string): RefreshTokenUpdateError {
+  Logger.error(`${operation} failed`, error instanceof Error ? error.name : "non_error")
+  return "unknown_error"
+}
+
+function mapRotationError(error: unknown, model: Prisma.ModelName, operation: string): RefreshTokenUpdateError {
+  if (isPrismaRecordNotFoundError(error, model)) return "refresh_token_concurrent_update"
+  return mapUpdateError(error, operation)
 }

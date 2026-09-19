@@ -117,14 +117,13 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@approvio/api@npm:0.0.58":
-  version: 0.0.58
-  resolution: "@approvio/api@npm:0.0.58"
+"@approvio/api@portal:/workspace/approvio-api::locator=%40approvio%2Fbackend%40workspace%3A.":
+  version: 0.0.0-use.local
+  resolution: "@approvio/api@portal:/workspace/approvio-api::locator=%40approvio%2Fbackend%40workspace%3A."
   peerDependencies:
     fp-ts: ^2.0.0
-  checksum: 10/bf5aa06318c103406dcb8cc80364c9902120211054b626bb258003b8db4f81050c9903bc1fad5914d65ccbfebf6ee6ba8a04f849c4647cd8f5c4f9d5d8cc7eb7
   languageName: node
-  linkType: hard
+  linkType: soft
 
 "@approvio/backend@workspace:.":
   version: 0.0.0-use.local

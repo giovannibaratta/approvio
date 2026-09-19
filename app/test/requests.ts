@@ -34,6 +34,11 @@ export class RequestBuilder {
     return this
   }
 
+  withHeader(name: string, value: string): RequestBuilder {
+    this.partialRequest = this.partialRequest.set(name, value)
+    return this
+  }
+
   build(): request.Test {
     return this.partialRequest
   }

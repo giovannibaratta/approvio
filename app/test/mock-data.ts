@@ -1,10 +1,11 @@
+import {randomOrgId, toOrganizationId} from "@test/organization-id"
 import {v7 as uuidv7} from "uuid"
 import {
   Prisma,
   PrismaClient,
   User as PrismaUser,
   Agent as PrismaAgent,
-  OrganizationAdmin as PrismaOrganizationAdmin,
+  AgentRefreshToken as PrismaAgentRefreshToken,
   WorkflowTemplate as PrismaWorkflowTemplate,
   Workflow as PrismaWorkflow,
   Group as PrismaGroup,
@@ -20,12 +21,12 @@ import {
   OrgRole,
   UnconstrainedBoundRole,
   User,
-  UserFactory,
   WorkflowStatus,
+  WorkflowAction,
   WorkflowTemplate,
-  WorkflowTemplateFactory,
-  PlanTier
+  WorkflowTemplateFactory
 } from "@domain"
+import {createTestUser} from "./user"
 import {mapToDomainVersionedUser} from "@external/database/shared"
 import {isLeft} from "fp-ts/Either"
 
@@ -33,6 +34,7 @@ import {Chance} from "chance"
 import {
   ConfigProvider,
   ConfigProviderInterface,
+  DatabaseConfig,
   EmailProviderConfig,
   JwtConfig,
   OidcProviderConfig,
@@ -48,7 +50,7 @@ import * as O from "fp-ts/Option"
 import {createSha256Hash} from "@utils"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "@external/database/constants"
 import {unwrapRight} from "@utils/either"
-import {EncryptionService} from "@external/kms/encryption.service"
+import {TenantEncryptionService} from "@external/kms/context-bound-encryption.service"
 import {EnvVarKmsProvider} from "@external/kms/env-var-kms.provider"
 import {LeverConfig, SsrfProtectionConfig} from "@external/config/interfaces"
 
@@ -64,6 +66,25 @@ function getTestEncryptionService(): EncryptionService {
 }
 
 const chance = new Chance()
+
+async function ensureTestOrganization(prisma: PrismaClient, organizationId: string): Promise<string> {
+  const now = new Date()
+  await prisma.organization.upsert({
+    where: {id: organizationId},
+    create: {
+      id: organizationId,
+      slug: `test-${organizationId}`,
+      displayName: "Test organization",
+      planTier: "FREE",
+      status: "active",
+      occ: 0n,
+      createdAt: now,
+      updatedAt: now
+    },
+    update: {}
+  })
+  return organizationId
+}
 
 // Pre-generated 2048-bit RSA key pairs for testing performance optimization
 // WARNING: These keys are for TESTING ONLY and should NEVER be used in production
@@ -274,7 +295,7 @@ export class MockKeyPool {
 
 export class MockConfigProvider implements ConfigProviderInterface {
   isPrivilegeMode: boolean
-  dbConnectionUrl: string
+  databaseConfig: DatabaseConfig
   emailProviderConfig: Option<EmailProviderConfig>
   oidcProviders: Map<string, OidcProviderConfig>
   jwtConfig: JwtConfig
@@ -282,34 +303,35 @@ export class MockConfigProvider implements ConfigProviderInterface {
   rateLimitConfig: RateLimitConfig
   webhookRetryConfig: WebhookRetryConfig
   emailRetryConfig: EmailRetryConfig
-  databaseRetryConfig: DatabaseRetryConfig
   frontendUrl: string
   cookieSecure: boolean
   kmsConfig: KmsConfig
   ssrfProtectionConfig: SsrfProtectionConfig
   leverConfig: LeverConfig
   deploymentEdition: "self_hosted" | "saas_cloud"
-  planTier: PlanTier
   healthCacheTtlMs: number
 
   private constructor(
     originalProvider?: ConfigProvider,
     mocks: {
-      dbConnectionUrl?: string
+      tenantConnectionUrl?: string
       emailProviderConfig?: EmailProviderConfig
       redisPrefix?: string
       rateLimitConfig?: RateLimitConfig
       webhookRetryConfig?: WebhookRetryConfig
       emailRetryConfig?: EmailRetryConfig
-      databaseRetryConfig?: DatabaseRetryConfig
+      databaseRetry?: DatabaseRetryConfig
       leverConfig?: LeverConfig
       deploymentEdition?: "self_hosted" | "saas_cloud"
-      planTier?: PlanTier
     } = {}
   ) {
     const provider: ConfigProviderInterface = originalProvider ?? {
       isPrivilegeMode: true,
-      dbConnectionUrl: "postgresql://test:test@localhost:5433/postgres?schema=public",
+      databaseConfig: {
+        tenantConnectionUrl: "postgresql://test:test@localhost:5433/postgres?schema=public",
+        platformConnectionUrl: "postgresql://test:test@localhost:5433/postgres?schema=public",
+        retry: {maxAttempts: 3, initialDelayMs: 0, backoffFactor: 1, maxDelayMs: 0}
+      },
       emailProviderConfig: O.none,
       oidcProviders: new Map([
         [
@@ -364,12 +386,6 @@ export class MockConfigProvider implements ConfigProviderInterface {
         backoffFactor: 1,
         maxDelayMs: 0
       },
-      databaseRetryConfig: {
-        maxAttempts: 3,
-        initialDelayMs: 0,
-        backoffFactor: 1,
-        maxDelayMs: 0
-      },
       frontendUrl: "http://localhost:5173",
       cookieSecure: false,
       kmsConfig: {
@@ -394,12 +410,16 @@ export class MockConfigProvider implements ConfigProviderInterface {
       leverConfig: {
         enabled: false
       },
-      deploymentEdition: "self_hosted",
-      planTier: "FREE"
+      deploymentEdition: "self_hosted"
     }
 
     this.isPrivilegeMode = provider.isPrivilegeMode
-    this.dbConnectionUrl = mocks.dbConnectionUrl || provider.dbConnectionUrl
+    this.databaseConfig = {
+      ...provider.databaseConfig,
+      tenantConnectionUrl: mocks.tenantConnectionUrl || provider.databaseConfig.tenantConnectionUrl,
+      platformConnectionUrl: mocks.tenantConnectionUrl || provider.databaseConfig.platformConnectionUrl,
+      retry: mocks.databaseRetry || provider.databaseConfig.retry
+    }
     this.emailProviderConfig =
       mocks.emailProviderConfig !== undefined ? O.some(mocks.emailProviderConfig) : provider.emailProviderConfig
     this.oidcProviders = provider.oidcProviders
@@ -409,7 +429,6 @@ export class MockConfigProvider implements ConfigProviderInterface {
     this.rateLimitConfig = mocks.rateLimitConfig || provider.rateLimitConfig
     this.webhookRetryConfig = mocks.webhookRetryConfig || provider.webhookRetryConfig
     this.emailRetryConfig = mocks.emailRetryConfig || provider.emailRetryConfig
-    this.databaseRetryConfig = mocks.databaseRetryConfig || provider.databaseRetryConfig
     this.frontendUrl = provider.frontendUrl
     this.cookieSecure = provider.cookieSecure
     this.ssrfProtectionConfig = {
@@ -434,7 +453,6 @@ export class MockConfigProvider implements ConfigProviderInterface {
     }
     this.leverConfig = mocks.leverConfig || provider.leverConfig
     this.deploymentEdition = mocks.deploymentEdition || provider.deploymentEdition || "self_hosted"
-    this.planTier = mocks.planTier || provider.planTier || "FREE"
     this.healthCacheTtlMs = provider.healthCacheTtlMs ?? 1000
   }
 
@@ -455,10 +473,10 @@ export class MockConfigProvider implements ConfigProviderInterface {
     return this.cachedRealProvider
   }
 
-  static fromDbConnectionUrl(dbConnectionUrl: string, redisPrefix?: string): MockConfigProvider {
+  static fromTenantConnectionUrl(tenantConnectionUrl: string, redisPrefix?: string): MockConfigProvider {
     const realProvider = this.getCachedRealProvider()
     return new MockConfigProvider(realProvider, {
-      dbConnectionUrl,
+      tenantConnectionUrl,
       redisPrefix,
       webhookRetryConfig: {
         maxAttempts: 3,
@@ -472,7 +490,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
         backoffFactor: 1,
         maxDelayMs: 0
       },
-      databaseRetryConfig: {
+      databaseRetry: {
         maxAttempts: 3,
         initialDelayMs: 0,
         backoffFactor: 1,
@@ -483,16 +501,15 @@ export class MockConfigProvider implements ConfigProviderInterface {
 
   static fromOriginalProvider(
     mocks: {
-      dbConnectionUrl?: string
+      tenantConnectionUrl?: string
       emailProviderConfig?: EmailProviderConfig
       redisPrefix?: string
       rateLimitConfig?: RateLimitConfig
       webhookRetryConfig?: WebhookRetryConfig
       emailRetryConfig?: EmailRetryConfig
-      databaseRetryConfig?: DatabaseRetryConfig
+      databaseRetry?: DatabaseRetryConfig
       leverConfig?: LeverConfig
       deploymentEdition?: "self_hosted" | "saas_cloud"
-      planTier?: PlanTier
     } = {}
   ): MockConfigProvider {
     const provider = this.getCachedRealProvider()
@@ -500,11 +517,8 @@ export class MockConfigProvider implements ConfigProviderInterface {
   }
 }
 
-type PrismaUserWithOrgAdmin = PrismaUser & {
-  organizationAdmins: PrismaOrganizationAdmin | null
-}
-
 export function createMockWorkflowTemplateDomain(overrides?: Partial<WorkflowTemplate>): WorkflowTemplate {
+  const organizationId = overrides?.organizationId ?? uuidv7()
   const randomTemplate = unwrapRight(
     WorkflowTemplateFactory.newWorkflowTemplate({
       name: chance.name(),
@@ -517,6 +531,7 @@ export function createMockWorkflowTemplateDomain(overrides?: Partial<WorkflowTem
       },
       actions: [],
       defaultExpiresInHours: chance.integer({min: 1, max: 8760}),
+      organizationId: toOrganizationId(organizationId),
       spaceId: uuidv7()
     })
   )
@@ -566,9 +581,10 @@ export async function createMockUserInDb(
       subjectId: string
     }
   }
-): Promise<PrismaUserWithOrgAdmin> {
+): Promise<PrismaUser> {
   const {orgAdmin, identity, ...userOverrides} = overrides || {}
-  const payload = createMockUserPrismaPayload(userOverrides)
+  const now = new Date()
+  await ensureTestOrganization(prisma, organizationId)
   const user = await prisma.user.create({data: payload})
 
   if (orgAdmin)
@@ -739,11 +755,14 @@ export async function createMockWorkflowInDb(
     name: string
     description?: string
     status?: WorkflowStatus
+    organizationId?: string
     workflowTemplateId?: string
     spaceId?: string
     expiresAt?: Date | "active" | "expired"
   }
 ): Promise<PrismaWorkflow> {
+  const organizationId = overrides.organizationId ?? uuidv7()
+
   let workflowId: string | undefined = overrides.workflowTemplateId
 
   if (!workflowId) {
@@ -863,10 +882,14 @@ export async function createMockGroupInDb(
 
 export async function createMockSpaceInDb(
   prisma: PrismaClient,
-  overrides?: Partial<Omit<Prisma.SpaceCreateInput, "id" | "occ">>
+    defaultOrganizationId?: string
+  }
 ): Promise<PrismaSpace> {
-  const randomSpace: Prisma.SpaceCreateInput = {
+  const {defaultOrganizationId, ...spaceOverrides} = overrides ?? {}
+  const organizationId = spaceOverrides.organizationId ?? defaultOrganizationId ?? uuidv7()
+  await ensureTestOrganization(prisma, organizationId)
     id: uuidv7(),
+    organizationId,
     name: chance.company() + "-" + chance.integer({min: 1, max: 1000}),
     description: chance.sentence(),
     createdAt: new Date(),

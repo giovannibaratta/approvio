@@ -1,4 +1,8 @@
 import {
+  UserValidationError,
+  StepUpReceiptValidationError,
+  AccountValidationError,
+  SessionValidationError,
   AgentChallenge,
   AgentChallengeCreationError,
   AgentChallengeDecoratedValidationError,
@@ -7,35 +11,51 @@ import {
   AgentChallengeProcessingError,
   AgentChallengeValidationError,
   DecoratedAgentChallenge,
-  RefreshToken,
-  DecoratedRefreshToken,
+  AccountRefreshToken,
+  AgentRefreshToken,
+  DecoratedAccountRefreshToken,
+  DecoratedAgentRefreshToken,
   RefreshTokenValidationError,
   RefreshTokenEligibilityError,
-  UsedUserRefreshToken,
-  DecoratedActiveUserRefreshToken,
+  UsedAccountRefreshToken,
+  DecoratedActiveAccountRefreshToken,
   UsedAgentRefreshToken,
   DecoratedActiveAgentRefreshToken,
-  StepUpOperation
+  StepUpOperation,
+  AuthorityError,
+  MutationError,
+  BoundaryError,
+  TenantContext,
+  PkceStorageData,
+  PkceSessionData,
+  PkceSessionValidationError
 } from "@domain"
 import {AgentGetError} from "../agent/interfaces"
-import {AutoRegisterError} from "../user/user.service"
-import {UserGetError} from "../user/interfaces"
-import {OrganizationAdminCreateError} from "../organization-admin/interfaces"
-import {UserIdentityCreateError} from "../user-identity/interfaces"
-import {UnknownError, EncryptionError} from "../error"
+import {UnknownError, RepositoryDependencyError} from "../error"
+import {TenantOperationError} from "../tenancy/interfaces"
 import {PrefixUnion} from "@utils/types"
 import {TaskEither} from "fp-ts/TaskEither"
+import {ExecutionError, TransactionError} from "@services/transaction/interfaces"
 import {Either} from "fp-ts/Either"
 import {DpopValidationError} from "@utils/dpop"
+import {CryptoError} from "../encryption/interfaces"
 
 export const PKCE_SESSION_REPOSITORY_TOKEN = "PKCE_SESSION_REPOSITORY_TOKEN"
 export const OIDC_PROVIDER_TOKEN = "OIDC_PROVIDER_TOKEN"
 export const AGENT_CHALLENGE_REPOSITORY_TOKEN = "AGENT_CHALLENGE_REPOSITORY_TOKEN"
-export const REFRESH_TOKEN_REPOSITORY_TOKEN = "REFRESH_TOKEN_REPOSITORY_TOKEN"
-export const STEP_UP_TOKEN_REPOSITORY_TOKEN = "STEP_UP_TOKEN_REPOSITORY_TOKEN"
+export const ACCOUNT_REFRESH_TOKEN_REPOSITORY_TOKEN = "ACCOUNT_REFRESH_TOKEN_REPOSITORY_TOKEN"
+export const AGENT_REFRESH_TOKEN_REPOSITORY_TOKEN = "AGENT_REFRESH_TOKEN_REPOSITORY_TOKEN"
 export const DPOP_TOKEN_REPOSITORY_TOKEN = "DPOP_TOKEN_REPOSITORY_TOKEN"
 
+export interface OidcProviderConfig {
+  issuerUrl: string
+  redirectUri: string
+}
+
 export type AuthError =
+  | SessionValidationError
+  | "invalid_credential"
+  | AccountValidationError
   | PrefixUnion<
       "auth",
       | "token_generation_failed"
@@ -46,21 +66,33 @@ export type AuthError =
       | "invalid_oidc_provider"
       | "missing_oidc_provider"
     >
-  | UserGetError
-  | AutoRegisterError
-  | OrganizationAdminCreateError
+  | BoundaryError
+  | "account_not_found"
+  | "identity_already_linked"
   | OidcError
   | PkceError
-  | UserIdentityCreateError
+  | RepositoryDependencyError
 
-export type HighPrivilegeAuthError = AuthError | PrefixUnion<"auth", "invalid_entity" | "high_privilege_flow_disabled">
+export type HighPrivilegeAuthError =
+  | "resource_already_exists"
+  | StepUpReceiptValidationError
+  | TenantOperationError
+  | AuthError
+  | AuthorityError
+  | TransactionError
+  | RepositoryDependencyError
+  | PrefixUnion<"auth", "invalid_entity" | "high_privilege_flow_disabled">
 
 export type UseHighPrivilegeTokenError =
+  | StepUpReceiptValidationError
+  | "concurrent_modification_error"
   | "entity_not_supported"
   | "step_up_context_missing"
   | "step_up_operation_mismatch"
   | "step_up_resource_mismatch"
-  | ConsumeTokenError
+  | AuthorityError
+  | TransactionError
+  | RepositoryDependencyError
   | UnknownError
 
 export type PkceError =
@@ -74,29 +106,13 @@ export type PkceError =
       | "code_already_used"
       | "code_concurrency_conflict"
     >
-  | EncryptionError
+  | CryptoError
+  | PkceSessionValidationError
 
 export interface PkceChallenge {
   codeChallenge: string
   codeVerifier: string
   state: string
-}
-
-export interface PkceData {
-  codeVerifier: string
-  redirectUri: string
-  oidcState: string
-  providerId: string
-}
-
-export interface PkceStorageData extends PkceData {
-  expiresAt: Date
-}
-
-export interface PkceSessionData extends PkceStorageData {
-  state: string
-  occ: bigint
-  usedAt?: Date
 }
 
 export interface PkceSessionRepository {
@@ -151,14 +167,16 @@ export interface OidcTokenRequest {
   code: string
   redirectUri: string
   codeVerifier: string
+  /** Stable key in the deployed OIDC configuration. */
   providerId: string
 }
 
-export type AgentChallengeGetError = "agent_challenge_not_found" | UnknownError
+export type AgentChallengeGetError = BoundaryError | "agent_challenge_not_found" | UnknownError
 export type AgentChallengeUpdateError =
-  "agent_challenge_update_failed" | "agent_challenge_concurrent_update" | UnknownError
+  BoundaryError | "agent_challenge_update_failed" | "agent_challenge_concurrent_update" | UnknownError
 
 export type AgentTokenError =
+  | ExecutionError
   | "agent_token_generation_failed"
   | AgentGetError
   | AgentChallengeGetError
@@ -169,6 +187,8 @@ export type AgentTokenError =
   | UnknownError
 
 export type AgentChallengeCreateError =
+  | ExecutionError
+  | BoundaryError
   | "agent_challenge_storage_error"
   | AgentChallengeCreationError
   | AgentChallengeValidationError
@@ -204,16 +224,28 @@ export type GetChallengeByNonceError =
 
 export interface AgentChallengeRepository {
   persistChallenge(challenge: AgentChallenge): TaskEither<AgentChallengeCreateError, AgentChallenge>
-  getChallengeByNonce(nonce: string): TaskEither<GetChallengeByNonceError, DecoratedAgentChallenge<{occ: true}>>
-  updateChallenge(challenge: DecoratedAgentChallenge<{occ: true}>): TaskEither<AgentChallengeUpdateError, void>
+  getChallengeByNonce(
+    context: TenantContext,
+    nonce: string
+  ): TaskEither<GetChallengeByNonceError, DecoratedAgentChallenge<{occ: true}>>
+  updateChallenge(
+    context: TenantContext,
+    challenge: DecoratedAgentChallenge<{occ: true}>
+  ): TaskEither<AgentChallengeUpdateError, void>
 }
 
-export type RefreshTokenCreateError = RefreshTokenValidationError | UnknownError
-export type RefreshTokenGetError = "refresh_token_not_found" | RefreshTokenValidationError | UnknownError
-export type RefreshTokenUpdateError = "refresh_token_concurrent_update" | RefreshTokenValidationError | UnknownError
-export type RefreshTokenRevokeError = RefreshTokenValidationError | UnknownError
+export type RefreshTokenCreateError = BoundaryError | RefreshTokenValidationError | UnknownError
+export type RefreshTokenGetError =
+  BoundaryError | "refresh_token_not_found" | RefreshTokenValidationError | UnknownError
+export type RefreshTokenUpdateError =
+  BoundaryError | "refresh_token_concurrent_update" | RefreshTokenValidationError | UnknownError
+export type RefreshTokenRevokeError = BoundaryError | RefreshTokenValidationError | UnknownError
 
 export type RefreshTokenRefreshError =
+  | UserValidationError
+  | "session_not_found"
+  | ExecutionError
+  | RepositoryDependencyError
   | "refresh_token_not_found"
   | "refresh_token_entity_mismatch"
   | "refresh_token_concurrent_update"
@@ -221,17 +253,19 @@ export type RefreshTokenRefreshError =
   | AgentTokenError
   | RefreshTokenEligibilityError
   | AuthError
+  | AuthorityError
+  | MutationError
   | RefreshTokenValidationError
   | UnknownError
 
-export interface RefreshTokenRepository {
+export interface AccountRefreshTokenRepository {
   /**
    * Creates and persists a new refresh token in the repository.
    *
    * @param token - The refresh token domain object to create
    * @returns TaskEither with RefreshTokenCreateError on failure, or the created RefreshToken on success
    */
-  createToken(token: RefreshToken): TaskEither<RefreshTokenCreateError, RefreshToken>
+  createToken(token: AccountRefreshToken): TaskEither<RefreshTokenCreateError, AccountRefreshToken>
 
   /**
    * Retrieves a refresh token by its SHA-256 hash.
@@ -239,10 +273,10 @@ export interface RefreshTokenRepository {
    * @param tokenHash - The SHA-256 hash of the refresh token value
    * @returns TaskEither with RefreshTokenGetError on failure, or the decorated refresh token with OCC on success
    */
-  getByTokenHash(tokenHash: string): TaskEither<RefreshTokenGetError, DecoratedRefreshToken<{occ: true}>>
+  getByTokenHash(tokenHash: string): TaskEither<RefreshTokenGetError, DecoratedAccountRefreshToken<{occ: true}>>
 
   /**
-   * Atomically creates a new active refresh token for a user and marks the old token as used.
+   * Atomically creates a new account/session refresh token and marks the old token as used.
    * Uses optimistic concurrency control to ensure the old token hasn't been modified.
    *
    * @param newTokenToPersist - The new active refresh token to create
@@ -250,24 +284,9 @@ export interface RefreshTokenRepository {
    * @param occCheckOldToken - The expected OCC value of the old token for concurrency control
    * @returns TaskEither with RefreshTokenUpdateError on failure, or void on success
    */
-  persistNewTokenUpdateOldForUser(
-    newTokenToPersist: DecoratedActiveUserRefreshToken<{occ: true}>,
-    oldTokenToUpdate: UsedUserRefreshToken,
-    occCheckOldToken: bigint
-  ): TaskEither<RefreshTokenUpdateError, void>
-
-  /**
-   * Atomically creates a new active refresh token for an agent and marks the old token as used.
-   * Uses optimistic concurrency control to ensure the old token hasn't been modified.
-   *
-   * @param newTokenToPersist - The new active refresh token to create
-   * @param oldTokenToUpdate - The old token to mark as used and link to the new token
-   * @param occCheckOldToken - The expected OCC value of the old token for concurrency control
-   * @returns TaskEither with RefreshTokenUpdateError on failure, or void on success
-   */
-  persistNewTokenUpdateOldForAgent(
-    newTokenToPersist: DecoratedActiveAgentRefreshToken<{occ: true}>,
-    oldTokenToUpdate: UsedAgentRefreshToken,
+  persistNewTokenUpdateOld(
+    newTokenToPersist: DecoratedActiveAccountRefreshToken<{occ: true}>,
+    oldTokenToUpdate: UsedAccountRefreshToken,
     occCheckOldToken: bigint
   ): TaskEither<RefreshTokenUpdateError, void>
 
@@ -280,10 +299,28 @@ export interface RefreshTokenRepository {
   revokeFamily(familyId: string): TaskEither<RefreshTokenUpdateError, void>
 }
 
-export interface TokenPair {
+export interface AgentRefreshTokenRepository {
+  createToken(token: AgentRefreshToken): TaskEither<RefreshTokenCreateError, AgentRefreshToken>
+  getByTokenHash(
+    context: TenantContext,
+    tokenHash: string
+  ): TaskEither<RefreshTokenGetError, DecoratedAgentRefreshToken<{occ: true}>>
+  persistNewTokenUpdateOld(
+    context: TenantContext,
+    newTokenToPersist: DecoratedActiveAgentRefreshToken<{occ: true}>,
+    oldTokenToUpdate: UsedAgentRefreshToken,
+    occCheckOldToken: bigint
+  ): TaskEither<RefreshTokenUpdateError, void>
+  revokeFamily(context: TenantContext, familyId: string): TaskEither<RefreshTokenUpdateError, void>
+}
+
+export interface AccessToken {
   accessToken: string
-  refreshToken: string
   accessTokenExpiresInSec: number
+}
+
+export interface TokenPair extends AccessToken {
+  refreshToken: string
   refreshTokenExpiresInSec: number
 }
 
@@ -292,21 +329,11 @@ export interface PrivilegedToken {
   expiresInSec: number
 }
 
-export type StoreTokenError = UnknownError
-export type ConsumeTokenError = UnknownError | "token_not_found"
-
-export interface StepUpTokenRepository {
-  /** Stores a token JTI with TTL for auto-expiry */
-  storeToken(jti: string, ttlSeconds: number): TaskEither<StoreTokenError, void>
-  /** Atomically deletes a token JTI. Fails if JTI doesn't exist (invalid or already consumed). */
-  consumeToken(jti: string): TaskEither<ConsumeTokenError, void>
-}
-
 export interface PrivilegeTokenExchange {
   readonly code: string
   readonly state: string
   readonly operation: StepUpOperation
-  readonly resourceId?: string
+  readonly resourceId: string
 }
 
 export interface DpopTokenRepository {

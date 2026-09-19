@@ -3,6 +3,18 @@ databaseChangeLog:
       id: 20260208132758-create-spaces-table
       author: giovannibaratta
       changes:
+        - insert:
+            tableName: approvio_security_table_registry
+            columns:
+              - column:
+                  name: table_name
+                  value: spaces
+              - column:
+                  name: security_class
+                  value: tenant
+              - column:
+                  name: capability_profile
+                  value: tenant_crud
         - createTable:
             tableName: spaces
             columns:
@@ -13,22 +25,26 @@ databaseChangeLog:
                     primaryKey: true
                     nullable: false
               - column:
-                  name: name
-                  type: varchar(255)
+                  name: organization_id
+                  type: uuid
                   constraints:
                     nullable: false
-
+              - column:
+                  name: name
+                  type: text
+                  constraints:
+                    nullable: false
               - column:
                   name: description
-                  type: varchar(2048)
+                  type: text
               - column:
                   name: created_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: updated_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
@@ -36,7 +52,19 @@ databaseChangeLog:
                   type: bigint
                   constraints:
                     nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: spaces
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_spaces_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
         - addUniqueConstraint:
             tableName: spaces
-            columnNames: name
-            constraintName: spaces_name_unique
+            columnNames: organization_id, id
+            constraintName: spaces_organization_id_unique
+        - addUniqueConstraint:
+            tableName: spaces
+            columnNames: organization_id, name
+            constraintName: spaces_organization_name_unique

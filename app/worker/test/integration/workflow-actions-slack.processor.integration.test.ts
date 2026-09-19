@@ -1,26 +1,41 @@
+import {serializeTenantEvent} from "@external/queue/tenant-event-payload"
+import {toOrganizationId} from "@test/organization-id"
 import {WorkflowActionSlackProcessor} from "../../src/processor/workflow-action-slack.processor"
 import {TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
 import {createMockSpaceInDb, createMockWorkflowTemplateInDb, MockConfigProvider} from "@test/mock-data"
-import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "@test/database"
-import {DatabaseClient} from "@external"
+import {
+  createFixturePrismaClient,
+  cleanDatabase,
+  prepareDatabase,
+  prepareRedisPrefix,
+  cleanRedisByPrefix
+} from "@test/database"
 import {PrismaClient} from "@prisma/client"
-import {setupWorkerTestModule} from "./test-helpers"
-import {WorkflowActionSlackTaskFactory, TaskStatus, ResponseBodyStatus, WorkflowStatus} from "@domain"
-import {Job} from "bull"
-import {WorkflowActionSlackEvent} from "@domain"
+import {persistTaskFixture, setupWorkerTestModule} from "./test-helpers"
+import {TASK_ID_NAMESPACE, WorkflowActionSlackTaskFactory, WorkflowStatus} from "@domain"
 
 import {createWiremockUrl, getWiremockRequestsFor, setupWiremockStub} from "@test/wiremock"
-import {v7 as uuidv7} from "uuid"
+import {v5 as uuidv5, v7 as uuidv7} from "uuid"
+
 import {unwrapRight} from "@utils/either"
 
-async function createWorkflowWithSlackTask(prisma: PrismaClient, webhookUrl: string, message: string = "Test message") {
-  const spaceId = (await createMockSpaceInDb(prisma)).id
-  const template = await createMockWorkflowTemplateInDb(prisma, {spaceId})
+async function createWorkflowWithSlackTask(
+  prisma: PrismaClient,
+  module: TestingModule,
+  webhookUrl: string,
+  message: string = "Test message"
+) {
+  const space = await createMockSpaceInDb(prisma)
+  const template = await createMockWorkflowTemplateInDb(prisma, {
+    organizationId: space.organizationId,
+    spaceId: space.id
+  })
 
   const workflow = await prisma.workflow.create({
     data: {
       id: uuidv7(),
+      organizationId: template.organizationId,
       workflowTemplateId: template.id,
       name: "Slack-Workflow",
       status: WorkflowStatus.EVALUATION_IN_PROGRESS,
@@ -33,7 +48,8 @@ async function createWorkflowWithSlackTask(prisma: PrismaClient, webhookUrl: str
   })
 
   const taskResult = WorkflowActionSlackTaskFactory.newWorkflowActionSlackTask({
-    id: uuidv7(),
+    id: uuidv5(`slack-task-${workflow.id}`, TASK_ID_NAMESPACE),
+    organizationId: toOrganizationId(template.organizationId),
     workflowId: workflow.id,
     webhookUrl,
     message
@@ -41,21 +57,19 @@ async function createWorkflowWithSlackTask(prisma: PrismaClient, webhookUrl: str
 
   const task = unwrapRight(taskResult)
 
-  const createdTask = await prisma.workflowActionsSlackTask.create({
-    data: {
-      id: task.id,
-      workflowId: task.workflowId,
-      status: task.status,
-      webhookUrl: task.webhookUrl,
-      message: task.message,
-      retryCount: task.retryCount,
-      occ: task.occ,
-      createdAt: task.createdAt,
-      updatedAt: task.updatedAt
+  const event = await persistTaskFixture(module, {
+    kind: "slack",
+    request: {
+      task,
+      metadata: {
+        eventId: uuidv7(),
+        actionIndex: 0,
+        availableAt: task.createdAt
+      }
     }
   })
 
-  return {workflow, task: createdTask}
+  return {workflow, task, event}
 }
 
 describe("WorkflowActionSlackProcessor Integration", () => {
@@ -79,7 +93,7 @@ describe("WorkflowActionSlackProcessor Integration", () => {
     redisPrefix = prepareRedisPrefix()
 
     const mockConfigProvider = MockConfigProvider.fromOriginalProvider({
-      dbConnectionUrl: dbUrl,
+      tenantConnectionUrl: dbUrl,
       redisPrefix
     })
 
@@ -89,11 +103,12 @@ describe("WorkflowActionSlackProcessor Integration", () => {
       .compile()
 
     processor = module.get<WorkflowActionSlackProcessor>(WorkflowActionSlackProcessor)
-    prisma = module.get<DatabaseClient>(DatabaseClient).cx as PrismaClient
+    prisma = createFixturePrismaClient(dbUrl)
   }, 30000)
 
   afterAll(async () => {
     jest.restoreAllMocks()
+    await prisma.$disconnect()
     await module?.close()
     await cleanRedisByPrefix(redisPrefix)
   })
@@ -107,59 +122,56 @@ describe("WorkflowActionSlackProcessor Integration", () => {
     const mockWebhookId = uuidv7()
     const webhookUrl = `${wiremockUrl}/slack-webhook-${mockWebhookId}`
 
-    const {task} = await createWorkflowWithSlackTask(prisma, webhookUrl)
+    const {task, event} = await createWorkflowWithSlackTask(prisma, module, webhookUrl)
 
     await setupWiremockStub("POST", `/slack-webhook-${mockWebhookId}`, 200, "ok")
 
-    const job = {
-      data: {taskId: task.id, workflowId: task.workflowId}
-    } as Job<WorkflowActionSlackEvent>
+    const job = {data: serializeTenantEvent(event)}
 
     // When
     await processor.handleSlackAction(job)
 
     // Expect
-    const updatedTask = await prisma.workflowActionsSlackTask.findUnique({
-      where: {id: task.id}
+    const updatedTask = await prisma.durableWork.findUnique({
+      where: {organizationId_id: {organizationId: task.organizationId, id: task.id}}
     })
 
     expect(updatedTask).toBeDefined()
-    expect(updatedTask?.status).toBe(TaskStatus.COMPLETED)
-    expect(updatedTask?.responseStatus).toBe(200)
-    expect(updatedTask?.responseBody).toBe("ok")
-    expect(updatedTask?.responseBodyStatus).toBe(ResponseBodyStatus.OK)
-    expect(updatedTask?.retryCount).toBe(0)
-    expect(updatedTask?.errorReason).toBeNull()
+    expect(updatedTask?.state).toBe("succeeded")
+    expect(updatedTask?.attempts).toBe(1)
 
     const requests = await getWiremockRequestsFor("POST", `/slack-webhook-${mockWebhookId}`)
     expect(requests).toHaveLength(1)
   })
 
-  it("should process a failing slack task and mark it as ERROR", async () => {
+  it("should acknowledge a Slack delivery error after persisting an unknown outcome", async () => {
     // Given
     const mockWebhookId = uuidv7()
     const webhookUrl = `${wiremockUrl}/slack-webhook-${mockWebhookId}`
 
-    const {task} = await createWorkflowWithSlackTask(prisma, webhookUrl)
+    const {task, event} = await createWorkflowWithSlackTask(prisma, module, webhookUrl)
 
     await setupWiremockStub("POST", `/slack-webhook-${mockWebhookId}`, 500, "Internal Server Error")
 
-    const job = {
-      data: {taskId: task.id, workflowId: task.workflowId}
-    } as Job<WorkflowActionSlackEvent>
+    const job = {data: serializeTenantEvent(event)}
 
     // When
+    // Persist the uncertain delivery outcome and acknowledge the job without retrying the notification.
     await processor.handleSlackAction(job)
 
     // Expect
-    const updatedTask = await prisma.workflowActionsSlackTask.findUnique({
-      where: {id: task.id}
+    const updatedTask = await prisma.durableWork.findUnique({
+      where: {organizationId_id: {organizationId: task.organizationId, id: task.id}}
     })
 
     expect(updatedTask).toBeDefined()
-    expect(updatedTask?.status).toBe(TaskStatus.ERROR)
-    expect(updatedTask?.responseStatus).toBeNull()
-    expect(updatedTask?.errorReason).toBe("Slack execution failed: slack_request_failed")
-    expect(updatedTask?.retryCount).toBe(1)
+    expect(updatedTask?.state).toBe("unknown")
+    expect(updatedTask?.attempts).toBe(1)
+
+    const attempt = await prisma.dispatchAttempt.findFirstOrThrow({
+      where: {organizationId: task.organizationId, taskId: task.id}
+    })
+
+    expect(attempt.outcomeCategory).toBe("slack_request_failed")
   })
 })

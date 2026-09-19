@@ -1,15 +1,19 @@
+import {randomOrgId} from "@test/organization-id"
 import {VoteFactory, Vote, ApproveVote, EntityReference} from "@domain"
 
 import {v7 as uuidv7} from "uuid"
 
 describe("Vote", () => {
   describe("VoteFactory", () => {
+    const organizationId = randomOrgId()
     const validVoter: EntityReference = {
       entityId: uuidv7(),
-      entityType: "user"
+      entityType: "user",
+      organizationId
     }
 
     const validVoteInput: Parameters<typeof VoteFactory.newVote>[0] = {
+      organizationId,
       workflowId: uuidv7(),
       voter: validVoter,
       type: "APPROVE",
@@ -54,7 +58,7 @@ describe("Vote", () => {
             id: uuidv7(),
             castedAt: new Date(),
             ...validVoteInput,
-            voter: {entityId: "not-a-uuid", entityType: "user"}
+            voter: {entityId: "not-a-uuid", entityType: "user", organizationId}
           }
 
           // When
@@ -69,7 +73,11 @@ describe("Vote", () => {
             id: uuidv7(),
             castedAt: new Date(),
             ...validVoteInput,
-            voter: {entityId: uuidv7(), entityType: "invalid" as EntityReference["entityType"]}
+            voter: {
+              entityId: uuidv7(),
+              entityType: "invalid" as EntityReference["entityType"],
+              organizationId
+            }
           }
           const result = VoteFactory.validate(vote)
           expect(result).toBeLeftOf("vote_invalid_voter_type")
@@ -89,6 +97,7 @@ describe("Vote", () => {
         it("should return invalid_group_id if a groupId is not a UUID for an APPROVE vote", () => {
           const vote: ApproveVote = {
             id: uuidv7(),
+            organizationId,
             castedAt: new Date(),
             type: "APPROVE",
             workflowId: uuidv7(),

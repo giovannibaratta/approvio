@@ -3,10 +3,15 @@ import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
 import {Test, TestingModule} from "@nestjs/testing"
-import {cleanDatabase, cleanRedisByPrefix, prepareDatabase, prepareRedisPrefix} from "@test/database"
+import {
+  createFixturePrismaClient,
+  cleanDatabase,
+  cleanRedisByPrefix,
+  prepareDatabase,
+  prepareRedisPrefix
+} from "@test/database"
 import {MockConfigProvider} from "@test/mock-data"
 import {get} from "@test/requests"
-import {DatabaseClient} from "@external"
 import {PrismaClient} from "@prisma/client"
 import {RequestContext} from "@app/logging/request-context"
 import {PingController} from "@controllers/ping/ping.controller"
@@ -25,13 +30,13 @@ describe("RequestIdMiddleware Integration", () => {
       imports: [AppModule]
     })
       .overrideProvider(ConfigProvider)
-      .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix))
+      .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb, redisPrefix))
       .compile()
 
     app = module.createNestApplication({
       logger: false
     })
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
 
     // Read NestJS controller metadata before replacing the method with a Jest spy
     // eslint-disable-next-line @typescript-eslint/unbound-method

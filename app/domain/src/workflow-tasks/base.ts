@@ -1,3 +1,4 @@
+import {OrganizationId, isOrganizationId} from "../shared"
 /**
  * This file contains the base types and factories (validation and initialization) for workflow action tasks.
  * The specific tasks (e.g. sending email, calling webhook)can extend this base types and factories to add task specific attributes.
@@ -18,9 +19,14 @@ import {
 import {mapToLeftWithPrefix} from "@utils"
 
 export enum TaskStatus {
-  PENDING = "PENDING",
-  COMPLETED = "COMPLETED",
-  ERROR = "ERROR"
+  READY = "ready",
+  CLAIMED = "claimed",
+  EXECUTING = "executing",
+  SUCCEEDED = "succeeded",
+  RETRY_DUE = "retry_due",
+  FAILED = "failed",
+  UNKNOWN = "unknown",
+  PAUSED = "paused"
 }
 
 export type WorkflowActionTaskDecoratorSelector = GeneratorSelector<WorkflowActionTaskDecorators>
@@ -32,11 +38,15 @@ export type DecoratedWorkflowActionTask<T extends WorkflowActionTaskDecoratorSel
 >
 
 export type WorkflowActionTaskData =
-  WorkflowActionPendingTaskData | WorkflowActionCompletedTaskData | WorkflowActionErrorTaskData
+  | WorkflowActionPendingTaskData
+  | WorkflowActionUnresolvedTaskData
+  | WorkflowActionCompletedTaskData
+  | WorkflowActionErrorTaskData
 
 interface WorkflowActionTaskBaseData {
   createdAt: Date
   id: string
+  organizationId: OrganizationId
   retryCount: number
   status: TaskStatus
   updatedAt: Date
@@ -44,17 +54,20 @@ interface WorkflowActionTaskBaseData {
 }
 
 export interface WorkflowActionPendingTaskData extends WorkflowActionTaskBaseData {
-  status: TaskStatus.PENDING
-  retryCount: 0
+  status: TaskStatus.READY
+}
+
+export interface WorkflowActionUnresolvedTaskData extends WorkflowActionTaskBaseData {
+  status: TaskStatus.CLAIMED | TaskStatus.EXECUTING | TaskStatus.RETRY_DUE | TaskStatus.UNKNOWN | TaskStatus.PAUSED
 }
 
 export interface WorkflowActionCompletedTaskData extends WorkflowActionTaskBaseData {
-  status: TaskStatus.COMPLETED
+  status: TaskStatus.SUCCEEDED
 }
 
 export interface WorkflowActionErrorTaskData extends WorkflowActionTaskBaseData {
-  status: TaskStatus.ERROR
-  errorReason: string
+  status: TaskStatus.FAILED
+  errorReason?: string
 }
 
 export type Lock = {
@@ -79,6 +92,7 @@ type StructureValidationError =
   | "missing_or_invalid_status"
   | "missing_or_invalid_method"
   | "missing_or_invalid_id"
+  | "missing_or_invalid_organization_id"
   | "missing_or_invalid_workflow_id"
   | "missing_or_invalid_created_at"
   | "missing_or_invalid_updated_at"
@@ -117,7 +131,7 @@ export function validateTaskStatus<E extends string>(status: string, invalidStat
 
 export function validateErrorReason(
   errorReason: string | undefined | null
-): Either<ErrorReasonValidationError, WorkflowActionErrorTaskData["errorReason"]> {
+): Either<ErrorReasonValidationError, string> {
   if (errorReason === undefined || errorReason === null) return left("error_reason_not_defined")
 
   const trimmed = errorReason.trim()
@@ -144,7 +158,7 @@ export class WorkflowActionTaskFactory {
    * const result = WorkflowActionTaskFactory.validate({
    *   id: "task-123",
    *   workflowId: "workflow-456",
-   *   status: "PENDING",
+   *   status: "ready",
    *   retryCount: 0,
    *   createdAt: new Date(),
    *   updatedAt: new Date(),
@@ -166,14 +180,21 @@ export class WorkflowActionTaskFactory {
     let eitherTaskData: Either<WorkflowActionTaskValidationError, WorkflowActionTaskData>
 
     switch (unvalidatedBaseData.status) {
-      case TaskStatus.PENDING:
-        eitherTaskData = this.validatePendingTaskData({...unvalidatedBaseData, status: TaskStatus.PENDING})
+      case TaskStatus.READY:
+        eitherTaskData = this.validatePendingTaskData({...unvalidatedBaseData, status: TaskStatus.READY})
         break
-      case TaskStatus.COMPLETED:
-        eitherTaskData = this.validateCompletedTaskData({...unvalidatedBaseData, status: TaskStatus.COMPLETED})
+      case TaskStatus.CLAIMED:
+      case TaskStatus.EXECUTING:
+      case TaskStatus.RETRY_DUE:
+      case TaskStatus.UNKNOWN:
+      case TaskStatus.PAUSED:
+        eitherTaskData = right({...unvalidatedBaseData, status: unvalidatedBaseData.status})
         break
-      case TaskStatus.ERROR:
-        eitherTaskData = this.validateErrorTaskData({...unvalidatedBaseData, status: TaskStatus.ERROR})
+      case TaskStatus.SUCCEEDED:
+        eitherTaskData = this.validateCompletedTaskData({...unvalidatedBaseData, status: TaskStatus.SUCCEEDED})
+        break
+      case TaskStatus.FAILED:
+        eitherTaskData = this.validateErrorTaskData({...unvalidatedBaseData, status: TaskStatus.FAILED})
         break
     }
 
@@ -222,6 +243,9 @@ export class WorkflowActionTaskFactory {
     if (!hasOwnProperty(dataToBeValidated, "id") || typeof dataToBeValidated.id !== "string")
       return left("workflow_action_task_missing_or_invalid_id")
 
+    if (!hasOwnProperty(dataToBeValidated, "organizationId") || !isOrganizationId(dataToBeValidated.organizationId))
+      return left("workflow_action_task_missing_or_invalid_organization_id")
+
     if (!hasOwnProperty(dataToBeValidated, "workflowId") || typeof dataToBeValidated.workflowId !== "string")
       return left("workflow_action_task_missing_or_invalid_workflow_id")
 
@@ -231,12 +255,18 @@ export class WorkflowActionTaskFactory {
     if (!hasOwnProperty(dataToBeValidated, "updatedAt") || !isDate(dataToBeValidated.updatedAt))
       return left("workflow_action_task_missing_or_invalid_updated_at")
 
-    if (!hasOwnProperty(dataToBeValidated, "retryCount") || typeof dataToBeValidated.retryCount !== "number")
+    if (
+      !hasOwnProperty(dataToBeValidated, "retryCount") ||
+      typeof dataToBeValidated.retryCount !== "number" ||
+      !Number.isSafeInteger(dataToBeValidated.retryCount) ||
+      dataToBeValidated.retryCount < 0
+    )
       return left("workflow_action_task_missing_or_invalid_retry_count")
 
     return right({
       ...dataToBeValidated,
       id: dataToBeValidated.id,
+      organizationId: dataToBeValidated.organizationId,
       workflowId: dataToBeValidated.workflowId,
       status: statusValidation.right,
       createdAt: dataToBeValidated.createdAt,
@@ -246,23 +276,23 @@ export class WorkflowActionTaskFactory {
   }
 
   private static validatePendingTaskData(
-    dataToBeValidated: WorkflowActionTaskBaseData & {status: TaskStatus.PENDING} & {[key: string]: unknown}
+    dataToBeValidated: WorkflowActionTaskBaseData & {status: TaskStatus.READY} & {[key: string]: unknown}
   ): Either<WorkflowActionTaskValidationError, WorkflowActionPendingTaskData> {
-    if (dataToBeValidated.retryCount !== 0) return left("workflow_action_task_missing_or_invalid_retry_count")
-
-    return right({...dataToBeValidated, retryCount: 0})
+    return right({...dataToBeValidated})
   }
 
   private static validateCompletedTaskData(
-    dataToBeValidated: WorkflowActionTaskBaseData & {status: TaskStatus.COMPLETED} & {[key: string]: unknown}
+    dataToBeValidated: WorkflowActionTaskBaseData & {status: TaskStatus.SUCCEEDED} & {[key: string]: unknown}
   ): Either<WorkflowActionTaskValidationError, WorkflowActionCompletedTaskData> {
     return right({...dataToBeValidated})
   }
 
   private static validateErrorTaskData(
-    dataToBeValidated: WorkflowActionTaskBaseData & {status: TaskStatus.ERROR} & {[key: string]: unknown}
+    dataToBeValidated: WorkflowActionTaskBaseData & {status: TaskStatus.FAILED} & {[key: string]: unknown}
   ): Either<WorkflowActionTaskValidationError, WorkflowActionErrorTaskData> {
-    if (!hasOwnProperty(dataToBeValidated, "errorReason") || typeof dataToBeValidated.errorReason !== "string")
+    if (!hasOwnProperty(dataToBeValidated, "errorReason") || dataToBeValidated.errorReason === undefined)
+      return right({...dataToBeValidated})
+    if (typeof dataToBeValidated.errorReason !== "string")
       return left("workflow_action_task_missing_or_invalid_error_reason")
 
     const errorReasonValidation = validateErrorReason(dataToBeValidated.errorReason)

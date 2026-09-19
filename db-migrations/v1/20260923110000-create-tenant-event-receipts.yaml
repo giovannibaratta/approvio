@@ -1,0 +1,61 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260923110000-create-tenant-event-receipts
+      author: giovannibaratta
+      comment: Durable idempotency receipts for tenant event consumers.
+      changes:
+        - insert:
+            tableName: approvio_security_table_registry
+            columns:
+              - column:
+                  name: table_name
+                  value: tenant_event_receipts
+              - column:
+                  name: security_class
+                  value: tenant
+              - column:
+                  name: capability_profile
+                  value: tenant_event_receipts
+        - createTable:
+            tableName: tenant_event_receipts
+            columns:
+              - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: consumer
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: event_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: processed_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - addPrimaryKey:
+            tableName: tenant_event_receipts
+            columnNames: organization_id, consumer, event_id
+            constraintName: pk_tenant_event_receipts
+        - addForeignKeyConstraint:
+            baseTableName: tenant_event_receipts
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_tenant_event_receipts_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: tenant_event_receipts
+            baseColumnNames: organization_id, event_id
+            referencedTableName: tenant_outbox
+            referencedColumnNames: organization_id, event_id
+            constraintName: fk_tenant_event_receipts_outbox
+            onDelete: RESTRICT
+            onUpdate: NO ACTION

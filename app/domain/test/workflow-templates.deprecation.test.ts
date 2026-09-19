@@ -1,11 +1,30 @@
-import {markTemplateForDeprecation, markTemplateAsDeprecated, WorkflowTemplateStatus} from "../src/workflow-templates"
+import {randomOrgId} from "@test/organization-id"
+import {
+  markTemplateForDeprecation,
+  markTemplateAsDeprecated,
+  WorkflowTemplateFactory,
+  WorkflowTemplateStatus
+} from "../src/workflow-templates"
+import {ApprovalRuleType} from "../src/approval-rules"
 import "@utils/matchers"
 import {unwrapRight} from "@utils/either"
-import {createMockWorkflowTemplateDomain} from "@test/mock-data"
+import {v7 as uuidv7} from "uuid"
 
 describe("WorkflowTemplate Deprecation", () => {
+  const organizationId = randomOrgId()
   const createActiveTemplate = (version: number = 1) => {
-    return createMockWorkflowTemplateDomain({version, status: WorkflowTemplateStatus.ACTIVE})
+    return unwrapRight(
+      WorkflowTemplateFactory.newWorkflowTemplate({
+        organizationId,
+        name: "Test Template",
+        version,
+        description: "Template used by lifecycle tests",
+        approvalRule: {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: uuidv7(), minCount: 1},
+        actions: [],
+        defaultExpiresInHours: 24,
+        spaceId: uuidv7()
+      })
+    )
   }
 
   describe("markTemplateForDeprecation", () => {

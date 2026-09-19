@@ -1,16 +1,17 @@
 import {Test, TestingModule} from "@nestjs/testing"
-import {INestApplication} from "@nestjs/common"
+import {HttpStatus, INestApplication} from "@nestjs/common"
 import request from "supertest"
 import {AppModule} from "@app/app.module"
-import {DatabaseClient} from "@external/database"
-import {cleanDatabase, prepareDatabase} from "@test/database"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
 import {ConfigProvider} from "@external/config"
-import {MockConfigProvider, createMockUserInDb} from "@test/mock-data"
+import {MockConfigProvider} from "@test/mock-data"
 import {PrismaClient} from "@prisma/client"
 import "@utils/matchers"
 import {simulateOidcAuthorization, OidcMockUser} from "@test/oidc-test-helpers"
 import "expect-more-jest"
 import {v7 as uuidv7} from "uuid"
+import {PKCE_SESSION_REPOSITORY_TOKEN, PkceSessionRepository} from "@services/auth/interfaces"
+import {wrapTaskEitherWithSideEffect} from "@test/injectors"
 
 /**
  * ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -92,6 +93,8 @@ describe("OIDC Flow Integration", () => {
   let prisma: PrismaClient
   let testUser: OidcMockUser
   let configProvider: ConfigProvider
+  let accountId: string
+  let providerId: string
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -115,6 +118,10 @@ describe("OIDC Flow Integration", () => {
         {
           Type: "email",
           Value: userEmail
+        },
+        {
+          Type: "email_verified",
+          Value: "true"
         }
       ]
     }
@@ -125,7 +132,7 @@ describe("OIDC Flow Integration", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
+        .useValue(MockConfigProvider.fromOriginalProvider({tenantConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -133,16 +140,32 @@ describe("OIDC Flow Integration", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     configProvider = module.get(ConfigProvider)
 
-    // Create database user with email that matches OIDC user claims and identity link
-    await createMockUserInDb(prisma, {
-      displayName,
-      email: userEmail,
-      identity: {
-        providerId: "custom",
-        subjectId: uuid
+    providerId = "custom"
+    accountId = uuidv7()
+    const now = new Date()
+    await prisma.platformAccount.create({
+      data: {
+        id: accountId,
+        displayName,
+        profileEmail: "user@example.com",
+        status: "active",
+        createdAt: now,
+        updatedAt: now,
+        occ: 0n
+      }
+    })
+    await prisma.platformAccountIdentity.create({
+      data: {
+        id: uuidv7(),
+        accountId,
+        providerId,
+        issuer: "http://localhost:4011",
+        subject: uuid,
+        createdAt: now,
+        occ: 0n
       }
     })
 
@@ -155,6 +178,7 @@ describe("OIDC Flow Integration", () => {
   })
 
   afterEach(async () => {
+    jest.restoreAllMocks()
     await cleanDatabase(prisma)
   })
 
@@ -208,14 +232,77 @@ describe("OIDC Flow Integration", () => {
         refreshToken: expect.toBeVisibleString()
       })
 
-      // When: Use JWT token to access /auth/info endpoint
-      const infoResponse = await request(app.getHttpServer())
-        .get("/auth/info")
+      // When: Use the issued access token to access an authenticated endpoint
+      const organizationsResponse = await request(app.getHttpServer())
+        .get("/organizations")
         .set("Authorization", `Bearer ${tokenResponse.body.accessToken}`)
 
-      // Expect: User info endpoint returns entity type
-      expect(infoResponse).toHaveStatusCode(200)
-      expect(infoResponse.body).toMatchObject({entityType: "user"})
+      // Expect: The token authenticates the account, which has no organization memberships
+      expect(organizationsResponse).toHaveStatusCode(200)
+      expect(organizationsResponse.body).toMatchObject({items: [], total: 0})
+
+      // Expect: An active browser session exists without a selected organization
+      const browserSession = await prisma.browserSession.findFirst({
+        where: {accountId, providerId, transport: "browser", status: "active"}
+      })
+      expect(browserSession).toMatchObject({selectedOrganizationId: null, contextVersion: 0n})
+
+      // Expect: The refresh token is bound to the browser session
+      const refreshTokens = await prisma.refreshToken.findMany({where: {accountId, providerId}})
+      expect(refreshTokens).toHaveLength(1)
+      expect(refreshTokens[0]).toMatchObject({sessionId: browserSession?.id})
+    }, 20000)
+
+    it("consumes a PKCE session only once during concurrent token exchanges", async () => {
+      // Given
+      const id = uuidv7()
+      const user: OidcMockUser = {
+        SubjectId: id,
+        Username: `concurrent-${id}`,
+        Password: "testpassword123",
+        Claims: [
+          {Type: "name", Value: "Concurrent Login"},
+          {Type: "email", Value: `${id}@localhost.com`},
+          {Type: "email_verified", Value: "true"}
+        ]
+      }
+      const login = await request(app.getHttpServer()).get("/auth/web/login").expect(HttpStatus.FOUND)
+      const authorizationUrl = new URL(login.headers.location ?? "")
+      const state = authorizationUrl.searchParams.get("state") ?? ""
+      const code = await simulateOidcAuthorization(authorizationUrl.toString(), user, configProvider)
+      const before = await prisma.pkceSession.findUniqueOrThrow({where: {state}})
+      const repository = app.get<PkceSessionRepository>(PKCE_SESSION_REPOSITORY_TOKEN)
+
+      let reads = 0
+      let release = () => {}
+      const bothRead = new Promise<void>(resolve => {
+        release = resolve
+      })
+      // Both requests must read the unused version before either attempts to consume it.
+      wrapTaskEitherWithSideEffect(repository, "retrievePkceData", async () => {
+        if (++reads === 2) release()
+        await bothRead
+      })
+
+      // When
+      const responses = await Promise.all([
+        request(app.getHttpServer()).post("/auth/cli/token").send({code, state}),
+        request(app.getHttpServer()).post("/auth/cli/token").send({code, state})
+      ])
+
+      // Expect
+      const [accepted, conflict] = responses.sort((first, second) => first.status - second.status)
+      expect(accepted).toHaveStatusCode(HttpStatus.CREATED)
+      expect(conflict).toHaveStatusCode(HttpStatus.CONFLICT)
+      expect(conflict.body).toHaveErrorCode("PKCE_CODE_CONCURRENCY_CONFLICT")
+      expect(await prisma.pkceSession.findUniqueOrThrow({where: {state}})).toMatchObject({
+        redirectUri: before.redirectUri,
+        oidcState: before.oidcState,
+        usedAt: expect.any(Date),
+        occ: before.occ + 1n
+      })
+      expect(await prisma.browserSession.count()).toBe(1)
+      expect(await prisma.refreshToken.count()).toBe(1)
     }, 20000)
   })
 })

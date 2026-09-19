@@ -1,9 +1,9 @@
+import {randomOrgId, toOrganizationId} from "@test/organization-id"
 import {CanVoteResponse as CanVoteResponseApi, WorkflowVoteRequest as WorkflowVoteRequestApi} from "@approvio/api"
 import {AppModule} from "@app/app.module"
 import {WORKFLOWS_ENDPOINT_ROOT} from "@controllers"
 import {SystemRole} from "@domain"
 import {ApprovalRuleType, WorkflowStatus} from "@domain"
-import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
@@ -16,20 +16,23 @@ import {
   Agent as PrismaAgent
 } from "@prisma/client"
 
-import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "@test/database"
 import {
-  createMockAgentInDb,
-  createMockWorkflowInDb,
-  createMockWorkflowTemplateInDb,
-  createTestGroup,
+  createFixturePrismaClient,
+  cleanDatabase,
+  prepareDatabase,
+  prepareRedisPrefix,
+  cleanRedisByPrefix
+} from "@test/database"
+import {
+  createMockAgentInDb as createMockAgentFixture,
+  createMockWorkflowInDb as createMockWorkflowFixture,
+  createMockWorkflowTemplateInDb as createMockWorkflowTemplateFixture,
+  createTestGroup as createTestGroupFixture,
   MockConfigProvider
 } from "@test/mock-data"
 import {TestTokenBuilder} from "@test/token-helpers"
 import {get, post} from "@test/requests"
 import {mapAgentToDomain} from "@external/database/shared"
-import {getQueueToken} from "@nestjs/bull"
-import {WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"
-import {Queue} from "bull"
 import {v7 as uuidv7} from "uuid"
 import {unwrapRight} from "@utils/either"
 
@@ -38,10 +41,16 @@ type AgentWithToken = {
   token: string
 }
 
-async function addAgentToGroup(prisma: PrismaClient, groupId: string, agentId: string): Promise<void> {
+async function addAgentToGroup(
+  prisma: PrismaClient,
+  organizationId: string,
+  groupId: string,
+  agentId: string
+): Promise<void> {
   await prisma.agentGroupMembership.upsert({
     where: {
-      groupId_agentId: {
+      organizationId_groupId_agentId: {
+        organizationId,
         groupId: groupId,
         agentId: agentId
       }
@@ -50,6 +59,7 @@ async function addAgentToGroup(prisma: PrismaClient, groupId: string, agentId: s
       updatedAt: new Date()
     },
     create: {
+      organizationId,
       groupId: groupId,
       agentId: agentId,
       createdAt: new Date(),
@@ -69,9 +79,24 @@ describe("Agent Workflow Voting API", () => {
   let mockGroupId: string
   let mockWorkflowTemplate: PrismaWorkflowTemplate
   let redisPrefix: string
-  let recalculationQueue: Queue
 
-  const endpoint = `/${WORKFLOWS_ENDPOINT_ROOT}`
+  let endpoint: string
+  let organizationId: ReturnType<typeof toOrganizationId>
+
+  const createMockAgentInDb = (prisma: PrismaClient, overrides?: Parameters<typeof createMockAgentFixture>[1]) =>
+    createMockAgentFixture(prisma, {...overrides, organizationId: overrides?.organizationId ?? organizationId})
+  const createMockWorkflowInDb = (prisma: PrismaClient, overrides: Parameters<typeof createMockWorkflowFixture>[1]) =>
+    createMockWorkflowFixture(prisma, {...overrides, organizationId: overrides.organizationId ?? organizationId})
+  const createMockWorkflowTemplateInDb = (
+    prisma: PrismaClient,
+    overrides?: Parameters<typeof createMockWorkflowTemplateFixture>[1]
+  ) =>
+    createMockWorkflowTemplateFixture(prisma, {
+      ...overrides,
+      organizationId: overrides?.organizationId ?? organizationId
+    })
+  const createTestGroup = (prisma: PrismaClient, overrides?: Parameters<typeof createTestGroupFixture>[1]) =>
+    createTestGroupFixture(prisma, {...overrides, organizationId: overrides?.organizationId ?? organizationId})
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -83,7 +108,7 @@ describe("Agent Workflow Voting API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix))
+        .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb, redisPrefix))
         .compile()
     } catch (error) {
       console.error(error)
@@ -92,15 +117,15 @@ describe("Agent Workflow Voting API", () => {
 
     app = module.createNestApplication({logger: false})
 
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
-    recalculationQueue = module.get<Queue>(getQueueToken(WORKFLOW_STATUS_RECALCULATION_QUEUE))
 
     await app.init()
   }, 30000)
 
   beforeEach(async () => {
+    organizationId = randomOrgId()
     const testGroup = await createTestGroup(prisma, {name: "Test-Agent-Voter-Group"})
     mockGroupId = testGroup.id
 
@@ -116,6 +141,7 @@ describe("Agent Workflow Voting API", () => {
     const agent = await createMockAgentInDb(prisma, {agentName: "test-voting-agent"})
     const agentNotInGroup = await createMockAgentInDb(prisma, {agentName: "test-agent-no-group"})
     const agentWithRole = await createMockAgentInDb(prisma, {agentName: "test-agent-with-role"})
+    endpoint = `/o/${agent.organizationId}/${WORKFLOWS_ENDPOINT_ROOT}`
 
     // Map agents to domain objects
     const domainAgent = unwrapRight(mapAgentToDomain(agent))
@@ -125,7 +151,8 @@ describe("Agent Workflow Voting API", () => {
     // Add voter roles for agents (preparing for future schema support)
     const voterRole = SystemRole.createWorkflowTemplateVoterRole({
       type: "workflow_template",
-      templateName: mockWorkflowTemplate.name
+      templateName: mockWorkflowTemplate.name,
+      organizationId: toOrganizationId(mockWorkflowTemplate.organizationId)
     })
     const roleForDb = JSON.parse(JSON.stringify(voterRole))
 
@@ -144,8 +171,8 @@ describe("Agent Workflow Voting API", () => {
     })
 
     // Add agents to group (except agentNotInGroup)
-    await addAgentToGroup(prisma, mockGroupId, agent.id)
-    await addAgentToGroup(prisma, mockGroupId, agentWithRole.id)
+    await addAgentToGroup(prisma, agent.organizationId, mockGroupId, agent.id)
+    await addAgentToGroup(prisma, agentWithRole.organizationId, mockGroupId, agentWithRole.id)
 
     testAgent = {agent, token: TestTokenBuilder.signAgentToken(jwtService, configProvider, domainAgent)}
     testAgentNotInGroup = {
@@ -170,7 +197,6 @@ describe("Agent Workflow Voting API", () => {
 
   it("should be defined", () => {
     expect(app).toBeDefined()
-    expect(recalculationQueue).toBeDefined()
   })
 
   describe("GET /workflows/:workflowId/canVote", () => {
@@ -380,10 +406,11 @@ describe("Agent Workflow Voting API", () => {
         // Expect: a 202 Accepted status and the vote recorded in the database
         expect(response).toHaveStatusCode(HttpStatus.ACCEPTED)
 
-        const tasks = await recalculationQueue.getWaiting()
-
-        expect(tasks).toHaveLength(1)
-        expect(tasks[0]).toMatchObject({data: {workflowId: workflowForVoting.id}})
+        const events = await prisma.tenantOutbox.findMany({
+          where: {organizationId: testAgent.agent.organizationId, eventType: "workflow.recalculate"}
+        })
+        expect(events).toHaveLength(1)
+        expect(events.at(0)?.payload).toMatchObject({workflowId: workflowForVoting.id})
       })
     })
 

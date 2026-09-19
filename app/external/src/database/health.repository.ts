@@ -10,7 +10,7 @@ export class PrismaHealthRepository implements HealthRepository {
   checkDatabaseConnection(): TE.TaskEither<DbHealthCheckFailed, void> {
     return TE.tryCatch(
       async () => {
-        await this.dbClient.prisma.$queryRaw`SELECT 1`
+        await this.dbClient.checkConnection()
       },
       error => {
         Logger.error("Failed to check database connection")

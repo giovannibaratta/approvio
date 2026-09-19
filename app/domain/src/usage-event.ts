@@ -1,10 +1,49 @@
+import {OrganizationId, isOrganizationId} from "./shared"
 import {Either, left, right, isLeft} from "fp-ts/Either"
 import {DistributiveOmit, PrefixUnion, isObject, hasOwnProperty, isDate} from "@utils"
 import {v7 as uuidv7} from "uuid"
-import {Actor, ActorType} from "./audit-log"
-import {TierQuotaLimit} from "./tier"
+import {OriginatingActor} from "./authenticated-entity"
+import {ActorType} from "./audit-log"
+import {isUsageQuantity, UsageQuotaLimit} from "./usage-quantity"
+import {generateDeterministicId} from "@utils"
 
-export const UNLIMITED_QUOTA_SENTINEL = -1
+/** Terminal outcomes are immutable; an operation settles or cancels once. */
+export type UsageSettlementState =
+  {readonly state: "settled"; readonly actualUnits: bigint} | {readonly state: "cancelled"}
+
+export type UsageOperationState = {readonly state: "reserved"} | UsageSettlementState
+
+// TODO: Better docstring
+/** Reconstruct totals only from a complete immutable ledger matching the settled operations. */
+export function reconstructUsageLedger(
+  organizationId: OrganizationId,
+  operations: ReadonlyArray<
+    {
+      readonly operationId: string
+      readonly estimatedUnits: bigint
+    } & UsageOperationState
+  >,
+  events: ReadonlyArray<{readonly id: string; readonly quantity: bigint}>
+): Either<"operation_mismatch", bigint> {
+  let reserved = 0n
+  const settled = new Map<string, bigint>()
+  for (const operation of operations) {
+    if (operation.state === "reserved") reserved += operation.estimatedUnits
+    if (operation.state === "settled")
+      settled.set(UsageEventFactory.getOperationEventId(organizationId, operation.operationId), operation.actualUnits)
+  }
+  // Individual quantities fit storage, but their combined total may exceed its range.
+  if (!isUsageQuantity(reserved) || events.length !== settled.size) return left("operation_mismatch")
+  let consumed = 0n
+  for (const event of events) {
+    if (event.quantity !== settled.get(event.id)) return left("operation_mismatch")
+    // TODO: Please explain the rationale
+    settled.delete(event.id)
+    consumed += event.quantity
+  }
+  if (settled.size !== 0 || consumed < 0n || !isUsageQuantity(consumed + reserved)) return left("operation_mismatch")
+  return right(consumed)
+}
 
 export interface UsageEntity {
   readonly id: string
@@ -46,16 +85,18 @@ export function getMetricUnit(metric: UsageMetric): MetricUnit {
 /**
  * Calculates the remaining quota capacity given a limit, total consumed, and active reservations.
  */
-export function calculateRemainingQuota(limit: TierQuotaLimit, consumed: number, reserved: number): TierQuotaLimit {
+export function calculateRemainingQuota(limit: UsageQuotaLimit, consumed: bigint, reserved: bigint): UsageQuotaLimit {
   if (limit === "UNLIMITED") return "UNLIMITED"
-  return Math.max(0, limit - consumed - reserved)
+  const remaining = limit - consumed - reserved
+  return remaining < 0n ? 0n : remaining
 }
 
 export interface UsageEvent {
   readonly id: string
+  readonly organizationId: OrganizationId
   readonly entityType: string
   readonly entityId: string
-  readonly actor: Actor
+  readonly actor: OriginatingActor
   readonly metric: UsageMetric
   readonly quantity: bigint
   readonly isBillable: boolean
@@ -73,10 +114,12 @@ export type UsageEventValidationError = PrefixUnion<
   | "invalid_actor_type"
   | "invalid_metric"
   | "invalid_quantity"
+  | "invalid_organization_id"
 >
 
 interface ValidatedRequiredFields {
   readonly id: string
+  readonly organizationId: OrganizationId
   readonly entityType: string
   readonly entityId: string
   readonly isBillable: boolean
@@ -84,6 +127,28 @@ interface ValidatedRequiredFields {
 }
 
 export class UsageEventFactory {
+  /** Stable ledger identity shared by operation settlement and cache reconstruction. */
+  static getOperationEventId(organizationId: OrganizationId, operationId: string): string {
+    return generateDeterministicId(`usage-event-${organizationId}-${operationId}`)
+  }
+
+  /** Compare immutable billing facts; retries may supply a new timestamp for the same operation. */
+  static isSameOperationEvent(existing: UsageEvent, requested: UsageEvent): boolean {
+    return (
+      existing.id === requested.id &&
+      existing.organizationId === requested.organizationId &&
+      existing.entityType === requested.entityType &&
+      existing.entityId === requested.entityId &&
+      existing.actor.type === requested.actor.type &&
+      existing.actor.id === requested.actor.id &&
+      existing.actor.displayName === requested.actor.displayName &&
+      existing.metric === requested.metric &&
+      existing.quantity === requested.quantity &&
+      existing.isBillable === requested.isBillable &&
+      canonicalJson(existing.metadata ?? null) === canonicalJson(requested.metadata ?? null)
+    )
+  }
+
   static create(
     data: DistributiveOmit<CreateUsageEvent, "occurredAt"> & {occurredAt?: Date}
   ): Either<UsageEventValidationError, UsageEvent> {
@@ -110,7 +175,7 @@ export class UsageEventFactory {
     const metricCheck = UsageEventFactory.validateMetric(data.metric)
     if (isLeft(metricCheck)) return metricCheck
 
-    if (!hasOwnProperty(data, "quantity") || typeof data.quantity !== "bigint" || data.quantity < 0n)
+    if (!hasOwnProperty(data, "quantity") || !isUsageQuantity(data.quantity))
       return left("usage_event_invalid_quantity")
 
     const metadataCheck = UsageEventFactory.validateMetadata(data)
@@ -118,6 +183,7 @@ export class UsageEventFactory {
 
     const validatedEvent: UsageEvent = {
       id: requiredCheck.right.id,
+      organizationId: requiredCheck.right.organizationId,
       entityType: requiredCheck.right.entityType,
       entityId: requiredCheck.right.entityId,
       actor: actorCheck.right,
@@ -136,6 +202,7 @@ export class UsageEventFactory {
   ): Either<UsageEventValidationError, ValidatedRequiredFields> {
     if (
       !hasOwnProperty(data, "id") ||
+      !hasOwnProperty(data, "organizationId") ||
       !hasOwnProperty(data, "entityType") ||
       !hasOwnProperty(data, "entityId") ||
       !hasOwnProperty(data, "isBillable") ||
@@ -143,11 +210,12 @@ export class UsageEventFactory {
     )
       return left("usage_event_missing_required_fields")
 
-    const {id, entityType, entityId, isBillable, occurredAt} = data
+    const {id, organizationId, entityType, entityId, isBillable, occurredAt} = data
 
     if (
       typeof id !== "string" ||
       id.trim() === "" ||
+      typeof organizationId !== "string" ||
       typeof entityId !== "string" ||
       entityId.trim() === "" ||
       typeof isBillable !== "boolean" ||
@@ -157,9 +225,11 @@ export class UsageEventFactory {
       return left("usage_event_missing_required_fields")
 
     if (typeof entityType !== "string" || entityType.trim() === "") return left("usage_event_invalid_entity_type")
+    if (!isOrganizationId(organizationId)) return left("usage_event_invalid_organization_id")
 
     return right({
       id,
+      organizationId,
       entityType,
       entityId,
       isBillable,
@@ -167,20 +237,31 @@ export class UsageEventFactory {
     })
   }
 
-  private static validateActor(actor: unknown): Either<UsageEventValidationError, Actor> {
-    if (!isObject(actor) || !hasOwnProperty(actor, "id") || !hasOwnProperty(actor, "type"))
+  private static validateActor(actor: unknown): Either<UsageEventValidationError, OriginatingActor> {
+    if (
+      !isObject(actor) ||
+      !hasOwnProperty(actor, "id") ||
+      !hasOwnProperty(actor, "type") ||
+      !hasOwnProperty(actor, "displayName")
+    )
       return left("usage_event_missing_required_fields")
 
-    const {id, type} = actor
+    const {id, type, displayName} = actor
 
-    if (typeof id !== "string" || id.trim() === "" || typeof type !== "string")
+    if (
+      typeof id !== "string" ||
+      id.trim() === "" ||
+      typeof type !== "string" ||
+      typeof displayName !== "string" ||
+      !displayName.trim()
+    )
       return left("usage_event_missing_required_fields")
 
-    if (type !== "user" && type !== "agent") return left("usage_event_invalid_actor_type")
+    if (type !== "user" && type !== "agent" && type !== "operator") return left("usage_event_invalid_actor_type")
 
     const actorType: ActorType = type
 
-    return right({id, type: actorType})
+    return right({id, type: actorType, displayName})
   }
 
   private static validateMetric(metric: unknown): Either<UsageEventValidationError, UsageMetric> {
@@ -199,4 +280,13 @@ export class UsageEventFactory {
     if (isObject(data.metadata)) return right(data.metadata)
     return left("usage_event_malformed_object")
   }
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`
+  return `{${Object.entries(value)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalJson(nested)}`)
+    .join(",")}}`
 }

@@ -1,151 +1,146 @@
 import {TaskEither} from "fp-ts/TaskEither"
 import {
-  WorkflowActionEmailTask,
   DecoratedWorkflowActionWebhookTask,
-  WorkflowActionType,
   DecoratedWorkflowActionEmailTask,
   DecoratedWorkflowActionSlackTask,
   DecoratedWorkflowActionSlackPendingTask,
-  Occ,
   WorkflowActionWebhookTaskValidationError,
   WorkflowActionEmailTaskValidationError,
   WorkflowActionSlackTaskValidationError,
-  WorkflowActionTaskDecoratorSelector,
-  DecoratedWorkflowActionWebhookPendingTask
+  DecoratedWorkflowActionWebhookPendingTask,
+  BoundaryError,
+  TenantContext,
+  TaskReadyEvent,
+  TaskCreation
 } from "@domain"
 import {UnknownError} from "@services/error"
+import {CryptoError} from "@services/encryption/interfaces"
 
 export type TaskAlreadyExists = "task_already_exists"
-export type TaskConcurrentUpdateError = "task_concurrent_update"
-export type TaskLockedByOtherError = "task_locked_by_other"
 type TaskNotFoundError = "task_not_found"
-type TaskLockInconsistentError = "task_lock_inconsistent"
+export type TaskLoadStorageError =
+  /** A database-confirmed serialization/write conflict; the owning transaction retries. */
+  | "task_load_transaction_conflict"
+  /** A recognized connection, timeout or capacity failure eligible for a bounded queue retry. */
+  | "task_load_temporarily_unavailable"
+  /** An unexpected storage failure; preserve its cause in internal logs without assuming it is transient. */
+  | "task_load_storage_error"
 
-export type TaskGetErrorWebhookTask =
-  UnknownError | WorkflowActionWebhookTaskValidationError | TaskNotFoundError | TaskLockInconsistentError
+/** Retryability is classified by the external adapter; callers preserve the code for diagnostics. */
+export interface TaskLoadFailure<Code extends string> {
+  readonly code: Code
+  readonly retryable: boolean
+}
 
-export type TaskGetErrorEmailTask =
-  UnknownError | WorkflowActionEmailTaskValidationError | TaskNotFoundError | TaskLockInconsistentError
+export type TaskGetErrorWebhookTask = TaskLoadFailure<
+  | BoundaryError
+  | CryptoError
+  | WorkflowActionWebhookTaskValidationError
+  | TaskNotFoundError
+  | TaskLoadStorageError
+  | "task_payload_invalid"
+>
 
-export type TaskGetErrorSlackTask =
-  UnknownError | WorkflowActionSlackTaskValidationError | TaskNotFoundError | TaskLockInconsistentError
+export type TaskGetErrorEmailTask = TaskLoadFailure<
+  | BoundaryError
+  | CryptoError
+  | WorkflowActionEmailTaskValidationError
+  | TaskNotFoundError
+  | TaskLoadStorageError
+  | "task_payload_invalid"
+>
 
-export type TaskCreateError = UnknownError | TaskAlreadyExists
-export type TaskUpdateError = UnknownError | TaskConcurrentUpdateError | TaskLockedByOtherError
-export type TaskLockError = TaskNotFoundError | TaskLockedByOtherError | UnknownError
+export type TaskGetErrorSlackTask = TaskLoadFailure<
+  | BoundaryError
+  | CryptoError
+  | WorkflowActionSlackTaskValidationError
+  | TaskNotFoundError
+  | TaskLoadStorageError
+  | "task_payload_invalid"
+>
+
+export type TaskCreateError =
+  BoundaryError | CryptoError | UnknownError | TaskAlreadyExists | "event_mismatch" | "repository_dependency_error"
 
 export const TASK_REPOSITORY_TOKEN = Symbol("TASK_REPOSITORY_TOKEN")
 
-/**
- * Checks to perform when updating a task to ensure the task is not modified by another process.
- */
-export interface TaskUpdateChecks {
-  /** Optimistic Concurrency Control version. */
-  occ: bigint
-  /** The identifier of the owner that is expected to hold the lock. */
-  lockOwner: string
+export interface TaskPersistenceMetadata {
+  readonly eventId: string
+  /** Zero-based position in the generation event's action list; with tenant and event ID, identifies the action on replay. */
+  readonly actionIndex: number
+  /**
+   * Outbox recovery may publish the task-ready event at or after this time.
+   * Also stored on the task and durable work; direct dispatch does not check it.
+   */
+  readonly availableAt: Date
 }
 
-/**
- * Uniquely identifies a task by its type and ID.
- */
-export interface TaskReference {
-  /** The type of workflow action associated with the task. */
-  type: WorkflowActionType
-  /** The unique identifier of the task. */
-  taskId: string
+interface TaskCreateRequest<T> {
+  readonly task: T
+  readonly metadata: TaskPersistenceMetadata
 }
 
+export type TaskGenerationRequest =
+  | {
+      readonly kind: "email"
+      readonly request: TaskCreateRequest<DecoratedWorkflowActionEmailTask<{occ: true}>>
+    }
+  | {
+      readonly kind: "webhook"
+      readonly request: TaskCreateRequest<DecoratedWorkflowActionWebhookPendingTask<{occ: true}>>
+    }
+  | {
+      readonly kind: "slack"
+      readonly request: TaskCreateRequest<DecoratedWorkflowActionSlackPendingTask<{occ: true}>>
+    }
+
 /**
- * Repository for managing workflow tasks, including email and webhook tasks.
- * Handles task creation, updates, locking, and retrieval.
+ * Persists and retrieves email, webhook, and Slack workflow tasks.
+ * For new tasks, each create operation atomically inserts the task, durable work, and task-ready
+ * outbox record supplied by the service. The repository encrypts task payloads.
+ * The service validates task ownership against context before calling these methods.
+ * Reads return task-row snapshots; DispatchService owns the live durable-work lifecycle.
  */
 export interface TaskRepository {
+  // TODO: Wouldn't be better to return a left if there is a duplicate value ?
   /**
-   * Creates a new email task.
-   * @param task The decorated email task data to create.
-   * @returns A TaskEither indicating success or a TaskCreateError.
+   * Persists one task, its durable work and task-ready outbox event atomically.
+   * An existing task with the same source event, action index and kind returns
+   * undefined; a mismatch returns event_mismatch. The service owns generation receipts.
    */
-  createEmailTask(task: DecoratedWorkflowActionEmailTask<{occ: true}>): TaskEither<TaskCreateError, void>
-
-  /**
-   * Updates an existing email task.
-   * @param task The email task data with updated fields.
-   * @param checks Concurrency and lock ownership checks.
-   * @returns A TaskEither containing the updated OCC version or a TaskUpdateError.
-   */
-  updateEmailTask(task: WorkflowActionEmailTask, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, Occ>
-
-  /**
-   * Creates a new webhook task in pending state.
-   * @param task The decorated pending webhook task data to create.
-   * @returns A TaskEither indicating success or a TaskCreateError.
-   */
-  createWebhookTask(task: DecoratedWorkflowActionWebhookPendingTask<{occ: true}>): TaskEither<TaskCreateError, void>
-
-  /**
-   * Updates a webhook task.
-   * @param task The decorated webhook task data (pending or completed).
-   * @param checks Concurrency and lock ownership checks.
-   * @returns A TaskEither containing the updated OCC version or a TaskUpdateError.
-   */
-  updateWebhookTask<T extends WorkflowActionTaskDecoratorSelector>(
-    task: DecoratedWorkflowActionWebhookTask<T>,
-    checks: TaskUpdateChecks
-  ): TaskEither<TaskUpdateError, Occ>
-
-  /**
-   * Attempts to acquire a lock on a task.
-   * @param taskReference The reference to the task to lock.
-   * @param lockOwner The identifier of the entity requesting the lock.
-   * @returns A TaskEither containing the current OCC version or a TaskLockError.
-   */
-  lockTask(taskReference: TaskReference, lockOwner: string): TaskEither<TaskLockError, Occ>
-
-  /**
-   * Releases a lock on a task.
-   * @param taskReference The reference to the task to unlock.
-   * @param checks Concurrency and lock ownership checks.
-   * @returns A TaskEither indicating success or a TaskUpdateError.
-   */
-  releaseLock(taskReference: TaskReference, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, void>
+  createEventTask(
+    context: TenantContext,
+    request: TaskGenerationRequest,
+    creation: TaskCreation
+  ): TaskEither<TaskCreateError, TaskReadyEvent | undefined>
 
   /**
    * Retrieves a webhook task by its ID.
    * @param taskId The unique identifier of the webhook task.
    * @returns A TaskEither containing the decorated webhook task or a TaskGetErrorWebhookTask.
    */
-  getWebhookTask(taskId: string): TaskEither<TaskGetErrorWebhookTask, DecoratedWorkflowActionWebhookTask<{occ: true}>>
+  getWebhookTask(
+    context: TenantContext,
+    taskId: string
+  ): TaskEither<TaskGetErrorWebhookTask, DecoratedWorkflowActionWebhookTask<{occ: true}>>
 
   /**
    * Retrieves an email task by its ID.
    * @param taskId The unique identifier of the email task.
    * @returns A TaskEither containing the decorated email task or a TaskGetErrorEmailTask.
    */
-  getEmailTask(taskId: string): TaskEither<TaskGetErrorEmailTask, DecoratedWorkflowActionEmailTask<{occ: true}>>
-
-  /**
-   * Creates a new slack task in pending state.
-   * @param task The decorated pending slack task data to create.
-   * @returns A TaskEither indicating success or a TaskCreateError.
-   */
-  createSlackTask(task: DecoratedWorkflowActionSlackPendingTask<{occ: true}>): TaskEither<TaskCreateError, void>
-
-  /**
-   * Updates a slack task.
-   * @param task The decorated slack task data (pending or completed).
-   * @param checks Concurrency and lock ownership checks.
-   * @returns A TaskEither containing the updated OCC version or a TaskUpdateError.
-   */
-  updateSlackTask<T extends WorkflowActionTaskDecoratorSelector>(
-    task: DecoratedWorkflowActionSlackTask<T>,
-    checks: TaskUpdateChecks
-  ): TaskEither<TaskUpdateError, Occ>
+  getEmailTask(
+    context: TenantContext,
+    taskId: string
+  ): TaskEither<TaskGetErrorEmailTask, DecoratedWorkflowActionEmailTask<{occ: true}>>
 
   /**
    * Retrieves a slack task by its ID.
    * @param taskId The unique identifier of the slack task.
    * @returns A TaskEither containing the decorated slack task or a TaskGetErrorSlackTask.
    */
-  getSlackTask(taskId: string): TaskEither<TaskGetErrorSlackTask, DecoratedWorkflowActionSlackTask<{occ: true}>>
+  getSlackTask(
+    context: TenantContext,
+    taskId: string
+  ): TaskEither<TaskGetErrorSlackTask, DecoratedWorkflowActionSlackTask<{occ: true}>>
 }

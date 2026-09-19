@@ -1,4 +1,4 @@
-import {RolePermissionChecker, OrgRole, getEntityRoles, User, UnconstrainedBoundRole} from "@domain"
+import {RolePermissionChecker, OrgRole, getEntityRoles, OrganizationId, UnconstrainedBoundRole} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {SpaceRepository, SPACE_REPOSITORY_TOKEN} from "@services/space/interfaces"
 import {GroupRepository, GROUP_REPOSITORY_TOKEN} from "@services/group/interfaces"
@@ -14,38 +14,47 @@ import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {validateUserEntity} from "@services/shared/types"
 import {Either, left, right, isLeft} from "fp-ts/Either"
+import {TRANSACTION_MANAGER_TOKEN, TenantTransactionManager} from "@services/transaction/interfaces"
+import {inTransaction} from "@services/transaction/in-transaction"
+import {sequenceS} from "fp-ts/Apply"
 
 @Injectable()
 export class ResourcesService {
   constructor(
     @Inject(SPACE_REPOSITORY_TOKEN) private readonly spaceRepo: SpaceRepository,
-    @Inject(GROUP_REPOSITORY_TOKEN) private readonly groupRepo: GroupRepository
+    @Inject(GROUP_REPOSITORY_TOKEN) private readonly groupRepo: GroupRepository,
+    @Inject(TRANSACTION_MANAGER_TOKEN) private readonly transactionManager: TenantTransactionManager
   ) {}
 
   resolveResources(request: ResolveResourcesRequest): TaskEither<ResolveResourcesError, ResourceResolveResponse> {
     const {requestor, request: payload} = request
 
-    const processResources = (user: User): TaskEither<ResolveResourcesError, ResourceResolveResponse> => {
-      const isOrgAdmin = user.orgRole === OrgRole.ADMIN
-      const roles = getEntityRoles(requestor)
-
+    const loadResources = () => {
       const {spaceIds, groupIds} = extractResourceIds(payload.resources)
-
-      return pipe(
-        TE.sequenceArray([
-          spaceIds.length > 0 ? this.spaceRepo.getSpacesByIds(spaceIds) : TE.right([]),
-          groupIds.length > 0 ? this.groupRepo.getGroupsByIds(groupIds) : TE.right([])
-        ]),
-        TE.chainW(res => {
-          if (res.length !== 2) return TE.left("unknown_error" as const)
-          const [spaces, groups] = res
-          if (spaces === undefined || groups === undefined) return TE.left("unknown_error" as const)
-          return TE.right(categorizeResources(payload.resources, spaces, groups, isOrgAdmin, roles))
-        })
-      )
+      return sequenceS(TE.ApplicativePar)({
+        spaces: spaceIds.length > 0 ? this.spaceRepo.getSpacesByIds(request, spaceIds) : TE.right([]),
+        groups: groupIds.length > 0 ? this.groupRepo.getGroupsByIds(request, groupIds) : TE.right([])
+      })
     }
 
-    return pipe(TE.fromEither(validateUserEntity(requestor)), TE.chainW(processResources))
+    return pipe(
+      TE.fromEither(validateUserEntity(requestor)),
+      inTransaction(this.transactionManager, request, user =>
+        pipe(
+          loadResources(),
+          TE.map(({spaces, groups}) =>
+            categorizeResources(
+              payload.resources,
+              spaces,
+              groups,
+              user.orgRole === OrgRole.ADMIN,
+              getEntityRoles(requestor),
+              request.organizationId
+            )
+          )
+        )
+      )
+    )
   }
 }
 
@@ -76,7 +85,8 @@ function categorizeResources(
   spaces: {id: string; name: string}[],
   groups: {id: string; name: string}[],
   isOrgAdmin: boolean,
-  roles: ReadonlyArray<UnconstrainedBoundRole>
+  roles: ReadonlyArray<UnconstrainedBoundRole>,
+  organizationId: OrganizationId
 ): ResourceResolveResponse {
   const spaceMap = new Map(spaces.map(s => [s.id, s]))
   const groupMap = new Map(groups.map(g => [g.id, g]))
@@ -86,11 +96,11 @@ function categorizeResources(
 
   for (const resourceReq of resources)
     if (resourceReq.type === "space") {
-      const res = resolveSpace(resourceReq, spaceMap, isOrgAdmin, roles)
+      const res = resolveSpace(resourceReq, spaceMap, isOrgAdmin, roles, organizationId)
       if (isLeft(res)) denied.push(res.left)
       else resolved.push(res.right)
     } else if (resourceReq.type === "group") {
-      const res = resolveGroup(resourceReq, groupMap, isOrgAdmin, roles)
+      const res = resolveGroup(resourceReq, groupMap, isOrgAdmin, roles, organizationId)
       if (isLeft(res)) denied.push(res.left)
       else resolved.push(res.right)
     }
@@ -112,13 +122,15 @@ function resolveSpace(
   resourceReq: {id: string},
   spaceMap: Map<string, {id: string; name: string}>,
   isOrgAdmin: boolean,
-  roles: ReadonlyArray<UnconstrainedBoundRole>
+  roles: ReadonlyArray<UnconstrainedBoundRole>,
+  organizationId: OrganizationId
 ): Either<ResourceDeniedItem, ResourceResolvedItem> {
   const space = spaceMap.get(resourceReq.id)
   if (!space) return left({type: "space", id: resourceReq.id, reason: "NOT_FOUND"})
 
   const hasAccess =
-    isOrgAdmin || RolePermissionChecker.hasSpacePermission(roles, {type: "space", spaceId: space.id}, "read")
+    isOrgAdmin ||
+    RolePermissionChecker.hasSpacePermission(roles, {type: "space", spaceId: space.id, organizationId}, "read")
 
   if (hasAccess) return right({type: "space", id: space.id, name: space.name})
   return left({type: "space", id: space.id, reason: "NOT_AUTHORIZED"})
@@ -138,13 +150,15 @@ function resolveGroup(
   resourceReq: {id: string},
   groupMap: Map<string, {id: string; name: string}>,
   isOrgAdmin: boolean,
-  roles: ReadonlyArray<UnconstrainedBoundRole>
+  roles: ReadonlyArray<UnconstrainedBoundRole>,
+  organizationId: OrganizationId
 ): Either<ResourceDeniedItem, ResourceResolvedItem> {
   const group = groupMap.get(resourceReq.id)
   if (!group) return left({type: "group", id: resourceReq.id, reason: "NOT_FOUND"})
 
   const hasAccess =
-    isOrgAdmin || RolePermissionChecker.hasGroupPermission(roles, {type: "group", groupId: group.id}, "read")
+    isOrgAdmin ||
+    RolePermissionChecker.hasGroupPermission(roles, {type: "group", groupId: group.id, organizationId}, "read")
 
   if (hasAccess) return right({type: "group", id: group.id, name: group.name})
   return left({type: "group", id: group.id, reason: "NOT_AUTHORIZED"})

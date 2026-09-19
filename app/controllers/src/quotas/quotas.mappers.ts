@@ -1,5 +1,8 @@
+// TODO: Are the concurrency error classified correctly ?
 import {ListQuotasParamsValidationError, QuotaCreate, QuotaValidationError} from "@approvio/api"
-import {Quota, Versioned} from "@domain"
+import * as E from "fp-ts/Either"
+import {pipe} from "fp-ts/function"
+import {Quota, Versioned, parseQuotaLimit} from "@domain"
 import {
   QuotaCreateError,
   QuotaGetError,
@@ -22,7 +25,7 @@ import {generateErrorPayload} from "@controllers/error"
 export function mapQuotaToApi(quota: Versioned<Quota>): unknown {
   return {
     id: quota.id,
-    limit: quota.limit,
+    limit: quota.limit.toString(),
     quotaType: quota.quotaType,
     scope: quota.node.type,
     targetId: quota.node.identifier,
@@ -31,13 +34,16 @@ export function mapQuotaToApi(quota: Versioned<Quota>): unknown {
   }
 }
 
-export function mapToCreateQuotaRequest(request: QuotaCreate): CreateQuotaRequest {
-  return {
-    nodeType: request.scope,
-    nodeIdentifier: request.targetId,
-    quotaType: request.quotaType,
-    limit: request.limit
-  }
+export function mapToCreateQuotaRequest(request: QuotaCreate): E.Either<"quota_invalid_limit", CreateQuotaRequest> {
+  return pipe(
+    parseQuotaLimit(request.limit),
+    E.map(limit => ({
+      nodeType: request.scope,
+      nodeIdentifier: request.targetId,
+      quotaType: request.quotaType,
+      limit
+    }))
+  )
 }
 
 export function generateErrorResponseForGetQuota(error: QuotaGetError): HttpException {
@@ -48,6 +54,14 @@ export function generateErrorResponseForGetQuota(error: QuotaGetError): HttpExce
       return new NotFoundException(generateErrorPayload(errorCode, "Quota not found"))
     case "quota_unknown_error":
     case "quota_unsupported_node_type":
+    case "quota_invalid_organization_id":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "storage_unavailable":
+    case "concurrency_error":
       return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", "Unknown error"))
     case "quota_invalid_id":
     case "quota_malformed_quota":
@@ -67,6 +81,14 @@ export function generateErrorResponseForCreateQuota(error: QuotaValidationError 
   switch (error) {
     case "quota_unknown_error":
     case "quota_unsupported_node_type":
+    case "quota_invalid_organization_id":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "storage_unavailable":
+    case "concurrency_error":
       return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", "Unknown error"))
     case "quota_already_exists":
       return new ConflictException(generateErrorPayload(errorCode, "Quota already exists"))
@@ -103,6 +125,14 @@ export function generateErrorResponseForUpdateQuota(error: QuotaValidationError 
       return new ForbiddenException(generateErrorPayload(errorCode, "Not authorized"))
     case "quota_unknown_error":
     case "quota_unsupported_node_type":
+    case "quota_invalid_organization_id":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "storage_unavailable":
+    case "concurrency_error":
       return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", "Unknown error"))
     case "quota_concurrent_modification_error":
       return new ConflictException(generateErrorPayload(errorCode, "Concurrent modification"))
@@ -138,6 +168,13 @@ export function generateErrorResponseForDeleteQuota(error: QuotaDeleteError): Ht
     case "quota_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, "Quota not found"))
     case "quota_unknown_error":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "storage_unavailable":
+    case "concurrency_error":
       return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", "Unknown error"))
     case "requestor_not_authorized":
       return new ForbiddenException(generateErrorPayload(errorCode, "Not authorized"))
@@ -168,6 +205,14 @@ export function generateErrorResponseForListQuotas(
     case "quota_unknown_error":
     case "quota_unsupported_node_type":
     case "invalid_search":
+    case "quota_invalid_organization_id":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "storage_unavailable":
+    case "concurrency_error":
       return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", "Unknown error"))
   }
 }

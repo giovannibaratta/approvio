@@ -5,6 +5,7 @@ import {
   WorkflowActionCompletedTaskData,
   WorkflowActionErrorTaskData,
   WorkflowActionPendingTaskData,
+  WorkflowActionUnresolvedTaskData,
   WorkflowActionTaskData,
   WorkflowActionTaskDecoratorSelector,
   WorkflowActionTaskDecorators,
@@ -38,7 +39,10 @@ export type DecoratedWorkflowActionSlackErrorTask<T extends WorkflowActionTaskDe
 >
 
 export type WorkflowActionSlackTaskData =
-  WorkflowActionSlackPendingTaskData | WorkflowActionSlackCompletedTaskData | WorkflowActionSlackErrorTaskData
+  | WorkflowActionSlackPendingTaskData
+  | WorkflowActionSlackCompletedTaskData
+  | WorkflowActionSlackErrorTaskData
+  | (WorkflowActionSlackBaseTaskData & WorkflowActionUnresolvedTaskData)
 
 export type WorkflowActionSlackBaseTaskData = WorkflowActionTaskData & {
   webhookUrl: string
@@ -48,7 +52,7 @@ export type WorkflowActionSlackBaseTaskData = WorkflowActionTaskData & {
 export type WorkflowActionSlackPendingTaskData = WorkflowActionSlackBaseTaskData & WorkflowActionPendingTaskData
 
 export type WorkflowActionSlackCompletedTaskData = WorkflowActionSlackBaseTaskData &
-  WorkflowActionCompletedTaskData & {response: HttpResponse}
+  WorkflowActionCompletedTaskData & {response?: HttpResponse}
 
 export type WorkflowActionSlackErrorTaskData = WorkflowActionSlackBaseTaskData &
   WorkflowActionErrorTaskData & {
@@ -60,7 +64,7 @@ export type WorkflowActionSlackTaskValidationError =
   | PrefixUnion<"workflow_action_slack_task", UnprefixedWorkflowActionSlackTaskValidationError>
 
 type UnprefixedWorkflowActionSlackTaskValidationError =
-  "completed_with_response_missing" | "response_invalid" | "webhook_url_invalid" | "webhook_url_missing_or_invalid"
+  "response_invalid" | "webhook_url_invalid" | "webhook_url_missing_or_invalid"
 
 export class WorkflowActionSlackTaskFactory {
   static newWorkflowActionSlackTask(
@@ -70,7 +74,7 @@ export class WorkflowActionSlackTaskFactory {
 
     const entity: DecoratedWorkflowActionSlackPendingTask<{occ: true}> = {
       ...data,
-      status: TaskStatus.PENDING,
+      status: TaskStatus.READY,
       retryCount: 0,
       createdAt: now,
       updatedAt: now,
@@ -97,7 +101,7 @@ export class WorkflowActionSlackTaskFactory {
       retryCount: task.retryCount + 1,
       errorReason: newData.errorReason,
       response: newData.response ? newData.response : undefined,
-      status: TaskStatus.ERROR
+      status: TaskStatus.FAILED
     }
 
     return WorkflowActionSlackTaskFactory.validate(newObj)
@@ -115,7 +119,7 @@ export class WorkflowActionSlackTaskFactory {
       retryCount: task.retryCount,
       response: newData.response,
       errorReason: undefined,
-      status: TaskStatus.COMPLETED
+      status: TaskStatus.SUCCEEDED
     }
 
     return WorkflowActionSlackTaskFactory.validate(newObj)
@@ -152,31 +156,37 @@ export class WorkflowActionSlackTaskFactory {
     }
 
     switch (baseSlackTask.status) {
-      case TaskStatus.PENDING:
+      case TaskStatus.CLAIMED:
+      case TaskStatus.EXECUTING:
+      case TaskStatus.RETRY_DUE:
+      case TaskStatus.UNKNOWN:
+      case TaskStatus.PAUSED:
+        return right(baseSlackTask)
+      case TaskStatus.READY:
         return WorkflowActionSlackTaskFactory.validateWorkflowActionSlackPending({
           ...baseSlackTask,
-          status: TaskStatus.PENDING
+          status: TaskStatus.READY
         })
-      case TaskStatus.ERROR:
+      case TaskStatus.FAILED:
         return WorkflowActionSlackTaskFactory.validateWorkflowActionSlackError({
           ...baseSlackTask,
-          status: TaskStatus.ERROR
+          status: TaskStatus.FAILED
         })
-      case TaskStatus.COMPLETED:
+      case TaskStatus.SUCCEEDED:
         return WorkflowActionSlackTaskFactory.validateWorkflowActionSlackCompleted({
           ...baseSlackTask,
-          status: TaskStatus.COMPLETED
+          status: TaskStatus.SUCCEEDED
         })
     }
   }
 
   private static validateWorkflowActionSlackCompleted(
     dataToBeValidated: WorkflowActionSlackBaseTaskData & {
-      status: TaskStatus.COMPLETED
+      status: TaskStatus.SUCCEEDED
     } & {[key: string]: unknown}
   ): Either<WorkflowActionSlackTaskValidationError, WorkflowActionSlackCompletedTaskData> {
-    if (!hasOwnProperty(dataToBeValidated, "response"))
-      return left("workflow_action_slack_task_completed_with_response_missing" as const)
+    if (!hasOwnProperty(dataToBeValidated, "response") || dataToBeValidated.response === undefined)
+      return right(dataToBeValidated)
 
     const responseValidation = validateResponse(dataToBeValidated.response)
     if (isLeft(responseValidation)) return responseValidation
@@ -186,7 +196,7 @@ export class WorkflowActionSlackTaskFactory {
 
   private static validateWorkflowActionSlackPending(
     dataToBeValidated: WorkflowActionSlackBaseTaskData & {
-      status: TaskStatus.PENDING
+      status: TaskStatus.READY
     } & {[key: string]: unknown}
   ): Either<WorkflowActionSlackTaskValidationError, WorkflowActionSlackPendingTaskData> {
     return right(dataToBeValidated)
@@ -194,7 +204,7 @@ export class WorkflowActionSlackTaskFactory {
 
   private static validateWorkflowActionSlackError(
     dataToBeValidated: WorkflowActionSlackBaseTaskData & {
-      status: TaskStatus.ERROR
+      status: TaskStatus.FAILED
     } & {[key: string]: unknown}
   ): Either<WorkflowActionSlackTaskValidationError, WorkflowActionSlackErrorTaskData> {
     if (hasOwnProperty(dataToBeValidated, "response") && dataToBeValidated.response !== undefined) {

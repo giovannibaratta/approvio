@@ -1,11 +1,13 @@
 import {Either, left, right} from "fp-ts/Either"
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const UUID_V5_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const EMAIL_REGEX = new RegExp(
   /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
 )
 
 export const isUUIDv7 = (value: string): boolean => value.match(UUID_REGEX) !== null
+export const isUUIDv5 = (value: string): boolean => value.match(UUID_V5_REGEX) !== null
 
 export const isEmail = (value: string): boolean => EMAIL_REGEX.test(value)
 
@@ -62,4 +64,18 @@ export function isValidHttpOrHttpsUrl(url: string): boolean {
   } catch {
     return false
   }
+}
+
+export type PaginationValidationError = "invalid_page_number" | "invalid_limit_number"
+
+const DEFAULT_MAX_PAGE_SIZE = 100
+
+export function validatePagination(
+  page: number,
+  limit: number,
+  maxLimit: number = DEFAULT_MAX_PAGE_SIZE
+): Either<PaginationValidationError, {readonly page: number; readonly limit: number}> {
+  if (!Number.isSafeInteger(page) || page <= 0) return left("invalid_page_number")
+  if (!Number.isSafeInteger(limit) || limit <= 0 || limit > maxLimit) return left("invalid_limit_number")
+  return right({page, limit})
 }

@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20261024120000-add-usage-operation-expiry
+      author: giovannibaratta
+      comment: Persist the last allowed start time so admission and replay retention survive cache recovery.
+      changes:
+        - addColumn:
+            tableName: usage_operations
+            columns:
+              - column:
+                  name: expires_at
+                  type: timestamptz
+                  remarks: Last allowed start time for the operation.
+                  constraints:
+                    nullable: false

@@ -7,13 +7,13 @@ Approvio is available in two editions:
 
 ## Overview
 
-| | Self-Hosted | Approvio Cloud |
-| :--- | :--- | :--- |
-| **Hosting** | Your infrastructure (on-premises, AWS, GCP, Azure, etc.) | Fully managed by Approvio |
-| **Data Control** | Complete control; data stays in your network | Hosted in Approvio Cloud infrastructure |
-| **Resource Limits** | No artificial caps on spaces, groups, templates, or workflows | Limits depend on your subscription plan |
-| **Maintenance** | Self-managed upgrades and backups | Handled automatically by Approvio |
-| **Pricing** | Free for noncommercial use; commercial license required for production enterprise use | Subscription-based plans |
+|                     | Self-Hosted                                                                           | Approvio Cloud                          |
+| :------------------ | :------------------------------------------------------------------------------------ | :-------------------------------------- |
+| **Hosting**         | Your infrastructure (on-premises, AWS, GCP, Azure, etc.)                              | Fully managed by Approvio               |
+| **Data Control**    | Complete control; data stays in your network                                          | Hosted in Approvio Cloud infrastructure |
+| **Resource Limits** | No artificial caps on spaces, groups, templates, or workflows                         | Limits depend on your subscription plan |
+| **Maintenance**     | Self-managed upgrades and backups                                                     | Handled automatically by Approvio       |
+| **Pricing**         | Free for noncommercial use; commercial license required for production enterprise use | Subscription-based plans                |
 
 ## Editions
 
@@ -28,6 +28,7 @@ DEPLOYMENT_EDITION=self_hosted
 ```
 
 In this mode:
+
 - There are no built-in limits on the number of spaces, groups, users, workflow templates, or concurrent workflows.
 - No usage throttling or billing checks are enforced by the software.
 
@@ -44,6 +45,7 @@ Commercial deployment on private infrastructure requires a commercial license ag
 Approvio Cloud is our managed multi-tenant platform. It eliminates the operational overhead of deploying and maintaining backend infrastructure.
 
 In Approvio Cloud:
+
 - Organizations choose a subscription plan that fits their team size and approval volume.
 - Workflows, spaces, and automated operations are governed by the allowances of your active plan.
 - Organization administrators can inspect current usage and limits at any time through the dashboard or API.

@@ -1,15 +1,14 @@
 import {
-  Pagination as PaginationApi,
   User as UserApi,
-  UserCreate,
+  Pagination as PaginationApi,
   UserSummary as UserSummaryApi,
   RoleAssignmentRequest,
   RoleRemovalRequest,
   validateRoleAssignmentRequest,
   validateRoleRemovalRequest
 } from "@approvio/api"
-import {GetAuthenticatedEntity} from "@app/auth"
-import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
+import {GetAuthenticatedEntity, GetTenantContext} from "@app/auth"
+import {Body, Controller, Delete, Get, Headers, HttpCode, HttpStatus, Param, Put, Query, Res} from "@nestjs/common"
 import {
   ListUsersRequest,
   UserService,
@@ -17,63 +16,44 @@ import {
   AssignRolesToUserRequest,
   RemoveRolesFromUserRequest
 } from "@services"
-import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
-import * as E from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {
-  createUserApiToServiceModel,
-  generateErrorResponseForCreateUser,
   generateErrorResponseForGetUser,
+  mapUserToApi,
   generateErrorResponseForListUsers,
   generateErrorResponseForUserRoleAssignment,
   generateErrorResponseForUserRoleRemoval,
   mapToServiceRequest,
-  mapUserToApi,
   mapUsersToApi
 } from "./users.mappers"
-import {AuthenticatedEntity} from "@domain"
+import {AuthenticatedEntity, TenantContext} from "@domain"
+import {bindRoleScopeToOrganization} from "../agents/agents.mappers"
 import {logSuccess} from "@utils"
+import {ConfigProvider} from "@external/config"
+import {Response} from "express"
+import {createEntityTag, parseEntityTag} from "../etag"
 
-export const USERS_ENDPOINT_ROOT = "users"
+export const USERS_ENDPOINT_ROOT = "o/:organizationId/users"
 
 @Controller(USERS_ENDPOINT_ROOT)
 export class UsersController {
+  private readonly etagSecret: string
+
   constructor(
     private readonly userService: UserService,
-    private readonly roleService: RoleService
-  ) {}
-
-  @Post()
-  @HttpCode(HttpStatus.CREATED)
-  async createUser(
-    @Body() request: UserCreate,
-    @Res({passthrough: true}) response: Response,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
-  ): Promise<void> {
-    // Wrap service call in lambda
-    const serviceCreateUser = (req: Parameters<UserService["createUser"]>[0]) => this.userService.createUser(req)
-
-    const eitherUserId = await pipe(
-      {requestor, userData: request},
-      createUserApiToServiceModel,
-      TE.fromEither,
-      TE.chainW(serviceCreateUser),
-      TE.map(data => data.id),
-      logSuccess("User created", "UsersController", id => ({id, email: request.email}))
-    )()
-
-    if (isLeft(eitherUserId)) throw generateErrorResponseForCreateUser(eitherUserId.left, "Failed to create user")
-
-    const userId = eitherUserId.right
-    const location = `${response.req.protocol}://${response.req.headers.host}${response.req.url}/${userId}`
-    response.setHeader("Location", location)
+    private readonly roleService: RoleService,
+    configProvider: ConfigProvider
+  ) {
+    this.etagSecret = configProvider.jwtConfig.secret
   }
 
   @Get()
   @HttpCode(HttpStatus.OK)
   async listUsers(
+    @GetTenantContext() context: TenantContext,
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
     @Query("search") search?: string,
     @Query("page") page?: string,
     @Query("limit") limit?: string
@@ -81,7 +61,7 @@ export class UsersController {
     const requestToService = (request: ListUsersRequest) => this.userService.listUsers(request)
 
     const eitherUsers = await pipe(
-      {search, page, limit},
+      {search, page, limit, organizationId: context.organizationId, requestor},
       mapToServiceRequest,
       TE.fromEither,
       TE.chainW(requestToService),
@@ -94,18 +74,22 @@ export class UsersController {
     return eitherUsers.right
   }
 
-  @Get(":userIdentifier")
+  @Get(":userId")
   @HttpCode(HttpStatus.OK)
-  async getUser(@Param("userIdentifier") userIdentifier: string): Promise<UserApi> {
-    const eitherUser = await pipe(
-      this.userService.getUserWithGroupsByIdentifier(userIdentifier),
-      logSuccess("User retrieved", "UsersController", ({user}) => ({id: user.id}))
+  async getUser(
+    @Param("userId") userId: string,
+    @GetTenantContext() context: TenantContext,
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @Res({passthrough: true}) response: Response
+  ): Promise<UserApi> {
+    const result = await pipe(
+      this.userService.getUser({organizationId: context.organizationId, userId, requestor}),
+      TE.map(({user, groups}) => ({user: mapUserToApi({user, groups}), occ: user.occ}))
     )()
 
-    if (isLeft(eitherUser)) throw generateErrorResponseForGetUser(eitherUser.left, "Failed to get user")
-
-    const {user, groups} = eitherUser.right
-    return mapUserToApi(user, groups)
+    if (isLeft(result)) throw generateErrorResponseForGetUser(result.left, "Failed to get user")
+    response.setHeader("ETag", createEntityTag(this.etagSecret, context.organizationId, userId, result.right.occ))
+    return result.right.user
   }
 
   @Put(":userId/roles")
@@ -113,28 +97,39 @@ export class UsersController {
   async assignRolesToUser(
     @Param("userId") userId: string,
     @Body() request: unknown,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Res({passthrough: true}) response: Response
   ): Promise<void> {
-    const mapToServiceModel = (req: RoleAssignmentRequest) => ({
+    const mapToServiceModel = (req: RoleAssignmentRequest, occVersion: bigint) => ({
       userId,
-      roles: req.roles,
+      roles: req.roles.map(role => ({...role, scope: bindRoleScopeToOrganization(role.scope, context.organizationId)})),
       requestor,
-      occVersion: BigInt(req.concurrencyControl.version)
+      context,
+      occVersion
     })
     const assignRole = (req: AssignRolesToUserRequest) => this.roleService.assignRolesToUser(req)
 
     const eitherResult = await pipe(
-      request,
-      E.right,
-      E.chainW(validateRoleAssignmentRequest),
-      E.map(mapToServiceModel),
-      TE.fromEither,
-      TE.chainW(assignRole),
+      TE.Do,
+      TE.bindW("occVersion", () =>
+        TE.fromEither(parseEntityTag(this.etagSecret, context.organizationId, userId, ifMatch))
+      ),
+      TE.bindW("validatedRequest", () => TE.fromEither(validateRoleAssignmentRequest(request))),
+      TE.bindW("serviceRequest", ({validatedRequest, occVersion}) =>
+        TE.right(mapToServiceModel(validatedRequest, occVersion))
+      ),
+      TE.bindW("updatedResult", ({serviceRequest}) => assignRole(serviceRequest)),
       logSuccess("Roles assigned to user", "UsersController", () => ({userId}))
     )()
 
     if (isLeft(eitherResult))
       throw generateErrorResponseForUserRoleAssignment(eitherResult.left, "Failed to assign roles to user")
+    response.setHeader(
+      "ETag",
+      createEntityTag(this.etagSecret, context.organizationId, userId, eitherResult.right.updatedResult.updatedOcc)
+    )
   }
 
   @Delete(":userId/roles")
@@ -142,27 +137,38 @@ export class UsersController {
   async removeRolesFromUser(
     @Param("userId") userId: string,
     @Body() request: unknown,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Res({passthrough: true}) response: Response
   ): Promise<void> {
-    const mapToServiceModel = (req: RoleRemovalRequest) => ({
+    const mapToServiceModel = (req: RoleRemovalRequest, occVersion: bigint) => ({
       userId,
-      roles: req.roles,
+      roles: req.roles.map(role => ({...role, scope: bindRoleScopeToOrganization(role.scope, context.organizationId)})),
       requestor,
-      occVersion: BigInt(req.concurrencyControl.version)
+      context,
+      occVersion
     })
     const removeRole = (req: RemoveRolesFromUserRequest) => this.roleService.removeRolesFromUser(req)
 
     const eitherResult = await pipe(
-      request,
-      E.right,
-      E.chainW(validateRoleRemovalRequest),
-      E.map(mapToServiceModel),
-      TE.fromEither,
-      TE.chainW(removeRole),
+      TE.Do,
+      TE.bindW("occVersion", () =>
+        TE.fromEither(parseEntityTag(this.etagSecret, context.organizationId, userId, ifMatch))
+      ),
+      TE.bindW("validatedRequest", () => TE.fromEither(validateRoleRemovalRequest(request))),
+      TE.bindW("serviceRequest", ({validatedRequest, occVersion}) =>
+        TE.right(mapToServiceModel(validatedRequest, occVersion))
+      ),
+      TE.bindW("updatedResult", ({serviceRequest}) => removeRole(serviceRequest)),
       logSuccess("Roles removed from user", "UsersController", () => ({userId}))
     )()
 
     if (isLeft(eitherResult))
       throw generateErrorResponseForUserRoleRemoval(eitherResult.left, "Failed to remove roles from user")
+    response.setHeader(
+      "ETag",
+      createEntityTag(this.etagSecret, context.organizationId, userId, eitherResult.right.updatedResult.updatedOcc)
+    )
   }
 }

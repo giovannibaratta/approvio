@@ -64,7 +64,8 @@ async function addUserToGroup(prisma: PrismaClient, groupId: string, userId: str
   })
   await prisma.groupMembership.upsert({
     where: {
-      groupId_userId: {
+      organizationId_groupId_userId: {
+        organizationId,
         groupId: groupId,
         userId: userId
       }
@@ -73,6 +74,7 @@ async function addUserToGroup(prisma: PrismaClient, groupId: string, userId: str
       updatedAt: new Date()
     },
     create: {
+      organizationId,
       groupId: groupId,
       userId: userId,
       createdAt: new Date(),
