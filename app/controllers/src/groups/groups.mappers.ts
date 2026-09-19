@@ -1,6 +1,7 @@
 import {Group as GroupApi, GroupCreate, ListGroupEntities200Response, ListGroups200Response} from "@approvio/api"
 import {
   AuthenticatedEntity,
+  TenantContext,
   DESCRIPTION_MAX_LENGTH,
   Group as GroupDomain,
   GroupWithEntitiesCount,

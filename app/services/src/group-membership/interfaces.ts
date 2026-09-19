@@ -9,7 +9,9 @@ import {
   MembershipValidationErrorWithGroupRef,
   MembershipWithGroupRef,
   RemoveMembershipError,
-  UserValidationError
+  UserValidationError,
+  BoundaryError,
+  TenantContext
 } from "@domain"
 import {ConcurrentModificationError, UnknownError} from "@services/error"
 import {GetGroupRepoError} from "@services/group/interfaces"
@@ -19,6 +21,7 @@ import {AgentGetError, AgentKeyDecodeError} from "@services/agent/interfaces"
 import {TaskEither} from "fp-ts/TaskEither"
 
 export type MembershipAddError =
+  | BoundaryError
   | GroupManagerValidationError
   | AddMembershipError
   | GetGroupRepoError
@@ -34,6 +37,7 @@ export type MembershipAddError =
   | "membership_agent_not_found"
 
 export type MembershipRemoveError =
+  | BoundaryError
   | GroupManagerValidationError
   | GetGroupRepoError
   | UserGetError
@@ -67,16 +71,22 @@ export type RemoveMembershipResult = GroupMembershipResult
 
 export interface GroupMembershipRepository {
   getGroupWithMembershipById(
+    context: TenantContext,
     data: GetGroupWithMembershipRepo
   ): TaskEither<
     GetGroupRepoError | UserValidationError | MembershipValidationError | AgentKeyDecodeError | AgentValidationError,
     GetGroupMembershipResult
   >
-  addMembershipsToGroup(request: AddMembershipRepoRequest): TaskEither<MembershipAddError, AddMembershipResult>
+  addMembershipsToGroup(
+    context: TenantContext,
+    request: AddMembershipRepoRequest
+  ): TaskEither<MembershipAddError, AddMembershipResult>
   removeMembershipFromGroup(
+    context: TenantContext,
     request: RemoveMembershipRepoRequest
   ): TaskEither<MembershipRemoveError, RemoveMembershipResult>
   getUserMembershipsByUserId(
+    context: TenantContext,
     userId: string
   ): TaskEither<
     MembershipValidationErrorWithGroupRef | UserValidationError | UnknownError,
@@ -84,14 +94,15 @@ export interface GroupMembershipRepository {
   >
 
   getAgentMembershipsByAgentId(
+    context: TenantContext,
     agentId: string
   ): TaskEither<
     MembershipValidationErrorWithGroupRef | AgentKeyDecodeError | AgentValidationError | UnknownError,
     ReadonlyArray<MembershipWithGroupRef>
   >
 
-  countUserMembersByGroupId(groupId: string): TaskEither<UnknownError, number>
-  countAgentMembersByGroupId(groupId: string): TaskEither<UnknownError, number>
+  countUserMembersByGroupId(context: TenantContext, groupId: string): TaskEither<UnknownError | BoundaryError, number>
+  countAgentMembersByGroupId(context: TenantContext, groupId: string): TaskEither<UnknownError | BoundaryError, number>
 }
 
 export interface GetGroupWithMembershipRepo {

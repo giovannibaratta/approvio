@@ -1,3 +1,4 @@
+import {randomOrgId} from "@test/organization-id"
 import {
   ApprovalRuleData,
   ApprovalRuleFactory,
@@ -207,12 +208,15 @@ describe("ApprovalRuleFactory.validate", () => {
 })
 
 describe("doesVotesCoverApprovalRules", () => {
+  const organizationId = randomOrgId()
   const createApproveVote = (votedForGroups: string[], userId?: string): ApproveVote => ({
     id: uuidv7(),
+    organizationId,
     workflowId: uuidv7(),
     voter: {
       entityId: userId || uuidv7(),
-      entityType: "user"
+      entityType: "user",
+      organizationId
     },
     type: "APPROVE",
     votedForGroups,

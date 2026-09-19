@@ -9,17 +9,18 @@ import {
   HttpCode,
   BadRequestException,
   InternalServerErrorException,
-  Req
+  Req,
+  Headers
 } from "@nestjs/common"
 import {Response, Request} from "express"
-import {AuthService, TokenPair} from "@services"
+import {AccessToken, AuthService, TokenPair} from "@services"
 import {ConfigProvider} from "@external/config"
 import {isLeft} from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {PublicRoute} from "../../../main/src/auth/jwt.authguard"
-import {GetAuthenticatedEntity} from "../../../main/src/auth"
-import {AuthenticatedEntity} from "@domain"
+import {GetAuthenticatedEntity, GetBrowserSession} from "../../../main/src/auth"
+import {AuthenticatedBrowserSession, AuthenticatedEntity} from "@domain"
 import {generateErrorPayload} from "@controllers/error"
 import {logSuccess} from "@utils"
 import {HttpStatusCode} from "axios"
@@ -28,7 +29,13 @@ import {
   validateWebRefreshTokenRequest,
   validateExchangeWebPrivilegeTokenRequest
 } from "./web-auth.validators"
-import {mapWebCallbackErrorToCode} from "./web-auth.mappers"
+import {
+  mapWebCallbackErrorToCode,
+  generateErrorResponseForWebSessionContext,
+  generateErrorResponseForWebOrganizationSwitch
+} from "./web-auth.mappers"
+import {WebSessionContext, validateWebOrganizationSwitch} from "@approvio/api"
+import {createSessionTag, parseSessionTag} from "../etag"
 import {
   generateErrorResponseForExchangePrivilegeToken,
   generateErrorResponseForRefreshUserToken,
@@ -47,7 +54,7 @@ export class WebAuthController {
   @Get("login")
   async login(@Query("provider") provider: string | undefined, @Res() res: Response): Promise<void> {
     const result = await pipe(
-      this.authService.initiateOidcLogin(provider),
+      this.authService.initiateOidcLogin("initial_login", provider),
       logSuccess("OIDC login initiated", "WebAuthController")
     )()
 
@@ -85,6 +92,79 @@ export class WebAuthController {
 
     this.setAuthCookies(res, result.right)
     res.redirect(this.configProvider.frontendUrl)
+  }
+
+  @Get("session")
+  async getSessionContext(
+    @GetBrowserSession() principal: AuthenticatedBrowserSession,
+    @Res({passthrough: true}) res: Response
+  ): Promise<WebSessionContext> {
+    const result = await pipe(
+      this.authService.getWebSessionContext(principal),
+      TE.map(session => {
+        res.setHeader(
+          "ETag",
+          createSessionTag(
+            this.configProvider.jwtConfig.secret,
+            getBrowserSessionAccountId(principal),
+            principal.sessionId,
+            session.occ
+          )
+        )
+        return {selectedOrganizationId: session.selectedOrganizationId}
+      })
+    )()
+
+    if (isLeft(result)) throw generateErrorResponseForWebSessionContext(result.left)
+
+    return result.right
+  }
+
+  @Post("organization-context")
+  async switchOrganizationContext(
+    @GetBrowserSession() principal: AuthenticatedBrowserSession,
+    @Body() body: unknown,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Res({passthrough: true}) res: Response
+  ): Promise<WebSessionContext> {
+    const result = await pipe(
+      validateWebOrganizationSwitch(body),
+      TE.fromEither,
+      TE.bindTo("request"),
+      TE.bindW("expectedOcc", () =>
+        TE.fromEither(
+          parseSessionTag(
+            this.configProvider.jwtConfig.secret,
+            getBrowserSessionAccountId(principal),
+            principal.sessionId,
+            ifMatch
+          )
+        )
+      ),
+      TE.chainW(({request, expectedOcc}) =>
+        this.authService.switchWebOrganization(principal, request.organizationId, expectedOcc)
+      ),
+      TE.map(session => {
+        // The access token remains account-bound and the selected organization is checked against the
+        // current session and route context by the guard; a second organization token is unnecessary.
+        this.setAccessTokenCookie(res, session)
+        res.setHeader(
+          "ETag",
+          createSessionTag(
+            this.configProvider.jwtConfig.secret,
+            getBrowserSessionAccountId(principal),
+            principal.sessionId,
+            session.occ
+          )
+        )
+        return {selectedOrganizationId: session.selectedOrganizationId}
+      }),
+      logSuccess("Web organization context switched", "WebAuthController")
+    )()
+
+    if (isLeft(result)) throw generateErrorResponseForWebOrganizationSwitch(result.left)
+
+    return result.right
   }
 
   @PublicRoute()
@@ -186,14 +266,8 @@ export class WebAuthController {
    * @private
    */
   private setAuthCookies(res: Response, tokenPair: TokenPair): void {
+    this.setAccessTokenCookie(res, tokenPair)
     const secure = this.configProvider.cookieSecure
-    res.cookie("access_token", tokenPair.accessToken, {
-      httpOnly: true,
-      secure,
-      sameSite: "lax",
-      path: "/",
-      maxAge: tokenPair.accessTokenExpiresInSec * 1000
-    })
     res.cookie("refresh_token", tokenPair.refreshToken, {
       httpOnly: true,
       secure,
@@ -202,4 +276,18 @@ export class WebAuthController {
       maxAge: tokenPair.refreshTokenExpiresInSec * 1000
     })
   }
+
+  private setAccessTokenCookie(res: Response, token: AccessToken): void {
+    res.cookie("access_token", token.accessToken, {
+      httpOnly: true,
+      secure: this.configProvider.cookieSecure,
+      sameSite: "lax",
+      path: "/",
+      maxAge: token.accessTokenExpiresInSec * 1000
+    })
+  }
+}
+
+function getBrowserSessionAccountId(principal: AuthenticatedBrowserSession): string {
+  return principal.entityType === "platform" ? principal.account.id : principal.user.accountId
 }

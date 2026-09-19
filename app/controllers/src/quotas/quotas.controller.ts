@@ -6,9 +6,9 @@ import {
   validateQuotaCreate,
   ListQuotasParams
 } from "@approvio/api"
-import {GetAuthenticatedEntity} from "@app/auth"
-import {AuthenticatedEntity} from "@domain"
-import {DEFAULT_ORG_ID, QuotaService} from "@services"
+import {GetAuthenticatedEntity, GetTenantContext} from "@app/auth"
+import {AuthenticatedEntity, TenantContext} from "@domain"
+import {QuotaService} from "@services"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
@@ -28,22 +28,26 @@ import {
 
 export const QUOTAS_ENDPOINT_ROOT = "quotas"
 
-@Controller(QUOTAS_ENDPOINT_ROOT)
+@Controller(`o/:organizationId/${QUOTAS_ENDPOINT_ROOT}`)
 export class QuotasController {
   constructor(private readonly quotaService: QuotaService) {}
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  async createQuota(@GetAuthenticatedEntity() requestor: AuthenticatedEntity, @Body() request: unknown) {
+  async createQuota(
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext,
+    @Body() request: unknown
+  ) {
     const eitherResult = await pipe(
       request,
       validateQuotaCreate,
       E.map(mapToCreateQuotaRequest),
       TE.fromEither,
       TE.chainW(validatedRequest =>
-        this.quotaService.createQuota(requestor, {
+        this.quotaService.createQuota(requestor, context, {
           ...validatedRequest,
-          nodeIdentifier: validatedRequest.nodeType === "Org" ? DEFAULT_ORG_ID : validatedRequest.nodeIdentifier
+          nodeIdentifier: validatedRequest.nodeIdentifier
         })
       ),
       logSuccess("Quota created", "QuotasController", quota => ({id: quota.id}))
@@ -55,16 +59,16 @@ export class QuotasController {
   }
 
   @Get()
-  async listQuotas(@Query() query: Record<string, unknown>) {
+  async listQuotas(@Query() query: Record<string, unknown>, @GetTenantContext() context: TenantContext) {
     const eitherResult = await pipe(
       query,
       validateListQuotasParams,
       TE.fromEither,
       TE.chainW((validatedQuery: ListQuotasParams) =>
-        this.quotaService.listQuotas(validatedQuery.page ?? 1, validatedQuery.limit ?? 20, {
+        this.quotaService.listQuotas(validatedQuery.page ?? 1, validatedQuery.limit ?? 20, context, {
           nodeType: validatedQuery.scope,
           quotaType: validatedQuery.quotaType,
-          nodeIdentifier: validatedQuery.scope === "Org" ? DEFAULT_ORG_ID : validatedQuery.targetId
+          nodeIdentifier: validatedQuery.targetId
         })
       ),
       TE.map(mapListQuotasResultToApi),
@@ -77,9 +81,9 @@ export class QuotasController {
   }
 
   @Get(":id")
-  async getQuota(@Param("id") id: string) {
+  async getQuota(@Param("id") id: string, @GetTenantContext() context: TenantContext) {
     const eitherResult = await pipe(
-      this.quotaService.getQuotaById(id),
+      this.quotaService.getQuotaById(context, id),
       TE.map(mapQuotaToApi),
       logSuccess("Quota retrieved", "QuotasController", () => ({id}))
     )()
@@ -92,6 +96,7 @@ export class QuotasController {
   @Patch(":id")
   async patchQuota(
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext,
     @Param("id") id: string,
     @Body() request: QuotaUpdate
   ) {
@@ -99,7 +104,7 @@ export class QuotasController {
       request,
       validateQuotaUpdate,
       TE.fromEither,
-      TE.chainW(validatedRequest => this.quotaService.updateQuota(requestor, id, validatedRequest.limit)),
+      TE.chainW(validatedRequest => this.quotaService.updateQuota(requestor, context, id, validatedRequest.limit)),
       TE.map(mapQuotaToApi),
       logSuccess("Quota updated", "QuotasController", () => ({id}))
     )()
@@ -111,9 +116,13 @@ export class QuotasController {
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
-  async deleteQuota(@GetAuthenticatedEntity() requestor: AuthenticatedEntity, @Param("id") id: string) {
+  async deleteQuota(
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext,
+    @Param("id") id: string
+  ) {
     const eitherResult = await pipe(
-      this.quotaService.deleteQuota(requestor, id),
+      this.quotaService.deleteQuota(requestor, context, id),
       logSuccess("Quota deleted", "QuotasController", () => ({id}))
     )()
 

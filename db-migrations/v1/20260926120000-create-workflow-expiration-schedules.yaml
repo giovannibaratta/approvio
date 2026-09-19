@@ -1,0 +1,45 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260926120000-create-workflow-expiration-schedules
+      author: giovannibaratta
+      comment: Per-organization hints used to schedule bounded workflow expiration scans.
+      changes:
+        - insert:
+            tableName: approvio_security_table_registry
+            columns:
+              - column:
+                  name: table_name
+                  value: workflow_expiration_schedules
+              - column:
+                  name: security_class
+                  value: tenant
+              - column:
+                  name: capability_profile
+                  value: tenant_crud
+        - createTable:
+            tableName: workflow_expiration_schedules
+            remarks: Best-effort scheduling metadata; workflows remain the source of truth for expiration.
+            columns:
+              - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: next_sweep_at
+                  type: timestamptz
+              - column:
+                  name: last_scheduled_at
+                  type: timestamptz
+              - column:
+                  name: last_swept_at
+                  type: timestamptz
+        - addForeignKeyConstraint:
+            baseTableName: workflow_expiration_schedules
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_workflow_expiration_schedules_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION

@@ -12,7 +12,9 @@ import {
   WorkflowStatus,
   markTemplateForDeprecation,
   markTemplateAsDeprecated,
-  WorkflowTemplateDeprecationError
+  WorkflowTemplateDeprecationError,
+  TenantContext,
+  BoundaryError
 } from "@domain"
 import {QuotaService} from "@services/quota/quota.service"
 import {
@@ -39,6 +41,8 @@ import {
 import {UnknownError} from "@services/error"
 import {Versioned} from "@domain"
 import {validateUserEntity} from "@services/shared/types"
+import {TRANSACTION_MANAGER_TOKEN, TenantTransactionManager, TransactionError} from "../transaction/interfaces"
+import {inTransaction} from "../transaction/in-transaction"
 
 @Injectable()
 export class WorkflowTemplateService {
@@ -47,7 +51,9 @@ export class WorkflowTemplateService {
     private readonly workflowTemplateRepository: WorkflowTemplateRepository,
     @Inject(WORKFLOW_REPOSITORY_TOKEN)
     private readonly workflowRepository: WorkflowRepository,
-    private readonly quotaService: QuotaService
+    private readonly quotaService: QuotaService,
+    @Inject(TRANSACTION_MANAGER_TOKEN)
+    private readonly transactionManager: TenantTransactionManager
   ) {}
 
   createWorkflowTemplate(
@@ -58,6 +64,7 @@ export class WorkflowTemplateService {
         this.quotaService.isQuotaAvailable(
           {type: "Space", identifier: request.workflowTemplateData.spaceId},
           "MAX_WORKFLOW_TEMPLATES_PER_SPACE",
+          request,
           1
         ),
         TE.mapLeft(() => "quota_check_error" as const),
@@ -65,44 +72,59 @@ export class WorkflowTemplateService {
       )
 
     return pipe(
-      validateUserEntity(request.requestor),
-      TE.fromEither,
-      TE.chainW(() => checkQuota()),
-      TE.chainEitherKW(() =>
-        WorkflowTemplateFactory.newWorkflowTemplate({
-          name: request.workflowTemplateData.name,
-          description: request.workflowTemplateData.description,
-          approvalRule: request.workflowTemplateData.approvalRule,
-          actions: request.workflowTemplateData.actions || [],
-          defaultExpiresInHours: request.workflowTemplateData.defaultExpiresInHours,
-          spaceId: request.workflowTemplateData.spaceId
-        })
+      TE.fromEither(validateUserEntity(request.requestor)),
+      TE.chainW(() =>
+        TE.fromEither(
+          WorkflowTemplateFactory.newWorkflowTemplate({
+            name: request.workflowTemplateData.name,
+            description: request.workflowTemplateData.description,
+            approvalRule: request.workflowTemplateData.approvalRule,
+            actions: request.workflowTemplateData.actions || [],
+            defaultExpiresInHours: request.workflowTemplateData.defaultExpiresInHours,
+            spaceId: request.workflowTemplateData.spaceId,
+            organizationId: request.organizationId
+          })
+        )
       ),
-      TE.chainW(workflowTemplate => this.workflowTemplateRepository.createWorkflowTemplate(workflowTemplate)),
+      inTransaction(this.transactionManager, request, workflowTemplate =>
+        pipe(
+          checkQuota(),
+          TE.chainW(() => this.workflowTemplateRepository.createWorkflowTemplate(request, workflowTemplate))
+        )
+      ),
       logSuccess("Workflow template created", "WorkflowTemplateService", t => ({id: t.id}))
     )
   }
 
   getWorkflowTemplateByIdentifier(
+    context: TenantContext,
     templateIdentifier: string
   ): TaskEither<WorkflowTemplateGetError | WorkflowTemplateGetActiveError, Versioned<WorkflowTemplate>> {
     if (isUUIDv7(templateIdentifier))
       return pipe(
-        this.workflowTemplateRepository.getWorkflowTemplateById(templateIdentifier),
+        TE.Do,
+        inTransaction(this.transactionManager, context, () =>
+          this.workflowTemplateRepository.getWorkflowTemplateById(context, templateIdentifier)
+        ),
         logSuccess("Workflow template retrieved by id", "WorkflowTemplateService", t => ({id: t.id}))
       )
 
     return pipe(
-      this.workflowTemplateRepository.getActiveWorkflowTemplateByName(templateIdentifier),
-      TE.altW(() =>
+      TE.Do,
+      inTransaction(this.transactionManager, context, () =>
         pipe(
-          this.workflowTemplateRepository.getMostRecentNonActiveWorkflowTemplateByName(templateIdentifier),
-          TE.chainW(maybeTemplate =>
+          this.workflowTemplateRepository.getActiveWorkflowTemplateByName(context, templateIdentifier),
+          TE.altW(() =>
             pipe(
-              maybeTemplate,
-              O.fold(
-                () => TE.left("workflow_template_not_found" as const),
-                template => TE.right(template)
+              this.workflowTemplateRepository.getMostRecentNonActiveWorkflowTemplateByName(context, templateIdentifier),
+              TE.chainW(maybeTemplate =>
+                pipe(
+                  maybeTemplate,
+                  O.fold(
+                    () => TE.left("workflow_template_not_found" as const),
+                    template => TE.right(template)
+                  )
+                )
               )
             )
           )
@@ -128,46 +150,50 @@ export class WorkflowTemplateService {
       TE.fromEither(WorkflowTemplateFactory.validateAttributes(request.workflowTemplateData))
 
     return pipe(
-      TE.Do,
-      TE.bindW("requestor", () => validateRequestor()),
-      TE.bindW("validatedAttributes", validateAttributes),
-      TE.bindW("activeTemplate", () =>
-        isUUIDv7(request.templateName)
-          ? this.workflowTemplateRepository.getWorkflowTemplateById(request.templateName)
-          : this.workflowTemplateRepository.getActiveWorkflowTemplateByName(request.templateName)
-      ),
-      // Fail-fast if the active template has been updated since the last read done by the caller
-      TE.chainFirstW(({activeTemplate}) => {
-        if (activeTemplate.occ !== request.occVersion) return TE.left("concurrency_error" as const)
-        return TE.right(undefined)
-      }),
-      // Simulate the deprecation in the domain
-      TE.bindW("deprecatedVersion", ({activeTemplate}) => {
-        return TE.fromEither(markTemplateForDeprecation(activeTemplate, request.cancelWorkflows ?? false))
-      }),
-      TE.bindW("deprecatedVersionWithOcc", ({deprecatedVersion, activeTemplate}) => {
-        return TE.right({
-          ...deprecatedVersion,
-          // Re-inject the expected OCC that must be validated during the actual update
-          occ: activeTemplate.occ
-        })
-      }),
-      // Generate the new active template that will replace the existing one
-      TE.bindW("newVersion", ({activeTemplate, validatedAttributes}) =>
-        TE.fromEither(
-          WorkflowTemplateFactory.newWorkflowTemplate({
-            ...activeTemplate,
-            ...validatedAttributes,
-            version: activeTemplate.version + 1
-          })
+      validateRequestor(),
+      TE.chainW(() => validateAttributes()),
+      inTransaction(this.transactionManager, request, validatedAttributes =>
+        pipe(
+          TE.Do,
+          TE.bindW("activeTemplate", () =>
+            isUUIDv7(request.templateName)
+              ? this.workflowTemplateRepository.getWorkflowTemplateById(request, request.templateName)
+              : this.workflowTemplateRepository.getActiveWorkflowTemplateByName(request, request.templateName)
+          ),
+          // Fail-fast if the active template has been updated since the last read done by the caller
+          TE.chainFirstW(({activeTemplate}) => {
+            if (activeTemplate.occ !== request.occVersion) return TE.left("concurrency_error" as const)
+            return TE.right(undefined)
+          }),
+          // Simulate the deprecation in the domain
+          TE.bindW("deprecatedVersion", ({activeTemplate}) =>
+            TE.fromEither(markTemplateForDeprecation(activeTemplate, request.cancelWorkflows ?? false))
+          ),
+          TE.bindW("deprecatedVersionWithOcc", ({deprecatedVersion, activeTemplate}) =>
+            TE.right({
+              ...deprecatedVersion,
+              // Re-inject the expected OCC that must be validated during the actual update
+              occ: activeTemplate.occ
+            })
+          ),
+          // Generate the new active template that will replace the existing one
+          TE.bindW("newVersion", ({activeTemplate}) =>
+            TE.fromEither(
+              WorkflowTemplateFactory.newWorkflowTemplate({
+                ...activeTemplate,
+                ...validatedAttributes,
+                version: activeTemplate.version + 1
+              })
+            )
+          ),
+          // Atomically update the existing template and create the new one
+          TE.chainW(({deprecatedVersionWithOcc, newVersion}) =>
+            this.workflowTemplateRepository.atomicUpdateAndCreate(request, {
+              existingTemplate: deprecatedVersionWithOcc,
+              newTemplate: newVersion
+            })
+          )
         )
-      ),
-      // Atomically update the existing template and create the new one
-      TE.chainW(({deprecatedVersionWithOcc, newVersion}) =>
-        this.workflowTemplateRepository.atomicUpdateAndCreate({
-          existingTemplate: deprecatedVersionWithOcc,
-          newTemplate: newVersion
-        })
       ),
       logSuccess("Workflow template updated", "WorkflowTemplateService", t => ({id: t.id}))
     )
@@ -193,6 +219,7 @@ export class WorkflowTemplateService {
    *          if active workflows persist after all attempts).
    */
   cancelWorkflowsAndDeprecateTemplate(
+    context: TenantContext,
     templateId: string,
     maxAttempts = 2
   ): TaskEither<
@@ -201,7 +228,8 @@ export class WorkflowTemplateService {
     | WorkflowTemplateDeprecateError
     | WorkflowGetError
     | WorkflowUpdateError
-    | UnknownError,
+    | UnknownError
+    | TransactionError,
     void
   > {
     /**
@@ -218,7 +246,7 @@ export class WorkflowTemplateService {
       void
     > => {
       return pipe(
-        this.cancelWorkflows(templateId),
+        this.cancelWorkflows(context, templateId),
         TE.chainW(remainingWorkflows => {
           if (remainingWorkflows > 0) {
             if (attempt + 1 >= maxAttempts) return TE.left("max_attempts_reach_for_cancelling_workflows" as const)
@@ -231,19 +259,24 @@ export class WorkflowTemplateService {
     }
 
     return pipe(
-      cancelWorkflowsLoop(0),
-      TE.chainW(() => this.workflowTemplateRepository.getWorkflowTemplateById(templateId)),
-      TE.chainW(template =>
+      TE.Do,
+      inTransaction(this.transactionManager, context, () =>
         pipe(
-          markTemplateAsDeprecated(template),
-          TE.fromEither,
-          TE.map(deprecatedTemplate => ({...deprecatedTemplate, occ: template.occ}))
+          cancelWorkflowsLoop(0),
+          TE.chainW(() => this.workflowTemplateRepository.getWorkflowTemplateById(context, templateId)),
+          TE.chainW(template =>
+            pipe(
+              markTemplateAsDeprecated(template),
+              TE.fromEither,
+              TE.map(deprecatedTemplate => ({...deprecatedTemplate, occ: template.occ}))
+            )
+          ),
+          TE.chainW(versionedDeprecatedTemplate =>
+            this.workflowTemplateRepository.updateWorkflowTemplate(context, versionedDeprecatedTemplate)
+          ),
+          TE.map(() => undefined)
         )
-      ),
-      TE.chainW(versionedDeprecatedTemplate =>
-        this.workflowTemplateRepository.updateWorkflowTemplate(versionedDeprecatedTemplate)
-      ),
-      TE.map(() => undefined)
+      )
     )
   }
 
@@ -261,6 +294,7 @@ export class WorkflowTemplateService {
    * - Active workflows are listed twice per pass (before and after cancellation).
    */
   private cancelWorkflows(
+    context: TenantContext,
     templateId: string
   ): TaskEither<
     | "max_attempts_reach_for_cancelling_workflows"
@@ -270,7 +304,7 @@ export class WorkflowTemplateService {
     number
   > {
     const getActiveWorkflowsForTemplate = () =>
-      this.workflowRepository.listWorkflows({
+      this.workflowRepository.listWorkflows(context, {
         include: {occ: true},
         filters: {includeOnlyNonTerminalState: true, templateId}
       })
@@ -285,7 +319,7 @@ export class WorkflowTemplateService {
         pipe(
           TE.sequenceArray(
             activeWorkflows.workflows.map(workflow =>
-              this.workflowRepository.updateWorkflowConcurrentSafe(workflow.id, workflow.occ, {
+              this.workflowRepository.updateWorkflowConcurrentSafe(context, workflow.id, workflow.occ, {
                 status: WorkflowStatus.CANCELED,
                 updatedAt: new Date()
               })
@@ -301,29 +335,34 @@ export class WorkflowTemplateService {
   deprecateWorkflowTemplate(
     request: DeprecateWorkflowTemplateRequest
   ): TaskEither<
-    WorkflowTemplateGetError | WorkflowTemplateGetActiveError | WorkflowTemplateDeprecateError | AuthorizationError,
+    | WorkflowTemplateGetError
+    | WorkflowTemplateGetActiveError
+    | WorkflowTemplateDeprecateError
+    | AuthorizationError
+    | TransactionError,
     Versioned<WorkflowTemplate>
   > {
     const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
     return pipe(
-      TE.Do,
-      TE.bindW("requestor", () => validateRequestor()),
-      TE.bindW("activeTemplate", () =>
-        isUUIDv7(request.templateName)
-          ? this.workflowTemplateRepository.getWorkflowTemplateById(request.templateName)
-          : this.workflowTemplateRepository.getActiveWorkflowTemplateByName(request.templateName)
-      ),
-      TE.bindW("deprecatedVersion", ({activeTemplate}) => {
-        return TE.fromEither(markTemplateForDeprecation(activeTemplate, request.cancelWorkflows ?? false))
-      }),
-      TE.bindW("deprecatedVersionWithOcc", ({deprecatedVersion, activeTemplate}) => {
-        return TE.right({
-          ...deprecatedVersion,
-          occ: activeTemplate.occ
-        })
-      }),
-      TE.chainW(({deprecatedVersionWithOcc}) =>
-        this.workflowTemplateRepository.updateWorkflowTemplate(deprecatedVersionWithOcc)
+      validateRequestor(),
+      inTransaction(this.transactionManager, request, () =>
+        pipe(
+          TE.Do,
+          TE.bindW("activeTemplate", () =>
+            isUUIDv7(request.templateName)
+              ? this.workflowTemplateRepository.getWorkflowTemplateById(request, request.templateName)
+              : this.workflowTemplateRepository.getActiveWorkflowTemplateByName(request, request.templateName)
+          ),
+          TE.bindW("deprecatedVersion", ({activeTemplate}) =>
+            TE.fromEither(markTemplateForDeprecation(activeTemplate, request.cancelWorkflows ?? false))
+          ),
+          TE.bindW("deprecatedVersionWithOcc", ({deprecatedVersion, activeTemplate}) =>
+            TE.right({...deprecatedVersion, occ: activeTemplate.occ})
+          ),
+          TE.chainW(({deprecatedVersionWithOcc}) =>
+            this.workflowTemplateRepository.updateWorkflowTemplate(request, deprecatedVersionWithOcc)
+          )
+        )
       ),
       logSuccess("Workflow template deprecated", "WorkflowTemplateService", t => ({id: t.id}))
     )
@@ -331,7 +370,10 @@ export class WorkflowTemplateService {
 
   listWorkflowTemplates(
     request: ListWorkflowTemplatesRequest
-  ): TaskEither<WorkflowTemplateValidationError | UnknownError | AuthorizationError, ListWorkflowTemplatesResponse> {
+  ): TaskEither<
+    WorkflowTemplateValidationError | UnknownError | AuthorizationError | BoundaryError | TransactionError,
+    ListWorkflowTemplatesResponse
+  > {
     const filters = request.filters
       ? {
           spaceId:
@@ -354,9 +396,10 @@ export class WorkflowTemplateService {
     }
 
     return pipe(
-      validateUserEntity(request.requestor),
-      TE.fromEither,
-      TE.chainW(() => this.workflowTemplateRepository.listWorkflowTemplates(repoRequest)),
+      TE.fromEither(validateUserEntity(request.requestor)),
+      inTransaction(this.transactionManager, request, () =>
+        this.workflowTemplateRepository.listWorkflowTemplates(request, repoRequest)
+      ),
       logSuccess("Workflow templates listed", "WorkflowTemplateService", r => ({count: r.pagination.total}))
     )
   }

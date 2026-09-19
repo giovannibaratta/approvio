@@ -3,11 +3,16 @@ import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
 import {Test, TestingModule} from "@nestjs/testing"
-import {cleanDatabase, cleanRedisByPrefix, prepareDatabase, prepareRedisPrefix} from "@test/database"
+import {
+  createFixturePrismaClient,
+  cleanDatabase,
+  cleanRedisByPrefix,
+  prepareDatabase,
+  prepareRedisPrefix
+} from "@test/database"
 import {MockConfigProvider} from "@test/mock-data"
 import {get} from "@test/requests"
 import {PrismaClient} from "@prisma/client"
-import {DatabaseClient} from "@external"
 import {failTaskEither} from "@test/injectors"
 import {HealthService} from "@services/health"
 
@@ -26,7 +31,7 @@ describe("Ping API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix))
+        .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb, redisPrefix))
         .compile()
     } catch (error) {
       console.error(error)
@@ -34,7 +39,7 @@ describe("Ping API", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     await app.init()
   }, 30000)
 

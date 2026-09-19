@@ -2,15 +2,25 @@ import {Inject, Injectable, Logger} from "@nestjs/common"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
-import {evaluateWorkflowStatus, WorkflowStatus} from "@domain"
+import {evaluateWorkflowStatus, WorkflowStatus, TenantContext} from "@domain"
 import {generateDeterministicId} from "@utils"
 import {VOTE_REPOSITORY_TOKEN, VoteRepository, FindVotesError} from "../vote/interfaces"
 import {WORKFLOW_REPOSITORY_TOKEN, WorkflowRepository, WorkflowGetError, WorkflowUpdateError} from "./interfaces"
-import {EnqueueRecalculationError, QUEUE_PROVIDER_TOKEN, QueueProvider} from "../queue/interface"
-import {UnknownError} from "../error"
+import {
+  EVENT_RECEIPT_REPOSITORY_TOKEN,
+  EventReceiptRepository,
+  OUTBOX_REPOSITORY_TOKEN,
+  OutboxRepository
+} from "../durable-work/interfaces"
+import {TRANSACTION_MANAGER_TOKEN, TenantTransactionManager} from "../transaction/interfaces"
 
 export type WorkflowRecalculationError =
-  WorkflowGetError | FindVotesError | WorkflowUpdateError | EnqueueRecalculationError
+  | WorkflowGetError
+  | FindVotesError
+  | WorkflowUpdateError
+  | "unknown_error"
+  | "event_mismatch"
+  | "repository_dependency_error"
 
 @Injectable()
 export class WorkflowRecalculationService {
@@ -29,9 +39,13 @@ export class WorkflowRecalculationService {
    * @param workflowId The ID of the workflow to recalculate.
    * @returns A TaskEither with void or a recalculation error.
    */
-  recalculateWorkflowStatusByWorkflowId(workflowId: string): TaskEither<WorkflowRecalculationError, void> {
-    const getWorkflow = () => this.workflowRepo.getWorkflowById(workflowId, {occ: true, workflowTemplate: true})
-    const getVotes = () => this.voteRepo.getVotesByWorkflowId(workflowId)
+  recalculateWorkflowStatusByWorkflowId(
+    context: TenantContext,
+    workflowId: string
+  ): TaskEither<WorkflowRecalculationError, void> {
+    const getWorkflow = () =>
+      this.workflowRepo.getWorkflowById(context, workflowId, {occ: true, workflowTemplate: true})
+    const getVotes = () => this.voteRepo.getVotesByWorkflowId(context, workflowId)
 
     return pipe(
       TE.Do,
@@ -46,7 +60,7 @@ export class WorkflowRecalculationService {
         )
       ),
       TE.chainFirstW(({workflow, workflowWithUpdatedStatus}) =>
-        this.workflowRepo.updateWorkflowConcurrentSafe(workflowWithUpdatedStatus.id, workflow.occ, {
+        this.workflowRepo.updateWorkflowConcurrentSafe(context, workflowWithUpdatedStatus.id, workflow.occ, {
           updatedAt: workflowWithUpdatedStatus.updatedAt,
           status: workflowWithUpdatedStatus.status,
           recalculationRequired: false
@@ -80,26 +94,6 @@ export class WorkflowRecalculationService {
         return TE.right(undefined)
       }),
       TE.map(() => undefined)
-    )
-  }
-
-  /**
-   * Sweeps the database for expired workflows, enqueues them for recalculation,
-   * and marks them as recalculation required in a bulk operation.
-   * @returns A TaskEither indicating success or an UnknownError.
-   */
-  sweepExpiredWorkflows(): TaskEither<UnknownError, void> {
-    const now = new Date()
-    return pipe(
-      this.workflowRepo.findExpiredWorkflows(now),
-      TE.chain(workflowIds => {
-        if (workflowIds.length === 0) return TE.right(undefined)
-
-        return pipe(
-          this.queueProvider.enqueueWorkflowStatusRecalculationBulk(workflowIds),
-          TE.chain(() => this.workflowRepo.markWorkflowsAsRecalculationRequired(workflowIds))
-        )
-      })
     )
   }
 }

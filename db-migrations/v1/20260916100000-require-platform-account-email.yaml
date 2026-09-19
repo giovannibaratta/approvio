@@ -1,0 +1,9 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260916100000-require-platform-account-email
+      author: approvio
+      changes:
+        - addNotNullConstraint:
+            tableName: platform_accounts
+            columnName: profile_email
+            columnDataType: text

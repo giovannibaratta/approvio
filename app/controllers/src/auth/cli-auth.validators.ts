@@ -2,6 +2,7 @@ import {TokenRequest, RefreshTokenRequest, PrivilegedTokenExchangeRequest} from 
 import {Either, left, map, right} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 import {hasOwnProperty} from "@utils"
+import {isStepUpOperation} from "@domain"
 
 export type CliInitiateLoginRequestValidationError =
   "request_missing_redirect_uri" | "request_invalid_redirect_uri" | "request_invalid_provider"
@@ -21,6 +22,7 @@ export type CliPrivilegedTokenExchangeRequestValidationError =
   | "request_invalid_code"
   | "request_missing_state"
   | "request_invalid_state"
+  | "request_missing_resource_id"
   | "request_invalid_resource_id"
   | "request_missing_operation"
   | "request_invalid_operation"
@@ -87,20 +89,17 @@ export function validateExchangeCliPrivilegeTokenRequest(
   if (!hasOwnProperty(body, "state")) return left("request_missing_state")
   if (typeof body.state !== "string" || !body.state) return left("request_invalid_state")
 
-  let resourceId: string | undefined = undefined
-
-  if (hasOwnProperty(body, "resourceId")) {
-    if (typeof body.resourceId !== "string" || !body.resourceId) return left("request_invalid_resource_id")
-    resourceId = body.resourceId
-  }
+  if (!hasOwnProperty(body, "resourceId")) return left("request_missing_resource_id")
+  if (typeof body.resourceId !== "string" || !body.resourceId) return left("request_invalid_resource_id")
 
   if (!hasOwnProperty(body, "operation")) return left("request_missing_operation")
   if (typeof body.operation !== "string") return left("request_invalid_operation")
+  if (!isStepUpOperation(body.operation)) return left("request_invalid_operation")
 
   return right({
     code: body.code,
     state: body.state,
-    resourceId: resourceId,
+    resourceId: body.resourceId,
     operation: body.operation
   })
 }

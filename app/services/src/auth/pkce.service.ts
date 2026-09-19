@@ -111,12 +111,26 @@ export class PkceService {
       )
     }
 
-    const extractPkceData = (sessionData: PkceSessionData): PkceData => ({
-      codeVerifier: sessionData.codeVerifier,
-      redirectUri: sessionData.redirectUri,
-      oidcState: sessionData.oidcState,
-      providerId: sessionData.providerId
-    })
+    const extractPkceData = (sessionData: PkceSessionData): PkceData => {
+      const base = {
+        codeVerifier: sessionData.codeVerifier,
+        redirectUri: sessionData.redirectUri,
+        oidcState: sessionData.oidcState,
+        providerId: sessionData.providerId
+      }
+      switch (sessionData.flow) {
+        case "initial_login":
+        case "initial_cli_login":
+          return {...base, flow: sessionData.flow}
+        case "step_up":
+          return {
+            ...base,
+            flow: sessionData.flow,
+            sessionId: sessionData.sessionId,
+            stepUpTarget: sessionData.stepUpTarget
+          }
+      }
+    }
 
     return pipe(
       retrieveSession(),

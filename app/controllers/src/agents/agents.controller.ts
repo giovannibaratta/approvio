@@ -7,8 +7,21 @@ import {
   validateRoleAssignmentRequest,
   validateRoleRemovalRequest
 } from "@approvio/api"
-import {GetAuthenticatedEntity} from "@app/auth"
-import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Logger, Param, Post, Put, Res} from "@nestjs/common"
+import {GetAuthenticatedEntity, GetTenantContext} from "@app/auth"
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  Logger,
+  Param,
+  Post,
+  Put,
+  Res
+} from "@nestjs/common"
 import {
   AgentService,
   RegisterAgentRequest,
@@ -26,31 +39,47 @@ import {
   generateErrorResponseForAgentRoleAssignment,
   generateErrorResponseForAgentRoleRemoval,
   generateErrorResponseForGetAgent,
+  bindRoleScopeToOrganization,
   mapAgentToRegistrationResponse,
   mapAgentToApi
 } from "./agents.mappers"
-import {AuthenticatedEntity, roleScopeToString} from "@domain"
+import {AuthenticatedEntity, TenantContext, roleScopeToString} from "@domain"
 import {logSuccess} from "@utils"
+import {ConfigProvider} from "@external/config"
+import {createEntityTag, parseEntityTag} from "../etag"
 
-export const AGENTS_ENDPOINT_ROOT = "agents"
+export const AGENTS_ENDPOINT_ROOT = "o/:organizationId/agents"
 
 @Controller(AGENTS_ENDPOINT_ROOT)
 export class AgentsController {
+  private readonly etagSecret: string
+
   constructor(
     private readonly agentService: AgentService,
-    private readonly roleService: RoleService
-  ) {}
+    private readonly roleService: RoleService,
+    private readonly configProvider: ConfigProvider
+  ) {
+    this.etagSecret = configProvider.jwtConfig.secret
+  }
 
   @Get(":idOrName")
   @HttpCode(HttpStatus.OK)
-  async getAgent(@Param("idOrName") idOrName: string): Promise<AgentGet200Response> {
+  async getAgent(
+    @Param("idOrName") idOrName: string,
+    @GetTenantContext() context: TenantContext,
+    @Res({passthrough: true}) response: Response
+  ): Promise<AgentGet200Response> {
     const eitherAgent = await pipe(
-      this.agentService.getAgent(idOrName),
+      this.agentService.getAgent(context, idOrName),
       logSuccess("Agent retrieved", "AgentsController", agent => ({agentId: agent.id}))
     )()
 
     if (isLeft(eitherAgent)) throw generateErrorResponseForGetAgent(eitherAgent.left, "Failed to fetch agent details")
 
+    response.setHeader(
+      "ETag",
+      createEntityTag(this.etagSecret, context.organizationId, eitherAgent.right.id, eitherAgent.right.occ)
+    )
     return mapAgentToApi(eitherAgent.right)
   }
 
@@ -59,12 +88,13 @@ export class AgentsController {
   async registerAgent(
     @Body() request: AgentRegistrationRequest,
     @Res({passthrough: true}) response: Response,
+    @GetTenantContext() context: TenantContext,
     @GetAuthenticatedEntity() entity: AuthenticatedEntity
   ): Promise<AgentRegistrationResponse> {
     const serviceRegisterAgent = (req: RegisterAgentRequest) => this.agentService.registerAgent(req)
 
     const eitherAgent = await pipe(
-      {agentData: request, requestor: entity},
+      {agentData: request, requestor: entity, context},
       agentRegistrationApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceRegisterAgent),
@@ -75,7 +105,7 @@ export class AgentsController {
     if (isLeft(eitherAgent)) throw generateErrorResponseForRegisterAgent(eitherAgent.left, "Failed to register agent")
 
     const agent = eitherAgent.right
-    const location = `${response.req.protocol}://${response.req.headers.host}/agents/${agent.id}`
+    const location = `${response.req.protocol}://${response.req.headers.host}/o/${context.organizationId}/agents/${agent.id}`
     response.setHeader("Location", location)
 
     return mapAgentToRegistrationResponse(agent)
@@ -86,29 +116,43 @@ export class AgentsController {
   async assignRolesToAgent(
     @Param("agentId") agentId: string,
     @Body() request: unknown,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Res({passthrough: true}) response: Response,
+    @GetTenantContext() context: TenantContext,
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<void> {
-    const mapToServiceModel = (req: RoleAssignmentRequest) => ({
+    const mapToServiceModel = (req: RoleAssignmentRequest, occVersion: bigint) => ({
       agentId,
-      roles: req.roles,
+      roles: req.roles.map(role => ({...role, scope: bindRoleScopeToOrganization(role.scope, context.organizationId)})),
       requestor,
-      occVersion: BigInt(req.concurrencyControl.version)
+      context,
+      occVersion
     })
     const assignRole = (req: AssignRolesToAgentRequest) => this.roleService.assignRolesToAgent(req)
 
     const eitherResult = await pipe(
       TE.Do,
+      TE.bindW("occVersion", () =>
+        TE.fromEither(parseEntityTag(this.etagSecret, context.organizationId, agentId, ifMatch))
+      ),
       TE.bindW("validatedRequest", () => TE.fromEither(validateRoleAssignmentRequest(request))),
-      TE.bindW("serviceRequest", ({validatedRequest}) => TE.right(mapToServiceModel(validatedRequest))),
-      TE.chainFirstW(({serviceRequest}) => assignRole(serviceRequest)),
+      TE.bindW("serviceRequest", ({validatedRequest, occVersion}) =>
+        TE.right(mapToServiceModel(validatedRequest, occVersion))
+      ),
+      TE.bindW("updatedOcc", ({serviceRequest}) => assignRole(serviceRequest)),
       logSuccess("Roles assigned to agent", "AgentsController", ({serviceRequest}) => ({
         agentId,
         roles: serviceRequest.roles.map(role => `${roleScopeToString(role.scope)}:${role.roleName}`)
       }))
     )()
 
-    if (isLeft(eitherResult))
+    if (isLeft(eitherResult)) {
       throw generateErrorResponseForAgentRoleAssignment(eitherResult.left, "Failed to assign roles to agent")
+    }
+    response.setHeader(
+      "ETag",
+      createEntityTag(this.etagSecret, context.organizationId, agentId, eitherResult.right.updatedOcc)
+    )
   }
 
   @Delete(":agentId/roles")
@@ -116,21 +160,30 @@ export class AgentsController {
   async removeRolesFromAgent(
     @Param("agentId") agentId: string,
     @Body() request: unknown,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Res({passthrough: true}) response: Response,
+    @GetTenantContext() context: TenantContext,
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<void> {
-    const mapToServiceModel = (req: RoleRemovalRequest) => ({
+    const mapToServiceModel = (req: RoleRemovalRequest, occVersion: bigint) => ({
       agentId,
-      roles: req.roles,
+      roles: req.roles.map(role => ({...role, scope: bindRoleScopeToOrganization(role.scope, context.organizationId)})),
       requestor,
-      occVersion: BigInt(req.concurrencyControl.version)
+      context,
+      occVersion
     })
     const removeRole = (req: RemoveRolesFromAgentRequest) => this.roleService.removeRolesFromAgent(req)
 
     const eitherResult = await pipe(
       TE.Do,
+      TE.bindW("occVersion", () =>
+        TE.fromEither(parseEntityTag(this.etagSecret, context.organizationId, agentId, ifMatch))
+      ),
       TE.bindW("validatedRequest", () => TE.fromEither(validateRoleRemovalRequest(request))),
-      TE.bindW("serviceRequest", ({validatedRequest}) => TE.right(mapToServiceModel(validatedRequest))),
-      TE.chainFirstW(({serviceRequest}) => removeRole(serviceRequest)),
+      TE.bindW("serviceRequest", ({validatedRequest, occVersion}) =>
+        TE.right(mapToServiceModel(validatedRequest, occVersion))
+      ),
+      TE.bindW("updatedOcc", ({serviceRequest}) => removeRole(serviceRequest)),
       logSuccess("Roles removed from agent", "AgentsController", ({serviceRequest}) => ({
         agentId,
         roles: serviceRequest.roles.map(role => `${roleScopeToString(role.scope)}:${role.roleName}`)
@@ -139,5 +192,9 @@ export class AgentsController {
 
     if (isLeft(eitherResult))
       throw generateErrorResponseForAgentRoleRemoval(eitherResult.left, "Failed to remove roles from agent")
+    response.setHeader(
+      "ETag",
+      createEntityTag(this.etagSecret, context.organizationId, agentId, eitherResult.right.updatedOcc)
+    )
   }
 }

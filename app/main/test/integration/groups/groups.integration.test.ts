@@ -1,3 +1,4 @@
+import {randomOrgId, toOrganizationId} from "@test/organization-id"
 import {
   AddGroupEntitiesRequest,
   GroupCreate,
@@ -10,7 +11,6 @@ import {
 import {AppModule} from "@app/app.module"
 import {GROUPS_ENDPOINT_ROOT} from "@controllers"
 import {DESCRIPTION_MAX_LENGTH, User} from "@domain"
-import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
@@ -18,9 +18,9 @@ import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient, Group as PrismaGroup} from "@prisma/client"
 
-import {cleanDatabase, prepareDatabase} from "@test/database"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
 import {createDomainMockUserInDb, MockConfigProvider} from "@test/mock-data"
-import {createAuthenticatedUserInDb, TestTokenBuilder} from "@test/token-helpers"
+import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
 
@@ -36,10 +36,16 @@ import {
 import {failTaskEither} from "@test/injectors"
 import {v7 as uuidv7} from "uuid"
 
-async function createTestGroup(prisma: PrismaClient, name: string, description?: string): Promise<PrismaGroup> {
+async function createTestGroupInOrganization(
+  prisma: PrismaClient,
+  organizationId: string,
+  name: string,
+  description?: string
+): Promise<PrismaGroup> {
   const group = await prisma.group.create({
     data: {
       id: uuidv7(),
+      organizationId,
       name: name,
       description: description,
       createdAt: new Date(),
@@ -70,7 +76,7 @@ describe("Groups API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb))
         .compile()
     } catch (error) {
       console.error(error)
@@ -79,7 +85,7 @@ describe("Groups API", () => {
 
     app = module.createNestApplication({logger: false})
 
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     auditLogRepo = module.get<AuditLogRepository>(AUDIT_LOG_REPOSITORY_TOKEN)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
@@ -465,6 +471,7 @@ describe("Groups API", () => {
         // Add OrgMember to group2
         await prisma.groupMembership.create({
           data: {
+            organizationId: group2.organizationId,
             groupId: group2.id,
             userId: orgMemberUser.user.id,
             createdAt: new Date(),
@@ -523,7 +530,7 @@ describe("Groups API", () => {
     })
   })
 
-  describe(`GET ${endpoint}/:groupIdentifier`, () => {
+  describe("GET /o/:organizationId/groups/:groupIdentifier", () => {
     describe("good cases", () => {
       it("should return group details when fetching by ID (as OrgAdmin)", async () => {
         // Given
@@ -571,7 +578,7 @@ describe("Groups API", () => {
               resourceType: "group",
               permissions: ["read"],
               scopeType: "group",
-              scope: {type: "group", groupId: createdGroup.id}
+              scope: {type: "group", organizationId: createdGroup.organizationId, groupId: createdGroup.id}
             }
           ]
         })
@@ -600,7 +607,7 @@ describe("Groups API", () => {
               resourceType: "group",
               permissions: ["read"],
               scopeType: "group",
-              scope: {type: "group", groupId: createdGroup.id}
+              scope: {type: "group", organizationId: createdGroup.organizationId, groupId: createdGroup.id}
             }
           ]
         })
@@ -684,6 +691,7 @@ describe("Groups API", () => {
 
       await prisma.groupMembership.create({
         data: {
+          organizationId: group.organizationId,
           groupId: group.id,
           userId: orgMemberUser.user.id,
           createdAt: new Date(),
@@ -933,6 +941,7 @@ describe("Groups API", () => {
           // Given: Add user3 to test pagination
           await prisma.groupMembership.create({
             data: {
+              organizationId: group.organizationId,
               groupId: group.id,
               userId: user2.id,
               createdAt: new Date(2023, 0, 3),
@@ -1168,6 +1177,7 @@ describe("Groups API", () => {
           await prisma.groupMembership.deleteMany({where: {groupId: group.id}})
           await prisma.groupMembership.create({
             data: {
+              organizationId: group.organizationId,
               groupId: group.id,
               userId: user1.id,
               createdAt: new Date(),
@@ -1176,6 +1186,7 @@ describe("Groups API", () => {
           })
           await prisma.groupMembership.create({
             data: {
+              organizationId: group.organizationId,
               groupId: group.id,
               userId: orgMemberUser.user.id,
               createdAt: new Date(),
@@ -1203,6 +1214,7 @@ describe("Groups API", () => {
           await prisma.groupMembership.deleteMany({where: {groupId: group.id}})
           await prisma.groupMembership.create({
             data: {
+              organizationId: group.organizationId,
               groupId: group.id,
               userId: user1.id,
               createdAt: new Date(),

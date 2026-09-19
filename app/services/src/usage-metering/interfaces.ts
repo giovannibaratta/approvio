@@ -1,6 +1,17 @@
-import {Actor, CreateUsageEvent, MetricUnit, TierQuotaLimit, UsageEntity, UsageMetric} from "@domain"
+import {
+  BoundaryError,
+  CreateUsageEvent,
+  OriginatingActor,
+  MetricUnit,
+  TenantContext,
+  TierQuotaLimit,
+  UsageEntity,
+  UsageMetric
+} from "@domain"
 import * as TE from "fp-ts/TaskEither"
+import {UsageCacheSnapshot} from "../durable-work/interfaces"
 import {AuthorizationError, UnknownError} from "../error"
+import {OrganizationPlanTierError} from "../tenancy/interfaces"
 
 export interface ReservationResult {
   readonly allowed: boolean
@@ -46,14 +57,14 @@ export interface UsageEventRepository {
    *
    * @param event - The usage event payload to persist.
    */
-  persist(event: CreateUsageEvent): TE.TaskEither<UnknownError, void>
+  persist(context: TenantContext, event: CreateUsageEvent): TE.TaskEither<UnknownError | BoundaryError, void>
 
   /**
    * Persists a batch of immutable usage events in a single operation.
    *
    * @param events - Array of usage event payloads to persist.
    */
-  persistBatch(events: CreateUsageEvent[]): TE.TaskEither<UnknownError, void>
+  persistBatch(context: TenantContext, events: CreateUsageEvent[]): TE.TaskEither<UnknownError | BoundaryError, void>
 
   /**
    * Calculates the total aggregate quantity consumed for a metric within the specified date window [fromDate, toDate].
@@ -63,7 +74,12 @@ export interface UsageEventRepository {
    * @param toDate - End date boundary (inclusive).
    * @returns Total consumed quantity as a bigint (0n if no records exist).
    */
-  getPeriodTotal(metric: UsageMetric, fromDate: Date, toDate: Date): TE.TaskEither<UnknownError, bigint>
+  getPeriodTotal(
+    context: TenantContext,
+    metric: UsageMetric,
+    fromDate: Date,
+    toDate: Date
+  ): TE.TaskEither<UnknownError | BoundaryError, bigint>
 
   /**
    * Aggregates usage for a metric grouped by individual actor within the specified date window [fromDate, toDate].
@@ -73,7 +89,12 @@ export interface UsageEventRepository {
    * @param toDate - End date boundary (inclusive).
    * @returns Array of actor summaries containing each actor and their total consumed quantity.
    */
-  getActorBreakdown(metric: UsageMetric, fromDate: Date, toDate: Date): TE.TaskEither<UnknownError, ActorUsageSummary[]>
+  getActorBreakdown(
+    context: TenantContext,
+    metric: UsageMetric,
+    fromDate: Date,
+    toDate: Date
+  ): TE.TaskEither<UnknownError | BoundaryError, ActorUsageSummary[]>
 }
 
 export const USAGE_EVENT_REPOSITORY_TOKEN = Symbol("USAGE_EVENT_REPOSITORY_TOKEN")
@@ -82,8 +103,7 @@ export const QUOTA_ADMISSION_CLIENT_TOKEN = Symbol("QUOTA_ADMISSION_CLIENT_TOKEN
 /**
  * Parameters for pre-flight quota reservation.
  */
-export interface AdmitAndReserveParams {
-  readonly orgId: string
+export interface AdmitAndReserveParams extends TenantContext {
   readonly entity: UsageEntity
   readonly actor: Actor
   readonly metric: UsageMetric
@@ -95,8 +115,7 @@ export interface AdmitAndReserveParams {
 /**
  * Parameters for post-operation quota settlement and immutable ledger entry.
  */
-export interface SettleUsageParams {
-  readonly orgId: string
+export interface SettleUsageParams extends TenantContext {
   readonly entity: UsageEntity
   readonly actor: Actor
   readonly metric: UsageMetric
@@ -110,8 +129,7 @@ export interface SettleUsageParams {
 /**
  * Parameters for releasing an inflight reservation.
  */
-export interface CancelReservationParams {
-  readonly orgId: string
+export interface CancelReservationParams extends TenantContext {
   readonly metric: UsageMetric
   readonly estimatedUnits: number
   readonly period: string
@@ -132,8 +150,7 @@ export interface MetricUsageSummary {
 /**
  * Organization-wide usage summary for a specific billing period.
  */
-export interface OrganizationUsageSummary {
-  readonly orgId: string
+export interface OrganizationUsageSummary extends TenantContext {
   readonly period: string
   readonly periodStartsAt: Date
   readonly periodEndsAt: Date
@@ -148,4 +165,5 @@ export type UsageMeteringError =
   | "billing_period_invalid_year"
   | "organization_not_found"
   | AuthorizationError
+  | BoundaryError
   | UnknownError

@@ -1,12 +1,12 @@
+import {randomOrgId, toOrganizationId} from "@test/organization-id"
 import {AppModule} from "@app/app.module"
-import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
 import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient} from "@prisma/client"
-import {cleanDatabase, prepareDatabase} from "@test/database"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
 import {MockConfigProvider, createMockSpaceInDb, createMockGroupInDb, createMockAgentInDb} from "@test/mock-data"
 import {createAuthenticatedUserInDb, TestTokenBuilder} from "@test/token-helpers"
 import {post} from "@test/requests"
@@ -23,7 +23,7 @@ describe("Resources Resolve API", () => {
   let jwtService: JwtService
   let configProvider: ConfigProvider
 
-  const endpoint = "/resources/resolve"
+  let endpoint: string
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -34,7 +34,7 @@ describe("Resources Resolve API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb))
         .compile()
     } catch (error) {
       console.error(error)
@@ -43,14 +43,19 @@ describe("Resources Resolve API", () => {
 
     app = module.createNestApplication({logger: false})
 
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
     await app.init()
   }, 30000)
 
   beforeEach(async () => {
-    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
+    const organizationId = randomOrgId()
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+      orgAdmin: true,
+      organizationId
+    })
+    endpoint = `/o/${organizationId}/resources/resolve`
   })
 
   afterAll(async () => {
@@ -70,8 +75,14 @@ describe("Resources Resolve API", () => {
   describe("POST /resources/resolve", () => {
     it("should resolve space and group for org admin", async () => {
       // Given
-      const space = await createMockSpaceInDb(prisma, {name: "Space 1"})
-      const group = await createMockGroupInDb(prisma, {name: "Group 1"})
+      const space = await createMockSpaceInDb(prisma, {
+        name: "Space 1",
+        organizationId: orgAdminUser.user.organizationId
+      })
+      const group = await createMockGroupInDb(prisma, {
+        name: "Group 1",
+        organizationId: orgAdminUser.user.organizationId
+      })
 
       const requestBody = {
         resources: [
@@ -98,28 +109,41 @@ describe("Resources Resolve API", () => {
 
     it("should resolve resources user has access to, and deny others", async () => {
       // Given
-      const spaceAllowed = await createMockSpaceInDb(prisma, {name: "Allowed Space"})
-      const spaceDenied = await createMockSpaceInDb(prisma, {name: "Denied Space"})
-      const groupAllowed = await createMockGroupInDb(prisma, {name: "Allowed Group"})
-      const groupDenied = await createMockGroupInDb(prisma, {name: "Denied Group"})
+      const spaceAllowed = await createMockSpaceInDb(prisma, {
+        name: "Allowed Space",
+        organizationId: orgAdminUser.user.organizationId
+      })
+      const spaceDenied = await createMockSpaceInDb(prisma, {
+        name: "Denied Space",
+        organizationId: orgAdminUser.user.organizationId
+      })
+      const groupAllowed = await createMockGroupInDb(prisma, {
+        name: "Allowed Group",
+        organizationId: orgAdminUser.user.organizationId
+      })
+      const groupDenied = await createMockGroupInDb(prisma, {
+        name: "Denied Group",
+        organizationId: orgAdminUser.user.organizationId
+      })
 
       // Given: user with access to spaceAllowed and groupAllowed
       const {token: userToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
         orgAdmin: false,
+        organizationId: orgAdminUser.user.organizationId,
         roles: [
           {
             name: "SpaceReader",
             resourceType: "space",
             permissions: ["read"],
             scopeType: "space",
-            scope: {type: "space", spaceId: spaceAllowed.id}
+            scope: {type: "space", organizationId: toOrganizationId(spaceAllowed.organizationId), spaceId: spaceAllowed.id}
           },
           {
             name: "GroupReader",
             resourceType: "group",
             permissions: ["read"],
             scopeType: "group",
-            scope: {type: "group", groupId: groupAllowed.id}
+            scope: {type: "group", organizationId: toOrganizationId(groupAllowed.organizationId), groupId: groupAllowed.id}
           }
         ]
       })
@@ -218,7 +242,7 @@ describe("Resources Resolve API", () => {
 
     it("should return UNAUTHORIZED when an agent token is used", async () => {
       // Given
-      const agent = await createMockAgentInDb(prisma)
+      const agent = await createMockAgentInDb(prisma, {organizationId: orgAdminUser.user.organizationId})
       const domainAgent = unwrapRight(mapAgentToDomain(agent))
       const agentToken = TestTokenBuilder.signAgentToken(jwtService, configProvider, domainAgent)
 

@@ -37,7 +37,7 @@ describe("Agent Authentication Integration", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb))
         .setLogger(new SilentLogger())
         .compile()
     } catch (error) {

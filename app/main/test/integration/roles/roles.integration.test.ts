@@ -5,12 +5,12 @@ import request from "supertest"
 import {AppModule} from "@app/app.module"
 import {MockConfigProvider} from "@test/mock-data"
 import {createAuthenticatedUserInDb} from "@test/token-helpers"
-import {cleanDatabase, prepareDatabase} from "@test/database"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
 import {PrismaClient} from "@prisma/client"
 import {ConfigProvider} from "@external/config"
 import {JwtService} from "@nestjs/jwt"
-import {DatabaseClient} from "@external"
 import {get} from "@test/requests"
+import {v7 as uuidv7} from "uuid"
 
 describe("Roles Integration Tests", () => {
   let app: NestApplication
@@ -25,11 +25,11 @@ describe("Roles Integration Tests", () => {
       imports: [AppModule]
     })
       .overrideProvider(ConfigProvider)
-      .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
+      .useValue(MockConfigProvider.fromOriginalProvider({tenantConnectionUrl: isolatedDb}))
       .compile()
 
     app = moduleRef.createNestApplication({logger: false})
-    prisma = moduleRef.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = moduleRef.get(JwtService)
     configProvider = moduleRef.get(ConfigProvider)
 
@@ -45,18 +45,18 @@ describe("Roles Integration Tests", () => {
     await cleanDatabase(prisma)
   })
 
-  describe("GET /roles", () => {
+  describe("GET /o/:organizationId/roles", () => {
     describe("good cases", () => {
       it("should return list of role templates for authenticated user", async () => {
         // Given: A valid user exists in the database
-        const {token: userToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+        const {token: userToken, user} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
           orgAdmin: false,
           roles: []
         })
 
         // When: Making a request to list roles
         const response = await request(app.getHttpServer())
-          .get("/roles")
+          .get(`/o/${user.organizationId}/roles`)
           .set("Authorization", `Bearer ${userToken}`)
           .expect(200)
 
@@ -78,7 +78,8 @@ describe("Roles Integration Tests", () => {
         // Given: No authentication token
 
         // When: Making a request to list roles without token
-        const response = await request(app.getHttpServer()).get("/roles")
+        const organizationId = uuidv7()
+        const response = await request(app.getHttpServer()).get(`/o/${organizationId}/roles`)
 
         // Then: Should receive unauthorized response
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
@@ -89,7 +90,8 @@ describe("Roles Integration Tests", () => {
         const invalidToken = "invalid-jwt-token"
 
         // When: Making a request with invalid token
-        const response = await get(app, "/roles").withToken(invalidToken).build().send()
+        const organizationId = uuidv7()
+        const response = await get(app, `/o/${organizationId}/roles`).withToken(invalidToken).build().send()
 
         // Then: Should receive bad request response
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)

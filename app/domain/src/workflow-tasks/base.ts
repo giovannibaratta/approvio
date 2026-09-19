@@ -1,3 +1,4 @@
+import {OrganizationId, isOrganizationId} from "../shared"
 /**
  * This file contains the base types and factories (validation and initialization) for workflow action tasks.
  * The specific tasks (e.g. sending email, calling webhook)can extend this base types and factories to add task specific attributes.
@@ -12,7 +13,8 @@ import {
   hasOwnProperty,
   isDate,
   isDecoratedWith,
-  isObject
+  isObject,
+  isUUIDv7
 } from "@utils"
 
 import {mapToLeftWithPrefix} from "@utils"
@@ -37,6 +39,7 @@ export type WorkflowActionTaskData =
 interface WorkflowActionTaskBaseData {
   createdAt: Date
   id: string
+  organizationId: OrganizationId
   retryCount: number
   status: TaskStatus
   updatedAt: Date
@@ -79,6 +82,7 @@ type StructureValidationError =
   | "missing_or_invalid_status"
   | "missing_or_invalid_method"
   | "missing_or_invalid_id"
+  | "missing_or_invalid_organization_id"
   | "missing_or_invalid_workflow_id"
   | "missing_or_invalid_created_at"
   | "missing_or_invalid_updated_at"
@@ -222,6 +226,12 @@ export class WorkflowActionTaskFactory {
     if (!hasOwnProperty(dataToBeValidated, "id") || typeof dataToBeValidated.id !== "string")
       return left("workflow_action_task_missing_or_invalid_id")
 
+    if (
+      !hasOwnProperty(dataToBeValidated, "organizationId") ||
+      !isOrganizationId(dataToBeValidated.organizationId)
+    )
+      return left("workflow_action_task_missing_or_invalid_organization_id")
+
     if (!hasOwnProperty(dataToBeValidated, "workflowId") || typeof dataToBeValidated.workflowId !== "string")
       return left("workflow_action_task_missing_or_invalid_workflow_id")
 
@@ -237,6 +247,7 @@ export class WorkflowActionTaskFactory {
     return right({
       ...dataToBeValidated,
       id: dataToBeValidated.id,
+      organizationId: dataToBeValidated.organizationId,
       workflowId: dataToBeValidated.workflowId,
       status: statusValidation.right,
       createdAt: dataToBeValidated.createdAt,

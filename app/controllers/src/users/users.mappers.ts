@@ -1,5 +1,4 @@
-import {ListUsers200Response, User as UserApi, UserCreate, RoleOperationRequestValidationError} from "@approvio/api"
-import {AuthenticatedEntity, User as UserDomain, Group, Versioned} from "@domain"
+import {ListUsers200Response, RoleOperationRequestValidationError} from "@approvio/api"
 import {
   BadRequestException,
   ConflictException,
@@ -11,15 +10,11 @@ import {
   UnprocessableEntityException
 } from "@nestjs/common"
 import {
-  AuthorizationError,
-  CreateUserRequest,
   ListUsersRequest,
   PaginatedUsersList,
-  UserCreateError,
   UserListError,
   UserRoleAssignmentError,
-  UserRoleRemovalError,
-  UserService
+  UserRoleRemovalError
 } from "@services"
 import {bindW, Do, Either, map, right, left} from "fp-ts/Either"
 import {generateErrorPayload} from "../error"
@@ -168,8 +163,10 @@ export function mapUsersToApi(paginatedUsers: PaginatedUsersList): ListUsers200R
   return {
     users: users.map(user => ({
       id: user.id,
+      organizationId: user.organizationId,
+      accountId: user.accountId,
       displayName: user.displayName,
-      email: user.email
+      orgRole: user.orgRole
     })),
     pagination: {
       page,
@@ -230,9 +227,6 @@ export function generateErrorResponseForUserRoleAssignment(
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "user_org_role_invalid":
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":
@@ -314,9 +308,6 @@ export function generateErrorResponseForUserRoleRemoval(
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "user_org_role_invalid":
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":
@@ -379,8 +370,10 @@ export function mapToServiceRequest(request: {
   search?: string
   page?: string
   limit?: string
+  organizationId: string
+  requestor: AuthenticatedEntity
 }): Either<"invalid_page_number" | "invalid_limit_number", ListUsersRequest> {
-  const {search, page, limit} = request
+  const {search, page, limit, organizationId, requestor} = request
 
   const validateInteger = <LValue>(value: string | undefined, lValue: LValue): Either<LValue, Option<number>> => {
     if (!value) return right(O.none)
@@ -400,7 +393,9 @@ export function mapToServiceRequest(request: {
     map(request => ({
       search: request.search,
       page: O.isSome(request.page) ? request.page.value : undefined,
-      limit: O.isSome(request.limit) ? request.limit.value : undefined
+      limit: O.isSome(request.limit) ? request.limit.value : undefined,
+      organizationId,
+      requestor
     }))
   )
 }

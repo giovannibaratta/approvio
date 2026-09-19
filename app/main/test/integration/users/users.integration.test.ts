@@ -2,22 +2,18 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
 import {NestApplication} from "@nestjs/core"
 import {AppModule} from "@app/app.module"
-import {DatabaseClient} from "@external"
-import {USERS_ENDPOINT_ROOT} from "@controllers"
-import {PrismaClient, User as PrismaUser} from "@prisma/client"
-import {UserCreate} from "@approvio/api"
+import {PrismaClient} from "@prisma/client"
 
-import {cleanDatabase, prepareDatabase} from "@test/database"
-import {createMockUserInDb, MockConfigProvider} from "@test/mock-data"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
+import {createMockUserInDb as createMockUserFixture, MockConfigProvider} from "@test/mock-data"
 import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
-import {get, post} from "@test/requests"
+import {get} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import {UserSummary} from "@approvio/api"
 import "expect-more-jest"
 import "@utils/matchers"
-import {v7 as uuidv7} from "uuid"
 
 describe("Users API", () => {
   let app: NestApplication
@@ -27,7 +23,7 @@ describe("Users API", () => {
   let jwtService: JwtService
   let configProvider: ConfigProvider
 
-  const endpoint = `/${USERS_ENDPOINT_ROOT}`
+  let endpoint: string
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -38,7 +34,7 @@ describe("Users API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
+        .useValue(MockConfigProvider.fromOriginalProvider({tenantConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -46,7 +42,7 @@ describe("Users API", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
 
@@ -55,7 +51,11 @@ describe("Users API", () => {
 
   beforeEach(async () => {
     orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
-    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+      orgAdmin: false,
+      organizationId: orgAdminUser.user.organizationId
+    })
+    endpoint = `/o/${orgAdminUser.user.organizationId}/users`
   })
 
   afterAll(async () => {
@@ -67,205 +67,7 @@ describe("Users API", () => {
     await cleanDatabase(prisma)
   })
 
-  describe("POST /users", () => {
-    const createUserPayload: UserCreate = {
-      displayName: "Test User",
-      email: "test.user@example.com",
-      orgRole: "member"
-    }
-
-    describe("good cases", () => {
-      it("should create a user and return 201 with location header (as OrgAdmin)", async () => {
-        // When
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(createUserPayload)
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.CREATED)
-        expect(response.headers.location).toMatch(new RegExp(`${endpoint}/[a-f0-9-]+`))
-
-        const responseUuid: string = response.headers.location?.split("/").reverse()[0] ?? ""
-
-        // Validate side effects in DB
-        const userDbObject = await prisma.user.findUnique({
-          where: {id: responseUuid}
-        })
-        expect(userDbObject).toBeDefined()
-        expect(userDbObject?.displayName).toEqual(createUserPayload.displayName)
-        expect(userDbObject?.email).toEqual(createUserPayload.email)
-        expect(userDbObject?.id).toEqual(responseUuid)
-
-        // Should not be an admin
-        const notOrgAdmin = await prisma.organizationAdmin.findMany({
-          where: {email: userDbObject?.email}
-        })
-        expect(notOrgAdmin).toHaveLength(0)
-      })
-    })
-
-    describe("bad cases", () => {
-      it("should return 401 UNAUTHORIZED if no token is provided", async () => {
-        // When
-        const response = await post(app, endpoint).build().send(createUserPayload)
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
-      })
-
-      it("should return 403 FORBIDDEN if requestor is not OrgAdmin", async () => {
-        // When
-        const response = await post(app, endpoint).withToken(orgMemberUser.token).build().send(createUserPayload)
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.FORBIDDEN)
-        expect(response.body).toHaveErrorCode("REQUESTOR_NOT_AUTHORIZED")
-      })
-
-      it("should return 409 CONFLICT (USER_ALREADY_EXISTS) for duplicate email", async () => {
-        // Given
-        const existingEmail = "duplicate@example.com"
-        await createMockUserInDb(prisma, {email: existingEmail})
-        const requestBody: UserCreate = {
-          displayName: "Another User",
-          email: existingEmail,
-          orgRole: "member"
-        }
-
-        // When
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
-        expect(response.body).toHaveErrorCode("USER_ALREADY_EXISTS")
-      })
-
-      it("should return 400 BAD_REQUEST (EMAIL_INVALID) for invalid email format", async () => {
-        // Given
-        const requestBody: UserCreate = {
-          displayName: "Invalid Email User",
-          email: "not-an-email",
-          orgRole: "member"
-        }
-
-        // When
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("USER_EMAIL_INVALID")
-      })
-
-      it("should return 400 BAD_REQUEST (DISPLAY_NAME_EMPTY) for empty display name", async () => {
-        // Given
-        const requestBody: UserCreate = {
-          displayName: "  ", // Whitespace only
-          email: "valid.email2@example.com",
-          orgRole: "member"
-        }
-
-        // When
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("USER_DISPLAY_NAME_EMPTY")
-      })
-
-      it("should return 400 BAD_REQUEST (EMAIL_EMPTY) for empty email", async () => {
-        // Given
-        const requestBody: UserCreate = {
-          displayName: "Valid Name",
-          email: "",
-          orgRole: "member"
-        }
-
-        // When
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("USER_EMAIL_EMPTY")
-      })
-    })
-  })
-
-  describe(`GET ${endpoint}/:userIdentifier`, () => {
-    let createdUser: PrismaUser
-
-    beforeEach(async () => {
-      createdUser = await createMockUserInDb(prisma)
-    })
-
-    describe("good cases", () => {
-      it("should return user details when fetching by ID (as OrgAdmin)", async () => {
-        // When
-        const response = await get(app, `${endpoint}/${createdUser.id}`).withToken(orgAdminUser.token).build()
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.OK)
-        expect(response.body.id).toEqual(createdUser.id)
-        expect(response.body.displayName).toEqual(createdUser.displayName)
-        expect(response.body.email).toEqual(createdUser.email)
-        expect(response.body.createdAt).toBeDefined()
-      })
-
-      it("should return user details when fetching by email (as OrgMember)", async () => {
-        // When
-        const response = await get(app, `${endpoint}/${createdUser.id}`).withToken(orgMemberUser.token).build()
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.OK)
-        expect(response.body.id).toEqual(createdUser.id)
-      })
-    })
-
-    describe("bad cases", () => {
-      it("should return 401 UNAUTHORIZED if no token is provided", async () => {
-        // When
-        const response = await get(app, `${endpoint}/${createdUser.id}`).build()
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
-      })
-
-      it("should return 404 NOT_FOUND (USER_NOT_FOUND) when fetching non-existent ID", async () => {
-        // Given
-        const nonExistentId = uuidv7()
-
-        // When
-        const response = await get(app, `${endpoint}/${nonExistentId}`).withToken(orgAdminUser.token).build()
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
-        expect(response.body).toHaveErrorCode("USER_NOT_FOUND")
-      })
-
-      it("should return 404 NOT_FOUND (USER_NOT_FOUND) when fetching non-existent email", async () => {
-        // Given
-        const nonExistentEmail = "not.found@example.com"
-
-        // When
-        const response = await get(app, `${endpoint}/${nonExistentEmail}`).withToken(orgAdminUser.token).build()
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
-        expect(response.body).toHaveErrorCode("USER_NOT_FOUND")
-      })
-
-      it("should return 400 BAD_REQUEST (REQUEST_INVALID_USER_IDENTIFIER) for invalid identifiers", async () => {
-        // Given
-        const invalidId = "not-a-uuid-and-not-an-email"
-
-        // When
-        const response = await get(app, `${endpoint}/${invalidId}`).withToken(orgAdminUser.token).build()
-
-        // Expect
-        expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
-        expect(response.body).toHaveErrorCode("REQUEST_INVALID_USER_IDENTIFIER")
-      })
-    })
-  })
-
-  describe(`GET ${endpoint}`, () => {
+  describe("GET /o/:organizationId/users", () => {
     describe("good cases", () => {
       it("should return a list of users (as OrgAdmin)", async () => {
         // Given

@@ -2,11 +2,10 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
 import {NestApplication} from "@nestjs/core"
 import {AppModule} from "@app/app.module"
-import {DatabaseClient} from "@external"
 import {AUDIT_LOGS_ENDPOINT_ROOT} from "../../../../controllers/src/audit-logs/audit-logs.controller"
 import {PrismaClient} from "@prisma/client"
 
-import {cleanDatabase, prepareDatabase} from "@test/database"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
 import {MockConfigProvider} from "@test/mock-data"
 import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {HttpStatus} from "@nestjs/common"
@@ -24,7 +23,7 @@ describe("Audit Logs API", () => {
   let jwtService: JwtService
   let configProvider: ConfigProvider
 
-  const endpoint = `/${AUDIT_LOGS_ENDPOINT_ROOT}`
+  let endpoint: string
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -35,7 +34,7 @@ describe("Audit Logs API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb))
         .compile()
     } catch (error) {
       console.error(error)
@@ -43,7 +42,7 @@ describe("Audit Logs API", () => {
     }
 
     app = module.createNestApplication({logger: ["error", "warn", "log"]})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
 
@@ -53,39 +52,52 @@ describe("Audit Logs API", () => {
   beforeEach(async () => {
     await cleanDatabase(prisma)
 
-    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
     orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+      orgAdmin: false,
+      organizationId: orgAdminUser.user.organizationId
+    })
+    endpoint = `/o/${orgAdminUser.user.organizationId}/${AUDIT_LOGS_ENDPOINT_ROOT}`
 
     // Insert mock audit logs
     await prisma.auditLog.createMany({
       data: [
         {
           id: uuidv7(),
+          organizationId: orgAdminUser.user.organizationId,
           auditType: "SPACE_CREATED",
           entityType: "SPACE",
           entityId: uuidv7(),
           actorId: orgAdminUser.user.id,
           actorType: "user",
+          actorDisplayName: orgAdminUser.user.displayName,
+          schemaVersion: 1,
           payload: {name: "Space 1"},
           createdAt: new Date()
         },
         {
           id: uuidv7(),
+          organizationId: orgAdminUser.user.organizationId,
           auditType: "GROUP_CREATED",
           entityType: "GROUP",
           entityId: uuidv7(),
           actorId: orgMemberUser.user.id,
           actorType: "user",
+          actorDisplayName: orgMemberUser.user.displayName,
+          schemaVersion: 1,
           payload: {name: "Group 1"},
           createdAt: new Date()
         },
         {
           id: uuidv7(),
+          organizationId: orgAdminUser.user.organizationId,
           auditType: "SPACE_CREATED",
           entityType: "SPACE",
           entityId: uuidv7(),
           actorId: orgAdminUser.user.id,
           actorType: "user",
+          actorDisplayName: orgAdminUser.user.displayName,
+          schemaVersion: 1,
           payload: {name: "Space Old"},
           createdAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000) // 8 days old (should be filtered out)
         }
@@ -94,6 +106,7 @@ describe("Audit Logs API", () => {
   })
 
   afterAll(async () => {
+    await prisma.$disconnect()
     await app.close()
   })
 
@@ -111,7 +124,10 @@ describe("Audit Logs API", () => {
 
     it("should return 200 OK for a non-org admin user who has the AuditorViewer role", async () => {
       // Given
-      const auditorViewerRole = SystemRole.createAuditViewerRole({type: "org"})
+      const auditorViewerRole = SystemRole.createAuditViewerRole({
+        type: "org",
+        organizationId: orgAdminUser.user.organizationId
+      })
       const {token: auditorToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
         orgAdmin: false,
         roles: [auditorViewerRole]

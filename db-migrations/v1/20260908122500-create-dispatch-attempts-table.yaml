@@ -1,0 +1,91 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908122500-create-dispatch-attempts-table
+      author: giovannibaratta
+      changes:
+        - insert:
+            tableName: approvio_security_table_registry
+            columns:
+              - column:
+                  name: table_name
+                  value: dispatch_attempts
+              - column:
+                  name: security_class
+                  value: tenant
+              - column:
+                  name: capability_profile
+                  value: tenant_worker
+        - createTable:
+            tableName: dispatch_attempts
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: durable_work_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+                  type: uuid
+              - column:
+                  name: fencing
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: state
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: outcome_category
+                  type: text
+              - column:
+                  name: admitted_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: sending_at
+                  type: timestamptz
+              - column:
+                  name: completed_at
+                  type: timestamptz
+        - addForeignKeyConstraint:
+            baseTableName: dispatch_attempts
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_dispatch_attempts_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: dispatch_attempts
+            baseColumnNames: organization_id, durable_work_id
+            referencedTableName: durable_work
+            referencedColumnNames: organization_id, id
+            constraintName: fk_dispatch_attempts_durable_work
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: dispatch_attempts
+            columnNames: organization_id, id
+            constraintName: dispatch_attempts_organization_id_unique
+        - sql:
+            dbms: postgresql
+            sql: >-
+              CREATE UNIQUE INDEX dispatch_attempts_durable_work_fence_unique
+              ON dispatch_attempts(organization_id, durable_work_id, fencing)

@@ -1,4 +1,5 @@
-import {User, Agent, OrgRole, StepUpContext} from "@domain"
+import {Account, User, Agent, OrgRole, StepUpContext} from "@domain"
+import {isObject, isUUIDv7} from "@utils"
 
 const CLOCK_SKEW_TOLERANCE_IN_SECONDS = 60
 
@@ -8,14 +9,10 @@ interface TokenPayloadCore {
   sub: string // Subject - user/agent ID
   aud: string[] // Audience - intended recipients/services
   nbf?: number // Not before - optional validity start time
-  jti?: string // JWT ID - unique identifier for the token
+  jti?: string // JWT ID - optional identifier for this token
 
   // Display name
   name: string
-
-  // Step-up context
-  operation?: string // The operation this token is bound to
-  resource?: string // The resource ID this token is bound to
 }
 
 export interface UserTokenPayloadForSigning extends TokenPayloadCore {
@@ -23,14 +20,30 @@ export interface UserTokenPayloadForSigning extends TokenPayloadCore {
   // IANA registered claims
   email: string
   providerId: string
-  orgRole?: OrgRole // Organizational role (admin/member)
+  accountId: string
+  sessionId: string
+  /** Decimal string on the JWT wire */
+  sessionContextVersion: string
+  orgRole: OrgRole // Organizational role (owner/admin/member)
+  operation?: string // The operation this token is bound to
+  resource?: string // The resource ID this token is bound to
 }
 
 export interface AgentTokenPayloadForSigning extends TokenPayloadCore {
   entityType: "agent"
+  organizationId: string
 }
 
-export type TokenPayloadForSigning = UserTokenPayloadForSigning | AgentTokenPayloadForSigning
+export interface PlatformTokenPayloadForSigning extends TokenPayloadCore {
+  entityType: "platform"
+  sessionId: string
+  providerId: string
+  /** Decimal string on the JWT wire */
+  sessionContextVersion: string
+}
+
+export type TokenPayloadForSigning =
+  UserTokenPayloadForSigning | AgentTokenPayloadForSigning | PlatformTokenPayloadForSigning
 
 export type UserTokenPayload = UserTokenPayloadForSigning & {
   exp: number
@@ -42,7 +55,12 @@ export type AgentTokenPayload = AgentTokenPayloadForSigning & {
   iat: number
 }
 
-export type TokenPayload = UserTokenPayload | AgentTokenPayload
+export type PlatformTokenPayload = PlatformTokenPayloadForSigning & {
+  exp: number
+  iat: number
+}
+
+export type TokenPayload = UserTokenPayload | AgentTokenPayload | PlatformTokenPayload
 
 export class TokenPayloadValidator {
   /**
@@ -51,15 +69,12 @@ export class TokenPayloadValidator {
    * @returns true if payload is a valid TokenPayload
    */
   static isValidPayloadSchema(payload: unknown): payload is TokenPayload {
-    if (typeof payload !== "object" || payload === null) return false
-
-    const p = payload as Record<string, unknown>
+    if (!isObject(payload)) return false
 
     return (
-      TokenPayloadValidator.hasCoreClaims(p) &&
-      TokenPayloadValidator.hasIanaClaims(p) &&
-      TokenPayloadValidator.hasCustomClaims(p) &&
-      TokenPayloadValidator.isValidStepUpContext(p)
+      TokenPayloadValidator.hasCoreClaims(payload) &&
+      TokenPayloadValidator.hasIanaClaims(payload) &&
+      TokenPayloadValidator.hasCustomClaims(payload)
     )
   }
 
@@ -81,19 +96,39 @@ export class TokenPayloadValidator {
   }
 
   private static hasCustomClaims(p: Record<string, unknown>): boolean {
-    if (p.entityType !== "user" && p.entityType !== "agent") return false
+    if (p.entityType === "user") return this.hasValidUserClaims(p)
+    if (p.entityType === "agent") return typeof p.organizationId === "string" && isUUIDv7(p.organizationId)
 
-    // Entity-specific validation
-    if (p.entityType === "user") {
-      if (typeof p.email !== "string") return false
-      if (typeof p.providerId !== "string" || !p.providerId) return false
-      if (p.orgRole !== undefined && p.orgRole !== "admin" && p.orgRole !== "member") return false
-      if (p.roles !== undefined && !Array.isArray(p.roles)) return false
-    }
+    if (p.entityType === "platform") return this.hasValidPlatformClaims(p)
 
-    if (p.entityType === "agent") if (p.providerId !== undefined) return false
+    return false
+  }
 
-    return true
+  private static hasValidUserClaims(p: Record<string, unknown>): boolean {
+    return (
+      typeof p.email === "string" &&
+      typeof p.providerId === "string" &&
+      isUUIDv7(p.providerId) &&
+      typeof p.accountId === "string" &&
+      isUUIDv7(p.accountId) &&
+      typeof p.sessionId === "string" &&
+      isUUIDv7(p.sessionId) &&
+      typeof p.sessionContextVersion === "string" &&
+      /^\d+$/.test(p.sessionContextVersion) &&
+      (p.orgRole === "owner" || p.orgRole === "admin" || p.orgRole === "member") &&
+      this.isValidStepUpContext(p)
+    )
+  }
+
+  private static hasValidPlatformClaims(p: Record<string, unknown>): boolean {
+    return (
+      typeof p.sessionId === "string" &&
+      isUUIDv7(p.sessionId) &&
+      typeof p.providerId === "string" &&
+      isUUIDv7(p.providerId) &&
+      typeof p.sessionContextVersion === "string" &&
+      /^\d+$/.test(p.sessionContextVersion)
+    )
   }
 
   private static isValidStepUpContext(p: Record<string, unknown>): boolean {
@@ -151,9 +186,12 @@ export type CreateUserTokenPayloadData = {
   displayName: string
   email: string
   providerId: string
+  accountId: string
+  sessionId: string
+  sessionContextVersion: bigint
   issuer: string
   audience: string[]
-  orgRole?: OrgRole
+  orgRole: OrgRole
   stepUpContext?: StepUpContext
 }
 
@@ -161,12 +199,24 @@ export type CreateAgentTokenPayloadData = {
   entityType: "agent"
   sub: string
   displayName: string
+  organizationId: string
   issuer: string
   audience: string[]
-  stepUpContext?: StepUpContext
 }
 
-export type CreateTokenPayloadData = CreateUserTokenPayloadData | CreateAgentTokenPayloadData
+export type CreatePlatformTokenPayloadData = {
+  entityType: "platform"
+  sub: string
+  displayName: string
+  sessionId: string
+  providerId: string
+  sessionContextVersion: bigint
+  issuer: string
+  audience: string[]
+}
+
+export type CreateTokenPayloadData =
+  CreateUserTokenPayloadData | CreateAgentTokenPayloadData | CreatePlatformTokenPayloadData
 
 /**
  * Helper class for building JWT-compliant token payloads
@@ -174,6 +224,7 @@ export type CreateTokenPayloadData = CreateUserTokenPayloadData | CreateAgentTok
 export class TokenPayloadBuilder {
   static from(data: CreateUserTokenPayloadData): UserTokenPayloadForSigning
   static from(data: CreateAgentTokenPayloadData): AgentTokenPayloadForSigning
+  static from(data: CreatePlatformTokenPayloadData): PlatformTokenPayloadForSigning
   static from(data: CreateTokenPayloadData): TokenPayloadForSigning {
     if (data.entityType === "user")
       return {
@@ -181,27 +232,39 @@ export class TokenPayloadBuilder {
         sub: data.sub,
         aud: data.audience,
         jti: data.stepUpContext?.jti,
-        email: data.email,
         name: data.displayName,
+        email: data.email,
         entityType: "user",
         providerId: data.providerId,
+        accountId: data.accountId,
+        sessionId: data.sessionId,
+        sessionContextVersion: data.sessionContextVersion.toString(),
         // Custom claims
-        ...(data.orgRole && {orgRole: data.orgRole}),
+        orgRole: data.orgRole,
         // Step-up context
         ...(data.stepUpContext?.operation && {operation: data.stepUpContext.operation}),
         ...(data.stepUpContext?.resource && {resource: data.stepUpContext.resource})
+      }
+
+    if (data.entityType === "agent")
+      return {
+        iss: data.issuer,
+        sub: data.sub,
+        aud: data.audience,
+        name: data.displayName,
+        entityType: "agent",
+        organizationId: data.organizationId
       }
 
     return {
       iss: data.issuer,
       sub: data.sub,
       aud: data.audience,
-      jti: data.stepUpContext?.jti,
       name: data.displayName,
-      entityType: "agent",
-      // Step-up context
-      ...(data.stepUpContext?.operation && {operation: data.stepUpContext.operation}),
-      ...(data.stepUpContext?.resource && {resource: data.stepUpContext.resource})
+      entityType: "platform",
+      sessionId: data.sessionId,
+      providerId: data.providerId,
+      sessionContextVersion: data.sessionContextVersion.toString()
     }
   }
 
@@ -216,7 +279,10 @@ export class TokenPayloadBuilder {
     options: {
       issuer: string
       audience: string[]
+      email: string
       providerId: string
+      sessionId: string
+      sessionContextVersion: bigint
       stepUpContext?: StepUpContext
     }
   ): UserTokenPayloadForSigning {
@@ -224,9 +290,12 @@ export class TokenPayloadBuilder {
       sub: user.id,
       entityType: "user",
       displayName: user.displayName,
-      email: user.email,
       orgRole: user.orgRole,
+      email: options.email,
       providerId: options.providerId,
+      accountId: user.accountId,
+      sessionId: options.sessionId,
+      sessionContextVersion: options.sessionContextVersion,
       issuer: options.issuer,
       audience: options.audience,
       stepUpContext: options.stepUpContext
@@ -247,12 +316,35 @@ export class TokenPayloadBuilder {
     }
   ): AgentTokenPayloadForSigning {
     return TokenPayloadBuilder.from({
-      sub: agent.agentName,
+      sub: agent.id,
       entityType: "agent",
       displayName: agent.agentName,
+      organizationId: agent.organizationId,
       // Agents don't have email
       issuer: options.issuer,
       audience: options.audience
+    })
+  }
+
+  static fromPlatformAccount(
+    account: Account,
+    options: {
+      issuer: string
+      audience: string[]
+      sessionId: string
+      providerId: string
+      sessionContextVersion: bigint
+    }
+  ): PlatformTokenPayloadForSigning {
+    return TokenPayloadBuilder.from({
+      entityType: "platform",
+      sub: account.id,
+      displayName: account.displayName,
+      issuer: options.issuer,
+      audience: options.audience,
+      sessionId: options.sessionId,
+      providerId: options.providerId,
+      sessionContextVersion: options.sessionContextVersion
     })
   }
 }

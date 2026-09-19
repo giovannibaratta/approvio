@@ -1,6 +1,5 @@
-import {Node, NodeAtOrAbove, NodeType} from "@domain"
+import {Node, NodeAtOrAbove, NodeType, TenantContext} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
-import {DEFAULT_ORG_ID} from "../constants"
 import {UnknownError} from "@services/error"
 import {WORKFLOW_REPOSITORY_TOKEN, WorkflowRepository} from "../workflow/interfaces"
 import {WORKFLOW_TEMPLATE_REPOSITORY_TOKEN, WorkflowTemplateRepository} from "../workflow-template/interfaces"
@@ -15,22 +14,23 @@ export class HierarchyService {
     @Inject(WORKFLOW_REPOSITORY_TOKEN) private readonly workflowRepository: WorkflowRepository
   ) {}
 
-  getParents<T extends NodeType>(node: Node<T>): TaskEither<UnknownError, NodeAtOrAbove<T>[]> {
+  getParents<T extends NodeType>(
+    node: Node<T>,
+    context: TenantContext
+  ): TaskEither<UnknownError, NodeAtOrAbove<T>[]> {
     switch (node.type) {
       case "Org":
         return TE.right([])
       case "Group":
-        return TE.right([{type: "Org", identifier: DEFAULT_ORG_ID}] as NodeAtOrAbove<T>[])
       case "Space":
-        return TE.right([{type: "Org", identifier: DEFAULT_ORG_ID}] as NodeAtOrAbove<T>[])
       case "User":
-        return TE.right([{type: "Org", identifier: DEFAULT_ORG_ID}] as NodeAtOrAbove<T>[])
+        return TE.right([{type: "Org", identifier: context.organizationId}] as NodeAtOrAbove<T>[])
       case "WorkflowTemplate":
         return pipe(
-          this.workflowTemplateRepository.getParentSpace(node.identifier),
+          this.workflowTemplateRepository.getParentSpace(context, node.identifier),
           TE.chainW(spaceId =>
             pipe(
-              this.getParents({type: "Space" as const, identifier: spaceId}),
+              this.getParents({type: "Space" as const, identifier: spaceId}, context),
               TE.map(parents => [{type: "Space" as const, identifier: spaceId}, ...parents])
             )
           ),
@@ -39,10 +39,10 @@ export class HierarchyService {
         )
       case "Workflow":
         return pipe(
-          this.workflowRepository.getParentWorkflowTemplate(node.identifier),
+          this.workflowRepository.getParentWorkflowTemplate(context, node.identifier),
           TE.chainW(templateId =>
             pipe(
-              this.getParents({type: "WorkflowTemplate" as const, identifier: templateId}),
+              this.getParents({type: "WorkflowTemplate" as const, identifier: templateId}, context),
               TE.map(parents => [{type: "WorkflowTemplate" as const, identifier: templateId}, ...parents])
             )
           ),

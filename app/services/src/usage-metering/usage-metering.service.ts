@@ -5,18 +5,34 @@ import {
   formatBillingPeriod,
   getMetricUnit,
   OrgRole,
+  OrganizationId,
+  PlanTier,
   parseBillingPeriod,
   resolveEffectiveLimit,
+  TenantContext,
+  TenantEvent,
   UNLIMITED_QUOTA_SENTINEL,
   UsageMetric
 } from "@domain"
 import {ConfigProvider} from "@external/config"
 import {Inject, Injectable, Logger} from "@nestjs/common"
+import {v7 as uuidv7} from "uuid"
 import {pipe} from "fp-ts/function"
 import * as E from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
-import {DEFAULT_ORG_ID} from "../constants"
+import {Task} from "fp-ts/Task"
 import {validateUserEntity} from "../shared/types"
+import {TRANSACTION_MANAGER_TOKEN, TenantTransactionManager} from "../transaction/interfaces"
+import {OrganizationEntitlementService} from "../tenancy/organization-entitlement.service"
+import {
+  OUTBOX_REPOSITORY_TOKEN,
+  OutboxRepository,
+  USAGE_OPERATION_REPOSITORY_TOKEN,
+  UsageOperation,
+  UsageOperationRepository
+} from "../durable-work/interfaces"
+import {bestEffort, isUUIDv7} from "@utils"
+import {QueueService} from "../queue"
 import {
   AdmitAndReserveParams,
   CancelReservationParams,
@@ -50,7 +66,7 @@ export class UsageMeteringService {
    * @returns TaskEither resolving to void on success, or Left with error.
    */
   public admitAndReserve(params: AdmitAndReserveParams): TE.TaskEither<UsageMeteringError, void> {
-    const key = this.buildAdmissionKey(params.orgId, params.metric, params.period)
+    const key = this.buildAdmissionKey(params.organizationId, params.metric, params.period)
 
     return pipe(
       TE.fromEither(parseBillingPeriod(params.period)),
@@ -128,13 +144,14 @@ export class UsageMeteringService {
    * @returns TaskEither resolving to void on success, or Left with error.
    */
   public settleUsage(params: SettleUsageParams): TE.TaskEither<UsageMeteringError, void> {
-    const key = this.buildAdmissionKey(params.orgId, params.metric, params.period)
+    const key = this.buildAdmissionKey(params.organizationId, params.metric, params.period)
 
     return pipe(
       TE.fromEither(parseBillingPeriod(params.period)),
       TE.chainW(() =>
         pipe(
-          this.usageEventRepo.persist({
+          this.usageEventRepo.persist(params, {
+            organizationId: params.organizationId,
             entityType: params.entity.type,
             entityId: params.entity.id,
             actor: params.actor,
@@ -170,7 +187,7 @@ export class UsageMeteringService {
    * @returns TaskEither resolving to void on success.
    */
   public cancelReservation(params: CancelReservationParams): TE.TaskEither<UsageMeteringError, void> {
-    const key = this.buildAdmissionKey(params.orgId, params.metric, params.period)
+    const key = this.buildAdmissionKey(params.organizationId, params.metric, params.period)
 
     return pipe(
       TE.fromEither(parseBillingPeriod(params.period)),
@@ -190,23 +207,24 @@ export class UsageMeteringService {
    * Inspects billing period consumption, active reservations, and remaining quota balances for an organization.
    *
    * @param requestor - Authenticated entity performing the request.
-   * @param orgId - Organization UUID.
+   * @param context - Tenant context for the organization being inspected.
    * @param period - Billing period (YYYY-MM). Defaults to current active period if omitted.
    * @param metricFilter - Optional single metric filter.
    * @returns TaskEither resolving to the complete OrganizationUsageSummary.
    */
   public getOrganizationUsage(
     requestor: AuthenticatedEntity,
-    orgId: string,
+    context: TenantContext,
     period?: string,
     metricFilter?: UsageMetric
   ): TE.TaskEither<UsageMeteringError, OrganizationUsageSummary> {
     const userResult = validateUserEntity(requestor)
-    if (E.isLeft(userResult) || userResult.right.orgRole !== OrgRole.ADMIN)
+    if (
+      E.isLeft(userResult) ||
+      userResult.right.organizationId !== context.organizationId ||
+      userResult.right.orgRole !== OrgRole.ADMIN
+    )
       return TE.left("requestor_not_authorized" as const)
-
-    // TODO(long-term): once multi-org support is implemented, orgId should be looked up dynamically
-    if (orgId !== DEFAULT_ORG_ID) return TE.left("organization_not_found" as const)
 
     const activePeriod = period ?? formatBillingPeriod(new Date())
     const metricsToQuery = metricFilter ? [metricFilter] : ALL_METERED_METRICS
@@ -218,7 +236,7 @@ export class UsageMeteringService {
           metricsToQuery.map(metric => this.getMetricUsage(orgId, metric, activePeriod)),
           TE.sequenceArray,
           TE.map(metrics => ({
-            orgId,
+                organizationId: context.organizationId,
             period: activePeriod,
             periodStartsAt,
             periodEndsAt,

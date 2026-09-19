@@ -24,6 +24,7 @@ import {
   WebhookActionRedactScope,
   WorkflowTemplateSummary,
   AuthenticatedEntity,
+  TenantContext,
   Versioned,
   WorkflowTemplateStatus
 } from "@domain"
@@ -34,7 +35,8 @@ import {
   HttpException,
   InternalServerErrorException,
   Logger,
-  NotFoundException
+  NotFoundException,
+  NotImplementedException
 } from "@nestjs/common"
 import {
   CreateWorkflowTemplateRequest,
@@ -52,6 +54,7 @@ import {pipe} from "fp-ts/function"
 export function createWorkflowTemplateApiToServiceModel(data: {
   workflowTemplateData: WorkflowTemplateCreateApi
   requestor: AuthenticatedEntity
+  context: TenantContext
 }): Either<ApprovalRuleValidationError | WorkflowTemplateValidationError, CreateWorkflowTemplateRequest> {
   const eitherApprovalRule = mapApprovalRuleToDomain(data.workflowTemplateData.approvalRule)
   if (isLeft(eitherApprovalRule)) return eitherApprovalRule
@@ -67,6 +70,7 @@ export function createWorkflowTemplateApiToServiceModel(data: {
 
   return right({
     workflowTemplateData,
+    organizationId: data.context.organizationId,
     requestor: data.requestor
   })
 }
@@ -75,6 +79,8 @@ export function updateWorkflowTemplateApiToServiceModel(data: {
   templateName: string
   workflowTemplateData: WorkflowTemplateUpdateApi
   requestor: AuthenticatedEntity
+  context: TenantContext
+  occVersion: bigint
 }): Either<ApprovalRuleValidationError | WorkflowTemplateValidationError, UpdateWorkflowTemplateRequest> {
   let approvalRule: ApprovalRule | undefined = undefined
 
@@ -100,8 +106,9 @@ export function updateWorkflowTemplateApiToServiceModel(data: {
     templateName: data.templateName,
     workflowTemplateData,
     cancelWorkflows: data.workflowTemplateData.cancelWorkflows,
+    organizationId: data.context.organizationId,
     requestor: data.requestor,
-    occVersion: BigInt(data.workflowTemplateData.concurrencyControl.version)
+    occVersion: data.occVersion
   })
 }
 
@@ -111,6 +118,7 @@ function mapApprovalRuleToDomain(apiRule: ApprovalRuleApi): Either<ApprovalRuleV
 
 export function mapWorkflowTemplateToApi(workflowTemplate: Versioned<WorkflowTemplate>): WorkflowTemplateApi {
   return {
+    organizationId: workflowTemplate.organizationId,
     id: workflowTemplate.id,
     name: workflowTemplate.name,
     version: workflowTemplate.version.toString(),
@@ -123,8 +131,7 @@ export function mapWorkflowTemplateToApi(workflowTemplate: Versioned<WorkflowTem
     createdAt: workflowTemplate.createdAt.toISOString(),
     updatedAt: workflowTemplate.updatedAt.toISOString(),
     status: workflowTemplate.status,
-    allowVotingOnDeprecatedTemplate: workflowTemplate.allowVotingOnDeprecatedTemplate,
-    concurrencyControl: {version: workflowTemplate.occ.toString()}
+    allowVotingOnDeprecatedTemplate: workflowTemplate.allowVotingOnDeprecatedTemplate
   }
 }
 
@@ -141,7 +148,8 @@ export function mapWorkflowTemplateListToApi(data: ListWorkflowTemplatesResponse
 
 export function mapListWorkflowTemplatesParamsToServiceRequest(
   params: ListWorkflowTemplatesParams,
-  requestor: AuthenticatedEntity
+  requestor: AuthenticatedEntity,
+  context: TenantContext
 ): Either<
   "invalid_status" | "invalid_search_mode" | "invalid_sort_direction" | "invalid_sort_by",
   ListWorkflowTemplatesRequest
@@ -208,6 +216,7 @@ export function mapListWorkflowTemplatesParamsToServiceRequest(
                       spaceIdentifier: params.spaceIdentifier,
                       status
                     },
+                    organizationId: context.organizationId,
                     requestor
                   }
                 })
@@ -222,6 +231,7 @@ export function mapListWorkflowTemplatesParamsToServiceRequest(
 
 function mapWorkflowTemplateSummaryToApi(workflowTemplateSummary: WorkflowTemplateSummary): WorkflowTemplateSummaryApi {
   return {
+    organizationId: workflowTemplateSummary.organizationId,
     id: workflowTemplateSummary.id,
     name: workflowTemplateSummary.name,
     version: workflowTemplateSummary.version.toString(),
@@ -389,6 +399,17 @@ export function generateErrorResponseForCreateWorkflowTemplate(
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
       )
+    case "workflow_template_organization_id_invalid_uuid":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
+      // TODO: Cateogrize in the appropriate place the errors above that are not returning an HTTPException
+      throw new NotImplementedException()
   }
 }
 
@@ -441,6 +462,17 @@ export function generateErrorResponseForGetWorkflowTemplate(
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
+    case "workflow_template_organization_id_invalid_uuid":
+      // TODO: Cateogrize in the appropriate place the errors above that are not returning an HTTPException
+      throw new NotImplementedException()
   }
 }
 
@@ -518,6 +550,16 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded`))
     case "workflow_template_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow template not found`))
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "workflow_template_organization_id_invalid_uuid":
+      // TODO: Cateogrize in the appropriate place the errors above that are not returning an HTTPException
+      throw new NotImplementedException()
   }
 }
 
@@ -592,6 +634,16 @@ export function generateErrorResponseForDeprecateWorkflowTemplate(
       )
     case "workflow_template_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow template not found`))
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "workflow_template_organization_id_invalid_uuid":
+      // TODO: Cateogrize in the appropriate place the errors above that are not returning an HTTPException
+      throw new NotImplementedException()
   }
 }
 
@@ -658,5 +710,16 @@ export function generateErrorResponseForListWorkflowTemplates(
       )
     case "unknown_error":
       return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: An unknown error occurred`))
+    case "workflow_template_organization_id_invalid_uuid":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
+      // TODO: Cateogrize in the appropriate place the errors above that are not returning an HTTPException
+      throw new NotImplementedException()
   }
 }

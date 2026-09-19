@@ -1,6 +1,7 @@
 import {hasOwnProperty} from "@utils"
 import {Either} from "fp-ts/Either"
 import {TaskEither} from "fp-ts/TaskEither"
+import {Task} from "fp-ts/Task"
 import * as E from "fp-ts/Either"
 
 /**
@@ -133,8 +134,34 @@ export function mapToLeftWithPrefix<T extends string, E extends string>(error: T
   return E.left(`${prefix}_${error}` as E)
 }
 
+/** Runs a TaskEither as a Task, reporting and suppressing its typed or unexpected failure. */
+export const bestEffort =
+  (onFailure: (error: unknown) => void) =>
+  <Error, Result>(operation: TaskEither<Error, Result>): Task<void> =>
+  async () => {
+    try {
+      const result = await operation()
+      if (E.isLeft(result)) onFailure(result.left)
+    } catch (error) {
+      onFailure(error)
+    }
+  }
+
 /**
  * Overwrites the properties of type T with the properties of type U.
  * This is a distributive type that works with unions.
  */
 export type Overwrite<T, U> = Omit<T, keyof U> & U
+
+/**
+ * Generic branded type helper.
+ * Attaches a nominal phantom brand to an underlying data shape.
+ */
+export type Brand<T, TBrand extends symbol> = T & {readonly [K in TBrand]: true}
+
+/**
+ * Attaches a phantom brand to an already validated data structure.
+ */
+export function brand<T, TBrand extends symbol>(data: T): Brand<T, TBrand> {
+  return data as Brand<T, TBrand>
+}
