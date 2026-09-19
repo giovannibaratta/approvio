@@ -1,3 +1,4 @@
+import {randomOrgId, toOrganizationId} from "@test/organization-id"
 import {PrismaClient, WorkflowTemplate as PrismaWorkflowTemplate} from "@prisma/client"
 import {createMockWorkflowTemplateInDb, MockConfigProvider} from "@test/mock-data"
 import {createAuthenticatedUserInDb} from "@test/token-helpers"
@@ -6,13 +7,11 @@ import {post} from "@test/requests"
 import "expect-more-jest"
 import "@utils/matchers"
 import {AppModule} from "@app/app.module"
-import {WORKFLOW_TEMPLATE_INTERNAL_ENDPOINT_ROOT} from "@controllers"
-import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
 import {NestApplication} from "@nestjs/core"
 import {JwtService} from "@nestjs/jwt"
 import {TestingModule, Test} from "@nestjs/testing"
-import {prepareDatabase, cleanDatabase} from "@test/database"
+import {createFixturePrismaClient, prepareDatabase, cleanDatabase} from "@test/database"
 import {UserWithToken} from "@test/types"
 
 describe("Workflow Templates internal API", () => {
@@ -21,10 +20,12 @@ describe("Workflow Templates internal API", () => {
   let orgAdminUser: UserWithToken
   let jwtService: JwtService
 
-  const endpoint = `/${WORKFLOW_TEMPLATE_INTERNAL_ENDPOINT_ROOT}`
+  let endpoint: string
+  let organizationId: ReturnType<typeof toOrganizationId>
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
+    organizationId = randomOrgId()
 
     let module: TestingModule
     try {
@@ -32,7 +33,7 @@ describe("Workflow Templates internal API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
+        .useValue(MockConfigProvider.fromOriginalProvider({tenantConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -40,11 +41,15 @@ describe("Workflow Templates internal API", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
     const configProvider = module.get(ConfigProvider)
 
-    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+      orgAdmin: true,
+      organizationId
+    })
+    endpoint = `/internal/o/${organizationId}/workflow-template`
 
     await app.init()
   }, 30000)
@@ -58,11 +63,12 @@ describe("Workflow Templates internal API", () => {
     await cleanDatabase(prisma)
   })
 
-  describe("POST /internal/workflow-template/:templateId/cancel-workflows", () => {
+  describe("POST /internal/o/:organizationId/workflow-template/:templateId/cancel-workflows", () => {
     let createdTemplate: PrismaWorkflowTemplate
 
     beforeEach(async () => {
       createdTemplate = await createMockWorkflowTemplateInDb(prisma, {
+        organizationId,
         name: "Cancel Workflows Template",
         description: "Template for cancel workflows test"
       })

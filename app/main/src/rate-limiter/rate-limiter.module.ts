@@ -12,7 +12,7 @@ import {HealthRateLimiterGuard} from "./health-rate-limiter.guard"
  */
 @Global()
 @Module({
-  imports: [ServiceModule, ConfigModule],
+  imports: [ServiceModule.register({runtime: "api"}), ConfigModule],
   providers: [RateLimiterGuard, HealthRateLimiterGuard],
   exports: [RateLimiterGuard, HealthRateLimiterGuard]
 })

@@ -2,10 +2,15 @@ import {Process, Processor} from "@nestjs/bull"
 import {Job} from "bull"
 import {Injectable, Logger, Inject} from "@nestjs/common"
 import {WORKFLOW_ACTION_WEBHOOK_QUEUE} from "@external"
+import {DispatchService} from "@services/durable-work/dispatch.service"
+import {DispatchCompletion, DispatchOutcome} from "@services/durable-work/models"
+import {DispatchClaim, WorkError} from "@services/durable-work/interfaces"
+import {TaskGetErrorWebhookTask} from "@services/task/interfaces"
+import {HttpError} from "@services/webhook/interfaces"
 import {TaskService} from "@services/task/task.service"
 import {WebhookService} from "@services/webhook/webhook.service"
 import {WORKER_ID} from "../worker.constants"
-import {WorkflowActionType, WorkflowActionWebhookEvent, WorkflowActionWebhookTaskFactory} from "@domain"
+import {TaskReadyEvent, DecoratedWorkflowActionWebhookTask} from "@domain"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {isLeft} from "fp-ts/Either"
@@ -15,99 +20,107 @@ import {isLeft} from "fp-ts/Either"
 export class WorkflowActionWebhookProcessor {
   constructor(
     private readonly taskService: TaskService,
+    private readonly taskDispatch: DispatchService,
     private readonly webhookService: WebhookService,
     @Inject(WORKER_ID) private readonly workerId: string
   ) {}
 
-  @Process("workflow-action-webhook")
-  async handleWebhookAction(job: Job<WorkflowActionWebhookEvent>) {
+  @Process("task.ready")
+  async handleWebhookAction(job: Pick<Job<TaskReadyEvent>, "data">): Promise<void> {
     const event = job.data
     Logger.log(`Processing webhook action for task ${event.taskId}`)
+    if (event.type !== "task.ready" || event.taskKind !== "webhook")
+      throw new Error("Expected a webhook task.ready event")
 
-    const processResult = await pipe(
-      TE.Do,
-      TE.bindW("lockOwner", () => TE.right(this.workerId)),
-      TE.bindW("task", () => this.taskService.getWebhookTask(event.taskId)),
-      TE.bindW("lockResult", ({task, lockOwner}) =>
-        this.taskService.lockTask({type: WorkflowActionType.WEBHOOK, taskId: task.id}, lockOwner)
-      ),
-      TE.bindW("webhookResult", ({task}) =>
-        pipe(
-          this.webhookService.executeWebhook(task.url, task.method, task.headers, task.payload, {
-            idempotencyKey: task.id
-          }),
-          // Map all the left errors to right string with the magic meaning that the call failed,
-          // and no response was received. This is needed to keep proceeding on the right path.
-          // It might still possible to it on the left side with a more idiomatic fp-ts way,
-          // but I don't know how to do it. Will revise in the future if needed.
-          TE.orElseW(error => TE.right(error))
-        )
-      ),
-      TE.bindW("updatedResult", ({task, lockResult, webhookResult, lockOwner}) => {
-        const checks = {
-          occ: lockResult.occ,
-          lockOwner
-        }
-
-        if (typeof webhookResult === "string") {
-          // Webhook call failed without reaching the server, we don't have the response.
-          Logger.error(`Webhook execution failed: ${webhookResult}`)
-          return pipe(
-            WorkflowActionWebhookTaskFactory.toFailedWebhook(task, {
-              response: null,
-              errorReason: `Webhook execution failed: ${webhookResult}`
-            }),
-            TE.fromEither,
-            TE.chainW(data => this.taskService.updateWebhookTask(data, checks))
-          )
-        }
-
-        if (webhookResult.status >= 200 && webhookResult.status < 300) {
-          // Webhook succeeded - update task as COMPLETED
-          Logger.log(`Webhook execution completed successfully: ${webhookResult.status}`)
-          return pipe(
-            WorkflowActionWebhookTaskFactory.toCompletedWebhook(task, {
-              response: {
-                status: webhookResult.status,
-                body: webhookResult.body,
-                bodyStatus: webhookResult.bodyStatus
-              }
-            }),
-            TE.fromEither,
-            TE.chainW(data => this.taskService.updateWebhookTask(data, checks))
-          )
-        }
-
-        // Webhook returned error status code - update task as ERROR
-        Logger.log(`Webhook execution completed with error: ${webhookResult.status}`)
-        return pipe(
-          WorkflowActionWebhookTaskFactory.toFailedWebhook(task, {
-            response: {
-              status: webhookResult.status,
-              body: webhookResult.body,
-              bodyStatus: webhookResult.bodyStatus
-            },
-            errorReason: `Webhook returned error status: ${webhookResult.status}`
-          }),
-          TE.fromEither,
-          TE.chainW(data => this.taskService.updateWebhookTask(data, checks))
-        )
-      }),
-      TE.chainW(({task, updatedResult}) => {
-        Logger.log(`Releasing lock for task ${task.id}`)
-        const checks = {
-          occ: updatedResult.occ,
-          lockOwner: this.workerId
-        }
-
-        return this.taskService.releaseLock({type: WorkflowActionType.WEBHOOK, taskId: task.id}, checks)
-      })
+    const context = {organizationId: event.organizationId}
+    const processResult = await this.taskService.withDeliveryPermit(
+      context,
+      event.taskId,
+      event.taskKind,
+      this.workerId,
+      (claim, validateOwnership) => this.processDispatch(event, claim, validateOwnership)
     )()
-
+    // Bull retries rejected jobs; service failures stay in the Left until this boundary.
     if (isLeft(processResult)) {
       Logger.error(`Task processing failed: ${JSON.stringify(processResult.left)}`)
-      throw new Error(`Starting webhook task failed: ${JSON.stringify(processResult.left)}`)
+      throw new Error(String(processResult.left))
     }
+
     Logger.log(`Task processing completed successfully for task ${event.taskId}`)
+  }
+
+  private processDispatch(
+    event: TaskReadyEvent,
+    claim: DispatchClaim,
+    validateOwnership: TE.TaskEither<WorkError, void>
+  ): TE.TaskEither<WorkError | TaskGetErrorWebhookTask | HttpError, void> {
+    return pipe(
+      this.loadTask(event, claim),
+      TE.chainW(task =>
+        pipe(
+          this.taskService.startDispatchExecution({organizationId: event.organizationId}, claim.attemptId, claim.lease),
+          TE.chainW(() => validateOwnership),
+          TE.chainW(() => this.executeWebhook(event, claim, task))
+        )
+      )
+    )
+  }
+
+  private loadTask(
+    event: TaskReadyEvent,
+    claim: DispatchClaim
+  ): TE.TaskEither<WorkError | TaskGetErrorWebhookTask, DecoratedWorkflowActionWebhookTask<{occ: true}>> {
+    return pipe(
+      this.taskService.getWebhookTask({organizationId: event.organizationId}, event.taskId),
+      TE.tapError(error => this.completeDispatch(event, claim, "failed", {type: "task_load_failed", error}))
+    )
+  }
+
+  private executeWebhook(
+    event: TaskReadyEvent,
+    claim: DispatchClaim,
+    task: DecoratedWorkflowActionWebhookTask<{occ: true}>
+  ): TE.TaskEither<WorkError | HttpError, void> {
+    return pipe(
+      this.webhookService.executeWebhook(task.url, task.method, task.headers, task.payload, {
+        idempotencyKey: event.taskId
+      }),
+      TE.orElseW(error => TE.right(error)),
+      TE.chainW(webhookResult => {
+        if (typeof webhookResult === "string")
+          return pipe(
+            this.completeDispatch(event, claim, "unknown", {type: "delivery_error", error: webhookResult}),
+            TE.chainW(() => TE.left(webhookResult))
+          )
+
+        return pipe(
+          this.completeDispatch(
+            event,
+            claim,
+            webhookResult.status >= 200 && webhookResult.status < 300 ? "succeeded" : "failed",
+            {
+              type: "http_response",
+              statusCode: webhookResult.status
+            }
+          ),
+          TE.map(() => Logger.log(`Webhook task ${event.taskId} dispatched`))
+        )
+      })
+    )
+  }
+
+  private completeDispatch(
+    event: TaskReadyEvent,
+    claim: DispatchClaim,
+    state: DispatchCompletion["state"],
+    outcome: DispatchOutcome
+  ): TE.TaskEither<WorkError, void> {
+    return this.taskDispatch.complete(
+      {organizationId: event.organizationId},
+      claim.attemptId,
+      claim.lease,
+      {state, outcome},
+      event.eventId
+    )
   }
 }

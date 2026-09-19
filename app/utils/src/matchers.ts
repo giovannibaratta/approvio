@@ -1,6 +1,7 @@
 import {ErrorPayload} from "@controllers/error"
 
-import {Either, isLeft, isRight} from "fp-ts/Either"
+import {isLeft, isRight} from "fp-ts/Either"
+import {isEither} from "./either"
 
 import {format} from "pretty-format"
 
@@ -37,22 +38,6 @@ declare global {
 }
 
 export {}
-
-function isEither(received: unknown): received is Either<unknown, unknown> {
-  const has_tag =
-    typeof received === "object" &&
-    received !== null &&
-    "_tag" in received &&
-    typeof received._tag === "string" &&
-    (received._tag === "Left" || received._tag === "Right")
-
-  if (!has_tag) return false
-
-  if (received._tag === "Left" && "left" in received) return true
-  if (received._tag === "Right" && "right" in received) return true
-
-  return false
-}
 
 export function toBeLeft(received: unknown): jest.CustomMatcherResult {
   if (!isEither(received))

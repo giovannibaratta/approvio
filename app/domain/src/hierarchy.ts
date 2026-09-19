@@ -1,3 +1,5 @@
+import {OrganizationId} from "./shared"
+
 /**
  * A union of all valid resource types in the Approvio system.
  *
@@ -22,7 +24,9 @@ export function isNodeType(val: string): val is NodeType {
  *
  * This is CRITICAL for `Extract<Node, ...>` and other distributive operations to work.
  */
-export type Node<T extends NodeType = NodeType> = T extends T ? {type: T; identifier: string} : never
+export type Node<T extends NodeType = NodeType> = T extends T
+  ? {type: T; identifier: T extends "Org" ? OrganizationId : string}
+  : never
 
 /**
  * The core definition of the Approvio resource hierarchy.

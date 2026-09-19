@@ -1,22 +1,38 @@
-import {OrgRole, PlanTier, UsageEntity, UsageMetric, UserFactory} from "@domain"
-import {DatabaseClient, RedisClient} from "@external"
+import {randomOrgId, toOrganizationId} from "@test/organization-id"
+import {ALL_METERED_METRICS, OrgRole, UsageEntity, UsageMetric} from "@domain"
+import {RedisClient} from "@external"
 import {ConfigProvider} from "@external/config"
 import {ConfigModule} from "@external/config.module"
 import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient} from "@prisma/client"
-import {DEFAULT_ORG_ID} from "@services"
 import {ServiceModule} from "@services/service.module"
+import {QueueService} from "@services/queue"
 import {
   AdmitAndReserveParams,
+  QUOTA_ADMISSION_CLIENT_TOKEN,
+  QuotaAdmissionClient,
   CancelReservationParams,
   SettleUsageParams,
-  UsageMeteringService
+  UsageMeteringService,
+  UsageEventRepository,
+  USAGE_EVENT_REPOSITORY_TOKEN
 } from "@services/usage-metering"
-import {cleanDatabase, cleanRedisByPrefix, prepareDatabase, prepareRedisPrefix} from "@test/database"
+import {
+  createFixturePrismaClient,
+  cleanDatabase,
+  cleanRedisByPrefix,
+  prepareDatabase,
+  prepareRedisPrefix
+} from "@test/database"
 import {MockConfigProvider} from "@test/mock-data"
+import {pipe} from "fp-ts/function"
+import * as TE from "fp-ts/TaskEither"
+import * as E from "fp-ts/Either"
+import {USAGE_OPERATION_REPOSITORY_TOKEN, UsageOperationRepository} from "@services/durable-work/interfaces"
 import {unwrapRight} from "@utils/either"
 import "@utils/matchers"
 import {v7 as uuidv7} from "uuid"
+import {createTestUser} from "@test/user"
 
 describe("UsageMeteringService Integration Tests", () => {
   let module: TestingModule
@@ -26,27 +42,31 @@ describe("UsageMeteringService Integration Tests", () => {
   let redisPrefix: string
   let isolatedDb: string
 
-  const orgId = DEFAULT_ORG_ID
+  const orgId = randomOrgId()
   const actor = {
     type: "user" as const,
-    id: uuidv7()
+    id: uuidv7(),
+    displayName: "Usage Test User"
   }
   const entity: UsageEntity = {
     type: "Workflow",
     id: uuidv7()
   }
   const period = "2026-08"
+  const operationId = uuidv7()
 
   const adminUser = unwrapRight(
-    UserFactory.newUser({
-      email: "admin@approvio.test",
+    createTestUser({
+      organizationId: orgId,
+      accountId: uuidv7(),
       displayName: "Admin",
       orgRole: OrgRole.ADMIN
     })
   )
   const memberUser = unwrapRight(
-    UserFactory.newUser({
-      email: "member@approvio.test",
+    createTestUser({
+      organizationId: orgId,
+      accountId: uuidv7(),
       displayName: "Member",
       orgRole: OrgRole.MEMBER
     })

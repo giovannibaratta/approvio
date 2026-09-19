@@ -91,20 +91,20 @@ User "alice@company.com" can vote on a workflow if:
 
 ### Resource Permissions
 
-| Resource | Permission | Description |
-| :--- | :--- | :--- |
-| **Space** | `read` | View space information |
-| **Space** | `manage` | Modify and delete spaces |
-| **Template** | `read` | View template details |
-| **Template** | `write` | Modify template definitions |
-| **Template** | `instantiate` | Create workflow instances |
-| **Template** | `vote` | Vote on workflows from the template |
-| **Workflow** | `workflow_read` | View workflow details |
-| **Workflow** | `workflow_list` | List workflows |
-| **Workflow** | `workflow_cancel` | Cancel workflows |
-| **Audit** | `read` | View system-wide audit logs |
+| Resource         | Permission          | Description                                                                             |
+| :--------------- | :------------------ | :-------------------------------------------------------------------------------------- |
+| **Space**        | `read`              | View space information                                                                  |
+| **Space**        | `manage`            | Modify and delete spaces                                                                |
+| **Template**     | `read`              | View template details                                                                   |
+| **Template**     | `write`             | Modify template definitions                                                             |
+| **Template**     | `instantiate`       | Create workflow instances                                                               |
+| **Template**     | `vote`              | Vote on workflows from the template                                                     |
+| **Workflow**     | `workflow_read`     | View workflow details                                                                   |
+| **Workflow**     | `workflow_list`     | List workflows                                                                          |
+| **Workflow**     | `workflow_cancel`   | Cancel workflows                                                                        |
+| **Audit**        | `read`              | View system-wide audit logs                                                             |
 | **Organization** | `entitlements_read` | Inspect active plan tier, feature flags, and resolved quota limits (Admins and Members) |
-| **Organization** | `usage_read` | Inspect monthly metered consumption, token usage, and credit balances (Org Admins only) |
+| **Organization** | `usage_read`        | Inspect monthly metered consumption, token usage, and credit balances (Org Admins only) |
 
 ## Security Considerations
 

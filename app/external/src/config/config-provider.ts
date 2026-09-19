@@ -5,6 +5,7 @@ import * as net from "net"
 import * as ipaddr from "ipaddr.js"
 import {
   ConfigProviderInterface,
+  DatabaseConfig,
   DEFAULT_RATE_LIMIT_DURATION_IN_SECONDS,
   DEFAULT_RATE_LIMIT_ENTITY_POINTS,
   EmailProviderConfig,
@@ -17,11 +18,11 @@ import {
   EmailRetryConfig,
   DatabaseRetryConfig,
   KmsConfig,
-  LeverConfig
+  LeverConfig,
+  DispatchConfig
 } from "./interfaces"
 import {isOidcProvider, isKmsProviderType} from "./types"
 import {isEmail, isNonEmptyArray} from "@utils"
-import {PlanTier} from "@domain"
 import {mapToUnleashFeatures, ApprovioLeverBootstrap} from "./lever-bootstrap.utils"
 
 const IS_PRIVILEGE_MODE_DEFAULT = true
@@ -37,44 +38,50 @@ const HOSTNAME_REGEX = /^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[
 @Injectable()
 export class ConfigProvider implements ConfigProviderInterface {
   readonly isPrivilegeMode: boolean
-  readonly dbConnectionUrl: string
+  readonly databaseConfig: DatabaseConfig
   readonly emailProviderConfig: Option<EmailProviderConfig>
   readonly oidcProviders: Map<string, OidcProviderConfig>
   readonly jwtConfig: JwtConfig
+  readonly dispatchConfig: DispatchConfig
   readonly redisConfig: RedisConfig
   readonly rateLimitConfig: RateLimitConfig
   readonly webhookRetryConfig: WebhookRetryConfig
   readonly emailRetryConfig: EmailRetryConfig
-  readonly databaseRetryConfig: DatabaseRetryConfig
   readonly frontendUrl: string
   readonly cookieSecure: boolean
   readonly kmsConfig: KmsConfig
   readonly ssrfProtectionConfig: SsrfProtectionConfig
   readonly leverConfig: LeverConfig
   readonly deploymentEdition: "self_hosted" | "saas_cloud"
-  readonly planTier: PlanTier
   readonly healthCacheTtlMs?: number
 
   constructor() {
     this.isPrivilegeMode = this.validatePrivilegeMode()
-    this.dbConnectionUrl = this.validateConnectionUrl()
+    const tenantConnectionUrl = this.validateConnectionUrl("TENANT_DATABASE_URL")
+    const platformConnectionUrl = this.validateConnectionUrl("PLATFORM_DATABASE_URL")
     this.emailProviderConfig = ConfigProvider.validateEmailProviderConfig()
     this.oidcProviders = this.validateOidcProviderConfig()
     this.jwtConfig = this.validateJwtConfig()
     // redisConfig must be initialized BEFORE rateLimitConfig because the latter
     // falls back to the main redisConfig if no specific rate limit connection is provided.
     this.redisConfig = this.validateRedisConfig()
+    this.dispatchConfig = ConfigProvider.validateDispatchConfig()
     this.rateLimitConfig = this.validateRateLimitConfig()
     this.webhookRetryConfig = this.validateWebhookRetryConfig()
     this.emailRetryConfig = this.validateEmailRetryConfig()
-    this.databaseRetryConfig = this.validateDatabaseRetryConfig()
+    const databaseRetry = this.validateDatabaseRetryConfig()
+    this.databaseConfig = {
+      tenantConnectionUrl,
+      platformConnectionUrl,
+      poolSize: this.validateDatabasePoolSize(),
+      retry: databaseRetry
+    }
     this.frontendUrl = this.validateFrontendUrl()
     this.cookieSecure = this.validateCookieSecure()
     this.kmsConfig = this.validateKmsConfig()
     this.ssrfProtectionConfig = this.validateSsrfProtectionConfig()
     this.leverConfig = this.validateLeverConfig()
     this.deploymentEdition = this.validateDeploymentEdition()
-    this.planTier = this.validatePlanTier()
     this.healthCacheTtlMs = this.validateHealthCacheTtlMs()
   }
 
@@ -90,15 +97,6 @@ export class ConfigProvider implements ConfigProviderInterface {
     return raw
   }
 
-  private validatePlanTier(): PlanTier {
-    // TODO(long-term): [multi-org] Plan tier will be stored in and resolved from the database per organization
-    // once multi-org tenant management is implemented. For now, self-hosted instances receive
-    // SELF_HOSTED_UNLIMITED while saas_cloud instances default to FREE tier.
-    if (this.deploymentEdition === "self_hosted") return "SELF_HOSTED_UNLIMITED"
-
-    return "FREE"
-  }
-
   private validateHealthCacheTtlMs(): number {
     const raw = process.env.HEALTH_CACHE_TTL_MS
 
@@ -108,6 +106,17 @@ export class ConfigProvider implements ConfigProviderInterface {
     }
 
     return 1000
+  }
+
+  static validateDispatchConfig(): DispatchConfig {
+    const readPositiveInteger = (name: string, fallback: number): number => {
+      const value = Number(process.env[name] ?? fallback)
+      if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${name} must be a positive safe integer`)
+      return value
+    }
+    const concurrencyPerOrganization = readPositiveInteger("DISPATCH_CONCURRENCY_PER_ORGANIZATION", 4)
+    const leaseDurationMs = readPositiveInteger("DISPATCH_LEASE_DURATION_MS", 120000)
+    return {concurrencyPerOrganization, leaseDurationMs}
   }
 
   private validateSsrfProtectionConfig(): SsrfProtectionConfig {
@@ -165,10 +174,24 @@ export class ConfigProvider implements ConfigProviderInterface {
     return IS_PRIVILEGE_MODE_DEFAULT
   }
 
-  private validateConnectionUrl(): string {
-    const connectionUrl = process.env.DATABASE_URL
+  private validateConnectionUrl(name: "TENANT_DATABASE_URL" | "PLATFORM_DATABASE_URL"): string {
+    const connectionUrl = process.env[name]
 
-    if (connectionUrl === undefined) throw new Error("DATABASE_URL is not defined")
+    if (connectionUrl === undefined) throw new Error(`${name} is not defined`)
+
+    return this.validatePostgresConnectionUrl(name, connectionUrl)
+  }
+
+  private validatePostgresConnectionUrl(name: string, connectionUrl: string): string {
+    let parsed: URL
+    try {
+      parsed = new URL(connectionUrl)
+    } catch {
+      throw new Error(`${name} must be a valid PostgreSQL connection URL`)
+    }
+
+    if (parsed.protocol !== "postgres:" && parsed.protocol !== "postgresql:")
+      throw new Error(`${name} must use the postgres or postgresql protocol`)
 
     return connectionUrl
   }
@@ -644,6 +667,16 @@ export class ConfigProvider implements ConfigProviderInterface {
       backoffFactor: backoffFactorRaw ? parseFloat(backoffFactorRaw) : 2,
       maxDelayMs: maxDelayMsRaw ? parseInt(maxDelayMsRaw, 10) : 10000
     }
+  }
+
+  private validateDatabasePoolSize(): number | undefined {
+    const raw = process.env.DATABASE_POOL_SIZE
+    if (raw === undefined) return undefined
+
+    const poolSize = Number(raw)
+    if (!Number.isInteger(poolSize) || poolSize <= 0) throw new Error("DATABASE_POOL_SIZE must be a positive integer")
+
+    return poolSize
   }
 
   private validateLeverConfig(): LeverConfig {

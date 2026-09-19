@@ -1,4 +1,3 @@
-import {PlanTier} from "@domain"
 import {KmsProviderType} from "./types"
 import {Option} from "fp-ts/Option"
 import {OidcProvider} from "./types"
@@ -93,6 +92,13 @@ export interface DatabaseRetryConfig {
   maxDelayMs: number
 }
 
+export interface DatabaseConfig {
+  tenantConnectionUrl: string
+  platformConnectionUrl: string
+  poolSize?: number
+  retry: DatabaseRetryConfig
+}
+
 export interface SsrfProtectionConfig {
   /**
    * Protection mode:
@@ -109,6 +115,12 @@ export interface SsrfProtectionConfig {
   allowedDestinations?: string[]
 }
 
+// TODO: We should add a basic description
+export interface DispatchConfig {
+  readonly concurrencyPerOrganization: number
+  readonly leaseDurationMs: number
+}
+
 export interface ConfigProviderInterface {
   /**
    * Indicates if the privilege mode (step-up authentication) is enabled.
@@ -116,15 +128,15 @@ export interface ConfigProviderInterface {
    * This can be disabled by setting the DISABLE_HIGH_PRIVILEGE_MODE environment variable to 'true'.
    */
   isPrivilegeMode: boolean
-  dbConnectionUrl: string
+  databaseConfig: DatabaseConfig
   emailProviderConfig: Option<EmailProviderConfig>
   oidcProviders: Map<string, OidcProviderConfig>
   jwtConfig: JwtConfig
   redisConfig: RedisConfig
+  dispatchConfig: DispatchConfig
   rateLimitConfig: RateLimitConfig
   webhookRetryConfig: WebhookRetryConfig
   emailRetryConfig: EmailRetryConfig
-  databaseRetryConfig: DatabaseRetryConfig
   /** URL of the frontend application. Used by the auth callback to redirect after login. */
   frontendUrl: string
   /** Whether to set the Secure flag on auth cookies. Set to false for local HTTP development. */
@@ -134,8 +146,6 @@ export interface ConfigProviderInterface {
   leverConfig: LeverConfig
   /** Deployment edition ('self_hosted' or 'saas_cloud'). */
   deploymentEdition: "self_hosted" | "saas_cloud"
-  /** Commercial plan tier ('FREE' or 'SELF_HOSTED_UNLIMITED'). */
-  planTier: PlanTier
   /** TTL for the health check result cache in milliseconds. */
   healthCacheTtlMs?: number
 }

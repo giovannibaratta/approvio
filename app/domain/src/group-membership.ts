@@ -1,3 +1,4 @@
+import {OrganizationId, isOrganizationId} from "./shared"
 import {
   Group,
   User,
@@ -6,7 +7,8 @@ import {
   getMembershipEntityId,
   getMembershipEntityType,
   getNormalizedId,
-  EntityReference
+  EntityReference,
+  getMembershipEntityOrganizationId
 } from "@domain"
 import {isUUIDv7, PrefixUnion} from "@utils"
 import * as A from "fp-ts/Array"
@@ -26,7 +28,8 @@ export type MembershipValidationErrorWithGroupRef = PrefixUnion<
 type EntityValidationReferenceError = "invalid_entity_uuid"
 type GroupValidationReferenceError = "invalid_group_uuid"
 
-type UnprefixedMembershipValidationError = EntityValidationReferenceError | "inconsistent_dates"
+type UnprefixedMembershipValidationError =
+  EntityValidationReferenceError | "inconsistent_dates" | "organization_mismatch" | "invalid_organization_id"
 type UnprefixedMembershipValidationErrorWithGroupRef =
   UnprefixedMembershipValidationError | GroupValidationReferenceError
 
@@ -35,6 +38,7 @@ interface PrivateMembershipWithGroupRef extends PrivateMembership {
 }
 
 interface PrivateMembership {
+  organizationId: OrganizationId
   entity: MembershipEntity
   createdAt: Date
   updatedAt: Date
@@ -43,15 +47,17 @@ interface PrivateMembership {
   getEntityType(): MembershipEntity["type"]
 }
 
+type MembershipInput = Omit<PrivateMembership, "organizationId" | "getEntityId" | "getEntityType"> & {
+  readonly organizationId: string
+}
+
 function validateGroupReference(groupReference: string): Either<MembershipValidationErrorWithGroupRef, string> {
   if (!isUUIDv7(groupReference)) return left("membership_invalid_group_uuid")
   return right(groupReference)
 }
 
 export class MembershipFactory {
-  static validate(
-    data: Parameters<typeof MembershipFactory.semanticValidation>[0]
-  ): Either<MembershipValidationError, Membership> {
+  static validate(data: MembershipInput): Either<MembershipValidationError, Membership> {
     return MembershipFactory.semanticValidation(data)
   }
 
@@ -76,19 +82,23 @@ export class MembershipFactory {
   static newMembership(data: {entity: MembershipEntity}): Either<MembershipValidationError, Membership> {
     const now = new Date()
     return MembershipFactory.semanticValidation({
+      organizationId: getMembershipEntityOrganizationId(data.entity),
       entity: data.entity,
       createdAt: now,
       updatedAt: now
     })
   }
 
-  private static semanticValidation(
-    data: Omit<Membership, "getEntityId" | "getEntityType">
-  ): Either<MembershipValidationError, Membership> {
+  private static semanticValidation(data: MembershipInput): Either<MembershipValidationError, Membership> {
+    const organizationId = data.organizationId
+    if (!isOrganizationId(organizationId)) return left("membership_invalid_organization_id")
     if (data.createdAt > data.updatedAt) return left("membership_inconsistent_dates")
+    if (organizationId !== getMembershipEntityOrganizationId(data.entity))
+      return left("membership_organization_mismatch")
 
     return right({
       entity: data.entity,
+      organizationId,
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
       getEntityId: () => getMembershipEntityId(data.entity),
@@ -97,8 +107,8 @@ export class MembershipFactory {
   }
 }
 
-export type GroupManagerValidationError = PrefixUnion<"membership", "duplicated_membership">
-export type AddMembershipError = PrefixUnion<"membership", "entity_already_in_group">
+export type GroupManagerValidationError = PrefixUnion<"membership", "duplicated_membership" | "organization_mismatch">
+export type AddMembershipError = PrefixUnion<"membership", "entity_already_in_group" | "organization_mismatch">
 export type RemoveMembershipError = PrefixUnion<"membership", "not_found" | "no_admin">
 export type UpdateMembershipError = RemoveMembershipError
 
@@ -119,6 +129,7 @@ export class GroupManager {
   }
 
   addMembership(membershipToAdd: Membership): Either<AddMembershipError, GroupManager> {
+    if (membershipToAdd.organizationId !== this.group.organizationId) return left("membership_organization_mismatch")
     const normalizedId = getNormalizedId(membershipToAdd.entity)
     if (this.isEntityInMembership(normalizedId)) return left("membership_entity_already_in_group")
 
@@ -151,6 +162,7 @@ export class GroupManager {
     const entity = membershipToRemove.entity
     const groupScope: GroupScope = {
       type: "group",
+      organizationId: this.group.organizationId,
       groupId: this.group.id
     }
 
@@ -189,11 +201,13 @@ export class GroupManager {
   }
 
   private canAdministerGroup(requestor: User): boolean {
-    // Organization admins can administer any group
-    if (requestor.orgRole === OrgRole.ADMIN) return true
+    if (requestor.organizationId !== this.group.organizationId) return false
+    // Organization owners and admins can administer any group in their own organization.
+    if (requestor.orgRole === OrgRole.OWNER || requestor.orgRole === OrgRole.ADMIN) return true
 
     const groupScope: GroupScope = {
       type: "group",
+      organizationId: this.group.organizationId,
       groupId: this.group.id
     }
 
@@ -204,6 +218,8 @@ export class GroupManager {
     group: Group,
     memberships: ReadonlyArray<Membership>
   ): Either<GroupManagerValidationError, GroupManager> {
+    if (memberships.some(membership => membership.organizationId !== group.organizationId))
+      return left("membership_organization_mismatch")
     // Validate that an entity does not appear twice in the memberships using normalized IDs
     const uniqueEntities = new Set(memberships.map(m => getNormalizedId(m.entity)))
 

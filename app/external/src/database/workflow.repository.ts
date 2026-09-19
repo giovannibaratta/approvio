@@ -1,74 +1,56 @@
+import {fromPromise} from "./repository-operation"
+import {Injectable, Logger} from "@nestjs/common"
 import {
   DecoratedWorkflow,
+  TenantContext,
+  Versioned,
   Workflow,
   WorkflowDecoratorSelector,
+  WorkflowFactory,
+  WorkflowTemplate,
+  WorkflowTemplateFactory,
   WorkflowTemplateValidationError,
   WorkflowValidationError,
-  WORKFLOW_TERMINAL_STATUSES
+  WORKFLOW_TERMINAL_STATUSES,
+  WorkflowExpirationSchedule,
+  WorkflowExpirationScheduleFactory,
+  WorkflowExpirationScheduleValidationError
 } from "@domain"
-import {DatabaseClient} from "@external/database/database-client"
-import {mapWorkflowToDomain} from "@external/database/shared"
-import {chainNullableToLeft} from "@external/database/utils"
-import {Injectable, Logger} from "@nestjs/common"
-import {Prisma, Workflow as PrismaWorkflow, WorkflowTemplate as PrismaWorkflowTemplate} from "@prisma/client"
+import {TenantEncryptionService} from "@external/kms/context-bound-encryption.service"
 import {
   ConcurrentSafeWorkflowUpdateData,
   ConcurrentUnsafeWorkflowUpdateData,
   CreateWorkflowRepo,
   CreateWorkflowRepoError,
-  WorkflowGetError,
-  WorkflowRepository,
-  WorkflowUpdateError,
   ListWorkflowsRequestRepo,
   ListWorkflowsResponse,
-  UnknownError,
-  WorkflowGetParentTemplateError
+  WorkflowGetError,
+  WorkflowGetParentTemplateError,
+  WorkflowRepository,
+  WorkflowUpdateError
 } from "@services"
-import {TaskEither} from "fp-ts/TaskEither"
+import {WorkflowExpirationScheduleRepository} from "@services/workflow/interfaces"
+import {UnknownError} from "@services/error"
+import {CryptoError} from "@services/encryption/interfaces"
+import {Prisma, Workflow as PrismaWorkflow, WorkflowTemplate as PrismaWorkflowTemplate} from "@prisma/client"
 import * as E from "fp-ts/Either"
-import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
-import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
+import {pipe} from "fp-ts/function"
+import {WorkflowTenantClient} from "./tenant-database-clients"
 import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "./errors"
-import {DecorableEntity, isDecoratedWith} from "@utils"
-import {EncryptionService} from "../kms"
-import {decryptActions} from "./workflow-template.repository"
-import {EncryptionError} from "@services/error"
+import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
+import {chainNullableToLeft} from "./utils"
 
-interface Identifier {
-  type: "id" | "name"
-  identifier: string
-}
+type WorkflowWithTemplate = PrismaWorkflow & {readonly workflowTemplates: PrismaWorkflowTemplate}
+type WorkflowResult =
+  Versioned<Workflow> | (Versioned<Workflow> & {readonly workflowTemplate: Versioned<WorkflowTemplate>})
 
 @Injectable()
-export class WorkflowDbRepository implements WorkflowRepository {
+export class WorkflowDbRepository implements WorkflowRepository, WorkflowExpirationScheduleRepository {
   constructor(
-    private readonly dbClient: DatabaseClient,
-    private readonly encryptionService: EncryptionService
+    private readonly dbClient: WorkflowTenantClient,
+    private readonly encryptionService: TenantEncryptionService
   ) {}
-
-  private decryptWorkflow<T extends PrismaWorkflowDecoratorSelector>(
-    workflow: PrismaDecoratedWorkflow<T>
-  ): TE.TaskEither<EncryptionError, PrismaDecoratedWorkflow<T>> {
-    if (iPrismaDecoratedWorkflow(workflow, "workflowTemplates")) {
-      const template = workflow.workflowTemplates
-      return pipe(
-        decryptActions(template.actions, this.encryptionService),
-        TE.map(decryptedActions => {
-          const updatedTemplate = {
-            ...template,
-            actions: decryptedActions
-          }
-          return {
-            ...workflow,
-            workflowTemplates: updatedTemplate
-          }
-        })
-      )
-    }
-
-    return TE.right(workflow)
-  }
 
   /**
    * Creates a new workflow in the database.
@@ -77,12 +59,30 @@ export class WorkflowDbRepository implements WorkflowRepository {
    */
   createWorkflow(
     data: CreateWorkflowRepo
-  ): TaskEither<CreateWorkflowRepoError | WorkflowValidationError | WorkflowTemplateValidationError, Workflow> {
+  ): TE.TaskEither<CreateWorkflowRepoError | WorkflowValidationError | WorkflowTemplateValidationError, Workflow> {
+    return pipe(data, TE.right, TE.chainW(this.persistWorkflow()), TE.chainEitherKW(mapWorkflowToDomain))
+  }
+
+  getDueExpirationSchedule(
+    context: TenantContext,
+    dueBefore: Date,
+    scheduledBefore: Date
+  ): TE.TaskEither<UnknownError | WorkflowExpirationScheduleValidationError, WorkflowExpirationSchedule | undefined> {
     return pipe(
-      data,
-      TE.right,
-      TE.chainW(this.persistWorkflow()),
-      TE.chainEitherKW(result => mapWorkflowToDomain(result))
+      fromPromise(
+        () => this.dbClient.cx.getDueExpirationSchedule(context.organizationId, dueBefore, scheduledBefore),
+        error => this.mapUnknownError(error, "get due expiration schedule")
+      ),
+      TE.chainEitherKW(schedule =>
+        schedule
+          ? WorkflowExpirationScheduleFactory.validate({
+              organizationId: context.organizationId,
+              lastSweptAt: schedule.lastSweptAt ?? undefined
+            })
+          : E.right(undefined)
+      )
+    )
+  }
     )
   }
 
@@ -93,6 +93,7 @@ export class WorkflowDbRepository implements WorkflowRepository {
    * @returns A TaskEither with the workflow result or an error if not found.
    */
   getWorkflowById<T extends WorkflowDecoratorSelector>(
+    context: TenantContext,
     workflowId: string,
     includeRef?: T
   ): TaskEither<WorkflowGetError, DecoratedWorkflow<T>> {

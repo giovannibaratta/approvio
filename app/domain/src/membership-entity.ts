@@ -1,4 +1,5 @@
 import {User, Agent, EntityReference} from "@domain"
+import {OrganizationId} from "./shared"
 
 export type MembershipEntity = UserEntity | AgentEntity
 
@@ -31,6 +32,10 @@ export function getMembershipEntityId(entity: MembershipEntity): string {
 
 export function getMembershipEntityType(entity: MembershipEntity): MembershipEntity["type"] {
   return entity.type
+}
+
+export function getMembershipEntityOrganizationId(entity: MembershipEntity): OrganizationId {
+  return entity.type === "user" ? entity.user.organizationId : entity.agent.organizationId
 }
 
 /**

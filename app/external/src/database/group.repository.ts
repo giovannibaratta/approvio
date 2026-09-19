@@ -1,12 +1,17 @@
-import {Group, GroupWithEntitiesCount, ListGroupsFilter} from "@domain"
-import {
-  isPrismaForeignKeyConstraintError,
-  isPrismaRecordNotFoundError,
-  isPrismaUniqueConstraintError
-} from "@external/database/errors"
+import {fromPromise} from "./repository-operation"
+import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
+import * as RA from "fp-ts/ReadonlyArray"
+import {TaskEither} from "fp-ts/TaskEither"
 import {Injectable, Logger} from "@nestjs/common"
-import {Prisma, Group as PrismaGroup} from "@prisma/client"
-import {UnknownError} from "@services/error"
+import {
+  Group,
+  GroupFactory,
+  GroupWithEntitiesCount,
+  GroupValidationError,
+  ListGroupsFilter,
+  TenantContext,
+  Versioned
+} from "@domain"
 import {
   CreateGroupRepoError,
   CreateGroupWithMembershipAndUpdateUserRepo,
@@ -16,107 +21,90 @@ import {
   GroupRepository,
   ListGroupsRepo,
   ListGroupsRepoError,
-  ListGroupsResult
+  ListGroupsResult,
+  UnknownError
 } from "@services"
-import {Versioned} from "@domain"
+import {Group as PrismaGroup, Prisma} from "@prisma/client"
 import * as E from "fp-ts/Either"
-import {isLeft} from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
-import {TaskEither} from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
-import * as RA from "fp-ts/ReadonlyArray"
-import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
-import {DatabaseClient} from "./database-client"
-import {mapToDomainVersionedGroupWithEntities} from "./shared"
-import {persistExistingUserRaceConditionFree} from "./shared/user-operations"
-import {areAllRights, chainNullableToLeft} from "./utils"
-
-interface Identifier {
-  identifier: string
-  type: "id" | "name"
-}
-
-interface ListOptions {
-  take: number
-  skip: number
-  filter: ListGroupsFilter
-}
-
-export type PrismaGroupWithCount = PrismaGroup & {
-  _count: {
-    groupMemberships: number
-    agentGroupMemberships: number
-  }
-}
+import {GroupTenantClient} from "./tenant-database-clients"
+import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError, isPrismaForeignKeyConstraintError} from "./errors"
+import {persistExistingUserRaceConditionFree} from "./shared"
+import {chainNullableToLeft} from "./utils"
 
 @Injectable()
 export class GroupDbRepository implements GroupRepository {
-  constructor(private readonly dbClient: DatabaseClient) {}
+  constructor(private readonly dbClient: GroupTenantClient) {}
 
   createGroupWithMembershipAndUpdateUser(
+    context: TenantContext,
     data: CreateGroupWithMembershipAndUpdateUserRepo
   ): TaskEither<CreateGroupRepoError, Group> {
     return pipe(
       data,
       TE.right,
-      TE.chainW(this.persistNewGroupWithMembershipAndUpdateUserTask()),
+      TE.chainW(this.persistNewGroupWithMembershipAndUpdateUserTask(context)),
       TE.chainEitherKW(mapToDomainVersionedGroupWithEntities)
     )
   }
 
-  private persistNewGroupWithMembershipAndUpdateUserTask(): (
-    data: CreateGroupWithMembershipAndUpdateUserRepo
-  ) => TaskEither<CreateGroupRepoError, PrismaGroupWithCount> {
+  private persistNewGroupWithMembershipAndUpdateUserTask(
+    context: TenantContext
+  ): (data: CreateGroupWithMembershipAndUpdateUserRepo) => TaskEither<CreateGroupRepoError, PrismaGroupWithCount> {
     // Wrap in a lambda to preserve the "this" context
     return data =>
-      TE.tryCatchK(
-        () =>
-          this.dbClient.transactional(async tx => {
-            // 1. Create the group
-            const createdGroup = await tx.group.create({
-              data: {
-                createdAt: data.group.createdAt,
-                id: data.group.id,
-                name: data.group.name,
-                description: data.group.description,
-                updatedAt: data.group.updatedAt,
-                occ: POSTGRES_BIGINT_LOWER_BOUND
-              },
-              include: {
-                // Include count for mapping later
-                _count: {
-                  select: {
-                    groupMemberships: true,
-                    agentGroupMemberships: true
-                  }
+      fromPromise(
+        async () => {
+          // 1. Create the group
+          const createdGroup = await this.dbClient.cx.group.create({
+            data: {
+              organizationId: data.group.organizationId,
+              createdAt: data.group.createdAt,
+              id: data.group.id,
+              name: data.group.name,
+              description: data.group.description,
+              updatedAt: data.group.updatedAt,
+              occ: POSTGRES_BIGINT_LOWER_BOUND
+            },
+            include: {
+              // Include count for mapping later
+              _count: {
+                select: {
+                  groupMemberships: true,
+                  agentGroupMemberships: true
                 }
               }
-            })
+            }
+          })
 
-            // 2. Add membership using provided data
-            await tx.groupMembership.create({
-              data: {
-                groupId: createdGroup.id,
-                userId: data.membership.getEntityId(),
-                createdAt: data.membership.createdAt,
-                updatedAt: data.membership.updatedAt
-              }
-            })
+          // 2. Add membership using provided data
+          await this.dbClient.cx.groupMembership.create({
+            data: {
+              organizationId: context.organizationId,
+              groupId: createdGroup.id,
+              userId: data.membership.getEntityId(),
+              createdAt: data.membership.createdAt,
+              updatedAt: data.membership.updatedAt
+            }
+          })
 
-            // 3. Update user with all data using shared function
-            await persistExistingUserRaceConditionFree(tx, {
-              userId: data.user.id,
-              userOcc: data.userOcc,
-              displayName: data.user.displayName,
-              email: data.user.email,
-              roles: data.user.roles,
-              createdAt: data.user.createdAt
-            })
+          // 3. Update user with all data using shared function
+          await persistExistingUserRaceConditionFree(this.dbClient.cx, {
+            organizationId: data.user.organizationId,
+            userId: data.user.id,
+            userOcc: data.userOcc,
+            displayName: data.user.displayName,
+            roles: data.user.roles,
+            createdAt: data.user.createdAt,
+            updatedAt: data.user.updatedAt
+          })
 
-            return createdGroup
-          }),
+          return createdGroup
+        },
         error => {
-          if (isPrismaUniqueConstraintError(error, ["name"])) return "group_already_exists"
+          if (isPrismaUniqueConstraintError(error, ["organization_id", "name"], "groups_organization_name_unique"))
+            return "group_already_exists"
           if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_user")) return "user_not_found"
 
           // Handle OCC conflicts - P2025 means record not found (likely due to OCC mismatch)
@@ -129,32 +117,38 @@ export class GroupDbRepository implements GroupRepository {
           Logger.error("Error while creating group. Unknown error", error)
           return "unknown_error"
         }
-      )()
+      )
   }
 
-  getGroupById(data: GetGroupByIdRepo): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
+  getGroupById(
+    context: TenantContext,
+    data: GetGroupByIdRepo
+  ): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
     const identifier: Identifier = {type: "id", identifier: data.groupId}
-    return this.getGroup({identifier})
+    return this.getGroup(context, {identifier})
   }
 
-  getGroupByName(data: GetGroupByNameRepo): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
+  getGroupByName(
+    context: TenantContext,
+    data: GetGroupByNameRepo
+  ): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
     const identifier: Identifier = {type: "name", identifier: data.groupName}
-    return this.getGroup({identifier})
+    return this.getGroup(context, {identifier})
   }
 
-  getGroupIdByName(groupName: string): TaskEither<GetGroupRepoError, string> {
+  getGroupIdByName(context: TenantContext, groupName: string): TaskEither<GetGroupRepoError, string> {
     return pipe(
-      TE.tryCatchK(
+      fromPromise(
         () =>
           this.dbClient.cx.group.findUnique({
-            where: {name: groupName},
+            where: {organizationId_name: {organizationId: context.organizationId, name: groupName}},
             select: {id: true}
           }),
         error => {
           Logger.error("Error while retrieving group ID by name. Unknown error", error)
           return "unknown_error" as const
         }
-      )(),
+      ),
       TE.chainW(result => {
         if (result === null) return TE.left("group_not_found" as const)
         return TE.right(result.id)
@@ -162,12 +156,16 @@ export class GroupDbRepository implements GroupRepository {
     )
   }
 
-  getGroupsByIds(groupIds: string[]): TaskEither<"unknown_error", {id: string; name: string}[]> {
+  getGroupsByIds(
+    context: TenantContext,
+    groupIds: string[]
+  ): TaskEither<"unknown_error", {id: string; name: string}[]> {
     return pipe(
-      TE.tryCatch(
+      fromPromise(
         () =>
           this.dbClient.cx.group.findMany({
             where: {
+              organizationId: context.organizationId,
               id: {
                 in: groupIds
               }
@@ -186,25 +184,29 @@ export class GroupDbRepository implements GroupRepository {
     )
   }
 
-  getGroupsByUserId(userId: string): TaskEither<GetGroupRepoError, Group[]> {
+  getGroupsByUserId(context: TenantContext, userId: string): TaskEither<GetGroupRepoError, Group[]> {
     return pipe(
       userId,
       TE.right,
-      TE.chainW(this.getGroupsByUserIdTask()),
+      TE.chainW(this.getGroupsByUserIdTask(context)),
       TE.chainEitherKW(groups =>
         pipe(groups, RA.traverse(E.Applicative)(mapToDomainVersionedGroupWithEntities), E.map(RA.toArray))
       )
     )
   }
 
-  private getGroupsByUserIdTask(): (userId: string) => TaskEither<GetGroupRepoError, PrismaGroupWithCount[]> {
+  private getGroupsByUserIdTask(
+    context: TenantContext
+  ): (userId: string) => TaskEither<GetGroupRepoError, PrismaGroupWithCount[]> {
     return userId =>
-      TE.tryCatchK(
+      fromPromise(
         () =>
           this.dbClient.cx.group.findMany({
             where: {
+              organizationId: context.organizationId,
               groupMemberships: {
                 some: {
+                  organizationId: context.organizationId,
                   userId
                 }
               }
@@ -222,23 +224,23 @@ export class GroupDbRepository implements GroupRepository {
           Logger.error("Error while retrieving user groups. Unknown error", error)
           return "unknown_error" as const
         }
-      )()
+      )
   }
 
-  getGroupsByAgentId(agentId: string): TaskEither<GetGroupRepoError, Group[]> {
+  getGroupsByAgentId(context: TenantContext, agentId: string): TaskEither<GetGroupRepoError, Group[]> {
     return pipe(
       agentId,
       TE.right,
-      TE.chainW(this.getGroupsByAgentIdTask()),
+      TE.chainW(this.getGroupsByAgentIdTask(context)),
       TE.chainEitherKW(groups =>
         pipe(groups, RA.traverse(E.Applicative)(mapToDomainVersionedGroupWithEntities), E.map(RA.toArray))
       )
     )
   }
 
-  countGroups(): TaskEither<UnknownError, number> {
-    return TE.tryCatch(
-      () => this.dbClient.cx.group.count(),
+  countGroups(context: TenantContext): TaskEither<UnknownError, number> {
+    return fromPromise(
+      () => this.dbClient.cx.group.count({where: {organizationId: context.organizationId}}),
       error => {
         Logger.error("Error counting groups", error)
         return "unknown_error"
@@ -246,14 +248,18 @@ export class GroupDbRepository implements GroupRepository {
     )
   }
 
-  private getGroupsByAgentIdTask(): (agentId: string) => TaskEither<GetGroupRepoError, PrismaGroupWithCount[]> {
+  private getGroupsByAgentIdTask(
+    context: TenantContext
+  ): (agentId: string) => TaskEither<GetGroupRepoError, PrismaGroupWithCount[]> {
     return agentId =>
-      TE.tryCatchK(
+      fromPromise(
         () =>
           this.dbClient.cx.group.findMany({
             where: {
+              organizationId: context.organizationId,
               agentGroupMemberships: {
                 some: {
+                  organizationId: context.organizationId,
                   agentId
                 }
               }
@@ -271,20 +277,23 @@ export class GroupDbRepository implements GroupRepository {
           Logger.error("Error while retrieving agent groups. Unknown error", error)
           return "unknown_error" as const
         }
-      )()
+      )
   }
 
-  private getGroup(request: GetObjectTaskRequest): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
+  private getGroup(
+    context: TenantContext,
+    request: GetObjectTaskRequest
+  ): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
     return pipe(
       request,
       TE.right,
-      TE.chainW(this.getObjectTask()),
+      TE.chainW(this.getObjectTask(context)),
       chainNullableToLeft("group_not_found" as const),
       TE.chainEitherKW(mapToDomainVersionedGroupWithEntities)
     )
   }
 
-  listGroups(data: ListGroupsRepo): TaskEither<ListGroupsRepoError, ListGroupsResult> {
+  listGroups(context: TenantContext, data: ListGroupsRepo): TaskEither<ListGroupsRepoError, ListGroupsResult> {
     const {page, limit, filter} = data
 
     const skip = (page - 1) * limit
@@ -299,43 +308,35 @@ export class GroupDbRepository implements GroupRepository {
     return pipe(
       options,
       TE.right,
-      TE.chainW(this.getObjectsTask()),
-      TE.chainEitherKW(([groups, total]) => {
-        const domainGroups = groups.map(group => mapToDomainVersionedGroupWithEntities(group))
-
-        if (areAllRights(domainGroups)) {
-          const mappedToDomain = {
-            groups: domainGroups.map(e => e.right),
-            total,
-            page,
-            limit
-          }
-          return E.right(mappedToDomain)
-        }
-
-        const lefts = domainGroups.filter(e => isLeft(e))
-        const firstLeft = lefts[0]
-        if (firstLeft === undefined) throw new Error("Unexpected error: No rights and no lefts")
-        return firstLeft
-      })
+      TE.chainW(this.getObjectsTask(context)),
+      TE.chainEitherKW(([groups, total]) =>
+        pipe(
+          groups,
+          RA.traverse(E.Applicative)(mapToDomainVersionedGroupWithEntities),
+          E.map(groups => ({groups: RA.toArray(groups), total, page, limit}))
+        )
+      )
     )
   }
 
-  private buildWhereClauseGetObjectTask(request: GetObjectTaskRequest): Prisma.GroupWhereUniqueInput {
+  private buildWhereClauseGetObjectTask(
+    context: TenantContext,
+    request: GetObjectTaskRequest
+  ): Prisma.GroupWhereUniqueInput {
     return request.identifier.type === "id"
-      ? {id: request.identifier.identifier}
-      : {name: request.identifier.identifier}
+      ? {organizationId_id: {organizationId: context.organizationId, id: request.identifier.identifier}}
+      : {organizationId_name: {organizationId: context.organizationId, name: request.identifier.identifier}}
   }
 
-  private getObjectTask(): (
-    request: GetObjectTaskRequest
-  ) => TaskEither<GetGroupRepoError, PrismaGroupWithCount | null> {
+  private getObjectTask(
+    context: TenantContext
+  ): (request: GetObjectTaskRequest) => TaskEither<GetGroupRepoError, PrismaGroupWithCount | null> {
     // Wrap in a lambda to preserve the "this" context
     return request =>
-      TE.tryCatchK(
+      fromPromise(
         () =>
           this.dbClient.cx.group.findUnique({
-            where: this.buildWhereClauseGetObjectTask(request),
+            where: this.buildWhereClauseGetObjectTask(context, request),
             include: {
               _count: {
                 select: {
@@ -349,17 +350,17 @@ export class GroupDbRepository implements GroupRepository {
           Logger.error("Error while retrieving group. Unknown error", error)
           return "unknown_error" as const
         }
-      )()
+      )
   }
 
-  private getObjectsTask(): (
-    options: ListOptions
-  ) => TaskEither<ListGroupsRepoError, [PrismaGroupWithCount[], number]> {
+  private getObjectsTask(
+    context: TenantContext
+  ): (options: ListOptions) => TaskEither<ListGroupsRepoError, [PrismaGroupWithCount[], number]> {
     // Wrap in a lambda to preserve the "this" context
     return options =>
-      TE.tryCatchK(
-        async () => {
-          const whereClause: Prisma.GroupWhereInput = this.buildWhereCloseForListingGroups(options.filter)
+      fromPromise(
+        async (): Promise<[PrismaGroupWithCount[], number]> => {
+          const whereClause: Prisma.GroupWhereInput = this.buildWhereCloseForListingGroups(context, options.filter)
 
           const data = this.dbClient.cx.group.findMany({
             take: options.take,
@@ -380,25 +381,20 @@ export class GroupDbRepository implements GroupRepository {
           const stats = this.dbClient.cx.group.count({where: whereClause})
 
           const [resolvedData, resolvedStats] = await Promise.all([data, stats])
-          return [
-            resolvedData.map((item: PrismaGroupWithCount) => ({
-              ...item,
-              occ: BigInt(item.occ)
-            })),
-            resolvedStats
-          ] as [PrismaGroupWithCount[], number]
+          return [resolvedData, resolvedStats]
         },
         error => {
           Logger.error("Error while retrieving groups. Unknown error", error)
           return "unknown_error" as const
         }
-      )()
+      )
   }
 
-  private buildWhereCloseForListingGroups(filter: ListGroupsFilter): Prisma.GroupWhereInput {
-    const baseWhere: Prisma.GroupWhereInput = filter.search
-      ? {name: {contains: filter.search, mode: "insensitive"}}
-      : {}
+  private buildWhereCloseForListingGroups(context: TenantContext, filter: ListGroupsFilter): Prisma.GroupWhereInput {
+    const baseWhere: Prisma.GroupWhereInput = {
+      organizationId: context.organizationId,
+      ...(filter.search ? {name: {contains: filter.search, mode: "insensitive"}} : {})
+    }
 
     switch (filter.type) {
       case "all":
@@ -408,6 +404,7 @@ export class GroupDbRepository implements GroupRepository {
           ...baseWhere,
           groupMemberships: {
             some: {
+              organizationId: context.organizationId,
               userId: filter.requestor.id
             }
           }
@@ -418,4 +415,32 @@ export class GroupDbRepository implements GroupRepository {
 
 interface GetObjectTaskRequest {
   identifier: Identifier
+}
+
+interface Identifier {
+  type: "id" | "name"
+  identifier: string
+}
+interface ListOptions {
+  take: number
+  skip: number
+  filter: ListGroupsFilter
+}
+type PrismaGroupWithCount = PrismaGroup & {
+  readonly _count: {readonly groupMemberships: number; readonly agentGroupMemberships: number}
+}
+
+function mapToDomainVersionedGroupWithEntities(
+  record: PrismaGroupWithCount
+): E.Either<GroupValidationError, Versioned<GroupWithEntitiesCount>> {
+  return GroupFactory.validate({
+    id: record.id,
+    organizationId: record.organizationId,
+    name: record.name,
+    description: record.description,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+    entitiesCount: record._count.groupMemberships + record._count.agentGroupMemberships,
+    occ: record.occ
+  })
 }

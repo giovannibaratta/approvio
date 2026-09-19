@@ -1,8 +1,8 @@
-import {User, Agent, AuthenticatedEntity} from "@domain"
+import {User, Agent, AuthenticatedEntity, TenantContext} from "@domain"
 import {AuthorizationError} from "@services/error"
 import * as E from "fp-ts/Either"
 
-export interface RequestorAwareRequest {
+export interface RequestorAwareRequest extends TenantContext {
   requestor: AuthenticatedEntity
 }
 

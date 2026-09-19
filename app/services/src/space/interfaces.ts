@@ -1,4 +1,4 @@
-import {Space, SpaceValidationError, User} from "@domain"
+import {BoundaryError, Space, SpaceValidationError, TenantContext, User} from "@domain"
 import {RequestorAwareRequest} from "@services/shared/types"
 import {Versioned} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
@@ -8,13 +8,19 @@ import {UnknownError} from "@services/error"
 export const SPACE_REPOSITORY_TOKEN = "SPACE_REPOSITORY_TOKEN"
 
 export interface SpaceRepository {
-  createSpaceWithUserPermissions(data: CreateSpaceWithUserPermissionsRepo): TaskEither<CreateSpaceRepoError, Space>
-  getSpaceById(data: GetSpaceByIdRepo): TaskEither<GetSpaceRepoError, Versioned<Space>>
-  getSpaceByName(data: GetSpaceByNameRepo): TaskEither<GetSpaceRepoError, Versioned<Space>>
-  getSpacesByIds(spaceIds: string[]): TaskEither<UnknownError, {id: string; name: string}[]>
-  listSpaces(data: ListSpacesRepo): TaskEither<ListSpacesRepoError, ListSpacesResult>
-  deleteSpace(data: DeleteSpaceRepo): TaskEither<DeleteSpaceRepoError, void>
-  countSpaces(): TaskEither<UnknownError, number>
+  createSpaceWithUserPermissions(
+    context: TenantContext,
+    data: CreateSpaceWithUserPermissionsRepo
+  ): TaskEither<CreateSpaceRepoError, Space>
+  getSpaceById(context: TenantContext, data: GetSpaceByIdRepo): TaskEither<GetSpaceRepoError, Versioned<Space>>
+  getSpaceByName(context: TenantContext, data: GetSpaceByNameRepo): TaskEither<GetSpaceRepoError, Versioned<Space>>
+  getSpacesByIds(
+    context: TenantContext,
+    spaceIds: string[]
+  ): TaskEither<UnknownError | BoundaryError, {id: string; name: string}[]>
+  listSpaces(context: TenantContext, data: ListSpacesRepo): TaskEither<ListSpacesRepoError, ListSpacesResult>
+  deleteSpace(context: TenantContext, data: DeleteSpaceRepo): TaskEither<DeleteSpaceRepoError, void>
+  countSpaces(context: TenantContext): TaskEither<UnknownError | BoundaryError, number>
 }
 
 // Repository data types
@@ -51,15 +57,17 @@ export interface ListSpacesResult {
 
 // Repository error types
 export type CreateSpaceRepoError =
+  | BoundaryError
   | "space_already_exists"
   | "concurrency_error"
   | "unknown_error"
   | SpaceValidationError
   | "quota_exceeded"
   | "quota_check_error"
-export type GetSpaceRepoError = "space_not_found" | "unknown_error" | SpaceValidationError
-export type ListSpacesRepoError = "invalid_page" | "invalid_limit" | "unknown_error" | SpaceValidationError
-export type DeleteSpaceRepoError = "space_not_found" | "unknown_error"
+export type GetSpaceRepoError = BoundaryError | "space_not_found" | "unknown_error" | SpaceValidationError
+export type ListSpacesRepoError =
+  BoundaryError | "invalid_page" | "invalid_limit" | "unknown_error" | SpaceValidationError
+export type DeleteSpaceRepoError = BoundaryError | "space_not_found" | "unknown_error"
 
 // Service request types
 export interface CreateSpaceRequest extends RequestorAwareRequest {

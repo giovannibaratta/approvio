@@ -6,28 +6,28 @@ Quotas define limits on resources, concurrency, and monthly operational usage ac
 
 Approvio organizes quotas into three categories:
 
-| Category | Metrics | Description |
-| :--- | :--- | :--- |
-| **Resource Limits** | `MAX_SPACES`, `MAX_GROUPS`, `MAX_ENTITIES_PER_GROUP`, `MAX_WORKFLOW_TEMPLATES_PER_SPACE`, `MAX_ROLES_PER_USER` | Caps the total number of items you can create. When a limit is reached, new items cannot be created until existing ones are removed or limits are increased. |
-| **Concurrency Limits** | `MAX_CONCURRENT_WORKFLOWS`, `MAX_VOTES_PER_WORKFLOW` | Restricts simultaneous active operations, such as workflows running in parallel for a template. |
-| **Monthly Usage** | `MAX_LLM_TOKENS_PER_MONTH`, `MAX_EVALUATIONS_PER_MONTH`, `MAX_CREDITS_PER_MONTH` | Monthly allowances for automated operations (like AI evaluation runs). These reset at the start of each billing period. |
+| Category               | Metrics                                                                                                        | Description                                                                                                                                                  |
+| :--------------------- | :------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Resource Limits**    | `MAX_SPACES`, `MAX_GROUPS`, `MAX_ENTITIES_PER_GROUP`, `MAX_WORKFLOW_TEMPLATES_PER_SPACE`, `MAX_ROLES_PER_USER` | Caps the total number of items you can create. When a limit is reached, new items cannot be created until existing ones are removed or limits are increased. |
+| **Concurrency Limits** | `MAX_CONCURRENT_WORKFLOWS`, `MAX_VOTES_PER_WORKFLOW`                                                           | Restricts simultaneous active operations, such as workflows running in parallel for a template.                                                              |
+| **Monthly Usage**      | `MAX_LLM_TOKENS_PER_MONTH`, `MAX_EVALUATIONS_PER_MONTH`, `MAX_CREDITS_PER_MONTH`                               | Monthly allowances for automated operations (like AI evaluation runs). These reset at the start of each billing period.                                      |
 
 ## Evaluation Levels
 
 Each quota metric applies at a specific level of the organization:
 
-| Evaluation Level | Metric | Description |
-| :--- | :--- | :--- |
-| **Organization** | `MAX_SPACES` | Maximum spaces allowed in the organization |
-| **Organization** | `MAX_GROUPS` | Maximum groups allowed in the organization |
-| **Organization** | `MAX_LLM_TOKENS_PER_MONTH` | Maximum monthly token allowance |
-| **Organization** | `MAX_EVALUATIONS_PER_MONTH` | Maximum monthly automated evaluations |
-| **Organization** | `MAX_CREDITS_PER_MONTH` | Maximum monthly platform credits |
-| **Space** | `MAX_WORKFLOW_TEMPLATES_PER_SPACE` | Maximum templates created within a single space |
-| **Group** | `MAX_ENTITIES_PER_GROUP` | Maximum members (users and agents) in a single group |
-| **Workflow Template** | `MAX_CONCURRENT_WORKFLOWS` | Maximum workflows running simultaneously for a template |
-| **Workflow** | `MAX_VOTES_PER_WORKFLOW` | Maximum votes recorded on a single workflow |
-| **User** | `MAX_ROLES_PER_USER` | Maximum distinct roles assigned to one user |
+| Evaluation Level      | Metric                             | Description                                             |
+| :-------------------- | :--------------------------------- | :------------------------------------------------------ |
+| **Organization**      | `MAX_SPACES`                       | Maximum spaces allowed in the organization              |
+| **Organization**      | `MAX_GROUPS`                       | Maximum groups allowed in the organization              |
+| **Organization**      | `MAX_LLM_TOKENS_PER_MONTH`         | Maximum monthly token allowance                         |
+| **Organization**      | `MAX_EVALUATIONS_PER_MONTH`        | Maximum monthly automated evaluations                   |
+| **Organization**      | `MAX_CREDITS_PER_MONTH`            | Maximum monthly platform credits                        |
+| **Space**             | `MAX_WORKFLOW_TEMPLATES_PER_SPACE` | Maximum templates created within a single space         |
+| **Group**             | `MAX_ENTITIES_PER_GROUP`           | Maximum members (users and agents) in a single group    |
+| **Workflow Template** | `MAX_CONCURRENT_WORKFLOWS`         | Maximum workflows running simultaneously for a template |
+| **Workflow**          | `MAX_VOTES_PER_WORKFLOW`           | Maximum votes recorded on a single workflow             |
+| **User**              | `MAX_ROLES_PER_USER`               | Maximum distinct roles assigned to one user             |
 
 ## How Limits Are Resolved
 

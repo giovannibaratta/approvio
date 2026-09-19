@@ -22,6 +22,7 @@ const mainSettings = {
 }
 
 const testSettings = {
+  maxWorkers: "50%",
   coverageDirectory: "<rootDir>/coverage",
   coverageReporters: ["text", "lcov", "html"],
   collectCoverageFrom: [

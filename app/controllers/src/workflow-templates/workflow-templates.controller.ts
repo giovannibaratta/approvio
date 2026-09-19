@@ -1,5 +1,5 @@
-import {GetAuthenticatedEntity} from "@app/auth"
-import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
+import {GetAuthenticatedEntity, GetTenantContext} from "@app/auth"
+import {Body, Controller, Get, Headers, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
 import {logSuccess} from "@utils"
 import {
   WorkflowTemplateService,
@@ -31,27 +31,39 @@ import {
   WorkflowTemplateDeprecate,
   validateListWorkflowTemplatesParams
 } from "@approvio/api"
-import {AuthenticatedEntity} from "@domain"
+import {AuthenticatedEntity, TenantContext} from "@domain"
 import {isLeft} from "fp-ts/Either"
+import {ConfigProvider} from "@external/config"
+import {createEntityTag, parseEntityTag} from "../etag"
+import {PreconditionFailedException} from "@nestjs/common"
+import {generateErrorPayload} from "@controllers/error"
 
 export const WORKFLOW_TEMPLATES_ENDPOINT_ROOT = "workflow-templates"
 
-@Controller(WORKFLOW_TEMPLATES_ENDPOINT_ROOT)
+@Controller(`o/:organizationId/${WORKFLOW_TEMPLATES_ENDPOINT_ROOT}`)
 export class WorkflowTemplatesController {
-  constructor(private readonly workflowTemplateService: WorkflowTemplateService) {}
+  private readonly etagSecret: string
+
+  constructor(
+    private readonly workflowTemplateService: WorkflowTemplateService,
+    configProvider: ConfigProvider
+  ) {
+    this.etagSecret = configProvider.jwtConfig.secret
+  }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async createWorkflowTemplate(
     @Body() request: WorkflowTemplateCreate,
     @Res({passthrough: true}) response: Response,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext
   ): Promise<WorkflowTemplateApi> {
     const serviceCreateWorkflowTemplate = (req: CreateWorkflowTemplateRequest) =>
       this.workflowTemplateService.createWorkflowTemplate(req)
 
     const eitherWorkflowTemplate = await pipe(
-      {workflowTemplateData: request, requestor},
+      {workflowTemplateData: request, requestor, context},
       createWorkflowTemplateApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceCreateWorkflowTemplate),
@@ -76,11 +88,12 @@ export class WorkflowTemplatesController {
   @Get()
   async listWorkflowTemplates(
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext,
     @Query() query: Record<string, unknown>
   ): Promise<ListWorkflowTemplates200Response> {
     const eitherWorkflowTemplates = await pipe(
       validateListWorkflowTemplatesParams(query),
-      E.chainW(params => mapListWorkflowTemplatesParamsToServiceRequest(params, requestor)),
+      E.chainW(params => mapListWorkflowTemplatesParamsToServiceRequest(params, requestor, context)),
       TE.fromEither,
       TE.chainW(req => this.workflowTemplateService.listWorkflowTemplates(req)),
       TE.map(mapWorkflowTemplateListToApi),
@@ -99,9 +112,12 @@ export class WorkflowTemplatesController {
   }
 
   @Get(":templateIdentifier")
-  async getWorkflowTemplate(@Param("templateIdentifier") templateIdentifier: string): Promise<WorkflowTemplateApi> {
+  async getWorkflowTemplate(
+    @Param("templateIdentifier") templateIdentifier: string,
+    @GetTenantContext() context: TenantContext
+  ): Promise<WorkflowTemplateApi> {
     const getWorkflowTemplateService = (identifier: string) =>
-      this.workflowTemplateService.getWorkflowTemplateByIdentifier(identifier)
+      this.workflowTemplateService.getWorkflowTemplateByIdentifier(context, identifier)
 
     const eitherWorkflowTemplate = await pipe(
       templateIdentifier,
@@ -121,17 +137,28 @@ export class WorkflowTemplatesController {
   async updateWorkflowTemplate(
     @Param("templateIdentifier") templateName: string,
     @Body() request: WorkflowTemplateUpdate,
+    @Headers("if-match") ifMatch: string | undefined,
+    @Res({passthrough: true}) response: Response,
+    @GetTenantContext() context: TenantContext,
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity
   ): Promise<WorkflowTemplateApi> {
     const serviceUpdateWorkflowTemplate = (req: UpdateWorkflowTemplateRequest) =>
       this.workflowTemplateService.updateWorkflowTemplate(req)
 
+    // TODO: This could have been done via the pipe to be more fp-ish
+    const occVersion = parseEntityTag(this.etagSecret, context.organizationId, templateName, ifMatch)
+    if (isLeft(occVersion))
+      // TODO: Not sure if the message 'current entity tag' is clear
+      throw new PreconditionFailedException(
+        generateErrorPayload("INVALID_ETAG", "If-Match must be a current entity tag")
+      )
+
     const eitherWorkflowTemplate = await pipe(
-      {templateName, workflowTemplateData: request, requestor},
+      {templateName, workflowTemplateData: request, requestor, context, occVersion: occVersion.right},
       updateWorkflowTemplateApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceUpdateWorkflowTemplate),
-      TE.map(mapWorkflowTemplateToApi),
+      // TODO: Why did we move the mapWorkflowTemplateToApi from here to the end ?
       logSuccess("Workflow template updated", "WorkflowTemplatesController", t => ({id: t.id}))
     )()
 
@@ -141,7 +168,12 @@ export class WorkflowTemplatesController {
         "Failed to update workflow template"
       )
 
-    return eitherWorkflowTemplate.right
+    response.setHeader(
+      "ETag",
+      createEntityTag(this.etagSecret, context.organizationId, templateName, eitherWorkflowTemplate.right.occ)
+    )
+
+    return mapWorkflowTemplateToApi(eitherWorkflowTemplate.right)
   }
 
   @Post(":templateIdentifier/deprecate")
@@ -149,11 +181,13 @@ export class WorkflowTemplatesController {
   async deprecateWorkflowTemplate(
     @Param("templateIdentifier") templateName: string,
     @Body() body: WorkflowTemplateDeprecate,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext
   ): Promise<WorkflowTemplateApi> {
     const request: DeprecateWorkflowTemplateRequest = {
       templateName,
       cancelWorkflows: body?.cancelWorkflows || false,
+      organizationId: context.organizationId,
       requestor
     }
 

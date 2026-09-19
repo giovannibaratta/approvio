@@ -4,11 +4,16 @@ import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
 import {Test, TestingModule} from "@nestjs/testing"
-import {cleanDatabase, cleanRedisByPrefix, prepareDatabase, prepareRedisPrefix} from "@test/database"
+import {
+  createFixturePrismaClient,
+  cleanDatabase,
+  cleanRedisByPrefix,
+  prepareDatabase,
+  prepareRedisPrefix
+} from "@test/database"
 import {MockConfigProvider} from "@test/mock-data"
 import {get} from "@test/requests"
 import {PrismaClient} from "@prisma/client"
-import {DatabaseClient} from "@external"
 import {HEALTH_REPOSITORY_TOKEN, HealthRepository} from "@services/health"
 import * as TE from "fp-ts/TaskEither"
 import {HealthRateLimiterGuard} from "@app/rate-limiter"
@@ -23,7 +28,7 @@ describe("Health API", () => {
     const isolatedDb = await prepareDatabase()
     redisPrefix = prepareRedisPrefix()
 
-    const configProvider = MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix)
+    const configProvider = MockConfigProvider.fromTenantConnectionUrl(isolatedDb, redisPrefix)
     configProvider.healthCacheTtlMs = 0
 
     let module: TestingModule
@@ -42,7 +47,7 @@ describe("Health API", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     healthRepository = module.get(HEALTH_REPOSITORY_TOKEN)
     await app.init()
   }, 30000)

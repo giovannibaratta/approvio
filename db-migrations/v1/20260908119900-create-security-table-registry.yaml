@@ -1,0 +1,12 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908119900-create-security-table-registry
+      author: codex
+      comment: Create capability roles and enforce declarative table security through a PostgreSQL event trigger.
+      changes:
+        - sqlFile:
+            dbms: postgresql
+            path: 20260908119900-create-security-table-registry.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+            stripComments: false

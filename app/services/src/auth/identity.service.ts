@@ -13,7 +13,7 @@ export class IdentityService {
    */
   getIdentityGroups(entity: AuthenticatedEntity): TaskEither<GetGroupRepoError, Group[]> {
     return entity.entityType === "user"
-      ? this.groupService.getUserGroups(entity.user.id)
-      : this.groupService.getAgentGroups(entity.agent.id)
+      ? this.groupService.getUserGroups({organizationId: entity.user.organizationId}, entity.user.id)
+      : this.groupService.getAgentGroups({organizationId: entity.agent.organizationId}, entity.agent.id)
   }
 }

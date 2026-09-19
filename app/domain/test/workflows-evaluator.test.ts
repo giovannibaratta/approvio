@@ -1,3 +1,4 @@
+import {randomOrgId} from "@test/organization-id"
 import {
   evaluateWorkflowStatus,
   WorkflowStatus,
@@ -13,19 +14,21 @@ import "@utils/matchers"
 import {unwrapRight} from "@utils/either"
 
 describe("Workflow Status Evaluator (Chronological)", () => {
+  const organizationId = randomOrgId()
   const groupId1 = uuidv7()
   const userId1 = uuidv7()
   const userId2 = uuidv7()
   const workflowTemplateId = uuidv7()
 
-  const voter1: EntityReference = {entityId: userId1, entityType: "user"}
-  const voter2: EntityReference = {entityId: userId2, entityType: "user"}
+  const voter1: EntityReference = {entityId: userId1, entityType: "user", organizationId}
+  const voter2: EntityReference = {entityId: userId2, entityType: "user", organizationId}
 
   let decoratedWorkflow: DecoratedWorkflow<{workflowTemplate: true}>
 
   beforeEach(() => {
     const templateResult = unwrapRight(
       WorkflowTemplateFactory.newWorkflowTemplate({
+        organizationId,
         name: "Test Template",
         description: "A test template",
         approvalRule: {
@@ -46,6 +49,7 @@ describe("Workflow Status Evaluator (Chronological)", () => {
 
     const workflowResult = unwrapRight(
       WorkflowFactory.newWorkflow({
+        organizationId,
         name: "Test-Workflow",
         description: "Test description",
         workflowTemplateId: template.id,
@@ -59,6 +63,66 @@ describe("Workflow Status Evaluator (Chronological)", () => {
     }
   })
 
+  describe("Recalculation delayed until after expiration", () => {
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(new Date(decoratedWorkflow.expiresAt.getTime() + 24 * 60 * 60 * 1000))
+    })
+
+    afterEach(() => {
+      jest.useRealTimers()
+    })
+
+    it.each([
+      {timing: "before", offset: -1000, expectedStatus: WorkflowStatus.APPROVED},
+      {timing: "at", offset: 0, expectedStatus: WorkflowStatus.APPROVED},
+      {timing: "after", offset: 1000, expectedStatus: WorkflowStatus.EXPIRED}
+    ])("evaluates an approval cast $timing the deadline", ({offset, expectedStatus}) => {
+      // Given
+      const vote: Vote = {
+        id: uuidv7(),
+        organizationId,
+        workflowId: decoratedWorkflow.id,
+        voter: voter1,
+        type: "APPROVE",
+        votedForGroups: [groupId1],
+        castedAt: new Date(decoratedWorkflow.expiresAt.getTime() + offset)
+      }
+
+      // When
+      const result = unwrapRight(evaluateWorkflowStatus(decoratedWorkflow, [vote]))
+
+      // Expect
+      expect(result.status).toBe(expectedStatus)
+      expect(result.recalculationRequired).toBe(false)
+    })
+
+    it("expires a workflow without votes", () => {
+      // When
+      const result = unwrapRight(evaluateWorkflowStatus(decoratedWorkflow, []))
+
+      // Expect
+      expect(result.status).toBe(WorkflowStatus.EXPIRED)
+    })
+
+    it("expires a vetoed workflow that never reached approval", () => {
+      // Given
+      const vote: Vote = {
+        id: uuidv7(),
+        organizationId,
+        workflowId: decoratedWorkflow.id,
+        voter: voter1,
+        type: "VETO",
+        castedAt: new Date(decoratedWorkflow.expiresAt.getTime() - 1000)
+      }
+
+      // When
+      const result = unwrapRight(evaluateWorkflowStatus(decoratedWorkflow, [vote]))
+
+      // Expect
+      expect(result.status).toBe(WorkflowStatus.EXPIRED)
+    })
+  })
+
   describe("Sequential Chronological Evaluation", () => {
     it("should approve the workflow if approval criteria is met at t1, ignoring a subsequent veto at t2", () => {
       // Given
@@ -67,6 +131,7 @@ describe("Workflow Status Evaluator (Chronological)", () => {
 
       const approvalVote: Vote = {
         id: uuidv7(),
+        organizationId,
         workflowId: decoratedWorkflow.id,
         voter: voter1,
         type: "APPROVE",
@@ -76,6 +141,7 @@ describe("Workflow Status Evaluator (Chronological)", () => {
 
       const vetoVote: Vote = {
         id: uuidv7(),
+        organizationId,
         workflowId: decoratedWorkflow.id,
         voter: voter2,
         type: "VETO",
@@ -97,6 +163,7 @@ describe("Workflow Status Evaluator (Chronological)", () => {
 
       const approvalVote: Vote = {
         id: uuidv7(),
+        organizationId,
         workflowId: decoratedWorkflow.id,
         voter: voter1,
         type: "APPROVE",
@@ -106,6 +173,7 @@ describe("Workflow Status Evaluator (Chronological)", () => {
 
       const vetoVote: Vote = {
         id: uuidv7(),
+        organizationId,
         workflowId: decoratedWorkflow.id,
         voter: voter2,
         type: "VETO",
@@ -128,6 +196,7 @@ describe("Workflow Status Evaluator (Chronological)", () => {
 
       const vetoVote: Vote = {
         id: uuidv7(),
+        organizationId,
         workflowId: decoratedWorkflow.id,
         voter: voter1,
         type: "VETO",
@@ -136,6 +205,7 @@ describe("Workflow Status Evaluator (Chronological)", () => {
 
       const withdrawVote: Vote = {
         id: uuidv7(),
+        organizationId,
         workflowId: decoratedWorkflow.id,
         voter: voter1,
         type: "WITHDRAW",

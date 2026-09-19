@@ -1,40 +1,23 @@
-import {Inject} from "@nestjs/common"
-import {
-  EnqueueRecalculationError,
-  EnqueueWorkflowActionError,
-  EnqueueWorkflowStatusChangedError,
-  QUEUE_PROVIDER_TOKEN,
-  QueueProvider
-} from "./interface"
+import {Injectable, Inject} from "@nestjs/common"
+import {TenantEvent} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
-import {
-  WorkflowActionEmailEvent,
-  WorkflowActionWebhookEvent,
-  WorkflowActionSlackEvent,
-  WorkflowStatusChangedEvent
-} from "@domain"
+import {EnqueueTenantEventError, QUEUE_PROVIDER_TOKEN, QueueProvider} from "./interface"
+import {UsageCacheRecoveryRequest} from "../usage-metering/interfaces"
+import {UnknownError} from "../error"
 
+/** Sends tenant events to the configured queue provider. */
+@Injectable()
 export class QueueService {
   constructor(
     @Inject(QUEUE_PROVIDER_TOKEN)
     private readonly queueProvider: QueueProvider
   ) {}
 
-  enqueueWorkflowStatusRecalculation(workflowId: string): TaskEither<EnqueueRecalculationError, void> {
-    return this.queueProvider.enqueueWorkflowStatusRecalculation(workflowId)
+  enqueue(event: TenantEvent, deliveryAttempt?: number): TaskEither<EnqueueTenantEventError, void> {
+    return this.queueProvider.enqueue(event, deliveryAttempt)
   }
 
-  enqueueWorkflowStatusRecalculationBulk(workflowIds: string[]): TaskEither<EnqueueRecalculationError, void> {
-    return this.queueProvider.enqueueWorkflowStatusRecalculationBulk(workflowIds)
-  }
-
-  enqueueWorkflowStatusChanged(event: WorkflowStatusChangedEvent): TaskEither<EnqueueWorkflowStatusChangedError, void> {
-    return this.queueProvider.enqueueWorkflowStatusChanged(event)
-  }
-
-  enqueueWorkflowAction(
-    event: WorkflowActionEmailEvent | WorkflowActionWebhookEvent | WorkflowActionSlackEvent
-  ): TaskEither<EnqueueWorkflowActionError, void> {
-    return this.queueProvider.enqueueWorkflowAction(event)
+  requestUsageCacheRecovery(request: UsageCacheRecoveryRequest): TaskEither<UnknownError, void> {
+    return this.queueProvider.requestUsageCacheRecovery(request)
   }
 }

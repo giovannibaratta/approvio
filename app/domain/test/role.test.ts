@@ -1,3 +1,4 @@
+import {randomOrgId} from "@test/organization-id"
 import {
   UnconstrainedBoundRole,
   GroupPermission,
@@ -10,25 +11,31 @@ import {
   WorkflowTemplateScope
 } from "../src/role"
 import {SystemRole} from "../src/system-role"
+import {v7 as uuidv7} from "uuid"
 
 describe("RoleFactory", () => {
+  const organizationId = randomOrgId()
   // Test data helpers
   const createValidOrgScope = (): OrgScope => ({
-    type: "org"
+    type: "org",
+    organizationId
   })
 
   const createValidSpaceScope = (): SpaceScope => ({
     type: "space",
-    spaceId: "space-123"
+    organizationId,
+    spaceId: uuidv7()
   })
 
   const createValidGroupScope = (): GroupScope => ({
     type: "group",
-    groupId: "group-123"
+    organizationId,
+    groupId: uuidv7()
   })
 
   const createValidWorkflowTemplateScope = (): WorkflowTemplateScope => ({
     type: "workflow_template",
+    organizationId,
     templateName: "template-123"
   })
 
@@ -64,6 +71,42 @@ describe("RoleFactory", () => {
     permissions,
     scope: createValidOrgScope(),
     scopeType: "org"
+  })
+
+  describe("consolidateRoles", () => {
+    it("removes duplicate roles with equivalent scopes while preserving the first role", () => {
+      // Given
+      const scope = createValidGroupScope()
+      const first = {...createValidGroupRole(), scope}
+      const duplicate: UnconstrainedBoundRole = {...first, scope: {...scope}, permissions: [...first.permissions]}
+
+      // When
+      const result = RoleFactory.consolidateRoles([first, duplicate])
+
+      // Expect
+      expect(result).toEqual([first])
+      expect(result[0]).toBe(first)
+    })
+
+    it("keeps differently named read and write roles on the same scope", () => {
+      // Given
+      const scope = createValidGroupScope()
+      const reader = {...createValidGroupRole(["read"]), name: "GroupReader", scope}
+      const writer = {...createValidGroupRole(["read", "write"]), name: "GroupWriter", scope}
+
+      // When
+      const result = RoleFactory.consolidateRoles([reader, writer])
+
+      // Expect
+      expect(result).toEqual([reader, writer])
+    })
+
+    it("keeps roles with different scopes", () => {
+      const first = createValidGroupRole()
+      const second = {...first, scope: {...first.scope, groupId: uuidv7()}}
+
+      expect(RoleFactory.consolidateRoles([first, second])).toEqual([first, second])
+    })
   })
 
   describe("validateBoundRoles", () => {

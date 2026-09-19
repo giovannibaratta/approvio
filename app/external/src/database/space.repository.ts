@@ -1,243 +1,205 @@
-import {Space} from "@domain"
-import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "@external/database/errors"
+import {fromPromise} from "./repository-operation"
 import {Injectable, Logger} from "@nestjs/common"
-import {Prisma, Space as PrismaSpace} from "@prisma/client"
+import {Space, SpaceFactory, SpaceValidationError, TenantContext, Versioned} from "@domain"
 import {
   CreateSpaceRepoError,
   CreateSpaceWithUserPermissionsRepo,
+  DeleteSpaceRepo,
+  DeleteSpaceRepoError,
   GetSpaceByIdRepo,
   GetSpaceByNameRepo,
   GetSpaceRepoError,
-  SpaceRepository,
   ListSpacesRepo,
   ListSpacesRepoError,
   ListSpacesResult,
-  DeleteSpaceRepoError,
-  DeleteSpaceRepo
+  SpaceRepository
 } from "@services"
-import {Versioned} from "@domain"
+import {Prisma, Space as PrismaSpace} from "@prisma/client"
 import * as E from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
-import {TaskEither} from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
+import {TaskEither} from "fp-ts/TaskEither"
+import {SpaceTenantClient} from "./tenant-database-clients"
+import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "./errors"
+import {persistExistingUserRaceConditionFree} from "./shared"
+import {chainNullableToLeft} from "./utils"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
-import {DatabaseClient} from "./database-client"
-import {mapToDomainVersionedSpace} from "./shared"
-import {persistExistingUserRaceConditionFree} from "./shared/user-operations"
-import {areAllRights, chainNullableToLeft} from "./utils"
 
 @Injectable()
 export class SpaceDbRepository implements SpaceRepository {
-  constructor(private readonly dbClient: DatabaseClient) {}
+  constructor(private readonly dbClient: SpaceTenantClient) {}
 
-  createSpaceWithUserPermissions(data: CreateSpaceWithUserPermissionsRepo): TaskEither<CreateSpaceRepoError, Space> {
+  createSpaceWithUserPermissions(
+    context: TenantContext,
+    data: CreateSpaceWithUserPermissionsRepo
+  ): TE.TaskEither<CreateSpaceRepoError, Space> {
     return pipe(
       data,
       TE.right,
-      TE.chainW(this.persistNewSpaceWithUserPermissionsTask()),
+      TE.chainW(this.persistNewSpaceWithUserPermissionsTask(context)),
       TE.chainEitherKW(mapToDomainVersionedSpace)
     )
   }
 
-  private persistNewSpaceWithUserPermissionsTask(): (
-    data: CreateSpaceWithUserPermissionsRepo
-  ) => TaskEither<CreateSpaceRepoError, PrismaSpace> {
+  private persistNewSpaceWithUserPermissionsTask(
+    context: TenantContext
+  ): (data: CreateSpaceWithUserPermissionsRepo) => TaskEither<CreateSpaceRepoError, PrismaSpace> {
     return data =>
-      TE.tryCatchK(
-        () =>
-          this.dbClient.transactional(async tx => {
-            // 1. Create the space
-            const createdSpace = await tx.space.create({
-              data: {
-                createdAt: data.space.createdAt,
-                id: data.space.id,
-                name: data.space.name,
-                description: data.space.description,
-                updatedAt: data.space.updatedAt,
-                occ: POSTGRES_BIGINT_LOWER_BOUND
-              }
-            })
-
-            // 2. Update user with new permissions using shared function
-            await persistExistingUserRaceConditionFree(tx, {
-              userId: data.user.id,
-              userOcc: data.userOcc,
-              displayName: data.user.displayName,
-              email: data.user.email,
-              roles: data.user.roles,
-              createdAt: data.user.createdAt
-            })
-
-            return createdSpace
-          }),
-        error => {
-          if (isPrismaUniqueConstraintError(error, ["name"])) return "space_already_exists"
-
-          if (isPrismaRecordNotFoundError(error, Prisma.ModelName.User)) return "concurrency_error"
-
-          Logger.error("Error while creating space. Unknown error", error)
-          return "unknown_error"
-        }
-      )()
-  }
-
-  getSpaceById(data: GetSpaceByIdRepo): TaskEither<GetSpaceRepoError, Versioned<Space>> {
-    return this.getSpace({identifier: {type: "id", value: data.spaceId}})
-  }
-
-  getSpaceByName(data: GetSpaceByNameRepo): TaskEither<GetSpaceRepoError, Versioned<Space>> {
-    return this.getSpace({identifier: {type: "name", value: data.spaceName}})
-  }
-
-  getSpacesByIds(spaceIds: string[]): TaskEither<"unknown_error", {id: string; name: string}[]> {
-    return pipe(
-      TE.tryCatch(
-        () =>
-          this.dbClient.cx.space.findMany({
-            where: {
-              id: {
-                in: spaceIds
-              }
-            },
-            select: {
-              id: true,
-              name: true
+      fromPromise(
+        async () => {
+          // 1. Create the space
+          const space = await this.dbClient.cx.space.create({
+            data: {
+              id: data.space.id,
+              organizationId: data.space.organizationId,
+              name: data.space.name,
+              description: data.space.description ?? null,
+              createdAt: data.space.createdAt,
+              updatedAt: data.space.updatedAt,
+              occ: POSTGRES_BIGINT_LOWER_BOUND
             }
-          }),
-        error => {
-          Logger.error("Error while fetching spaces by ids. Unknown error", error)
-          return "unknown_error" as const
-        }
-      ),
-      TE.map(spaces => spaces.map(s => ({id: s.id, name: s.name})))
+          })
+          // 2. Update user with new permissions using shared function
+          await persistExistingUserRaceConditionFree(this.dbClient.cx, {
+            userId: data.user.id,
+            organizationId: context.organizationId,
+            userOcc: data.userOcc,
+            displayName: data.user.displayName,
+            roles: data.user.roles,
+            createdAt: data.user.createdAt,
+            updatedAt: data.user.updatedAt
+          })
+          return space
+        },
+        error => this.mapCreateError(error)
+      )
+  }
+
+  getSpaceById(context: TenantContext, data: GetSpaceByIdRepo): TE.TaskEither<GetSpaceRepoError, Versioned<Space>> {
+    return this.getSpace(context, {identifier: {type: "id", value: data.spaceId}})
+  }
+  getSpaceByName(context: TenantContext, data: GetSpaceByNameRepo): TE.TaskEither<GetSpaceRepoError, Versioned<Space>> {
+    return this.getSpace(context, {identifier: {type: "name", value: data.spaceName}})
+  }
+  getSpacesByIds(
+    context: TenantContext,
+    spaceIds: string[]
+  ): TE.TaskEither<"unknown_error", {id: string; name: string}[]> {
+    return fromPromise(
+      () =>
+        this.dbClient.cx.space.findMany({
+          where: {organizationId: context.organizationId, id: {in: spaceIds}},
+          select: {id: true, name: true}
+        }),
+      error => this.unknown(error, "get by ids")
     )
   }
-
-  private getSpace(request: GetSpaceTaskRequest): TaskEither<GetSpaceRepoError, Versioned<Space>> {
+  private getSpace(
+    context: TenantContext,
+    request: GetSpaceTaskRequest
+  ): TaskEither<GetSpaceRepoError, Versioned<Space>> {
     return pipe(
       request,
       TE.right,
-      TE.chainW(this.getSpaceTask()),
+      TE.chainW(this.getSpaceTask(context)),
       chainNullableToLeft("space_not_found" as const),
       TE.chainEitherKW(mapToDomainVersionedSpace)
     )
   }
 
-  listSpaces(data: ListSpacesRepo): TaskEither<ListSpacesRepoError, ListSpacesResult> {
+  listSpaces(context: TenantContext, data: ListSpacesRepo): TaskEither<ListSpacesRepoError, ListSpacesResult> {
     const {page, limit, search} = data
-
-    const skip = (page - 1) * limit
-    const take = limit
-
-    const options: ListOptions = {
-      take,
-      skip,
-      search
-    }
+    const options: ListOptions = {take: limit, skip: (page - 1) * limit, search}
 
     return pipe(
       options,
       TE.right,
-      TE.chainW(this.getSpacesTask()),
-      TE.chainEitherKW(([spaces, total]) => {
-        const domainSpaces = spaces.map(space => mapToDomainVersionedSpace(space))
-
-        if (areAllRights(domainSpaces)) {
-          const mappedToDomain = {
-            spaces: domainSpaces.map(e => e.right),
-            total,
-            page,
-            limit
-          }
-          return E.right(mappedToDomain)
-        }
-
-        return E.left("unknown_error" as const)
-      })
+      TE.chainW(this.getSpacesTask(context)),
+      TE.chainEitherKW(([spaces, total]) =>
+        pipe(
+          E.traverseArray(mapToDomainVersionedSpace)(spaces),
+          E.map(mapped => ({spaces: mapped, total, page, limit}))
+        )
+      )
     )
   }
 
-  deleteSpace(data: DeleteSpaceRepo): TaskEither<DeleteSpaceRepoError, void> {
+  deleteSpace(context: TenantContext, data: DeleteSpaceRepo): TaskEither<DeleteSpaceRepoError, void> {
     return pipe(
-      TE.tryCatchK(
+      fromPromise(
         () =>
           this.dbClient.cx.space.delete({
-            where: {id: data.spaceId}
+            where: {organizationId_id: {organizationId: context.organizationId, id: data.spaceId}}
           }),
         error => {
-          if (isPrismaRecordNotFoundError(error, Prisma.ModelName.Space)) return "space_not_found"
-
-          Logger.error("Error while deleting space. Unknown error", error)
-          return "unknown_error"
+          if (isPrismaRecordNotFoundError(error, Prisma.ModelName.Space)) return "space_not_found" as const
+          return this.unknown(error, "delete")
         }
-      )(),
+      ),
       TE.map(() => undefined)
     )
   }
 
-  countSpaces(): TaskEither<"unknown_error", number> {
-    return TE.tryCatch(
-      () => this.dbClient.cx.space.count(),
-      error => {
-        Logger.error("Error counting spaces", error)
-        return "unknown_error"
-      }
+  countSpaces(context: TenantContext): TE.TaskEither<"unknown_error", number> {
+    return fromPromise(
+      () => this.dbClient.cx.space.count({where: {organizationId: context.organizationId}}),
+      error => this.unknown(error, "count")
     )
   }
-
-  private buildWhereClauseGetSpaceTask(request: GetSpaceTaskRequest): Prisma.SpaceWhereUniqueInput {
-    return request.identifier.type === "id" ? {id: request.identifier.value} : {name: request.identifier.value}
+  private buildWhereClauseGetSpaceTask(
+    context: TenantContext,
+    request: GetSpaceTaskRequest
+  ): Prisma.SpaceWhereUniqueInput {
+    return request.identifier.type === "id"
+      ? {organizationId_id: {organizationId: context.organizationId, id: request.identifier.value}}
+      : {organizationId_name: {organizationId: context.organizationId, name: request.identifier.value}}
   }
 
-  private getSpaceTask(): (request: GetSpaceTaskRequest) => TaskEither<GetSpaceRepoError, PrismaSpace | null> {
+  private getSpaceTask(
+    context: TenantContext
+  ): (request: GetSpaceTaskRequest) => TaskEither<GetSpaceRepoError, PrismaSpace | null> {
     return request =>
-      TE.tryCatchK(
-        () =>
-          this.dbClient.cx.space.findUnique({
-            where: this.buildWhereClauseGetSpaceTask(request)
-          }),
-        error => {
-          Logger.error("Error while retrieving space. Unknown error", error)
-          return "unknown_error" as const
-        }
-      )()
+      fromPromise(
+        () => this.dbClient.cx.space.findUnique({where: this.buildWhereClauseGetSpaceTask(context, request)}),
+        error => this.unknown(error, "get")
+      )
   }
 
-  private getSpacesTask(): (options: ListOptions) => TaskEither<ListSpacesRepoError, [PrismaSpace[], number]> {
+  private getSpacesTask(
+    context: TenantContext
+  ): (options: ListOptions) => TaskEither<ListSpacesRepoError, [PrismaSpace[], number]> {
     return options =>
-      TE.tryCatchK(
-        async () => {
-          const whereClause: Prisma.SpaceWhereInput = options.search
-            ? {name: {contains: options.search, mode: "insensitive"}}
-            : {}
-
-          return this.dbClient.transactional(
-            async cx => {
-              const data = cx.space.findMany({
-                take: options.take,
-                skip: options.skip,
-                where: whereClause,
-                orderBy: {
-                  createdAt: "asc"
-                }
-              })
-              const stats = cx.space.count({where: whereClause})
-
-              const [resolvedData, resolvedStats] = await Promise.all([data, stats])
-
-              return [resolvedData.map((item: PrismaSpace) => ({...item, occ: BigInt(item.occ)})), resolvedStats] as [
-                PrismaSpace[],
-                number
-              ]
-            },
-            {isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead}
-          )
+      fromPromise(
+        () => {
+          // The page and count must observe the same snapshot in the caller's transaction.
+          this.dbClient.assertIsolationLevel(Prisma.TransactionIsolationLevel.RepeatableRead)
+          const whereClause: Prisma.SpaceWhereInput = {
+            organizationId: context.organizationId,
+            ...(options.search ? {name: {contains: options.search, mode: "insensitive"}} : {})
+          }
+          return Promise.all([
+            this.dbClient.cx.space.findMany({
+              take: options.take,
+              skip: options.skip,
+              where: whereClause,
+              orderBy: {createdAt: "asc"}
+            }),
+            this.dbClient.cx.space.count({where: whereClause})
+          ])
         },
-        error => {
-          Logger.error("Error while retrieving spaces. Unknown error", error)
-          return "unknown_error" as const
-        }
-      )()
+        error => this.unknown(error, "list")
+      )
+  }
+
+  private mapCreateError(error: unknown): CreateSpaceRepoError {
+    if (isPrismaUniqueConstraintError(error, ["organization_id", "name"], "spaces_organization_name_unique"))
+      return "space_already_exists"
+    if (isPrismaRecordNotFoundError(error, Prisma.ModelName.User)) return "concurrency_error"
+    return this.unknown(error, "create")
+  }
+  private unknown(error: unknown, operation: string): "unknown_error" {
+    Logger.error(`Space repository ${operation} failed`, error instanceof Error ? error.name : "non_error")
+    return "unknown_error"
   }
 }
 
@@ -252,4 +214,18 @@ interface ListOptions {
   take: number
   skip: number
   search?: string
+}
+
+function mapToDomainVersionedSpace(record: PrismaSpace): E.Either<SpaceValidationError, Versioned<Space>> {
+  return pipe(
+    SpaceFactory.validate({
+      id: record.id,
+      organizationId: record.organizationId,
+      name: record.name,
+      description: record.description ?? undefined,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt
+    }),
+    E.map(space => ({...space, occ: record.occ}))
+  )
 }

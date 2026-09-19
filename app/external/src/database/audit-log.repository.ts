@@ -1,8 +1,8 @@
-import {Injectable} from "@nestjs/common"
+import {fromPromise, fromEitherPromise} from "./repository-operation"
+import {Inject, Injectable} from "@nestjs/common"
 import {AuditLogRepository, FindManyError, ListAuditLogResponse, UnknownError} from "@services"
-import {CreateAuditLog, AuditLogFactory} from "@domain"
-import {DatabaseClient} from "./database-client"
-import {v7 as uuidv7} from "uuid"
+import {AuditLog, AuditLogFactory, TenantContext} from "@domain"
+import {AuditLogTenantClient} from "./tenant-database-clients"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
@@ -14,25 +14,23 @@ import {pipe} from "fp-ts/function"
 
 @Injectable()
 export class PostgresAuditLogRepository implements AuditLogRepository {
-  constructor(private readonly dbClient: DatabaseClient) {}
+  constructor(@Inject(AuditLogTenantClient) private readonly dbClient: AuditLogTenantClient) {}
 
-  public persist(data: CreateAuditLog): TaskEither<UnknownError, void> {
-    return TE.tryCatch(
+  public persist(_context: TenantContext, data: AuditLog): TaskEither<UnknownError, void> {
+    return fromPromise(
       async () => {
-        await this.dbClient.cx.auditLog.create({
-          data: this.mapToPrisma(data),
-          select: {id: true}
-        })
+        await this.dbClient.cx.auditLog.create({data: this.mapToPrisma(data), select: {id: true}})
         return
       },
-      e => {
-        Logger.error(e)
+      () => {
+        // Let the transaction boundary handle storage failures and serialization retries.
         return "unknown_error" as const
       }
     )
   }
 
   public findMany(
+    context: TenantContext,
     limit: number,
     fromDate: Date,
     cursor: string | undefined,
@@ -43,14 +41,15 @@ export class PostgresAuditLogRepository implements AuditLogRepository {
     }
   ): TaskEither<FindManyError, ListAuditLogResponse> {
     return pipe(
-      TE.tryCatch(
+      fromEitherPromise(
         async () => {
           // Fetch 'limit + 1' items to check if there is a next page without executing an extra count query.
           // If we receive 'limit + 1' items, we know there are more pages (hasMore = true) and slice
           // the extra element off before returning the payload to the caller.
           const take = limit + 1
           const decodedCursor = this.decodeCursor(cursor)
-          const where = this.buildWhere(fromDate, filters, decodedCursor)
+          if (E.isLeft(decodedCursor)) return decodedCursor
+          const where = this.buildWhere(context, fromDate, filters, decodedCursor.right)
 
           const items = await this.dbClient.cx.auditLog.findMany({
             where,
@@ -63,11 +62,9 @@ export class PostgresAuditLogRepository implements AuditLogRepository {
           const lastItem = itemsToReturn[itemsToReturn.length - 1]
           const nextCursor = hasMore && lastItem ? this.encodeCursor(lastItem) : null
 
-          return {items: itemsToReturn, hasMore, nextCursor}
+          return E.right({items: itemsToReturn, hasMore, nextCursor})
         },
         e => {
-          if (e instanceof InvalidCursorError) return "invalid_cursor" as const
-
           Logger.error(e)
           return "unknown_error" as const
         }
@@ -89,17 +86,17 @@ export class PostgresAuditLogRepository implements AuditLogRepository {
               hasMore: false as const
             }
           }),
-          E.mapLeft(error => {
+          E.orElseW(error => {
             Logger.error("Failed to map AuditLog record to domain", error)
-            return "unknown_error" as const
+            return E.left(error)
           })
         )
       )
     )
   }
 
-  private decodeCursor(cursorStr?: string): {createdAt: Date; id: string} | undefined {
-    if (!cursorStr) return undefined
+  private decodeCursor(cursorStr?: string): E.Either<"invalid_cursor", {createdAt: Date; id: string} | undefined> {
+    if (!cursorStr) return E.right(undefined)
 
     let decoded: string
 
@@ -107,15 +104,15 @@ export class PostgresAuditLogRepository implements AuditLogRepository {
       decoded = Buffer.from(cursorStr, "base64").toString("utf-8")
     } catch {
       Logger.error("Failed to decode cursor", cursorStr)
-      throw new InvalidCursorError()
+      return E.left("invalid_cursor")
     }
 
     const [createdAtStr, id] = decoded.split("_")
-    if (!createdAtStr || !id) throw new InvalidCursorError()
+    if (!createdAtStr || !id) return E.left("invalid_cursor")
 
     const createdAt = new Date(createdAtStr)
-    if (isNaN(createdAt.getTime())) throw new InvalidCursorError()
-    return {createdAt, id}
+    if (isNaN(createdAt.getTime())) return E.left("invalid_cursor")
+    return E.right({createdAt, id})
   }
 
   private encodeCursor(lastItem: PrismaAuditLog): string | null {
@@ -123,6 +120,7 @@ export class PostgresAuditLogRepository implements AuditLogRepository {
   }
 
   private buildWhere(
+    context: TenantContext,
     fromDate: Date,
     filters: {
       targets?: Array<{entityType: string; entityId: string}>
@@ -131,7 +129,10 @@ export class PostgresAuditLogRepository implements AuditLogRepository {
     },
     cursor: {createdAt: Date; id: string} | undefined
   ): Prisma.AuditLogWhereInput {
-    const andConditions: Prisma.AuditLogWhereInput[] = [{createdAt: {gte: fromDate}}]
+    const andConditions: Prisma.AuditLogWhereInput[] = [
+      {organizationId: context.organizationId},
+      {createdAt: {gte: fromDate}}
+    ]
 
     if (filters.targets && filters.targets.length > 0)
       andConditions.push({
@@ -162,15 +163,19 @@ export class PostgresAuditLogRepository implements AuditLogRepository {
     return {AND: andConditions}
   }
 
-  private mapToPrisma(data: CreateAuditLog): Prisma.AuditLogCreateInput {
+  private mapToPrisma(data: AuditLog): Prisma.AuditLogCreateInput {
     return {
-      id: uuidv7(),
+      id: data.id,
+      organizations: {connect: {id: data.organizationId}},
       auditType: data.auditType,
       entityType: data.entityType,
       entityId: data.entityId,
+      entityDisplayName: null,
       actorId: data.actor.id,
       actorType: data.actor.type,
+      actorDisplayName: data.actor.displayName,
       payload: mapToJsonValue(data.payload),
+      schemaVersion: data.schemaVersion,
       createdAt: data.createdAt
     }
   }
@@ -178,22 +183,18 @@ export class PostgresAuditLogRepository implements AuditLogRepository {
   private mapToDomain(record: PrismaAuditLog) {
     return AuditLogFactory.validate({
       id: record.id,
+      organizationId: record.organizationId,
       auditType: record.auditType,
+      schemaVersion: record.schemaVersion,
       entityType: record.entityType,
       entityId: record.entityId,
       actor: {
         id: record.actorId,
-        type: record.actorType
+        type: record.actorType,
+        displayName: record.actorDisplayName
       },
       payload: record.payload,
       createdAt: record.createdAt
     })
-  }
-}
-
-class InvalidCursorError extends Error {
-  constructor() {
-    super("Invalid cursor")
-    this.name = "InvalidCursorError"
   }
 }
