@@ -1,7 +1,6 @@
 import {Module} from "@nestjs/common"
 import {AgentService} from "./agent"
 import {GroupService} from "./group"
-import {OrganizationAdminService} from "./organization-admin"
 import {PersistenceModule, ThirdPartyModule, QueueModule, RateLimiterModule} from "@external"
 import {GroupMembershipService} from "./group-membership"
 import {SpaceService} from "./space"
@@ -29,13 +28,18 @@ import {LeverService} from "./lever"
 import {ResourcesService} from "./resources"
 import {FeatureGateService} from "./feature-gate"
 import {UsageMeteringService} from "./usage-metering"
+import {
+  InvitationManagementService,
+  MembershipManagementService,
+  OrganizationLifecycleService,
+  OrganizationService
+} from "./tenancy"
 
 const services = [
   AgentService,
   AuditLogService,
   GroupService,
   GroupMembershipService,
-  OrganizationAdminService,
   SpaceService,
   UserService,
   WorkflowService,
@@ -57,7 +61,11 @@ const services = [
   LeverService,
   ResourcesService,
   FeatureGateService,
-  UsageMeteringService
+  UsageMeteringService,
+  OrganizationService,
+  OrganizationLifecycleService,
+  MembershipManagementService,
+  InvitationManagementService
 ]
 
 const internalServices = [PkceService]

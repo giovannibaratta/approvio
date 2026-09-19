@@ -229,6 +229,7 @@ describe("QuotaFactory", () => {
         // Given
         const data = {
           id: validId,
+          organizationId: validNode.identifier,
           node: validNode,
           quotaType: validQuotaType,
           limit: 10,
@@ -260,6 +261,7 @@ describe("QuotaFactory", () => {
         // Given
         const data = {
           id: validId,
+          organizationId: validNode.identifier,
           node: {type: "User", identifier: uuidv7()},
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE",
           limit: 10,
@@ -278,6 +280,7 @@ describe("QuotaFactory", () => {
         // Given
         const data = {
           id: "not-a-uuid",
+          organizationId: validNode.identifier,
           node: validNode,
           quotaType: validQuotaType,
           limit: 10,
@@ -296,6 +299,7 @@ describe("QuotaFactory", () => {
         // Given
         const data1 = {
           id: validId,
+          organizationId: validNode.identifier,
           node: validNode,
           quotaType: validQuotaType,
           limit: -1,
@@ -317,6 +321,7 @@ describe("QuotaFactory", () => {
         // Given
         const data = {
           id: validId,
+          organizationId: validNode.identifier,
           node: validNode,
           quotaType: validQuotaType,
           limit: 10
@@ -335,6 +340,7 @@ describe("QuotaFactory", () => {
     it("should create a new quota with generated id and dates", () => {
       // Given
       const data = {
+        organizationId: validNode.identifier,
         node: validNode,
         quotaType: validQuotaType
       }

@@ -14,12 +14,14 @@ import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {validateUserEntity} from "@services/shared/types"
 import {Either, left, right, isLeft} from "fp-ts/Either"
+import {TRANSACTION_MANAGER_TOKEN, TransactionManager} from "@services/transaction/interfaces"
 
 @Injectable()
 export class ResourcesService {
   constructor(
     @Inject(SPACE_REPOSITORY_TOKEN) private readonly spaceRepo: SpaceRepository,
-    @Inject(GROUP_REPOSITORY_TOKEN) private readonly groupRepo: GroupRepository
+    @Inject(GROUP_REPOSITORY_TOKEN) private readonly groupRepo: GroupRepository,
+    @Inject(TRANSACTION_MANAGER_TOKEN) private readonly transactionManager: TransactionManager
   ) {}
 
   resolveResources(request: ResolveResourcesRequest): TaskEither<ResolveResourcesError, ResourceResolveResponse> {
@@ -33,14 +35,16 @@ export class ResourcesService {
 
       return pipe(
         TE.sequenceArray([
-          spaceIds.length > 0 ? this.spaceRepo.getSpacesByIds(spaceIds) : TE.right([]),
-          groupIds.length > 0 ? this.groupRepo.getGroupsByIds(groupIds) : TE.right([])
+          spaceIds.length > 0 ? this.spaceRepo.getSpacesByIds(request, spaceIds) : TE.right([]),
+          groupIds.length > 0 ? this.groupRepo.getGroupsByIds(request, groupIds) : TE.right([])
         ]),
         TE.chainW(res => {
           if (res.length !== 2) return TE.left("unknown_error" as const)
           const [spaces, groups] = res
           if (spaces === undefined || groups === undefined) return TE.left("unknown_error" as const)
-          return TE.right(categorizeResources(payload.resources, spaces, groups, isOrgAdmin, roles))
+          return TE.right(
+            categorizeResources(payload.resources, spaces, groups, isOrgAdmin, roles, request.organizationId)
+          )
         })
       )
     }
@@ -76,7 +80,8 @@ function categorizeResources(
   spaces: {id: string; name: string}[],
   groups: {id: string; name: string}[],
   isOrgAdmin: boolean,
-  roles: ReadonlyArray<UnconstrainedBoundRole>
+  roles: ReadonlyArray<UnconstrainedBoundRole>,
+  organizationId: string
 ): ResourceResolveResponse {
   const spaceMap = new Map(spaces.map(s => [s.id, s]))
   const groupMap = new Map(groups.map(g => [g.id, g]))
@@ -86,11 +91,11 @@ function categorizeResources(
 
   for (const resourceReq of resources)
     if (resourceReq.type === "space") {
-      const res = resolveSpace(resourceReq, spaceMap, isOrgAdmin, roles)
+      const res = resolveSpace(resourceReq, spaceMap, isOrgAdmin, roles, organizationId)
       if (isLeft(res)) denied.push(res.left)
       else resolved.push(res.right)
     } else if (resourceReq.type === "group") {
-      const res = resolveGroup(resourceReq, groupMap, isOrgAdmin, roles)
+      const res = resolveGroup(resourceReq, groupMap, isOrgAdmin, roles, organizationId)
       if (isLeft(res)) denied.push(res.left)
       else resolved.push(res.right)
     }
@@ -112,13 +117,15 @@ function resolveSpace(
   resourceReq: {id: string},
   spaceMap: Map<string, {id: string; name: string}>,
   isOrgAdmin: boolean,
-  roles: ReadonlyArray<UnconstrainedBoundRole>
+  roles: ReadonlyArray<UnconstrainedBoundRole>,
+  organizationId: string
 ): Either<ResourceDeniedItem, ResourceResolvedItem> {
   const space = spaceMap.get(resourceReq.id)
   if (!space) return left({type: "space", id: resourceReq.id, reason: "NOT_FOUND"})
 
   const hasAccess =
-    isOrgAdmin || RolePermissionChecker.hasSpacePermission(roles, {type: "space", spaceId: space.id}, "read")
+    isOrgAdmin ||
+    RolePermissionChecker.hasSpacePermission(roles, {type: "space", spaceId: space.id, organizationId}, "read")
 
   if (hasAccess) return right({type: "space", id: space.id, name: space.name})
   return left({type: "space", id: space.id, reason: "NOT_AUTHORIZED"})
@@ -138,13 +145,15 @@ function resolveGroup(
   resourceReq: {id: string},
   groupMap: Map<string, {id: string; name: string}>,
   isOrgAdmin: boolean,
-  roles: ReadonlyArray<UnconstrainedBoundRole>
+  roles: ReadonlyArray<UnconstrainedBoundRole>,
+  organizationId: string
 ): Either<ResourceDeniedItem, ResourceResolvedItem> {
   const group = groupMap.get(resourceReq.id)
   if (!group) return left({type: "group", id: resourceReq.id, reason: "NOT_FOUND"})
 
   const hasAccess =
-    isOrgAdmin || RolePermissionChecker.hasGroupPermission(roles, {type: "group", groupId: group.id}, "read")
+    isOrgAdmin ||
+    RolePermissionChecker.hasGroupPermission(roles, {type: "group", groupId: group.id, organizationId}, "read")
 
   if (hasAccess) return right({type: "group", id: group.id, name: group.name})
   return left({type: "group", id: group.id, reason: "NOT_AUTHORIZED"})

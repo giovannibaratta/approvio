@@ -1,15 +1,13 @@
 import {
   Pagination as PaginationApi,
-  User as UserApi,
-  UserCreate,
   UserSummary as UserSummaryApi,
   RoleAssignmentRequest,
   RoleRemovalRequest,
   validateRoleAssignmentRequest,
   validateRoleRemovalRequest
 } from "@approvio/api"
-import {GetAuthenticatedEntity} from "@app/auth"
-import {Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Res} from "@nestjs/common"
+import {GetAuthenticatedEntity, GetTenantContext} from "@app/auth"
+import {Body, Controller, Delete, Get, Headers, HttpCode, HttpStatus, Param, Put, Query, Res} from "@nestjs/common"
 import {
   ListUsersRequest,
   UserService,
@@ -17,26 +15,26 @@ import {
   AssignRolesToUserRequest,
   RemoveRolesFromUserRequest
 } from "@services"
-import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
-import * as E from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {
-  createUserApiToServiceModel,
-  generateErrorResponseForCreateUser,
-  generateErrorResponseForGetUser,
   generateErrorResponseForListUsers,
   generateErrorResponseForUserRoleAssignment,
   generateErrorResponseForUserRoleRemoval,
   mapToServiceRequest,
-  mapUserToApi,
   mapUsersToApi
 } from "./users.mappers"
-import {AuthenticatedEntity} from "@domain"
+import {AuthenticatedEntity, TenantContext} from "@domain"
+import {bindRoleScopeToOrganization} from "../agents/agents.mappers"
 import {logSuccess} from "@utils"
+import {ConfigProvider} from "@external/config"
+import {Response} from "express"
+import {createEntityTag, parseEntityTag} from "../etag"
+import {PreconditionFailedException} from "@nestjs/common"
+import {generateErrorPayload} from "../error"
 
-export const USERS_ENDPOINT_ROOT = "users"
+export const USERS_ENDPOINT_ROOT = "o/:organizationId/users"
 
 @Controller(USERS_ENDPOINT_ROOT)
 export class UsersController {

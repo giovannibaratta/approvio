@@ -14,7 +14,9 @@ import {
   RolePermissionChecker,
   AuditLogFactory,
   CreateAuditLog,
-  AuditLogValidationError
+  AuditLogValidationError,
+  BoundaryError,
+  TenantContext
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {AuthorizationError, UnknownError} from "@services/error"
@@ -22,7 +24,6 @@ import {RequestorAwareRequest, validateUserEntity} from "@services/shared/types"
 import {Versioned} from "@domain"
 import {isUUIDv7, logSuccess} from "@utils"
 import {UserRepository, USER_REPOSITORY_TOKEN} from "@services/user/interfaces"
-import {DEFAULT_ORG_ID} from "@services/constants"
 import {QuotaService} from "@services/quota/quota.service"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
@@ -80,22 +81,26 @@ export class GroupService {
 
     const validateGroup = (req: CreateGroupRequest) => pipe(req.groupData, g => GroupFactory.newGroup(g), TE.fromEither)
 
-    const fetchUser = (requestor: User) => this.userRepo.getUserById(requestor.id)
+    const fetchUser = (requestor: User) => this.userRepo.getUserById(request, requestor.id)
 
     const createMembership = (user: User) =>
       pipe(MembershipFactory.newMembership({entity: createUserMembershipEntity(user)}), TE.fromEither)
 
     const addManagePermissions = ({user, group}: {user: Versioned<User>; group: Group}) => {
-      const manageRole = SystemRole.createGroupManagerRole({type: "group", groupId: group.id})
+      const manageRole = SystemRole.createGroupManagerRole({
+        type: "group",
+        organizationId: group.organizationId,
+        groupId: group.id
+      })
       return pipe(UserFactory.addPermissions(user, [manageRole]), TE.fromEither)
     }
 
     const persistGroupWithMembershipAndUpdateUser = (data: CreateGroupWithMembershipAndUpdateUserRepo) =>
-      this.groupRepo.createGroupWithMembershipAndUpdateUser(data)
+      this.groupRepo.createGroupWithMembershipAndUpdateUser(request, data)
 
     const checkQuota = () =>
       pipe(
-        this.quotaService.isQuotaAvailable({type: "Org", identifier: DEFAULT_ORG_ID}, "MAX_GROUPS", 1),
+        this.quotaService.isQuotaAvailable({type: "Org", identifier: request.organizationId}, "MAX_GROUPS", 1),
         TE.mapLeft(() => "quota_check_error" as const),
         TE.chainW(isAvailable => (isAvailable ? TE.right(undefined) : TE.left("quota_exceeded" as const)))
       )
@@ -110,12 +115,13 @@ export class GroupService {
       TE.bindW("membership", ({updatedUser}) => createMembership(updatedUser)),
       TE.bindW("actor", () => TE.right(extractActorDetails(request.requestor))),
       TE.chainW(({group, updatedUser, user, membership, actor}) =>
-        this.txManager.execute(() =>
+        this.txManager.execute(request, () =>
           pipe(
             persistGroupWithMembershipAndUpdateUser({group, user: updatedUser, userOcc: user.occ, membership}),
             TE.chainFirstW(createdGroup =>
-              this.persistGroupAuditLog({
+              this.persistGroupAuditLog(request, {
                 auditType: "GROUP_CREATED",
+                organizationId: request.organizationId,
                 entityType: "GROUP",
                 entityId: createdGroup.id,
                 actor: actor,
@@ -142,14 +148,14 @@ export class GroupService {
     const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
 
     const resolveGroupId = (identifier: string): TaskEither<GetGroupError, string> => {
-      return isUuid ? TE.right(identifier) : this.groupRepo.getGroupIdByName(identifier)
+      return isUuid ? TE.right(identifier) : this.groupRepo.getGroupIdByName(request, identifier)
     }
 
     const checkPermissions = (requestor: User, groupId: string): TaskEither<GetGroupError, string> => {
       const isOrgAdmin = requestor.orgRole === OrgRole.ADMIN
       const hasReadPermission = RolePermissionChecker.hasGroupPermission(
         requestor.roles,
-        {type: "group", groupId},
+        {type: "group", organizationId: request.organizationId, groupId},
         "read"
       )
 
@@ -158,7 +164,7 @@ export class GroupService {
     }
 
     const fetchGroupData = (groupId: string): TaskEither<GetGroupError, Versioned<GroupWithEntitiesCount>> => {
-      return this.groupRepo.getGroupById({groupId})
+      return this.groupRepo.getGroupById(request, {groupId})
     }
 
     return pipe(
@@ -179,7 +185,7 @@ export class GroupService {
     if (limit <= 0) return TE.left("invalid_limit")
     if (limit > 100) limit = MAX_LIMIT
 
-    const repoListGroups = (data: ListGroupsRepo) => this.groupRepo.listGroups(data)
+    const repoListGroups = (data: ListGroupsRepo) => this.groupRepo.listGroups(request, data)
     const validateRequestor = () => TE.fromEither(validateUserEntity(request.requestor))
 
     const buildRepoRequest = (requestor: User) => {
@@ -197,19 +203,22 @@ export class GroupService {
     )
   }
 
-  getUserGroups(userId: string): TaskEither<GetGroupRepoError, Group[]> {
-    return this.groupRepo.getGroupsByUserId(userId)
+  getUserGroups(context: TenantContext, userId: string): TaskEither<GetGroupRepoError, Group[]> {
+    return this.groupRepo.getGroupsByUserId(context, userId)
   }
 
-  getAgentGroups(agentId: string): TaskEither<GetGroupRepoError, Group[]> {
-    return this.groupRepo.getGroupsByAgentId(agentId)
+  getAgentGroups(context: TenantContext, agentId: string): TaskEither<GetGroupRepoError, Group[]> {
+    return this.groupRepo.getGroupsByAgentId(context, agentId)
   }
 
-  private persistGroupAuditLog(data: CreateAuditLog): TaskEither<AuditLogValidationError | UnknownError, void> {
+  private persistGroupAuditLog(
+    context: RequestorAwareRequest,
+    data: CreateAuditLog
+  ): TaskEither<AuditLogValidationError | BoundaryError | UnknownError, void> {
     return pipe(
       AuditLogFactory.create(data),
       TE.fromEither,
-      TE.chainW(validAuditLog => this.auditLogRepo.persist(validAuditLog))
+      TE.chainW(validAuditLog => this.auditLogRepo.persist(context, validAuditLog))
     )
   }
 }

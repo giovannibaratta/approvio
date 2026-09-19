@@ -30,7 +30,7 @@ describe("Lever Integration (Real Provider)", () => {
     const isolatedDb = await prepareDatabase()
     redisPrefix = prepareRedisPrefix()
 
-    const mockConfig = MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix)
+    const mockConfig = MockConfigProvider.fromTenantConnectionUrl(isolatedDb, redisPrefix)
 
     if (options.additionalOidcProviders)
       for (const [id, config] of options.additionalOidcProviders.entries()) mockConfig.oidcProviders.set(id, config)

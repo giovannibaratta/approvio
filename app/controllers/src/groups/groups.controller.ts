@@ -7,7 +7,7 @@ import {
   RemoveGroupEntitiesRequest,
   validateListGroupsParams
 } from "@approvio/api"
-import {GetAuthenticatedEntity} from "@app/auth"
+import {GetAuthenticatedEntity, GetTenantContext} from "@app/auth"
 import {
   createGroupApiToServiceModel,
   generateErrorResponseForAddMembersToGroup,
@@ -49,13 +49,13 @@ import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
-import {AuthenticatedEntity} from "@domain"
+import {AuthenticatedEntity, TenantContext} from "@domain"
 import {logSuccess} from "@utils"
 
 export const GROUPS_ENDPOINT_ROOT = "groups"
 const MAX_LIMIT = 100
 
-@Controller(GROUPS_ENDPOINT_ROOT)
+@Controller(`o/:organizationId/${GROUPS_ENDPOINT_ROOT}`)
 export class GroupsController {
   constructor(
     private readonly groupService: GroupService,
@@ -67,13 +67,14 @@ export class GroupsController {
   async createGroup(
     @Body() request: GroupCreate,
     @Res({passthrough: true}) response: Response,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext
   ): Promise<void> {
     // Wrap service call in lambda, passing the creatorId
     const serviceCreateGroup = (req: CreateGroupRequest) => this.groupService.createGroup(req)
 
     const eitherGroup = await pipe(
-      {request, requestor},
+      {request, requestor, context},
       createGroupApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceCreateGroup),
@@ -90,6 +91,7 @@ export class GroupsController {
   @HttpCode(HttpStatus.OK)
   async listGroups(
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext,
     @Query() query: Record<string, unknown>
   ): Promise<ListGroups200Response> {
     // Wrap in a lambda to preserve the "this" context
@@ -104,6 +106,7 @@ export class GroupsController {
           page: params.page ?? 1,
           limit: params.limit ?? 20,
           search: params.search,
+          organizationId: context.organizationId,
           requestor
         }
       }),
@@ -118,11 +121,12 @@ export class GroupsController {
   @HttpCode(HttpStatus.OK)
   async getGroup(
     @Param("groupIdentifier") groupIdentifier: string,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext
   ): Promise<GroupApi> {
     const serviceGetGroup = (request: GetGroupByIdentifierRequest) => this.groupService.getGroupByIdentifier(request)
     const eitherGroup = await pipe(
-      {groupIdentifier, requestor},
+      {groupIdentifier, organizationId: context.organizationId, requestor},
       TE.right,
       TE.chainW(serviceGetGroup),
       logSuccess("Group retrieved", "GroupsController", group => ({id: group.id}))
@@ -139,7 +143,8 @@ export class GroupsController {
     @Param("groupId") groupId: string,
     @Query("page", new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query("limit", new DefaultValuePipe(20), ParseIntPipe) limit: number,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext
   ): Promise<ListGroupEntities200Response> {
     // This should be moved to the service layer once the pagination will be implemented
     if (page <= 0)
@@ -154,7 +159,7 @@ export class GroupsController {
       this.groupMembershipService.getGroupByIdentifierWithMembership(request)
 
     const eitherResult = await pipe(
-      {groupId, requestor},
+      {groupId, organizationId: context.organizationId, requestor},
       TE.right,
       TE.chainW(serviceListUsers),
       TE.map(data => mapListGroupMembersResultToApi(page, limit, data)),
@@ -172,7 +177,8 @@ export class GroupsController {
   async addGroupEntities(
     @Param("groupId") groupId: string,
     @Body() request: AddGroupEntitiesRequest,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext
   ): Promise<GroupApi> {
     const addUserRequests: AddMembersToGroupRequest = {
       groupId,
@@ -180,6 +186,7 @@ export class GroupsController {
         entityId: entity.entity.entityId,
         entityType: entity.entity.entityType === "human" ? "user" : "agent"
       })),
+      organizationId: context.organizationId,
       requestor
     }
 
@@ -204,7 +211,8 @@ export class GroupsController {
   async removeEntitiesFromGroup(
     @Param("groupId") groupId: string,
     @Body() request: RemoveGroupEntitiesRequest,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext
   ): Promise<GroupApi> {
     const removeMembersRequest: RemoveMembersFromGroupRequest = {
       groupId,
@@ -212,6 +220,7 @@ export class GroupsController {
         entityId: entity.entity.entityId,
         entityType: entity.entity.entityType === "human" ? "user" : "agent"
       })),
+      organizationId: context.organizationId,
       requestor
     }
 

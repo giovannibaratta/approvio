@@ -1,45 +1,64 @@
-import {Either, left, right, isLeft} from "fp-ts/Either"
+import {Either, isLeft, left, right} from "fp-ts/Either"
 
-import {getStringAsEnum, isEmail, isUUIDv7, PrefixUnion} from "@utils"
-import {UnconstrainedBoundRole, RoleFactory, RoleValidationError, MAX_ROLES_PER_ENTITY} from "./role"
-import {Versioned} from "./shared"
-import {v7 as uuidv7} from "uuid"
+import {getStringAsEnum, isUUIDv7, PrefixUnion} from "@utils"
+import {MAX_ROLES_PER_ENTITY, RoleFactory, RoleValidationError, UnconstrainedBoundRole} from "./role"
+import {TenantContext, Versioned} from "./shared"
 
 export const DISPLAY_NAME_MAX_LENGTH = 255
-export const EMAIL_MAX_LENGTH = 255
 
 export enum OrgRole {
+  OWNER = "owner",
   ADMIN = "admin",
   MEMBER = "member"
 }
 
-export type User = Readonly<PrivateUser>
+export enum MembershipStatus {
+  ACTIVE = "active",
+  REMOVED = "removed"
+}
+
+export interface User extends TenantContext {
+  readonly id: string
+  readonly accountId: string
+  readonly displayName: string
+  readonly status: MembershipStatus
+  readonly orgRole: OrgRole
+  readonly roles: ReadonlyArray<UnconstrainedBoundRole>
+  readonly createdAt: Date
+  readonly updatedAt: Date
+}
+
+interface UserSummaryData extends TenantContext {
+  id: string
+  accountId: string
+  displayName: string
+  status: MembershipStatus
+  orgRole: OrgRole
+}
+
 export type UserSummary = Readonly<UserSummaryData>
 
-interface UserSummaryData {
-  id: string
-  displayName: string
-  email: string
-}
+type UnprefixedUserIdentityValidationError =
+  "invalid_uuid" | "invalid_organization_id" | "invalid_account_id" | "display_name_empty" | "display_name_too_long"
 
-interface PrivateUser extends UserSummaryData {
-  createdAt: Date
-  orgRole: OrgRole
-  roles: ReadonlyArray<UnconstrainedBoundRole>
-}
+type UserIdentityValidationError = PrefixUnion<"user", UnprefixedUserIdentityValidationError>
 
-type EmailValidationError = "email_empty" | "email_too_long" | "email_invalid"
-type DisplayNameValidationError = "display_name_empty" | "display_name_too_long"
-type OrgValidationError = "org_role_invalid"
-type IdValidationError = "invalid_uuid"
-type RoleAssignmentValidationError = "role_assignments_invalid_format" | "duplicate_roles"
+type UnprefixedUserFieldValidationError =
+  | UnprefixedUserIdentityValidationError
+  | "org_role_invalid"
+  | "status_invalid"
+  | "update_before_create"
+  | "role_assignments_invalid_format"
+  | "duplicate_roles"
+  | "role_organization_mismatch"
+  | "membership_roles_invalid"
 
-export type UserValidationError = PrefixUnion<"user", UnprefixedUserValidationError> | RoleValidationError
-export type UserSummaryValidationError = PrefixUnion<"user", UnprefixedUserSummaryValidationError>
+type UserFieldValidationError = PrefixUnion<"user", UnprefixedUserFieldValidationError>
 
-type UnprefixedUserValidationError =
-  UnprefixedUserSummaryValidationError | OrgValidationError | RoleAssignmentValidationError
-type UnprefixedUserSummaryValidationError = IdValidationError | DisplayNameValidationError | EmailValidationError
+export type UserValidationError = UserFieldValidationError | RoleValidationError
+export type UserSummaryValidationError =
+  UserIdentityValidationError | PrefixUnion<"user", "org_role_invalid" | "status_invalid">
+export type MembershipTransitionError = "user_invalid_membership_transition"
 
 export class UserFactory {
   /**
@@ -52,18 +71,13 @@ export class UserFactory {
     user: User,
     newRoles: ReadonlyArray<UnconstrainedBoundRole>
   ): Either<UserValidationError, User> {
-    const updatedUser: User = {
-      ...user,
-      roles: [...user.roles, ...newRoles]
-    }
-
-    return UserFactory.validate(updatedUser)
+    return UserFactory.assignRoles(user, newRoles)
   }
 
   /**
-   * Validates role assignments from external data
-   * @param roles Array data that should represent BoundRole array
-   * @returns Either validation error or validated roles array
+   * Validates role assignments from external data.
+   * @param roles Array data that should represent bound roles.
+   * @returns Either validation error or validated roles.
    */
   static validateRoles(roles: unknown): Either<UserValidationError, ReadonlyArray<UnconstrainedBoundRole>> {
     if (roles === null || roles === undefined) return right([])
@@ -87,167 +101,91 @@ export class UserFactory {
     return UserFactory.createUserSummary(data)
   }
 
-  /**
-   * Creates a new User object with validation.
-   * Generates a UUID and sets the creation timestamp.
-   * @param data Request data for creating a user.
-   * @returns Either a validation error or the newly created User object.
-   */
-  static newUser(
-    data: Omit<User, "id" | "createdAt" | "orgRole" | "roles"> & {orgRole: string}
-  ): Either<UserValidationError, User> {
-    const uuid = uuidv7()
-    const now = new Date()
-
-    const validatedOrgRole = validateOrgRole(data.orgRole)
-    if (isLeft(validatedOrgRole)) return validatedOrgRole
-
-    const user: User = {
-      ...data,
-      id: uuid,
-      createdAt: now,
-      orgRole: validatedOrgRole.right,
-      roles: []
-    }
-
-    return UserFactory.validate(user)
-  }
-
-  /**
-   * Creates a new User from OIDC claims with automatic org role assignment.
-   * This method is used for auto-registration of OIDC-authenticated users.
-   * @param oidcClaims Basic user information from OIDC provider
-   * @param isFirstUser Whether this is the first user in the system (gets admin role)
-   * @returns Either a validation error or the newly created User object.
-   */
-  static newUserFromOidc(
-    oidcClaims: {
-      email: string
-      displayName: string
-    },
-    isFirstUser: boolean
-  ): Either<UserValidationError, User> {
-    const uuid = uuidv7()
-    const now = new Date()
-    const orgRole = isFirstUser ? OrgRole.ADMIN : OrgRole.MEMBER
-
-    const user: User = {
-      id: uuid,
-      email: oidcClaims.email,
-      displayName: oidcClaims.displayName,
-      createdAt: now,
-      orgRole,
-      roles: []
-    }
-
-    return UserFactory.validate(user)
-  }
-
-  /**
-   * Creates a new User with additional roles assigned (additive operation)
-   * @param user Existing user (can be regular User or Versioned<User>)
-   * @param newRoles Array of new roles to add
-   * @returns Either validation error or new User/Versioned<User> with roles added (preserves input type)
-   */
-  static assignRoles<T extends User | Versioned<User>>(
-    user: T,
+  static assignRoles(user: User, newRoles: ReadonlyArray<UnconstrainedBoundRole>): Either<UserValidationError, User>
+  static assignRoles(
+    user: Versioned<User>,
     newRoles: ReadonlyArray<UnconstrainedBoundRole>
-  ): Either<UserValidationError, T> {
-    const consolidatedRoles = RoleFactory.consolidateRoles([...user.roles, ...newRoles])
+  ): Either<UserValidationError, Versioned<User>>
+  static assignRoles(
+    user: User | Versioned<User>,
+    newRoles: ReadonlyArray<UnconstrainedBoundRole>
+  ): Either<UserValidationError, User | Versioned<User>> {
+    const roles = RoleFactory.consolidateRoles([...user.roles, ...newRoles])
+    if (roles.length > MAX_ROLES_PER_ENTITY) return left("role_total_roles_exceed_maximum")
 
-    if (consolidatedRoles.length > MAX_ROLES_PER_ENTITY) return left("role_total_roles_exceed_maximum")
-
-    const updatedUser = {
-      ...user,
-      roles: consolidatedRoles
-    } as T
-
-    // Extract the base user for validation (remove occ if present)
-    const baseUser: User =
-      "occ" in user
-        ? {
-            id: user.id,
-            displayName: user.displayName,
-            email: user.email,
-            createdAt: user.createdAt,
-            orgRole: user.orgRole,
-            roles: consolidatedRoles
-          }
-        : updatedUser
-
-    const validation = UserFactory.validate(baseUser)
-    if (isLeft(validation)) return validation
-
-    return right(updatedUser)
+    return validateRoleUpdate(user, roles)
   }
 
   /**
    * Creates a new User with specified roles removed
    * @param user Existing user (can be regular User or Versioned<User>)
    * @param rolesToRemove Array of roles to remove (matched by name and scope)
-   * @returns Either validation error or new User/Versioned<User> with roles removed (preserves input type)
+   * @returns Either validation error or new User/Versioned<User> with roles removed
    */
-  static removeRoles<T extends User | Versioned<User>>(
-    user: T,
+  static removeRoles(
+    user: User,
     rolesToRemove: ReadonlyArray<UnconstrainedBoundRole>
-  ): Either<UserValidationError, T> {
-    const remainingRoles = user.roles.filter(existingRole => {
-      return !rolesToRemove.some(
-        roleToRemove =>
-          existingRole.name === roleToRemove.name && RoleFactory.isSameScope(existingRole.scope, roleToRemove.scope)
-      )
-    })
-
-    const updatedUser = {
-      ...user,
-      roles: remainingRoles
-    } as T
-
-    // Extract the base user for validation (remove occ if present)
-    const baseUser: User =
-      "occ" in user
-        ? {
-            id: user.id,
-            displayName: user.displayName,
-            email: user.email,
-            createdAt: user.createdAt,
-            orgRole: user.orgRole,
-            roles: remainingRoles
-          }
-        : updatedUser
-
-    const validation = UserFactory.validate(baseUser)
-    if (isLeft(validation)) return validation
-
-    return right(updatedUser)
+  ): Either<UserValidationError, User>
+  static removeRoles(
+    user: Versioned<User>,
+    rolesToRemove: ReadonlyArray<UnconstrainedBoundRole>
+  ): Either<UserValidationError, Versioned<User>>
+  static removeRoles(
+    user: User | Versioned<User>,
+    rolesToRemove: ReadonlyArray<UnconstrainedBoundRole>
+  ): Either<UserValidationError, User | Versioned<User>> {
+    const roles = user.roles.filter(
+      existing =>
+        !rolesToRemove.some(
+          candidate => existing.name === candidate.name && RoleFactory.isSameScope(existing.scope, candidate.scope)
+        )
+    )
+    return validateRoleUpdate(user, roles)
   }
 
-  /**
-   * Performs the core validation logic for a User object.
-   * @param data The User object data.
-   * @returns Either a validation error or the validated User object.
-   */
+  static remove(user: User): Either<MembershipTransitionError, User> {
+    if (user.status !== MembershipStatus.ACTIVE) return left("user_invalid_membership_transition")
+    return right({...user, status: MembershipStatus.REMOVED, roles: [], updatedAt: new Date()})
+  }
+
+  static readmit(user: User, orgRole: OrgRole): Either<MembershipTransitionError, User> {
+    if (user.status !== MembershipStatus.REMOVED) return left("user_invalid_membership_transition")
+    return right({...user, status: MembershipStatus.ACTIVE, orgRole, roles: [], updatedAt: new Date()})
+  }
+
+  static canGrantOrgRole(actor: User, target: User, requestedRole: OrgRole): boolean {
+    if (actor.organizationId !== target.organizationId) return false
+    if (actor.status !== MembershipStatus.ACTIVE || target.status !== MembershipStatus.ACTIVE) return false
+    if (actor.orgRole === OrgRole.OWNER) return true
+    if (actor.orgRole !== OrgRole.ADMIN) return false
+    return target.orgRole !== OrgRole.OWNER && requestedRole !== OrgRole.OWNER
+  }
+
   private static createUser(
-    data: Omit<User, "orgRole" | "roles"> & {
-      readonly orgRole: User["orgRole"] | string
+    data: Omit<User, "orgRole" | "roles" | "status"> & {
+      readonly orgRole: unknown
+      readonly status: unknown
       readonly roles: unknown
     }
   ): Either<UserValidationError, User> {
-    const userSummaryValidation = this.createUserSummary(data)
-    const orgRoleValidation = typeof data.orgRole === "string" ? validateOrgRole(data.orgRole) : right(data.orgRole)
-    const rolesValidation = this.validateRoles(data.roles)
+    const userSummaryValidation = UserFactory.createUserSummary(data)
+    const rolesValidation = UserFactory.validateRoles(data.roles)
 
     if (isLeft(userSummaryValidation)) return userSummaryValidation
-    if (isLeft(orgRoleValidation)) return orgRoleValidation
     if (isLeft(rolesValidation)) return rolesValidation
+    if (data.createdAt > data.updatedAt) return left("user_update_before_create")
+    if (rolesValidation.right.some(role => role.scope.organizationId !== data.organizationId))
+      return left("user_role_organization_mismatch")
+    if (userSummaryValidation.right.status === MembershipStatus.REMOVED && rolesValidation.right.length > 0)
+      return left("user_membership_roles_invalid")
 
-    const duplicateCheck = this.checkForDuplicateRoles(rolesValidation.right)
+    const duplicateCheck = UserFactory.checkForDuplicateRoles(rolesValidation.right)
     if (isLeft(duplicateCheck)) return duplicateCheck
 
     return right({
       ...userSummaryValidation.right,
-      orgRole: orgRoleValidation.right,
       createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
       roles: rolesValidation.right
     })
   }
@@ -271,45 +209,57 @@ export class UserFactory {
     return right(undefined)
   }
 
-  private static createUserSummary(data: UserSummaryData): Either<UserSummaryValidationError, UserSummary> {
-    const displayNameValidation = validateDisplayName(data.displayName)
-    const emailValidation = validateEmail(data.email)
-    const idValidation = validateId(data.id)
+  private static createUserSummary(data: UserSummaryInput): Either<UserSummaryValidationError, UserSummary> {
+    const identityValidation = validateUserIdentity(data)
+    const orgRoleValidation = validateOrgRole(data.orgRole)
+    const statusValidation = validateMembershipStatus(data.status)
 
-    if (isLeft(idValidation)) return idValidation
-    if (isLeft(displayNameValidation)) return displayNameValidation
-    if (isLeft(emailValidation)) return emailValidation
+    if (isLeft(identityValidation)) return identityValidation
+    if (isLeft(orgRoleValidation)) return orgRoleValidation
+    if (isLeft(statusValidation)) return statusValidation
 
     return right({
-      id: idValidation.right,
-      displayName: displayNameValidation.right,
-      email: emailValidation.right
+      ...identityValidation.right,
+      orgRole: orgRoleValidation.right,
+      status: statusValidation.right
     })
   }
 }
 
-function validateDisplayName(displayName: string): Either<UserSummaryValidationError, string> {
-  if (!displayName || displayName.trim().length === 0) return left("user_display_name_empty")
-  if (displayName.length > DISPLAY_NAME_MAX_LENGTH) return left("user_display_name_too_long")
-
-  return right(displayName)
+type UserSummaryInput = Omit<UserSummaryData, "orgRole" | "status"> & {
+  readonly orgRole: unknown
+  readonly status: unknown
 }
 
-function validateEmail(email: string): Either<UserSummaryValidationError, string> {
-  if (!email || email.trim().length === 0) return left("user_email_empty")
-  if (email.length > EMAIL_MAX_LENGTH) return left("user_email_too_long")
-  if (!isEmail(email)) return left("user_email_invalid")
-
-  return right(email)
+function validateMembershipStatus(status: unknown): Either<UserSummaryValidationError, MembershipStatus> {
+  if (typeof status !== "string") return left("user_status_invalid")
+  const validatedStatus = getStringAsEnum(status, MembershipStatus)
+  if (validatedStatus === undefined) return left("user_status_invalid")
+  return right(validatedStatus)
 }
 
-function validateOrgRole(orgRole: string): Either<UserValidationError, OrgRole> {
-  const enumOrgRole = getStringAsEnum(orgRole, OrgRole)
-  if (enumOrgRole === undefined) return left("user_org_role_invalid")
-  return right(enumOrgRole)
+function validateOrgRole(orgRole: unknown): Either<UserSummaryValidationError, OrgRole> {
+  if (typeof orgRole !== "string") return left("user_org_role_invalid")
+  const validatedOrgRole = getStringAsEnum(orgRole, OrgRole)
+  if (validatedOrgRole === undefined) return left("user_org_role_invalid")
+  return right(validatedOrgRole)
 }
 
-function validateId(id: string): Either<UserSummaryValidationError, string> {
-  if (!isUUIDv7(id)) return left("user_invalid_uuid")
-  return right(id)
+function validateRoleUpdate(
+  user: User | Versioned<User>,
+  roles: ReadonlyArray<UnconstrainedBoundRole>
+): Either<UserValidationError, User | Versioned<User>> {
+  const validation = UserFactory.validate({...user, roles})
+  return isLeft(validation) ? validation : right({...user, roles})
+}
+
+function validateUserIdentity(
+  data: Pick<User, "id" | "organizationId" | "accountId" | "displayName">
+): Either<UserIdentityValidationError, Pick<User, "id" | "organizationId" | "accountId" | "displayName">> {
+  if (!isUUIDv7(data.id)) return left("user_invalid_uuid")
+  if (!isUUIDv7(data.organizationId)) return left("user_invalid_organization_id")
+  if (!isUUIDv7(data.accountId)) return left("user_invalid_account_id")
+  if (!data.displayName.trim()) return left("user_display_name_empty")
+  if (data.displayName.length > DISPLAY_NAME_MAX_LENGTH) return left("user_display_name_too_long")
+  return right(data)
 }

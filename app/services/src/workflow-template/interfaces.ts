@@ -3,7 +3,9 @@ import {
   WorkflowTemplateValidationError,
   ApprovalRule,
   WorkflowTemplateSummary,
-  WorkflowTemplateStatus
+  WorkflowTemplateStatus,
+  BoundaryError,
+  TenantContext
 } from "@domain"
 import {EncryptionError, UnknownError} from "@services/error"
 import {RequestorAwareRequest} from "@services/shared/types"
@@ -19,16 +21,20 @@ export interface WorkflowTemplateRepository {
    * @returns The created workflow template or validation/creation errors
    */
   createWorkflowTemplate(
+    context: TenantContext,
     data: WorkflowTemplate
   ): TaskEither<CreateWorkflowTemplateRepoError | WorkflowTemplateValidationError, Versioned<WorkflowTemplate>>
-  getParentSpace(templateId: string): TaskEither<WorkflowTemplateGetParentSpaceError, string>
+  getParentSpace(context: TenantContext, templateId: string): TaskEither<WorkflowTemplateGetParentSpaceError, string>
 
   /**
    * Retrieves a workflow template by its unique identifier.
    * @param templateId The unique ID of the workflow template
    * @returns The versioned workflow template or an error if not found
    */
-  getWorkflowTemplateById(templateId: string): TaskEither<WorkflowTemplateGetError, Versioned<WorkflowTemplate>>
+  getWorkflowTemplateById(
+    context: TenantContext,
+    templateId: string
+  ): TaskEither<WorkflowTemplateGetError, Versioned<WorkflowTemplate>>
 
   /**
    * Retrieves a workflow template by its name and version.
@@ -37,6 +43,7 @@ export interface WorkflowTemplateRepository {
    * @returns The versioned workflow template or an error if not found
    */
   getWorkflowTemplateByNameAndVersion(
+    context: TenantContext,
     templateName: string,
     version: number
   ): TaskEither<WorkflowTemplateGetError, Versioned<WorkflowTemplate>>
@@ -47,6 +54,7 @@ export interface WorkflowTemplateRepository {
    * @returns The versioned workflow template or an error if not found
    */
   getActiveWorkflowTemplateByName(
+    context: TenantContext,
     templateName: string
   ): TaskEither<WorkflowTemplateGetActiveError, Versioned<WorkflowTemplate>>
 
@@ -57,6 +65,7 @@ export interface WorkflowTemplateRepository {
    * @returns An optional versioned workflow template (None if no non-active templates exist)
    */
   getMostRecentNonActiveWorkflowTemplateByName(
+    context: TenantContext,
     templateName: string
   ): TaskEither<WorkflowTemplateGetError, Option<Versioned<WorkflowTemplate>>>
 
@@ -66,6 +75,7 @@ export interface WorkflowTemplateRepository {
    * @returns The updated versioned workflow template or concurrency/validation errors
    */
   updateWorkflowTemplate(
+    context: TenantContext,
     template: Versioned<WorkflowTemplate>
   ): TaskEither<WorkflowTemplateUpdateError, Versioned<WorkflowTemplate>>
 
@@ -75,8 +85,9 @@ export interface WorkflowTemplateRepository {
    * @returns A paginated response containing workflow template summaries
    */
   listWorkflowTemplates(
+    context: TenantContext,
     request: ListWorkflowTemplatesRequestRepo
-  ): TaskEither<WorkflowTemplateValidationError | UnknownError, ListWorkflowTemplatesResponse>
+  ): TaskEither<BoundaryError | WorkflowTemplateValidationError | UnknownError, ListWorkflowTemplatesResponse>
 
   /**
    * Atomically updates an existing workflow template and creates a new one.
@@ -84,10 +95,13 @@ export interface WorkflowTemplateRepository {
    * @param data Contains the template to update and the new template to create
    * @returns The newly created workflow template or transaction errors
    */
-  atomicUpdateAndCreate(data: {
-    existingTemplate: Versioned<WorkflowTemplate>
-    newTemplate: WorkflowTemplate
-  }): TaskEither<WorkflowTemplateUpdateError | CreateWorkflowTemplateRepoError, Versioned<WorkflowTemplate>>
+  atomicUpdateAndCreate(
+    context: TenantContext,
+    data: {
+      existingTemplate: Versioned<WorkflowTemplate>
+      newTemplate: WorkflowTemplate
+    }
+  ): TaskEither<WorkflowTemplateUpdateError | CreateWorkflowTemplateRepoError, Versioned<WorkflowTemplate>>
 
   /**
    * Retrieves space mappings for a batch of workflow template IDs.
@@ -95,15 +109,19 @@ export interface WorkflowTemplateRepository {
    * @returns A map of templateName to spaceId, or an error if any template is not found or missing spaceId
    */
   getWorkflowTemplatesParentsByNames(
+    context: TenantContext,
     templateNames: ReadonlyArray<string>
-  ): TaskEither<"workflow_template_not_found", ReadonlyMap<string, string>>
+  ): TaskEither<BoundaryError | "workflow_template_not_found", ReadonlyMap<string, string>>
 
   /**
    * Counts the number of unique workflow templates in a space, revision of a template are not counted as separate templates.
    * @param spaceId The ID of the space to count unique workflow templates in
    * @returns The number of unique workflow templates in the space or an error
    */
-  countUniqueWorkflowTemplatesBySpaceId(spaceId: string): TaskEither<UnknownError, number>
+  countUniqueWorkflowTemplatesBySpaceId(
+    context: TenantContext,
+    spaceId: string
+  ): TaskEither<UnknownError | BoundaryError, number>
 }
 
 export interface Sort {
@@ -172,7 +190,8 @@ export interface DeprecateWorkflowTemplateRequest extends RequestorAwareRequest 
   cancelWorkflows?: boolean
 }
 
-export type CreateWorkflowTemplateRepoError = UnknownError | "workflow_template_already_exists" | EncryptionError
+export type CreateWorkflowTemplateRepoError =
+  BoundaryError | UnknownError | "workflow_template_already_exists" | EncryptionError
 
 export interface CreateWorkflowTemplateRepo {
   workflowTemplate: WorkflowTemplate
@@ -181,14 +200,19 @@ export interface CreateWorkflowTemplateRepo {
 export const WORKFLOW_TEMPLATE_REPOSITORY_TOKEN = Symbol("WORKFLOW_TEMPLATE_REPOSITORY_TOKEN")
 
 export type WorkflowTemplateGetActiveError =
-  "active_workflow_template_not_found" | WorkflowTemplateValidationError | EncryptionError | UnknownError
+  | BoundaryError
+  | "active_workflow_template_not_found"
+  | WorkflowTemplateValidationError
+  | EncryptionError
+  | UnknownError
 
-export type WorkflowTemplateGetParentSpaceError = "workflow_template_not_found" | UnknownError
+export type WorkflowTemplateGetParentSpaceError = BoundaryError | "workflow_template_not_found" | UnknownError
 
 export type WorkflowTemplateGetError =
-  "workflow_template_not_found" | WorkflowTemplateValidationError | EncryptionError | UnknownError
+  BoundaryError | "workflow_template_not_found" | WorkflowTemplateValidationError | EncryptionError | UnknownError
 
 export type WorkflowTemplateUpdateError =
+  | BoundaryError
   | "concurrency_error"
   | "workflow_template_already_exists"
   | UnknownError

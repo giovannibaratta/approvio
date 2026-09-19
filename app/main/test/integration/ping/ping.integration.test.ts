@@ -26,7 +26,7 @@ describe("Ping API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix))
+        .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb, redisPrefix))
         .compile()
     } catch (error) {
       console.error(error)

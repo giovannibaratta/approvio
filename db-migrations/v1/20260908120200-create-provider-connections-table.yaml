@@ -1,0 +1,46 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20260908120200-create-provider-connections-table
+      author: giovannibaratta
+      changes:
+        - insert:
+            tableName: approvio_security_table_registry
+            columns:
+              - column:
+                  name: table_name
+                  value: provider_connections
+              - column:
+                  name: security_class
+                  value: platform
+              - column:
+                  name: capability_profile
+                  value: platform_provider_connections
+        - createTable:
+            tableName: provider_connections
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: trust_scope
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: issuer
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: config_reference
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false

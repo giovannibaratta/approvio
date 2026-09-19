@@ -1,4 +1,4 @@
-import {AuthenticatedEntity} from "@domain"
+import {AuthenticatedEntity, BoundaryError, TenantContext, TransactionError} from "@domain"
 import {AuthorizationError, UnknownError} from "@services/error"
 
 export type ResolveResourceType = "space" | "group"
@@ -18,12 +18,12 @@ export interface ResourceResolvedItem {
   name: string
 }
 
-export interface ResolveResourcesRequest {
+export interface ResolveResourcesRequest extends TenantContext {
   requestor: AuthenticatedEntity
   request: ResourceResolveRequest
 }
 
-export type ResolveResourcesError = AuthorizationError | UnknownError
+export type ResolveResourcesError = AuthorizationError | UnknownError | BoundaryError | TransactionError
 
 export interface ResourceDeniedItem {
   type: ResolveResourceType

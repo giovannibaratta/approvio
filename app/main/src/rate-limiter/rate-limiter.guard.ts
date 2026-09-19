@@ -1,7 +1,7 @@
 import {CanActivate, ExecutionContext, Injectable, Logger, HttpException, HttpStatus} from "@nestjs/common"
 import {Request, Response} from "express"
 import {RateLimiterRes} from "@external/rate-limiter"
-import {AuthenticatedEntity} from "@domain"
+import {AuthenticatedEntity, AuthenticatedPlatformSession} from "@domain"
 import {RateLimiterService} from "@services/rate-limiter"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
@@ -22,7 +22,7 @@ export class RateLimiterGuard implements CanActivate {
   }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const request = context.switchToHttp().getRequest<Request & {user?: AuthenticatedEntity}>()
+    const request = context.switchToHttp().getRequest<Request & {user?: AuthenticatedEntity | AuthenticatedPlatformSession}>()
     const user = request.user
 
     if (!user) {
@@ -31,8 +31,13 @@ export class RateLimiterGuard implements CanActivate {
       return true
     }
 
+    // TODO: This deserve its own private helper
     const entityFullId =
-      user.entityType === "user" ? `${user.entityType}:${user.user.id}` : `${user.entityType}:${user.agent.id}`
+      user.entityType === "user"
+        ? `${user.entityType}:${user.user.id}`
+        : user.entityType === "agent"
+          ? `${user.entityType}:${user.agent.id}`
+          : `${user.entityType}:${user.account.id}`
 
     const result = await pipe(
       this.rateLimiterService.consume(entityFullId, 1),

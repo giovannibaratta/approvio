@@ -1,5 +1,5 @@
-import {GetAuthenticatedEntity} from "@app/auth"
-import {AuthenticatedEntity, WorkflowDecoratorSelector} from "@domain"
+import {GetAuthenticatedEntity, GetTenantContext} from "@app/auth"
+import {AuthenticatedEntity, TenantContext, WorkflowDecoratorSelector} from "@domain"
 import {Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Res, Query} from "@nestjs/common"
 import {CreateWorkflowRequest, WorkflowService, VoteService, CanVoteRequest, CastVoteRequest} from "@services"
 import {UseLever} from "../../../main/src/lever"
@@ -39,7 +39,7 @@ import {
 
 export const WORKFLOWS_ENDPOINT_ROOT = "workflows"
 
-@Controller(WORKFLOWS_ENDPOINT_ROOT)
+@Controller(`o/:organizationId/${WORKFLOWS_ENDPOINT_ROOT}`)
 export class WorkflowsController {
   constructor(
     private readonly workflowService: WorkflowService,
@@ -52,7 +52,8 @@ export class WorkflowsController {
   async createWorkflow(
     @Body() request: unknown,
     @Res({passthrough: true}) response: Response,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext
   ): Promise<void> {
     // Wrap service call in lambda to preserve context and pass requestor
     const serviceCreateWorkflow = (req: CreateWorkflowRequest) => this.workflowService.createWorkflow(req)
@@ -62,7 +63,7 @@ export class WorkflowsController {
       TE.bindW("validatedApiRequest", () => TE.fromEither(validateWorkflowCreateRequest(request))),
       TE.bindW("requestor", () => TE.right(requestor)),
       TE.bindW("serviceRequest", ({validatedApiRequest, requestor}) =>
-        TE.fromEither(createWorkflowApiToServiceModel({workflowData: validatedApiRequest, requestor}))
+        TE.fromEither(createWorkflowApiToServiceModel({workflowData: validatedApiRequest, requestor, context}))
       ),
       TE.chainW(({serviceRequest}) => serviceCreateWorkflow(serviceRequest)),
       logSuccess("Workflow created", "WorkflowsController", w => ({id: w.id}))
@@ -78,7 +79,11 @@ export class WorkflowsController {
   }
 
   @Get(":identifier")
-  async getWorkflow(@Param("identifier") identifier: string, @Query("include") include?: string): Promise<WorkflowApi> {
+  async getWorkflow(
+    @Param("identifier") identifier: string,
+    @GetTenantContext() context: TenantContext,
+    @Query("include") include?: string
+  ): Promise<WorkflowApi> {
     const eitherWorkflow = await pipe(
       TE.Do,
       TE.bindW("params", () => TE.fromEither(validateGetWorkflowParams({include}))),
@@ -86,7 +91,7 @@ export class WorkflowsController {
         TE.right(includeArrayToWorkflowDecoratorSelector(params.include))
       ),
       TE.chainW(({workflowDecoratorSelector}) =>
-        this.workflowService.getWorkflowByIdentifier(identifier, workflowDecoratorSelector)
+        this.workflowService.getWorkflowByIdentifier(context, identifier, workflowDecoratorSelector)
       ),
       TE.map(workflow => mapWorkflowToApi(workflow)),
       logSuccess("Workflow retrieved", "WorkflowsController", w => ({id: w.id}))
@@ -100,7 +105,8 @@ export class WorkflowsController {
   @Get()
   async listWorkflows(
     @Query() query: Record<string, unknown>,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext
   ): Promise<ListWorkflows200Response> {
     const eitherWorkflows = await pipe(
       TE.Do,
@@ -120,6 +126,7 @@ export class WorkflowsController {
           pagination: {page: params.page ?? 1, limit: params.limit ?? 20},
           include: workflowDecoratorSelector,
           requestor,
+          organizationId: context.organizationId,
           sort: mapOrderByToService(params.orderBy),
           filters: {
             includeOnlyNonTerminalState: params.includeOnlyNonTerminalState,
@@ -142,12 +149,13 @@ export class WorkflowsController {
   @HttpCode(HttpStatus.OK)
   async canVote(
     @Param("workflowId") workflowId: string,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext
   ): Promise<CanVoteResponseApi> {
     const serviceCanVote = (request: CanVoteRequest) => this.voteService.canVote(request)
 
     const eitherCanVoteResponse = await pipe(
-      {workflowId, requestor},
+      {workflowId, requestor, organizationId: context.organizationId},
       TE.right,
       TE.chainW(serviceCanVote),
       TE.map(mapCanVoteResponseToApi),
@@ -168,7 +176,8 @@ export class WorkflowsController {
   async castVote(
     @Param("workflowId") workflowId: string,
     @Body() request: unknown,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext
   ): Promise<void> {
     const serviceCastVote = (req: CastVoteRequest) => this.voteService.castVote(req)
 
@@ -176,7 +185,14 @@ export class WorkflowsController {
       TE.Do,
       TE.bindW("validatedRequest", () => TE.fromEither(validateApiRequest(request))),
       TE.bindW("serviceRequest", ({validatedRequest}) =>
-        TE.fromEither(createCastVoteApiToServiceModel({workflowId, request: validatedRequest, requestor}))
+        TE.fromEither(
+          createCastVoteApiToServiceModel({
+            workflowId,
+            request: validatedRequest,
+            requestor,
+            context
+          })
+        )
       ),
       TE.chainW(({serviceRequest}) => serviceCastVote(serviceRequest)),
       logSuccess("Vote cast", "WorkflowsController", vote => ({
@@ -191,8 +207,11 @@ export class WorkflowsController {
   }
 
   @Get(":workflowId/votes")
-  async listVotes(@Param("workflowId") workflowId: string): Promise<GetWorkflowVotes200Response> {
-    const serviceListVotes = (wId: string) => this.voteService.listVotes(wId)
+  async listVotes(
+    @Param("workflowId") workflowId: string,
+    @GetTenantContext() context: TenantContext
+  ): Promise<GetWorkflowVotes200Response> {
+    const serviceListVotes = (wId: string) => this.voteService.listVotes(context, wId)
 
     const eitherVotes = await pipe(
       workflowId,

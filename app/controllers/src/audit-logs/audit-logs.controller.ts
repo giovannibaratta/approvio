@@ -39,7 +39,7 @@ function coerceQueryArray(query: Record<string, unknown>, keys: string[]): Recor
   return result
 }
 
-@Controller(AUDIT_LOGS_ENDPOINT_ROOT)
+@Controller(`o/:organizationId/${AUDIT_LOGS_ENDPOINT_ROOT}`)
 export class AuditLogsController {
   constructor(private readonly auditLogService: AuditLogService) {}
 

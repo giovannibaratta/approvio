@@ -6,7 +6,13 @@ import {
   SystemRole,
   BoundRole
 } from "@domain"
-import {createMembership, createGroupRequirementRule, createAndRule, createOrRule} from "./workflow-test-helpers"
+import {
+  createMembership,
+  createGroupRequirementRule,
+  createAndRule,
+  createOrRule,
+  TEST_ORGANIZATION_ID
+} from "./workflow-test-helpers"
 
 import {isRight} from "fp-ts/Either"
 import "@utils/matchers"
@@ -17,6 +23,7 @@ import {v7 as uuidv7} from "uuid"
  */
 const getWorkflowTemplate = (rule: ApprovalRule): WorkflowTemplate => {
   const result = WorkflowTemplateFactory.newWorkflowTemplate({
+    organizationId: TEST_ORGANIZATION_ID,
     name: "Test Template",
     description: "A test template",
     approvalRule: rule,
@@ -35,6 +42,7 @@ const getWorkflowTemplate = (rule: ApprovalRule): WorkflowTemplate => {
 const createVoterRole = (templateName: string): BoundRole<"workflow_template"> => {
   return SystemRole.createWorkflowTemplateVoterRole({
     type: "workflow_template",
+    organizationId: TEST_ORGANIZATION_ID,
     templateName
   })
 }

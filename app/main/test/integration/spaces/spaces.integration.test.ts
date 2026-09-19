@@ -39,7 +39,7 @@ describe("Spaces API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+        .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb))
         .compile()
     } catch (error) {
       console.error(error)
@@ -410,7 +410,7 @@ describe("Spaces API", () => {
               resourceType: "space",
               permissions: ["read"],
               scopeType: "space",
-              scope: {type: "space", spaceId: createdSpace.id}
+              scope: {type: "space", organizationId: createdSpace.organizationId, spaceId: createdSpace.id}
             }
           ]
         })
@@ -498,7 +498,7 @@ describe("Spaces API", () => {
               resourceType: "space",
               permissions: ["read", "manage"],
               scopeType: "space",
-              scope: {type: "space", spaceId: createdSpace.id}
+              scope: {type: "space", organizationId: createdSpace.organizationId, spaceId: createdSpace.id}
             }
           ]
         })

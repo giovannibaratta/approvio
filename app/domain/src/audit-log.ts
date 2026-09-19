@@ -1,7 +1,7 @@
 import {Either, left, right} from "fp-ts/Either"
-import {PrefixUnion, DistributiveOmit, isObject, hasOwnProperty, isDate} from "@utils"
+import {PrefixUnion, DistributiveOmit, isObject, hasOwnProperty, isDate, isUUIDv7} from "@utils"
 import {v7 as uuidv7} from "uuid"
-import {EntityReference} from "./authenticated-entity"
+import {isOriginatingActor, OriginatingActor, EntityReference} from "./authenticated-entity"
 import {RoleScope, RoleFactory} from "./role"
 
 export type AuditType =
@@ -14,14 +14,22 @@ export type AuditType =
   | "USER_ROLES_REMOVED"
   | "AGENT_ROLES_ASSIGNED"
   | "AGENT_ROLES_REMOVED"
+  | "ORGANIZATION_CREATED"
+  | "ORGANIZATION_UPDATED"
+  | "ORGANIZATION_SUSPENDED"
+  | "ORGANIZATION_RESUMED"
+  | "ORGANIZATION_DELETION_REQUESTED"
+  | "MEMBERSHIP_ADMITTED"
+  | "MEMBERSHIP_ROLE_CHANGED"
+  | "MEMBERSHIP_REMOVED"
+  | "INVITATION_CREATED"
+  | "INVITATION_REVOKED"
+  | "INVITATION_ACCEPTED"
+  | "AGENT_CREATED"
+  | "AGENT_REVOKED"
 
-export type EntityTypeAudit = "SPACE" | "GROUP" | "USER" | "AGENT"
-export type ActorType = "user" | "agent"
-
-export interface Actor {
-  id: string
-  type: ActorType
-}
+export type EntityTypeAudit = "SPACE" | "GROUP" | "USER" | "AGENT" | "ORGANIZATION" | "MEMBERSHIP" | "INVITATION"
+export type ActorType = OriginatingActor["type"]
 
 /**
  * Base interface for audit logs.
@@ -30,10 +38,12 @@ export interface Actor {
  */
 interface BaseAuditLog {
   id: string
+  organizationId: string
   auditType: AuditType
+  schemaVersion: 1
   entityType: EntityTypeAudit
   entityId: string
-  actor: Actor
+  actor: OriginatingActor
   createdAt: Date
   payload: Record<string, unknown>
 }
@@ -110,6 +120,31 @@ export interface AgentRolesRemovedAuditLog extends BaseAuditLog {
   }
 }
 
+export interface OrganizationAuditLog extends BaseAuditLog {
+  auditType:
+    | "ORGANIZATION_CREATED"
+    | "ORGANIZATION_UPDATED"
+    | "ORGANIZATION_SUSPENDED"
+    | "ORGANIZATION_RESUMED"
+    | "ORGANIZATION_DELETION_REQUESTED"
+  entityType: "ORGANIZATION"
+}
+
+export interface MembershipAuditLog extends BaseAuditLog {
+  auditType: "MEMBERSHIP_ADMITTED" | "MEMBERSHIP_ROLE_CHANGED" | "MEMBERSHIP_REMOVED"
+  entityType: "MEMBERSHIP"
+}
+
+export interface InvitationAuditLog extends BaseAuditLog {
+  auditType: "INVITATION_CREATED" | "INVITATION_REVOKED" | "INVITATION_ACCEPTED"
+  entityType: "INVITATION"
+}
+
+export interface AgentLifecycleAuditLog extends BaseAuditLog {
+  auditType: "AGENT_CREATED" | "AGENT_REVOKED"
+  entityType: "AGENT"
+}
+
 export type AuditLog =
   | SpaceCreatedAuditLog
   | SpaceDeletedAuditLog
@@ -120,8 +155,12 @@ export type AuditLog =
   | UserRolesRemovedAuditLog
   | AgentRolesAssignedAuditLog
   | AgentRolesRemovedAuditLog
+  | OrganizationAuditLog
+  | MembershipAuditLog
+  | InvitationAuditLog
+  | AgentLifecycleAuditLog
 
-export type CreateAuditLog = DistributiveOmit<AuditLog, "id">
+export type CreateAuditLog = DistributiveOmit<AuditLog, "id" | "schemaVersion">
 
 export type AuditLogValidationError = PrefixUnion<
   "audit_log",
@@ -129,16 +168,19 @@ export type AuditLogValidationError = PrefixUnion<
   | "invalid_audit_type"
   | "invalid_entity_type"
   | "invalid_actor_type"
+  | "invalid_schema_version"
   | "invalid_payload"
   | "missing_required_fields"
+  | "organization_mismatch"
 >
 
 export class AuditLogFactory {
   static create(data: DistributiveOmit<CreateAuditLog, "createdAt">): Either<AuditLogValidationError, AuditLog> {
     const auditLog = {
+      ...data,
       createdAt: new Date(),
       id: uuidv7(),
-      ...data
+      schemaVersion: 1 as const
     }
 
     return AuditLogFactory.validate(auditLog)
@@ -146,18 +188,9 @@ export class AuditLogFactory {
 
   static validate(data: unknown): Either<AuditLogValidationError, AuditLog> {
     if (!isObject(data)) return left("audit_log_malformed_object")
-
+    if (!hasOwnProperty(data, "schemaVersion") || data.schemaVersion !== 1)
+      return left("audit_log_invalid_schema_version")
     if (!AuditLogFactory.isBaseAuditLog(data)) return left("audit_log_missing_required_fields")
-    if (
-      data.entityType !== "SPACE" &&
-      data.entityType !== "GROUP" &&
-      data.entityType !== "USER" &&
-      data.entityType !== "AGENT"
-    )
-      return left("audit_log_invalid_entity_type")
-
-    const actorType = data.actor.type
-    if (actorType !== "user" && actorType !== "agent") return left("audit_log_invalid_actor_type")
 
     switch (data.auditType) {
       case "SPACE_CREATED":
@@ -178,30 +211,64 @@ export class AuditLogFactory {
         return AuditLogFactory.validateAgentRolesAssigned(data)
       case "AGENT_ROLES_REMOVED":
         return AuditLogFactory.validateAgentRolesRemoved(data)
+      case "ORGANIZATION_CREATED":
+      case "ORGANIZATION_UPDATED":
+      case "ORGANIZATION_SUSPENDED":
+      case "ORGANIZATION_RESUMED":
+      case "ORGANIZATION_DELETION_REQUESTED":
+        return data.entityType === "ORGANIZATION"
+          ? right({...data, auditType: data.auditType, entityType: "ORGANIZATION"})
+          : left("audit_log_invalid_entity_type")
+      case "MEMBERSHIP_ADMITTED":
+      case "MEMBERSHIP_ROLE_CHANGED":
+      case "MEMBERSHIP_REMOVED":
+        return data.entityType === "MEMBERSHIP"
+          ? right({...data, auditType: data.auditType, entityType: "MEMBERSHIP"})
+          : left("audit_log_invalid_entity_type")
+      case "INVITATION_CREATED":
+      case "INVITATION_REVOKED":
+      case "INVITATION_ACCEPTED":
+        return data.entityType === "INVITATION"
+          ? right({...data, auditType: data.auditType, entityType: "INVITATION"})
+          : left("audit_log_invalid_entity_type")
+      case "AGENT_CREATED":
+      case "AGENT_REVOKED":
+        return data.entityType === "AGENT"
+          ? right({...data, auditType: data.auditType, entityType: "AGENT"})
+          : left("audit_log_invalid_entity_type")
     }
   }
 
   private static isBaseAuditLog(data: unknown): data is BaseAuditLog {
     return (
       isObject(data) &&
-      hasOwnProperty(data, "id") &&
-      typeof data.id === "string" &&
-      hasOwnProperty(data, "auditType") &&
-      typeof data.auditType === "string" &&
-      hasOwnProperty(data, "entityType") &&
-      typeof data.entityType === "string" &&
-      hasOwnProperty(data, "entityId") &&
-      typeof data.entityId === "string" &&
+      AuditLogFactory.hasValidIdentityFields(data) &&
+      hasOwnProperty(data, "schemaVersion") &&
+      data.schemaVersion === 1 &&
       hasOwnProperty(data, "actor") &&
-      isObject(data.actor) &&
-      hasOwnProperty(data.actor, "id") &&
-      typeof data.actor.id === "string" &&
-      hasOwnProperty(data.actor, "type") &&
-      typeof data.actor.type === "string" &&
+      isOriginatingActor(data.actor) &&
       hasOwnProperty(data, "createdAt") &&
       isDate(data.createdAt) &&
       hasOwnProperty(data, "payload") &&
       isObject(data.payload)
+    )
+  }
+
+  private static hasValidIdentityFields(data: Record<string, unknown>): boolean {
+    return (
+      hasOwnProperty(data, "id") &&
+      typeof data.id === "string" &&
+      hasOwnProperty(data, "organizationId") &&
+      typeof data.organizationId === "string" &&
+      isUUIDv7(data.organizationId) &&
+      hasOwnProperty(data, "auditType") &&
+      typeof data.auditType === "string" &&
+      isAuditType(data.auditType) &&
+      hasOwnProperty(data, "entityType") &&
+      typeof data.entityType === "string" &&
+      isEntityTypeAudit(data.entityType) &&
+      hasOwnProperty(data, "entityId") &&
+      typeof data.entityId === "string"
     )
   }
 
@@ -260,7 +327,10 @@ export class AuditLogFactory {
       Array.isArray(data.payload.members) &&
       data.payload.members.every(
         (m: Record<string, unknown>) =>
-          isObject(m) && typeof m.entityId === "string" && (m.entityType === "user" || m.entityType === "agent")
+          isObject(m) &&
+          typeof m.entityId === "string" &&
+          (m.entityType === "user" || m.entityType === "agent") &&
+          m.organizationId === data.organizationId
       )
     )
   }
@@ -279,7 +349,10 @@ export class AuditLogFactory {
       Array.isArray(data.payload.members) &&
       data.payload.members.every(
         (m: Record<string, unknown>) =>
-          isObject(m) && typeof m.entityId === "string" && (m.entityType === "user" || m.entityType === "agent")
+          isObject(m) &&
+          typeof m.entityId === "string" &&
+          (m.entityType === "user" || m.entityType === "agent") &&
+          m.organizationId === data.organizationId
       )
     )
   }
@@ -298,7 +371,10 @@ export class AuditLogFactory {
       Array.isArray(data.payload.roles) &&
       data.payload.roles.every(
         (r: Record<string, unknown>) =>
-          isObject(r) && typeof r.roleName === "string" && RoleFactory["isValidRoleScope"](r.scope)
+          isObject(r) &&
+          typeof r.roleName === "string" &&
+          RoleFactory.isValidRoleScope(r.scope) &&
+          r.scope.organizationId === data.organizationId
       )
     )
   }
@@ -317,7 +393,10 @@ export class AuditLogFactory {
       Array.isArray(data.payload.roles) &&
       data.payload.roles.every(
         (r: Record<string, unknown>) =>
-          isObject(r) && typeof r.roleName === "string" && RoleFactory.isValidRoleScope(r.scope)
+          isObject(r) &&
+          typeof r.roleName === "string" &&
+          RoleFactory.isValidRoleScope(r.scope) &&
+          r.scope.organizationId === data.organizationId
       )
     )
   }
@@ -336,7 +415,10 @@ export class AuditLogFactory {
       Array.isArray(data.payload.roles) &&
       data.payload.roles.every(
         (r: Record<string, unknown>) =>
-          isObject(r) && typeof r.roleName === "string" && RoleFactory.isValidRoleScope(r.scope)
+          isObject(r) &&
+          typeof r.roleName === "string" &&
+          RoleFactory.isValidRoleScope(r.scope) &&
+          r.scope.organizationId === data.organizationId
       )
     )
   }
@@ -355,8 +437,54 @@ export class AuditLogFactory {
       Array.isArray(data.payload.roles) &&
       data.payload.roles.every(
         (r: Record<string, unknown>) =>
-          isObject(r) && typeof r.roleName === "string" && RoleFactory.isValidRoleScope(r.scope)
+          isObject(r) &&
+          typeof r.roleName === "string" &&
+          RoleFactory.isValidRoleScope(r.scope) &&
+          r.scope.organizationId === data.organizationId
       )
     )
   }
+}
+
+const AUDIT_TYPES: ReadonlySet<string> = new Set([
+  "SPACE_CREATED",
+  "SPACE_DELETED",
+  "GROUP_CREATED",
+  "MEMBERSHIPS_ADDED",
+  "MEMBERSHIPS_REMOVED",
+  "USER_ROLES_ASSIGNED",
+  "USER_ROLES_REMOVED",
+  "AGENT_ROLES_ASSIGNED",
+  "AGENT_ROLES_REMOVED",
+  "ORGANIZATION_CREATED",
+  "ORGANIZATION_UPDATED",
+  "ORGANIZATION_SUSPENDED",
+  "ORGANIZATION_RESUMED",
+  "ORGANIZATION_DELETION_REQUESTED",
+  "MEMBERSHIP_ADMITTED",
+  "MEMBERSHIP_ROLE_CHANGED",
+  "MEMBERSHIP_REMOVED",
+  "INVITATION_CREATED",
+  "INVITATION_REVOKED",
+  "INVITATION_ACCEPTED",
+  "AGENT_CREATED",
+  "AGENT_REVOKED"
+])
+
+function isAuditType(value: string): value is AuditType {
+  return AUDIT_TYPES.has(value)
+}
+
+const ENTITY_TYPES: ReadonlySet<string> = new Set<EntityTypeAudit>([
+  "SPACE",
+  "GROUP",
+  "USER",
+  "AGENT",
+  "ORGANIZATION",
+  "MEMBERSHIP",
+  "INVITATION"
+])
+
+function isEntityTypeAudit(value: string): value is EntityTypeAudit {
+  return ENTITY_TYPES.has(value)
 }

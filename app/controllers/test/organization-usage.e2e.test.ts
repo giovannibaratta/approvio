@@ -18,7 +18,7 @@ import {createMockAgentInDb, MockConfigProvider} from "@test/mock-data"
 import {get} from "@test/requests"
 import {createAuthenticatedUserInDb, TestTokenBuilder} from "@test/token-helpers"
 import {UserWithToken} from "@test/types"
-import {DEFAULT_ORG_ID, QuotaRepository, QUOTA_REPOSITORY_TOKEN} from "@services"
+import {QuotaRepository, QUOTA_REPOSITORY_TOKEN} from "@services"
 import {QuotaFactory} from "@domain"
 import {unwrapRight} from "@utils/either"
 import {mapAgentToDomain} from "@external/database/shared"
@@ -36,8 +36,8 @@ describe("Organizations API (Entitlements & Usage)", () => {
   let quotaRepo: QuotaRepository
 
   const endpoint = `/${ORGANIZATIONS_ENDPOINT_ROOT}`
-  const validOrgId = DEFAULT_ORG_ID
   const nonExistentOrgId = uuidv7()
+  let validOrgId: string
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -68,6 +68,7 @@ describe("Organizations API (Entitlements & Usage)", () => {
   beforeEach(async () => {
     orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
     orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
+    validOrgId = orgAdminUser.user.organizationId
   })
 
   afterAll(async () => {
@@ -86,7 +87,7 @@ describe("Organizations API (Entitlements & Usage)", () => {
 
         expect(response).toHaveStatusCode(HttpStatus.OK)
         const body = response.body as OrganizationEntitlementsResponse
-        expect(body.orgId).toBe(validOrgId)
+        expect(body.organizationId).toBe(validOrgId)
         expect(body.planTier).toBe("FREE")
         expect(body.edition).toBe("saas_cloud")
         expect(body.features.platformLlmEvaluators).toBe(false)
@@ -104,7 +105,7 @@ describe("Organizations API (Entitlements & Usage)", () => {
 
         expect(response).toHaveStatusCode(HttpStatus.OK)
         const body = response.body as OrganizationEntitlementsResponse
-        expect(body.orgId).toBe(validOrgId)
+        expect(body.organizationId).toBe(validOrgId)
         const validation = validateOrganizationEntitlementsResponse(body)
         expect(isRight(validation)).toBe(true)
       })
@@ -113,7 +114,7 @@ describe("Organizations API (Entitlements & Usage)", () => {
         const customQuota = unwrapRight(
           QuotaFactory.newQuota({node: {type: "Org", identifier: validOrgId}, quotaType: "MAX_SPACES"}, 42)
         )
-        await quotaRepo.createQuota(customQuota)()
+        await quotaRepo.createQuota({organizationId: validOrgId}, customQuota)()
 
         const response = await get(app, `${endpoint}/${validOrgId}/entitlements`).withToken(orgAdminUser.token).build()
 
@@ -166,7 +167,7 @@ describe("Organizations API (Entitlements & Usage)", () => {
 
         expect(response).toHaveStatusCode(HttpStatus.OK)
         const body = response.body as OrganizationUsageResponse
-        expect(body.orgId).toBe(validOrgId)
+        expect(body.organizationId).toBe(validOrgId)
         expect(body.period).toMatch(/^\d{4}-\d{2}$/)
         expect(body.periodStartsAt).toBeDefined()
         expect(body.periodEndsAt).toBeDefined()

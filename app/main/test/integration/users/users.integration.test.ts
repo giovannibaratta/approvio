@@ -38,7 +38,7 @@ describe("Users API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
+        .useValue(MockConfigProvider.fromOriginalProvider({tenantConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -67,6 +67,7 @@ describe("Users API", () => {
     await cleanDatabase(prisma)
   })
 
+  // TODO: What ?!?!?! This is why we have git history
   describe("POST /users", () => {
     const createUserPayload: UserCreate = {
       displayName: "Test User",

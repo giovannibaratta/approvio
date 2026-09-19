@@ -23,7 +23,7 @@ describe("Health API", () => {
     const isolatedDb = await prepareDatabase()
     redisPrefix = prepareRedisPrefix()
 
-    const configProvider = MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix)
+    const configProvider = MockConfigProvider.fromTenantConnectionUrl(isolatedDb, redisPrefix)
     configProvider.healthCacheTtlMs = 0
 
     let module: TestingModule

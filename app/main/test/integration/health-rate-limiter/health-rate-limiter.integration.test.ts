@@ -25,7 +25,7 @@ describe("Health API Rate Limiting", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix))
+        .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb, redisPrefix))
         .compile()
     } catch (error) {
       console.error(error)

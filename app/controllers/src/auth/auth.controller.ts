@@ -4,7 +4,7 @@ import {AuthService, GenerateChallengeRequest, IdentityService} from "@services"
 import {isLeft} from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {PublicRoute} from "../../../main/src/auth/jwt.authguard"
-import {GetAuthenticatedEntity} from "../../../main/src/auth"
+import {GetAuthenticatedEntity, GetTenantContext} from "../../../main/src/auth"
 import {
   TokenResponse,
   AgentChallengeRequest,
@@ -24,7 +24,7 @@ import {
   validateAgentChallengeRequest
 } from "./agent-auth.mappers"
 import {pipe} from "fp-ts/function"
-import {AuthenticatedEntity} from "@domain"
+import {AuthenticatedEntity, TenantContext} from "@domain"
 import {validateRefreshAgentTokenRequest} from "./auth.validators"
 import {
   generateErrorResponseForRefreshAgentToken,
@@ -46,7 +46,7 @@ import {logSuccess} from "@utils"
  * - Web endpoints (including login initiation) are handled in `WebAuthController` (/auth/web/*)
  * - CLI endpoints are handled in `CliAuthController` (/auth/cli/*)
  */
-@Controller("auth")
+@Controller("o/:organizationId/auth")
 export class AuthController {
   constructor(
     private readonly authService: AuthService,
@@ -55,6 +55,8 @@ export class AuthController {
 
   @Get("info")
   async getEntityInfo(
+    // TODO: Why are we fetching something that is not being used ?
+    @GetTenantContext() _context: TenantContext,
     @GetAuthenticatedEntity() authenticatedEntity: AuthenticatedEntity
   ): Promise<GetEntityInfo200Response> {
     const result = await pipe(
@@ -74,7 +76,10 @@ export class AuthController {
   @PublicRoute()
   @Post("agents/challenge")
   @HttpCode(200)
-  async generateAgentChallenge(@Body() request: unknown): Promise<AgentChallengeResponse> {
+  async generateAgentChallenge(
+    @GetTenantContext() context: TenantContext,
+    @Body() request: unknown
+  ): Promise<AgentChallengeResponse> {
     const mapRequest = (req: AgentChallengeRequest) => mapAgentChallengeRequestToService(req)
     const generateChallenge = (req: GenerateChallengeRequest) => this.authService.generateAgentChallenge(req)
 
@@ -83,7 +88,8 @@ export class AuthController {
       TE.right,
       TE.chainW(r => TE.fromEither(validateAgentChallengeRequest(r))),
       TE.chainW(r => TE.fromEither(mapRequest(r))),
-      TE.chainW(r => generateChallenge(r)),
+      // TODO: req building could be done in the mapper
+      TE.chainW(r => generateChallenge({...r, context})),
       logSuccess("Agent challenge generated", "AuthController")
     )()
 
@@ -95,10 +101,13 @@ export class AuthController {
   @PublicRoute()
   @Post("agents/token")
   @HttpCode(200)
-  async exchangeAgentToken(@Body() request: unknown): Promise<AgentTokenResponse> {
+  async exchangeAgentToken(
+    @GetTenantContext() context: TenantContext,
+    @Body() request: unknown
+  ): Promise<AgentTokenResponse> {
     const validateRequest = (req: unknown) => validateAgentTokenRequest(req)
     const extractAssertion = (validatedReq: AgentTokenRequest) => validatedReq.clientAssertion
-    const exchangeToken = (assertion: string) => this.authService.exchangeJwtAssertionForToken(assertion)
+    const exchangeToken = (assertion: string) => this.authService.exchangeJwtAssertionForToken(context, assertion)
 
     const result = await pipe(
       request,
@@ -120,12 +129,13 @@ export class AuthController {
   @Post("agents/refresh")
   @HttpCode(200)
   async refreshAgentToken(
+    @GetTenantContext() context: TenantContext,
     @Body() body: RefreshTokenRequest,
     @Headers("DPoP") dpop: string,
     @Req() request: Request
   ): Promise<TokenResponse> {
     const refreshAgentToken = (refreshToken: string, dpopJkt: string) =>
-      this.authService.refreshTokenForAgent(refreshToken, dpopJkt, {
+      this.authService.refreshTokenForAgent(context, refreshToken, dpopJkt, {
         expectedMethod: "POST",
         expectedUrl: `${request.protocol}://${request.get("host") ?? ""}${request.originalUrl}`
       })

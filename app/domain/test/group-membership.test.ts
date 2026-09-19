@@ -6,12 +6,16 @@ import {
   MembershipFactory,
   OrgRole,
   User,
-  UserFactory,
   createUserMembershipEntity
 } from "@domain"
 import {SystemRole} from "../src/system-role"
+// TODO: Can we import it via @test ?
+import {createTestUser} from "../../test/user"
 
 import {Either, isLeft, isRight} from "fp-ts/Either"
+import {v7 as uuidv7} from "uuid"
+
+const organizationId = uuidv7()
 
 // Helpers for unwrapping Either in tests
 const unwrapRight = <L, R>(either: Either<L, R>): R => {
@@ -24,7 +28,7 @@ describe("MembershipFactory", () => {
     it("should return right with a Membership object for valid user", () => {
       // Given
       const user = unwrapRight(
-        UserFactory.newUser({displayName: "test", email: "test@test.com", orgRole: OrgRole.MEMBER})
+        createTestUser({organizationId, accountId: uuidv7(), displayName: "test", orgRole: OrgRole.MEMBER})
       )
       const data = {entity: createUserMembershipEntity(user)}
 
@@ -45,11 +49,11 @@ describe("MembershipFactory", () => {
     it("should return an error when dates are inconsistent", () => {
       // Given: createdAt is after updatedAt
       const user = unwrapRight(
-        UserFactory.newUser({displayName: "test", email: "test@test.com", orgRole: OrgRole.MEMBER})
+        createTestUser({organizationId, accountId: uuidv7(), displayName: "test", orgRole: OrgRole.MEMBER})
       )
       const now = new Date()
       const earlier = new Date(now.getTime() - 1000)
-      const data = {entity: createUserMembershipEntity(user), createdAt: now, updatedAt: earlier}
+      const data = {organizationId, entity: createUserMembershipEntity(user), createdAt: now, updatedAt: earlier}
 
       // When
       const result = MembershipFactory.validate(data)
@@ -65,18 +69,24 @@ describe("GroupManager", () => {
   let groupManager: User
   let member: User
   let orgAdmin: User
+  let orgOwner: User
   let groupManagerMembership: Membership
   let memberMembership: Membership
 
   beforeEach(() => {
-    group = unwrapRight(GroupFactory.newGroup({name: "Test-Group", description: "Test-Description"}))
+    group = unwrapRight(GroupFactory.newGroup({organizationId, name: "Test-Group", description: "Test-Description"}))
 
     // Create group scope for role assignment
-    const groupScope = {type: "group" as const, groupId: group.id}
+    const groupScope = {type: "group" as const, organizationId, groupId: group.id}
 
     // Create users with appropriate roles
     groupManager = unwrapRight(
-      UserFactory.newUser({displayName: "groupmanager", email: "groupmanager@test.com", orgRole: OrgRole.MEMBER})
+      createTestUser({
+        organizationId,
+        accountId: uuidv7(),
+        displayName: "groupmanager",
+        orgRole: OrgRole.MEMBER
+      })
     )
     // Add group manager role to groupManager
     groupManager = {
@@ -85,11 +95,14 @@ describe("GroupManager", () => {
     }
 
     member = unwrapRight(
-      UserFactory.newUser({displayName: "member", email: "member@test.com", orgRole: OrgRole.MEMBER})
+      createTestUser({organizationId, accountId: uuidv7(), displayName: "member", orgRole: OrgRole.MEMBER})
     )
 
     orgAdmin = unwrapRight(
-      UserFactory.newUser({displayName: "orgadmin", email: "orgadmin@test.com", orgRole: OrgRole.ADMIN})
+      createTestUser({organizationId, accountId: uuidv7(), displayName: "orgadmin", orgRole: OrgRole.ADMIN})
+    )
+    orgOwner = unwrapRight(
+      createTestUser({organizationId, accountId: uuidv7(), displayName: "orgowner", orgRole: OrgRole.OWNER})
     )
 
     groupManagerMembership = unwrapRight(
@@ -138,6 +151,23 @@ describe("GroupManager", () => {
       // Expect
       expect(result).toBeLeftOf("membership_entity_already_in_group")
     })
+
+    it("should reject a membership from another organization", () => {
+      const manager = unwrapRight(GroupManager.createGroupManager(group, [groupManagerMembership]))
+      const foreignUser = unwrapRight(
+        createTestUser({
+          organizationId: uuidv7(),
+          accountId: uuidv7(),
+          displayName: "foreign",
+          orgRole: OrgRole.MEMBER
+        })
+      )
+      const foreignMembership = unwrapRight(
+        MembershipFactory.newMembership({entity: createUserMembershipEntity(foreignUser)})
+      )
+
+      expect(manager.addMembership(foreignMembership)).toBeLeftOf("membership_organization_mismatch")
+    })
   })
 
   describe("removeMembership", () => {
@@ -163,6 +193,22 @@ describe("GroupManager", () => {
 
     it("should return true for an org admin", () => {
       expect(manager.canUpdateMembership(orgAdmin)).toBe(true)
+    })
+
+    it("should return true for an org owner", () => {
+      expect(manager.canUpdateMembership(orgOwner)).toBe(true)
+    })
+
+    it("should reject an owner from another organization", () => {
+      const foreignOwner = unwrapRight(
+        createTestUser({
+          organizationId: uuidv7(),
+          accountId: uuidv7(),
+          displayName: "foreign-owner",
+          orgRole: OrgRole.OWNER
+        })
+      )
+      expect(manager.canUpdateMembership(foreignOwner)).toBe(false)
     })
 
     it("should return true for a user with group manage permission", () => {

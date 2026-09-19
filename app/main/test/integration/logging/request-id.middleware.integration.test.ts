@@ -25,7 +25,7 @@ describe("RequestIdMiddleware Integration", () => {
       imports: [AppModule]
     })
       .overrideProvider(ConfigProvider)
-      .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix))
+      .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb, redisPrefix))
       .compile()
 
     app = module.createNestApplication({

@@ -32,7 +32,7 @@ describe("Workflow Templates internal API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
+        .useValue(MockConfigProvider.fromOriginalProvider({tenantConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)

@@ -5,23 +5,58 @@ import {PrismaPg} from "@prisma/adapter-pg"
 import Redis from "ioredis"
 import {v7 as uuidv7} from "uuid"
 
-/** Create a duplicated database using the reference database as template
- * @returns the connection string to the new database
+const TEST_DATABASE_TEMPLATE = "approvio"
+
+/** Clone the test template database.
+ * @returns a connection string for the clone, preserving the configured host and credentials
  */
 export async function prepareDatabase(): Promise<string> {
-  const adapter = new PrismaPg({
-    connectionString: process.env.DATABASE_URL
-  })
-
-  const prismaClient = new PrismaClient({adapter})
-
   // Generate a unique database name to isolate test runs
   const databaseName = `integration_test_${uuidv7().replace(/-/g, "")}`
+  const adminConnection = process.env.TENANT_DATABASE_URL
+  if (!adminConnection) throw new Error("TENANT_DATABASE_URL is required to prepare an isolated database")
 
-  await prismaClient.$executeRawUnsafe(`CREATE DATABASE "${databaseName}" TEMPLATE approvio;`)
-  await prismaClient.$disconnect()
+  const admin = new PrismaClient({adapter: new PrismaPg({connectionString: adminConnection})})
 
-  return `postgresql://developer:Safe1!@localhost:5433/${databaseName}?schema=public`
+  try {
+    await admin.$executeRawUnsafe(`CREATE DATABASE "${databaseName}" TEMPLATE "${TEST_DATABASE_TEMPLATE}"`)
+  } finally {
+    await admin.$disconnect()
+  }
+
+  const testConnection = new URL(adminConnection)
+  testConnection.pathname = `/${databaseName}`
+  testConnection.searchParams.set("schema", "public")
+  return testConnection.toString()
+}
+
+/** Connect to the clone*/
+export function createFixturePrismaClient(connectionString: string): PrismaClient {
+  return new PrismaClient({adapter: new PrismaPg({connectionString})})
+}
+
+/**
+ * Drops an isolated database created by prepareDatabase. Tests use the admin connection because
+ * the restricted application roles intentionally cannot create or drop databases.
+ */
+export async function dropPreparedDatabase(connectionString: string): Promise<void> {
+  const targetUrl = new URL(connectionString)
+  const databaseName = targetUrl.pathname.slice(1)
+  if (!/^integration_test_[a-f0-9]+$/.test(databaseName))
+    throw new Error(`Refusing to drop unexpected test database: ${databaseName}`)
+
+  const adminConnection = process.env.TENANT_DATABASE_URL
+  if (!adminConnection) throw new Error("TENANT_DATABASE_URL is required to clean a prepared database")
+  const adminUrl = new URL(adminConnection)
+  adminUrl.pathname = "/postgres"
+
+  const admin = new PrismaClient({adapter: new PrismaPg({connectionString: adminUrl.toString()})})
+  try {
+    await admin.$queryRaw`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = ${databaseName}`
+    await admin.$executeRawUnsafe(`DROP DATABASE "${databaseName}"`)
+  } finally {
+    await admin.$disconnect()
+  }
 }
 
 /**
@@ -56,25 +91,37 @@ export async function cleanRedisByPrefix(prefix: string): Promise<void> {
 
 export async function cleanDatabase(client: PrismaClient): Promise<void> {
   // Clean in dependency order (children before parents)
-  // Use raw query for AuditLog to bypass the immutability protection in DatabaseClient
-  await client.$executeRawUnsafe("DELETE FROM audit_logs;")
-  await client.agentChallenge.deleteMany()
-  await client.organizationAdmin.deleteMany()
-  await client.userIdentity.deleteMany()
-  await client.pkceSession.deleteMany()
-  await client.refreshToken.deleteMany()
+  await client.dispatchAttempt.deleteMany()
   await client.workflowActionsEmailTask.deleteMany()
   await client.workflowActionsWebhookTask.deleteMany()
   await client.workflowActionsSlackTask.deleteMany()
+  await client.durableWork.deleteMany()
   await client.vote.deleteMany()
   await client.workflow.deleteMany()
   await client.workflowTemplate.deleteMany()
+  await client.agentChallenge.deleteMany()
+  await client.agentRefreshToken.deleteMany()
   await client.agentGroupMembership.deleteMany()
   await client.groupMembership.deleteMany()
+  await client.organizationInvitation.deleteMany()
+  await client.stepUpReceipt.deleteMany()
   await client.group.deleteMany()
   await client.space.deleteMany()
-  await client.user.deleteMany()
   await client.agent.deleteMany()
+  await client.usageSettlementIntent.deleteMany()
+  await client.usageOperation.deleteMany()
   await client.quota.deleteMany()
   await client.usageEvent.deleteMany()
+  await client.tenantEventReceipt.deleteMany()
+  await client.tenantOutbox.deleteMany()
+  await client.auditLog.deleteMany()
+  await client.user.deleteMany()
+  await client.refreshToken.deleteMany()
+  await client.pkceSession.deleteMany()
+  await client.browserSession.deleteMany()
+  await client.platformAccountIdentity.deleteMany()
+  await client.platformSecurityEvent.deleteMany()
+  await client.platformAccount.deleteMany()
+  await client.providerConnection.deleteMany()
+  await client.organization.deleteMany()
 }

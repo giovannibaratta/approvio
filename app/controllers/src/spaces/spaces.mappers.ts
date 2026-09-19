@@ -1,5 +1,5 @@
 import {Space as SpaceApi, SpaceCreate, ListSpaces200Response} from "@approvio/api"
-import {AuthenticatedEntity, Space, SpaceValidationError} from "@domain"
+import {AuthenticatedEntity, Space, SpaceValidationError, TenantContext} from "@domain"
 import {
   CreateSpaceError,
   CreateSpaceRequest,
@@ -24,20 +24,24 @@ import {generateErrorPayload} from "@controllers/error"
 export function createSpaceApiToServiceModel(data: {
   request: SpaceCreate
   requestor: AuthenticatedEntity
+  context: TenantContext
 }): Either<SpaceValidationError, CreateSpaceRequest> {
   const spaceData = {
     name: data.request.name,
-    description: data.request.description
+    description: data.request.description,
+    organizationId: data.context.organizationId
   }
 
   return right({
     spaceData,
+    organizationId: data.context.organizationId,
     requestor: data.requestor
   })
 }
 
 export function mapSpaceToApi(space: Versioned<Space>): SpaceApi {
   return {
+    organizationId: space.organizationId,
     id: space.id,
     name: space.name,
     description: space.description,
@@ -97,9 +101,6 @@ export function generateErrorResponseForCreateSpace(error: CreateSpaceError, con
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "user_org_role_invalid":
     case "user_role_assignments_invalid_format":
     case "user_duplicate_roles":

@@ -6,7 +6,6 @@
 import axios, {AxiosInstance, isAxiosError} from "axios"
 import {PrismaClient} from "../../generated/prisma/client"
 import {PrismaPg} from "@prisma/adapter-pg"
-import {v7 as uuidv7} from "uuid"
 
 // Configuration
 const IDP_URL = process.env.IDP_URL || "http://localhost:4010"
@@ -26,7 +25,7 @@ const VOTER_USER = {
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
-    connectionString: process.env.DATABASE_URL
+    connectionString: process.env.TENANT_DATABASE_URL
   })
 })
 
@@ -179,52 +178,6 @@ async function getAccessToken(name: string, email: string): Promise<string> {
   })
 
   return tokenResponse.data.token
-}
-
-/**
- * Ensures a user exists in the database.
- */
-async function ensureUserInDb(email: string, displayName: string, isAdmin: boolean = false) {
-  let user = await prisma.user.findUnique({
-    where: {email}
-  })
-
-  if (!user) {
-    console.log(`Creating user ${email} in DB...`)
-    user = await prisma.user.create({
-      data: {
-        id: uuidv7(),
-        email,
-        displayName,
-        createdAt: new Date(),
-        occ: 0,
-        roles: []
-      }
-    })
-
-    if (isAdmin) {
-      const orgAdmin = await prisma.organizationAdmin.findUnique({
-        where: {email}
-      })
-      if (!orgAdmin)
-        await prisma.organizationAdmin.create({
-          data: {
-            id: uuidv7(),
-            email,
-            createdAt: new Date()
-          }
-        })
-    }
-  } else {
-    console.log(`User ${email} already exists in DB. Ensuring valid state...`)
-    // Ensure roles are empty array to avoid validation errors
-    if (!Array.isArray(user.roles))
-      await prisma.user.update({
-        where: {id: user.id},
-        data: {roles: []}
-      })
-  }
-  return user
 }
 
 /**
@@ -394,18 +347,22 @@ async function bootstrap() {
   try {
     console.log("--- Starting Bootstrap ---")
 
-    // 1. Database Setup
-    const adminUser = await ensureUserInDb(ADMIN_USER.email, ADMIN_USER.displayName, true)
-    const voterUser = await ensureUserInDb(VOTER_USER.email, VOTER_USER.displayName, false)
-
-    console.log(`Admin User ID: ${adminUser.id}`)
-    console.log(`Voter User ID: ${voterUser.id}`)
-
-    // 2. Authentication
+    // Authentication provisions the platform accounts and memberships.
     console.log("Authenticating with IDP...")
     const adminAccessToken = await getAccessToken(ADMIN_USER.displayName, ADMIN_USER.email)
     const voterAccessToken = await getAccessToken(VOTER_USER.displayName, VOTER_USER.email)
     console.log("Authentication successful.")
+
+    const voterAccount = await prisma.platformAccount.findFirst({where: {profileEmail: VOTER_USER.email}})
+    const voterUser = voterAccount
+      ? await prisma.user.findFirst({where: {platformAccountId: voterAccount.id}})
+      : undefined
+    if (!voterUser) throw new Error("OIDC authentication did not provision the voter membership")
+    const adminAccount = await prisma.platformAccount.findFirst({where: {profileEmail: ADMIN_USER.email}})
+    const adminUser = adminAccount
+      ? await prisma.user.findFirst({where: {platformAccountId: adminAccount.id}})
+      : undefined
+    if (!adminUser) throw new Error("OIDC authentication did not provision the admin membership")
 
     const apiClient = axios.create({
       baseURL: API_URL,

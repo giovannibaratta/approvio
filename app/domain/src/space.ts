@@ -10,6 +10,7 @@ export type Space = Readonly<PrivateSpace>
 
 interface PrivateSpace {
   id: string
+  organizationId: string
   name: string
   description?: string
   createdAt: Date
@@ -23,7 +24,11 @@ type TimestampValidationError = "update_before_create"
 
 export type SpaceValidationError = PrefixUnion<
   "space",
-  NameValidationError | DescriptionValidationError | IdValidationError | TimestampValidationError
+  | NameValidationError
+  | DescriptionValidationError
+  | IdValidationError
+  | TimestampValidationError
+  | "invalid_organization_id"
 >
 
 export class SpaceFactory {
@@ -46,6 +51,7 @@ export class SpaceFactory {
   }
 
   private static createSpace(data: Space): Either<SpaceValidationError, Space> {
+    if (!isUUIDv7(data.organizationId)) return left("space_invalid_organization_id")
     const idValidation = validateId(data.id)
     const nameValidation = validateName(data.name)
     const descriptionValidation = data.description ? validateDescription(data.description) : right(undefined)
@@ -57,6 +63,7 @@ export class SpaceFactory {
 
     return right({
       id: idValidation.right,
+      organizationId: data.organizationId,
       name: nameValidation.right,
       description: descriptionValidation.right,
       createdAt: data.createdAt,

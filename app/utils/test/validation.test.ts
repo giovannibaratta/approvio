@@ -1,9 +1,20 @@
 import {
   eitherParseInt,
   eitherParseOptionalBoolean,
+  isUUIDv5,
   isValidHttpOrHttpsUrl,
   isRecordStringString
 } from "@utils/validation"
+
+describe("isUUIDv5", () => {
+  it("accepts UUIDv5 values", () => {
+    expect(isUUIDv5("886313e1-3b8a-5372-9b90-0c9aee199e5d")).toBe(true)
+  })
+
+  it("rejects UUIDv7 values", () => {
+    expect(isUUIDv5("018f2f3e-6b9a-7abc-8def-0123456789ab")).toBe(false)
+  })
+})
 
 describe("isRecordStringString", () => {
   it("should return true for an empty object", () => {

@@ -81,11 +81,11 @@ export class OidcClient implements OidcProvider {
 
   exchangeCodeForTokens(request: OidcTokenRequest): TaskEither<OidcError, OidcTokenResponse> {
     return pipe(
-      TE.fromEither(this.oidcBootstrapService.getRawClientConfiguration(request.providerId)),
+      TE.fromEither(this.oidcBootstrapService.getRawClientConfiguration(request.providerConnectionId)),
       TE.chainW(rawConfiguration =>
         TE.tryCatch(
           async () => {
-            Logger.log(`Exchanging authorization code for tokens with provider ${request.providerId}`)
+            Logger.log(`Exchanging authorization code for tokens with provider ${request.providerConnectionId}`)
 
             const tokens = await client.genericGrantRequest(rawConfiguration, "authorization_code", {
               code: request.code,

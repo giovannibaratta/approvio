@@ -9,10 +9,14 @@ import {
   AuthenticatedEntity,
   RoleAuthorizationChecker,
   User,
+  UserValidationError,
   MAX_ROLES_PER_ENTITY,
   AuditLogFactory,
   CreateAuditLog,
-  AuditLogValidationError
+  AuditLogValidationError,
+  TenantContext,
+  BoundaryError,
+  Versioned
 } from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
 import {TaskEither} from "fp-ts/TaskEither"

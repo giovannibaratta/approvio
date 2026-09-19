@@ -1,5 +1,5 @@
 import {Space as SpaceApi, SpaceCreate, ListSpaces200Response, validateListSpacesParams} from "@approvio/api"
-import {GetAuthenticatedEntity} from "@app/auth"
+import {GetAuthenticatedEntity, GetTenantContext} from "@app/auth"
 import {
   createSpaceApiToServiceModel,
   generateErrorResponseForCreateSpace,
@@ -15,12 +15,12 @@ import {Response} from "express"
 import {isLeft} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
-import {AuthenticatedEntity} from "@domain"
+import {AuthenticatedEntity, TenantContext} from "@domain"
 import {logSuccess} from "@utils"
 
 export const SPACES_ENDPOINT_ROOT = "spaces"
 
-@Controller(SPACES_ENDPOINT_ROOT)
+@Controller(`o/:organizationId/${SPACES_ENDPOINT_ROOT}`)
 export class SpacesController {
   constructor(private readonly spaceService: SpaceService) {}
 
@@ -29,12 +29,13 @@ export class SpacesController {
   async createSpace(
     @Body() request: SpaceCreate,
     @Res({passthrough: true}) response: Response,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext
   ): Promise<void> {
     const serviceCreateSpace = (req: CreateSpaceRequest) => this.spaceService.createSpace(req)
 
     const eitherSpace = await pipe(
-      {request, requestor},
+      {request, requestor, context},
       createSpaceApiToServiceModel,
       TE.fromEither,
       TE.chainW(serviceCreateSpace),
@@ -52,6 +53,7 @@ export class SpacesController {
   @HttpCode(HttpStatus.OK)
   async listSpaces(
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext,
     @Query() query: Record<string, unknown>
   ): Promise<ListSpaces200Response> {
     const serviceListSpaces = (request: ListSpacesRequest) => this.spaceService.listSpaces(request)
@@ -65,6 +67,7 @@ export class SpacesController {
           page: params.page ?? 1,
           limit: params.limit ?? 20,
           search: params.search,
+          organizationId: context.organizationId,
           requestor
         }
       }),
@@ -83,12 +86,13 @@ export class SpacesController {
   @HttpCode(HttpStatus.OK)
   async getSpace(
     @Param("spaceId") spaceId: string,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext
   ): Promise<SpaceApi> {
     const serviceGetSpace = (request: GetSpaceRequest) => this.spaceService.getSpace(request)
 
     const eitherSpace = await pipe(
-      {spaceId, requestor},
+      {spaceId, organizationId: context.organizationId, requestor},
       TE.right,
       TE.chainW(serviceGetSpace),
       logSuccess("Space retrieved", "SpacesController", space => ({id: space.id}))
@@ -103,12 +107,13 @@ export class SpacesController {
   @HttpCode(HttpStatus.NO_CONTENT)
   async deleteSpace(
     @Param("spaceId") spaceId: string,
-    @GetAuthenticatedEntity() requestor: AuthenticatedEntity
+    @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext
   ): Promise<void> {
     const serviceDeleteSpace = (request: DeleteSpaceRequest) => this.spaceService.deleteSpace(request)
 
     const eitherResult = await pipe(
-      {spaceId, requestor},
+      {spaceId, organizationId: context.organizationId, requestor},
       TE.right,
       TE.chainW(serviceDeleteSpace),
       logSuccess("Space deleted", "SpacesController", () => ({spaceId}))

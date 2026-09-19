@@ -6,19 +6,19 @@
 
 ## Glossary
 
-| Term | Meaning in this ADR |
-| --- | --- |
-| Customer | The person or business administering an organization. A person may participate in several customers' organizations without sharing their authority or data. |
-| Organization / tenant | The same isolation boundary in this design. “Organization” is the product term; “tenant” describes its ownership and isolation in shared infrastructure. |
-| Space | A resource container inside one organization, governed by that organization's permissions. |
-| Login account | The identity used to authenticate a person. A platform account may access several organizations through separate memberships; an enterprise account belongs to one organization. |
-| Membership / organization user | A person's presence and authority inside one organization, including local roles and group membership. Authentication alone does not establish this authority. |
-| Identity provider (IdP) / SSO | An external authentication authority / single sign-on through that authority. A provider connection specifies which configured authority Approvio trusts. |
-| IAM | Identity and access management: authentication, account lifecycle, memberships, and permissions. These responsibilities need not share one service or storage location. |
-| Cell | An independently operated deployment of tenant APIs, workers, and data stores serving a subset of organizations. Several cells can occupy one region; a cell can serve one or many tenants. |
-| Region / data residency | A geographic deployment area / requirements governing where particular data is stored, processed, or accessed. A region is not a tenant boundary. |
-| Routing directory / control plane | Organization-to-cell placement metadata / administrative capabilities for provisioning and managing deployments. Neither grants access to tenant resources. |
-| RLS / tenant-matching constraint | Database row-level security that restricts visible or writable rows / a relational rule that prevents links between different organizations. |
+| Term                              | Meaning in this ADR                                                                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Customer                          | The person or business administering an organization. A person may participate in several customers' organizations without sharing their authority or data.                                 |
+| Organization / tenant             | The same isolation boundary in this design. “Organization” is the product term; “tenant” describes its ownership and isolation in shared infrastructure.                                    |
+| Space                             | A resource container inside one organization, governed by that organization's permissions.                                                                                                  |
+| Login account                     | The identity used to authenticate a person. A platform account may access several organizations through separate memberships; an enterprise account belongs to one organization.            |
+| Membership / organization user    | A person's presence and authority inside one organization, including local roles and group membership. Authentication alone does not establish this authority.                              |
+| Identity provider (IdP) / SSO     | An external authentication authority / single sign-on through that authority. A provider connection specifies which configured authority Approvio trusts.                                   |
+| IAM                               | Identity and access management: authentication, account lifecycle, memberships, and permissions. These responsibilities need not share one service or storage location.                     |
+| Cell                              | An independently operated deployment of tenant APIs, workers, and data stores serving a subset of organizations. Several cells can occupy one region; a cell can serve one or many tenants. |
+| Region / data residency           | A geographic deployment area / requirements governing where particular data is stored, processed, or accessed. A region is not a tenant boundary.                                           |
+| Routing directory / control plane | Organization-to-cell placement metadata / administrative capabilities for provisioning and managing deployments. Neither grants access to tenant resources.                                 |
+| RLS / tenant-matching constraint  | Database row-level security that restricts visible or writable rows / a relational rule that prevents links between different organizations.                                                |
 
 ## 1. Context and requirements
 
@@ -47,15 +47,15 @@ All references between tenant-owned resources must remain within their owning or
 
 ### Ownership classification
 
-| Data | Required scope |
-| --- | --- |
-| Spaces, groups, agents, templates, workflows, votes, action tasks | Explicit owning organization; relationships remain within that organization. |
+| Data                                                                               | Required scope                                                                                                                                                                       |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Spaces, groups, agents, templates, workflows, votes, action tasks                  | Explicit owning organization; relationships remain within that organization.                                                                                                         |
 | Organization users or memberships, group membership, role assignments, invitations | Authority is local to one organization and may span its spaces. A shared login account identifies the person; each organization independently owns their membership and permissions. |
-| Quotas and usage events | Explicit owning/billing organization, separately from the measured resource and initiating actor. |
-| Tenant audit records | Organization attribution survives resource deletion and member departure, subject to retention policy. |
-| Secrets, jobs, caches, locks, deduplication and reservation state | Organization ownership is preserved wherever tenant data is stored or executed. |
-| Authentication sessions and provider connections | Explicit principal and provider trust scope, plus target organization where applicable. |
-| Platform metadata and security events | Explicit platform scope; platform capabilities do not implicitly grant customer-data access. |
+| Quotas and usage events                                                            | Explicit owning/billing organization, separately from the measured resource and initiating actor.                                                                                    |
+| Tenant audit records                                                               | Organization attribution survives resource deletion and member departure, subject to retention policy.                                                                               |
+| Secrets, jobs, caches, locks, deduplication and reservation state                  | Organization ownership is preserved wherever tenant data is stored or executed.                                                                                                      |
+| Authentication sessions and provider connections                                   | Explicit principal and provider trust scope, plus target organization where applicable.                                                                                              |
+| Platform metadata and security events                                              | Explicit platform scope; platform capabilities do not implicitly grant customer-data access.                                                                                         |
 
 All tenant-owned database entities receive an organization binding. Global/platform records are deliberately classified exceptions, rather than records assigned to a default organization. Platform login accounts are platform-scoped; enterprise login accounts are organization-owned, as defined in section 4.
 
@@ -69,11 +69,11 @@ The initial model is a **shared PostgreSQL database with shared tables and expli
 
 The trade-off is shared capacity and a shared failure domain: RLS protects row access, not CPU, connection pools, or backup isolation. Tenant-specific restore and heavy-neighbor control require additional mechanisms. Schema-per-tenant would retain much of that infrastructure sharing while adding migration and routing complexity.
 
-| Alternative | Main benefit | Main cost and disposition |
-| --- | --- | --- |
-| Database per organization | Stronger database separation; independent backup/restore and placement options. | Provisioning, connections, and migration orchestration across databases. Dedicated compute is a separate choice. Retained as a future option. |
-| Schema per organization | Separate table namespaces within PostgreSQL. | Repeated schema migrations and dynamic schema/client routing; still shares database infrastructure. Not selected initially. |
-| Shared tables with organization binding | One schema, efficient shared infrastructure, explicit tenant data model. | Every access and relationship must preserve scope; tenant restore and capacity isolation need application/operational support. Selected initial model. |
+| Alternative                             | Main benefit                                                                    | Main cost and disposition                                                                                                                              |
+| --------------------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Database per organization               | Stronger database separation; independent backup/restore and placement options. | Provisioning, connections, and migration orchestration across databases. Dedicated compute is a separate choice. Retained as a future option.          |
+| Schema per organization                 | Separate table namespaces within PostgreSQL.                                    | Repeated schema migrations and dynamic schema/client routing; still shares database infrastructure. Not selected initially.                            |
+| Shared tables with organization binding | One schema, efficient shared infrastructure, explicit tenant data model.        | Every access and relationship must preserve scope; tenant restore and capacity isolation need application/operational support. Selected initial model. |
 
 **Upgrade path:** Keep shared tables as the short- and medium-term storage model. When measured capacity, failure isolation, or residency requirements justify cells, distribute whole organizations among independent cells; each cell can retain this same schema and application. A large or contractually isolated customer can occupy a dedicated cell, or later use a separately routed database where justified. Cells address deployment placement and capacity; shared tables address storage inside a deployment. These decisions are compatible.
 
@@ -107,6 +107,8 @@ A replacement database must preserve the isolation contract. Replacing enforceme
 RLS uses a restricted runtime database role and an organization setting local to a bounded database transaction. The transaction boundary establishes context before queries, preserves it through nested operations, and re-establishes it on retries. External calls execute outside retried database transactions.
 
 `FORCE ROW LEVEL SECURITY` makes a non-superuser table owner obey row policies. Superusers and roles with `BYPASSRLS` remain exempt. Liquibase can manage these policies as SQL migrations; Prisma need not represent them as application models. Runtime and migration roles must be separated. [PostgreSQL row security](https://www.postgresql.org/docs/17/ddl-rowsecurity.html)
+
+The [tenancy security-boundary note](./010-tenancy-security-boundaries.md) defines the capability roles, failure modes, and non-goals behind these controls. It also records the deferred decision on transparent recovery from an unknown database commit outcome.
 
 An isolated check verified these mechanisms using Prisma 7.9.1, PostgreSQL 17.4, and Liquibase 4.31.1. It also verified that Prisma query extensions do not receive separate nested-operation callbacks. A cross-organization relationship accepted with simple foreign keys and RLS was rejected after adding tenant-matching composite foreign keys. These checks establish mechanism compatibility; application transaction propagation, retries, and worker integration still require implementation tests.
 
@@ -252,12 +254,12 @@ Cells, geographic routing, dedicated infrastructure, and tenant migration are ou
 
 Keep these as logical boundaries in the monolith now; separate services are unnecessary at launch. For future cells, the preferred direction is:
 
-| Responsibility | Placement direction |
-| --- | --- |
-| Organization routing | A minimal directory maps an opaque organization ID to its cell/region. Routing selects a destination; the receiving cell still authenticates and authorizes the request. |
-| Platform social accounts | A platform authentication boundary owns provider bindings, account recovery, and login sessions. Its storage may be regionalized; “platform-wide account” does not require one worldwide database. |
-| Organization discovery | An authenticated platform account can obtain a limited index of its memberships and destinations. The index is a discovery aid, not authority; current membership is checked in the destination cell. |
-| Organization IAM | Organization users, memberships, groups, roles, agent credentials, suspension state, and future enterprise provider configuration live with the organization in its cell. Enterprise authentication must be able to operate within that residency boundary. |
+| Responsibility           | Placement direction                                                                                                                                                                                                                                         |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Organization routing     | A minimal directory maps an opaque organization ID to its cell/region. Routing selects a destination; the receiving cell still authenticates and authorizes the request.                                                                                    |
+| Platform social accounts | A platform authentication boundary owns provider bindings, account recovery, and login sessions. Its storage may be regionalized; “platform-wide account” does not require one worldwide database.                                                          |
+| Organization discovery   | An authenticated platform account can obtain a limited index of its memberships and destinations. The index is a discovery aid, not authority; current membership is checked in the destination cell.                                                       |
+| Organization IAM         | Organization users, memberships, groups, roles, agent credentials, suspension state, and future enterprise provider configuration live with the organization in its cell. Enterprise authentication must be able to operate within that residency boundary. |
 
 A router can forward requests or direct a browser to the proper endpoint. This does not require separate frontend codebases or a “super cell” holding all customer permissions. A direct organization URL must support enterprise login without first creating a platform social account. Stable organization IDs permit directory-based placement changes; hashing alone would constrain rebalancing and residency exceptions.
 
@@ -277,14 +279,14 @@ Self-hosted installations need no edge service, Kubernetes, hyperscaler-specific
 
 The core decisions above establish the HLD. The following details belong in subsequent product, low-level, or deployment design:
 
-| Topic | Required follow-up |
-| --- | --- |
-| Identity and sessions | Platform versus enterprise account schemas, recovery, invitation matching, future SSO transitions, and session transport. No implicit email-based linking. |
-| Storage and authorization | Tenant-matching constraints, RLS policies and roles, transaction propagation/retries, and authoritative per-request checks. |
-| Browser switching | One active organization per browser session, server mismatch handling, and cross-tab UX; no logout of unrelated devices. |
-| Onboarding and ownership | Automatic versus explicit creation, self-hosted bootstrap, owner/admin powers, and recovery with multiple owners. |
-| Lifecycle and work | Grace periods, paused-work resumption, authorization points, in-flight reconciliation, retention, and deletion. |
-| Future cells | Placement/routing, authentication trust and revocation distribution, regional identity requirements, capacity triggers, and migration operations. |
+| Topic                     | Required follow-up                                                                                                                                         |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity and sessions     | Platform versus enterprise account schemas, recovery, invitation matching, future SSO transitions, and session transport. No implicit email-based linking. |
+| Storage and authorization | Tenant-matching constraints, RLS policies and roles, transaction propagation/retries, and authoritative per-request checks.                                |
+| Browser switching         | One active organization per browser session, server mismatch handling, and cross-tab UX; no logout of unrelated devices.                                   |
+| Onboarding and ownership  | Automatic versus explicit creation, self-hosted bootstrap, owner/admin powers, and recovery with multiple owners.                                          |
+| Lifecycle and work        | Grace periods, paused-work resumption, authorization points, in-flight reconciliation, retention, and deletion.                                            |
+| Future cells              | Placement/routing, authentication trust and revocation distribution, regional identity requirements, capacity triggers, and migration operations.          |
 
 Include isolation checks for cross-org references, revocation, stale browser contexts, replayed jobs, and lifecycle transitions. Client/API rollout and migrations belong in the implementation plan.
 

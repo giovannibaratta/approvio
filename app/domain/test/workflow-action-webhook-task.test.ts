@@ -5,6 +5,7 @@ import {WebhookActionHttpMethod} from "../src/workflow-actions"
 describe("WorkflowActionWebhookTaskFactory", () => {
   const baseTaskData = {
     id: "018d9f1b-5b5c-7d9a-8e5f-1a2b3c4d5e6f",
+    organizationId: "018d9f1b-5b5c-7d9a-8e5f-1a2b3c4d5e6a",
     workflowId: "018d9f1b-5b5c-7d9a-8e5f-1a2b3c4d5e6f",
     url: "https://example.com/webhook",
     method: WebhookActionHttpMethod.POST,

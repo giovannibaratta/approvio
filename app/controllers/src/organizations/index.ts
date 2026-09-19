@@ -1,2 +1,5 @@
 export * from "./organization.controller"
+export * from "./own-organizations.controller"
+export * from "./memberships.controller"
+export * from "./invitations.controller"
 export * from "./organization.mappers"

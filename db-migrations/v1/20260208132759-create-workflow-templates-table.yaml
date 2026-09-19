@@ -3,6 +3,18 @@ databaseChangeLog:
       id: 20260208132759-create-workflow-templates-table
       author: giovannibaratta
       changes:
+        - insert:
+            tableName: approvio_security_table_registry
+            columns:
+              - column:
+                  name: table_name
+                  value: workflow_templates
+              - column:
+                  name: security_class
+                  value: tenant
+              - column:
+                  name: capability_profile
+                  value: tenant_crud
         - createTable:
             tableName: workflow_templates
             columns:
@@ -13,39 +25,43 @@ databaseChangeLog:
                     primaryKey: true
                     nullable: false
               - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
                   name: name
-                  type: varchar
+                  type: text
                   constraints:
                     nullable: false
               - column:
                   name: description
-                  type: varchar
+                  type: text
               - column:
                   name: approval_rule
                   type: jsonb
                   constraints:
                     nullable: false
               - column:
-                  name: actions
-                  type: jsonb
-                  constraints:
-                    nullable: true
+                  name: enc_actions
+                  type: text
+                  remarks: Tenant-bound encrypted action envelope
               - column:
                   name: default_expires_in_hours
                   type: integer
               - column:
                   name: created_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: updated_at
-                  type: timestamp
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: status
-                  type: varchar(50)
+                  type: text
                   constraints:
                     nullable: false
               - column:
@@ -68,10 +84,27 @@ databaseChangeLog:
                   type: uuid
                   constraints:
                     nullable: false
-                    foreignKeyName: fk_workflow_templates_space
-                    references: spaces(id)
-                    deleteCascade: true
+        - addForeignKeyConstraint:
+            baseTableName: workflow_templates
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_workflow_templates_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: workflow_templates
+            baseColumnNames: organization_id, space_id
+            referencedTableName: spaces
+            referencedColumnNames: organization_id, id
+            constraintName: fk_workflow_templates_space
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
         - addUniqueConstraint:
             tableName: workflow_templates
-            columnNames: name, version
-            constraintName: workflow_templates_name_version_unique
+            columnNames: organization_id, id
+            constraintName: workflow_templates_organization_id_unique
+        - addUniqueConstraint:
+            tableName: workflow_templates
+            columnNames: organization_id, name, version
+            constraintName: workflow_templates_organization_name_version_unique

@@ -1,4 +1,5 @@
 import {User, Agent, OrgRole, StepUpContext} from "@domain"
+import {isUUIDv7} from "@utils"
 
 const CLOCK_SKEW_TOLERANCE_IN_SECONDS = 60
 
@@ -28,6 +29,7 @@ export interface UserTokenPayloadForSigning extends TokenPayloadCore {
 
 export interface AgentTokenPayloadForSigning extends TokenPayloadCore {
   entityType: "agent"
+  organizationId: string
 }
 
 export type TokenPayloadForSigning = UserTokenPayloadForSigning | AgentTokenPayloadForSigning
@@ -91,7 +93,10 @@ export class TokenPayloadValidator {
       if (p.roles !== undefined && !Array.isArray(p.roles)) return false
     }
 
-    if (p.entityType === "agent") if (p.providerId !== undefined) return false
+    if (p.entityType === "agent") {
+      if (p.providerId !== undefined) return false
+      if (typeof p.organizationId !== "string" || !isUUIDv7(p.organizationId)) return false
+    }
 
     return true
   }
@@ -161,6 +166,7 @@ export type CreateAgentTokenPayloadData = {
   entityType: "agent"
   sub: string
   displayName: string
+  organizationId: string
   issuer: string
   audience: string[]
   stepUpContext?: StepUpContext
@@ -199,6 +205,7 @@ export class TokenPayloadBuilder {
       jti: data.stepUpContext?.jti,
       name: data.displayName,
       entityType: "agent",
+      organizationId: data.organizationId,
       // Step-up context
       ...(data.stepUpContext?.operation && {operation: data.stepUpContext.operation}),
       ...(data.stepUpContext?.resource && {resource: data.stepUpContext.resource})
@@ -247,9 +254,10 @@ export class TokenPayloadBuilder {
     }
   ): AgentTokenPayloadForSigning {
     return TokenPayloadBuilder.from({
-      sub: agent.agentName,
+      sub: agent.id,
       entityType: "agent",
       displayName: agent.agentName,
+      organizationId: agent.organizationId,
       // Agents don't have email
       issuer: options.issuer,
       audience: options.audience

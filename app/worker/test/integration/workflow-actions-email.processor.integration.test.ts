@@ -6,13 +6,12 @@ import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} 
 import {DatabaseClient} from "@external"
 import {PrismaClient} from "@prisma/client"
 import {setupWorkerTestModule} from "./test-helpers"
-import {WorkflowActionEmailTaskFactory, TaskStatus, WorkflowStatus, WorkflowActionType} from "@domain"
-import {Job} from "bull"
-import {WorkflowActionEmailEvent} from "@domain/events"
+import {WorkflowActionEmailTaskFactory, TaskEvent, WorkflowStatus} from "@domain"
 
 import {MailpitClient} from "mailpit-api"
 import {isNone} from "fp-ts/Option"
 import {EmailService} from "@services/email/email.service"
+import {TaskService} from "@services"
 import * as TE from "fp-ts/TaskEither"
 import {unwrapRight} from "@utils/either"
 import {v7 as uuidv7} from "uuid"
@@ -31,6 +30,7 @@ async function createWorkflowWithEmailTask(
   const workflow = await prisma.workflow.create({
     data: {
       id: uuidv7(),
+      organizationId: template.organizationId,
       name: "Test-Email-Workflow",
       status: WorkflowStatus.EVALUATION_IN_PROGRESS,
       workflowTemplateId: template.id,
@@ -42,10 +42,12 @@ async function createWorkflowWithEmailTask(
     }
   })
 
-  // Create an email task
+  // Create an email task through the tenant-aware service so payload encryption and durable metadata
+  // match production task creation.
   const emailTask = unwrapRight(
     WorkflowActionEmailTaskFactory.newWorkflowActionEmailTask({
       id: uuidv7(),
+      organizationId: template.organizationId,
       workflowId: workflow.id,
       recipients,
       subject,
@@ -53,27 +55,13 @@ async function createWorkflowWithEmailTask(
     })
   )
 
-  await prisma.workflowActionsEmailTask.create({
-    data: {
-      id: emailTask.id,
-      workflowId: emailTask.workflowId,
-      recipients: emailTask.recipients,
-      subject: emailTask.subject,
-      body: emailTask.body,
-      status: emailTask.status,
-      retryCount: emailTask.retryCount,
-      createdAt: emailTask.createdAt,
-      updatedAt: emailTask.updatedAt,
-      occ: emailTask.occ
-    }
-  })
-
-  return {workflowId: workflow.id, taskId: emailTask.id}
+  return {workflowId: workflow.id, organizationId: template.organizationId, task: emailTask}
 }
 
 describe("Workflow Action Email Processor Integration", () => {
   let processor: WorkflowActionEmailProcessor
   let emailService: EmailService
+  let taskService: TaskService
   let prisma: PrismaClient
   let redisPrefix: string
   let module: TestingModule
@@ -119,6 +107,7 @@ describe("Workflow Action Email Processor Integration", () => {
 
     processor = module.get<WorkflowActionEmailProcessor>(WorkflowActionEmailProcessor)
     emailService = module.get<EmailService>(EmailService)
+    taskService = module.get<TaskService>(TaskService)
     prisma = module.get(DatabaseClient).prisma
 
     await module.init()

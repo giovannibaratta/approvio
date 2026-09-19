@@ -8,6 +8,7 @@ import {
   UserValidationError,
   AgentValidationError,
   AuthenticatedEntity,
+  TenantContext,
   createEntityReference,
   getEntityRoles
 } from "@domain"
@@ -17,7 +18,6 @@ import {RequestorAwareRequest} from "@services/shared/types"
 import {AgentKeyDecodeError} from "@services/agent/interfaces"
 import {WorkflowGetError, WorkflowUpdateError} from "../workflow/interfaces"
 import {WorkflowService} from "../workflow/workflow.service"
-import {QueueService} from "../queue/queue.service"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
@@ -30,6 +30,9 @@ import {isRight} from "fp-ts/Either"
 import {AuthService} from "@services/auth/auth.service"
 import {UseHighPrivilegeTokenError} from "@services/auth/interfaces"
 import {QuotaService} from "@services/quota/quota.service"
+import {ExecutionError, TRANSACTION_MANAGER_TOKEN, TransactionManager} from "@services/transaction/interfaces"
+import {OUTBOX_REPOSITORY_TOKEN, OutboxRepository} from "@services/durable-work/interfaces"
+import {generateDeterministicId} from "@utils"
 
 @Injectable()
 export class VoteService {
@@ -39,9 +42,12 @@ export class VoteService {
     private readonly workflowService: WorkflowService,
     @Inject(GROUP_MEMBERSHIP_REPOSITORY_TOKEN)
     private readonly groupMembershipRepo: GroupMembershipRepository,
-    private readonly queueService: QueueService,
     private readonly authService: AuthService,
-    private readonly quotaService: QuotaService
+    private readonly quotaService: QuotaService,
+    @Inject(TRANSACTION_MANAGER_TOKEN)
+    private readonly transactionManager: TransactionManager,
+    @Inject(OUTBOX_REPOSITORY_TOKEN)
+    private readonly outboxRepository: OutboxRepository
   ) {}
 
   /**
@@ -241,6 +247,7 @@ export type CanVoteError =
   | GetLatestVoteError
   | UnknownError
   | AuthorizationError
+  | ExecutionError
 
 export type CastVoteRequest = RequestorAwareRequest & DistributiveOmit<Vote, "id" | "castedAt" | "voter">
 
@@ -254,3 +261,5 @@ export type CastVoteServiceError =
   | WorkflowUpdateError
   | AuthorizationError
   | UseHighPrivilegeTokenError
+  | ExecutionError
+  | "event_mismatch"

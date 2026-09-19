@@ -2,6 +2,10 @@ import {SupportedQuotaType} from "./quota"
 
 export type PlanTier = "FREE" | "SELF_HOSTED_UNLIMITED"
 
+export function isPlanTier(value: unknown): value is PlanTier {
+  return value === "FREE" || value === "SELF_HOSTED_UNLIMITED"
+}
+
 export type TierQuotaLimit = number | "UNLIMITED"
 
 export interface TierFeatures {

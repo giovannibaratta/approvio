@@ -1,17 +1,26 @@
-import {User, UserSummary, UserSummaryValidationError, UserValidationError} from "@domain"
+import {
+  BoundaryError,
+  TenantContext,
+  TransactionError,
+  User,
+  UserSummary,
+  UserSummaryValidationError,
+  UserValidationError
+} from "@domain"
 import {AuthorizationError, ConcurrentModificationError, UnknownError} from "@services/error"
 import {Versioned} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
-import {UserIdentityCreate} from "../user-identity/interfaces"
 
 export type UserCreateError =
-  "user_already_exists" | AuthorizationError | UserValidationError | UnknownError | "quota_check_error"
-export type UserGetError = "user_not_found" | "request_invalid_user_identifier" | UserValidationError | UnknownError
+  BoundaryError | "user_already_exists" | AuthorizationError | UserValidationError | UnknownError | "quota_check_error"
+export type UserGetError =
+  BoundaryError | "user_not_found" | "request_invalid_user_identifier" | UserValidationError | UnknownError
 export type UserUpdateError = UserGetError | ConcurrentModificationError
 
 export type UserListValidationError =
   "invalid_page_number" | "invalid_limit_number" | "search_too_long" | "search_term_invalid_characters"
-export type UserListError = UserListValidationError | UserSummaryValidationError | UnknownError
+export type UserListError =
+  BoundaryError | UserListValidationError | UserSummaryValidationError | UnknownError | TransactionError
 
 export interface PaginatedUsersList {
   readonly users: ReadonlyArray<UserSummary>

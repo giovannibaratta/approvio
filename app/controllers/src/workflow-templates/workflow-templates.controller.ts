@@ -76,11 +76,12 @@ export class WorkflowTemplatesController {
   @Get()
   async listWorkflowTemplates(
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext,
     @Query() query: Record<string, unknown>
   ): Promise<ListWorkflowTemplates200Response> {
     const eitherWorkflowTemplates = await pipe(
       validateListWorkflowTemplatesParams(query),
-      E.chainW(params => mapListWorkflowTemplatesParamsToServiceRequest(params, requestor)),
+      E.chainW(params => mapListWorkflowTemplatesParamsToServiceRequest(params, requestor, context)),
       TE.fromEither,
       TE.chainW(req => this.workflowTemplateService.listWorkflowTemplates(req)),
       TE.map(mapWorkflowTemplateListToApi),
@@ -99,9 +100,12 @@ export class WorkflowTemplatesController {
   }
 
   @Get(":templateIdentifier")
-  async getWorkflowTemplate(@Param("templateIdentifier") templateIdentifier: string): Promise<WorkflowTemplateApi> {
+  async getWorkflowTemplate(
+    @Param("templateIdentifier") templateIdentifier: string,
+    @GetTenantContext() context: TenantContext
+  ): Promise<WorkflowTemplateApi> {
     const getWorkflowTemplateService = (identifier: string) =>
-      this.workflowTemplateService.getWorkflowTemplateByIdentifier(identifier)
+      this.workflowTemplateService.getWorkflowTemplateByIdentifier(context, identifier)
 
     const eitherWorkflowTemplate = await pipe(
       templateIdentifier,

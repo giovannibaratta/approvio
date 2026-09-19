@@ -3,48 +3,107 @@ databaseChangeLog:
       id: 20260208132803-create-pkce-sessions-table
       author: giovannibaratta
       changes:
+        - insert:
+            tableName: approvio_security_table_registry
+            columns:
+              - column:
+                  name: table_name
+                  value: pkce_sessions
+              - column:
+                  name: security_class
+                  value: platform
+              - column:
+                  name: capability_profile
+                  value: platform_sessions
         - createTable:
             tableName: pkce_sessions
             columns:
               - column:
                   name: state
-                  type: VARCHAR(255)
+                  type: text
                   constraints:
                     primaryKey: true
                     nullable: false
               - column:
-                  name: code_verifier
-                  type: VARCHAR(2048)
+                  name: enc_code_verifier
+                  type: text
+                  remarks: Platform-bound encrypted PKCE verifier.
                   constraints:
                     nullable: false
               - column:
                   name: redirect_uri
-                  type: VARCHAR(500)
+                  type: text
                   constraints:
                     nullable: false
               - column:
                   name: oidc_state
-                  type: VARCHAR(255)
+                  type: text
                   constraints:
                     nullable: false
               - column:
+                  name: provider_connection_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: flow
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: session_id
+                  type: uuid
+              - column:
+                  name: step_up_organization_id
+                  type: uuid
+              - column:
+                  name: step_up_operation
+                  type: text
+              - column:
+                  name: step_up_resource_id
+                  type: uuid
+              - column:
+                  name: step_up_context_version
+                  type: bigint
+              - column:
                   name: created_at
-                  type: TIMESTAMP
-                  defaultValueComputed: CURRENT_TIMESTAMP
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: expires_at
-                  type: TIMESTAMP
+                  type: timestamptz
                   constraints:
                     nullable: false
               - column:
                   name: used_at
-                  type: TIMESTAMP
-                  constraints:
-                    nullable: true
+                  type: timestamptz
               - column:
                   name: occ
-                  type: BIGINT
+                  type: bigint
                   constraints:
                     nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: pkce_sessions
+            baseColumnNames: provider_connection_id
+            referencedTableName: provider_connections
+            referencedColumnNames: id
+            constraintName: fk_pkce_sessions_provider
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: pkce_sessions
+            baseColumnNames: session_id, provider_connection_id
+            referencedTableName: browser_sessions
+            referencedColumnNames: id, provider_connection_id
+            constraintName: fk_pkce_sessions_session_provider
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: pkce_sessions
+            baseColumnNames: step_up_organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_pkce_sessions_step_up_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
