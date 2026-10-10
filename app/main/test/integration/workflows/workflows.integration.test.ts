@@ -1,3 +1,5 @@
+import {TenantEncryptionService} from "@external/kms/context-bound-encryption.service"
+import {randomOrgId, toOrganizationId} from "@test/organization-id"
 import {
   CanVoteResponse as CanVoteResponseApi,
   Workflow as WorkflowApi,
@@ -10,7 +12,6 @@ import {AppModule} from "@app/app.module"
 import {WORKFLOWS_ENDPOINT_ROOT} from "@controllers"
 import {SystemRole} from "@domain"
 import {ApprovalRuleType, WORKFLOW_DESCRIPTION_MAX_LENGTH, WORKFLOW_NAME_MAX_LENGTH, WorkflowStatus} from "@domain"
-import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
@@ -18,50 +19,29 @@ import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient, Workflow as PrismaWorkflow, WorkflowTemplate as PrismaWorkflowTemplate} from "@prisma/client"
 
-import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "@test/database"
 import {
-  createMockWorkflowInDb,
-  createMockWorkflowTemplateInDb,
-  MockConfigProvider,
-  createUserWithRefreshToken
+  createFixturePrismaClient,
+  cleanDatabase,
+  prepareDatabase,
+  prepareRedisPrefix,
+  cleanRedisByPrefix
+} from "@test/database"
+import {
+  createMockWorkflowInDb as createMockWorkflowFixture,
+  createMockWorkflowTemplateInDb as createMockWorkflowTemplateFixture,
+  createTestGroup as createTestGroupFixture,
+  MockConfigProvider
 } from "@test/mock-data"
-import {createAuthenticatedUserInDb, TestTokenBuilder} from "@test/token-helpers"
+import {createAuthenticatedUserInDb as createAuthenticatedUserFixture} from "@test/token-helpers"
 import {get, post} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import {WORKFLOW_REPOSITORY_TOKEN, WorkflowRepository} from "@services"
 import {LeverService} from "@services/lever"
 import {wrapTaskEitherWithSideEffect} from "@test/injectors"
-import {getQueueToken} from "@nestjs/bull"
-import {WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"
-import {Queue} from "bull"
 import {v7 as uuidv7} from "uuid"
 
-// Helper function to create a mock group for tests
-async function createTestGroup(prisma: PrismaClient, name: string): Promise<{id: string}> {
-  const group = await prisma.group.create({
-    data: {
-      id: uuidv7(),
-      name: name,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      occ: 1
-    }
-  })
-  return group
-}
-
 async function addUserToGroup(prisma: PrismaClient, groupId: string, userId: string): Promise<void> {
-  await prisma.user.update({
-    where: {id: userId},
-    data: {
-      groupMemberships: {
-        connectOrCreate: {
-          where: {groupId_userId: {groupId, userId}},
-          create: {groupId, createdAt: new Date(), updatedAt: new Date()}
-        }
-      }
-    }
-  })
+  const organizationId = (await prisma.user.findUniqueOrThrow({where: {id: userId}})).organizationId
   await prisma.groupMembership.upsert({
     where: {
       organizationId_groupId_userId: {
@@ -84,12 +64,13 @@ async function addUserToGroup(prisma: PrismaClient, groupId: string, userId: str
 }
 
 async function addVoterRoleToUser(prisma: PrismaClient, userId: string, templateName: string): Promise<void> {
+  const user = await prisma.user.findUniqueOrThrow({where: {id: userId}})
   const voterRole = SystemRole.createWorkflowTemplateVoterRole({
     type: "workflow_template",
-    templateName
+    templateName,
+    organizationId: toOrganizationId(user.organizationId)
   })
   const roleForDb = JSON.parse(JSON.stringify(voterRole))
-  const user = await prisma.user.findUnique({where: {id: userId}})
   const roles = (user?.roles as unknown[]) || []
   await prisma.user.update({
     where: {id: userId},
@@ -108,9 +89,31 @@ describe("Workflows API", () => {
   let mockGroupId2: string
   let mockWorkflowTemplate: PrismaWorkflowTemplate
   let redisPrefix: string
-  let recalculationQueue: Queue
+  let endpoint: string
+  let organizationId: ReturnType<typeof toOrganizationId>
 
-  const endpoint = `/${WORKFLOWS_ENDPOINT_ROOT}`
+  const createMockWorkflowInDb = (prisma: PrismaClient, overrides: Parameters<typeof createMockWorkflowFixture>[1]) =>
+    createMockWorkflowFixture(prisma, {...overrides, organizationId: overrides.organizationId ?? organizationId})
+  const createMockWorkflowTemplateInDb = (
+    prisma: PrismaClient,
+    overrides?: Parameters<typeof createMockWorkflowTemplateFixture>[1]
+  ) =>
+    createMockWorkflowTemplateFixture(prisma, {
+      ...overrides,
+      organizationId: overrides?.organizationId ?? organizationId
+    })
+  const createTestGroup = (prisma: PrismaClient, overrides?: Parameters<typeof createTestGroupFixture>[1]) =>
+    createTestGroupFixture(prisma, {...overrides, organizationId: overrides?.organizationId ?? organizationId})
+  const createAuthenticatedUserInDb = (
+    prisma: PrismaClient,
+    jwtService: JwtService,
+    configProvider: ConfigProvider,
+    overrides?: Parameters<typeof createAuthenticatedUserFixture>[3]
+  ) =>
+    createAuthenticatedUserFixture(prisma, jwtService, configProvider, {
+      ...overrides,
+      organizationId: overrides?.organizationId ?? organizationId
+    })
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -122,7 +125,7 @@ describe("Workflows API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix))
+        .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb, redisPrefix))
         .compile()
     } catch (error) {
       console.error(error)
@@ -131,18 +134,25 @@ describe("Workflows API", () => {
 
     app = module.createNestApplication({logger: false})
     configProvider = module.get(ConfigProvider)
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
 
-    recalculationQueue = module.get<Queue>(getQueueToken(WORKFLOW_STATUS_RECALCULATION_QUEUE))
     await app.init()
   }, 30000)
 
   beforeEach(async () => {
-    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
-    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
-    const testGroup1 = await createTestGroup(prisma, "Test-Approver-Group-1")
-    const testGroup2 = await createTestGroup(prisma, "Test-Approver-Group-2")
+    organizationId = randomOrgId()
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+      orgAdmin: true,
+      organizationId
+    })
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+      orgAdmin: false,
+      organizationId: orgAdminUser.user.organizationId
+    })
+    endpoint = `/o/${orgAdminUser.user.organizationId}/${WORKFLOWS_ENDPOINT_ROOT}`
+    const testGroup1 = await createTestGroup(prisma, {name: "Test-Approver-Group-1"})
+    const testGroup2 = await createTestGroup(prisma, {name: "Test-Approver-Group-2"})
 
     mockGroupId1 = testGroup1.id
     mockGroupId2 = testGroup2.id
@@ -168,11 +178,34 @@ describe("Workflows API", () => {
 
   it("should be defined", () => {
     expect(app).toBeDefined()
-    expect(recalculationQueue).toBeDefined()
   })
 
   describe("POST /workflows", () => {
     describe("good cases", () => {
+      it("creates from template metadata without decrypting actions and preserves the configured expiry", async () => {
+        await prisma.workflowTemplate.update({
+          where: {id: mockWorkflowTemplate.id},
+          data: {defaultExpiresInHours: 12, encActions: "unreadable ciphertext"}
+        })
+        const decrypt = jest.spyOn(app.get(TenantEncryptionService), "decrypt")
+        try {
+          const startedAt = Date.now()
+          const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send({
+            name: "Metadata-Only-Workflow",
+            workflowTemplateId: mockWorkflowTemplate.id
+          })
+          expect(response.status).toBe(HttpStatus.CREATED)
+          expect(decrypt).not.toHaveBeenCalled()
+          const workflow = await prisma.workflow.findFirstOrThrow({
+            where: {organizationId, name: "Metadata-Only-Workflow"}
+          })
+          expect(workflow.expiresAt.getTime()).toBeGreaterThanOrEqual(startedAt + 12 * 60 * 60 * 1000)
+          expect(workflow.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 12 * 60 * 60 * 1000)
+        } finally {
+          decrypt.mockRestore()
+        }
+      })
+
       it("should create a workflow and return 201 with location header (as OrgAdmin)", async () => {
         // Given: a workflow creation request
         const requestBody: WorkflowCreate = {
@@ -197,6 +230,11 @@ describe("Workflows API", () => {
         expect(workflowDbObject?.name).toEqual(requestBody.name)
         expect(workflowDbObject?.description).toEqual(requestBody.description)
         expect(workflowDbObject?.id).toEqual(responseUuid)
+
+        const expirationSchedule = await prisma.workflowExpirationSchedule.findUnique({
+          where: {organizationId}
+        })
+        expect(expirationSchedule?.nextSweepAt).toEqual(workflowDbObject?.expiresAt)
       })
 
       it("should create a workflow with null description if not provided (as OrgAdmin)", async () => {
@@ -238,7 +276,7 @@ describe("Workflows API", () => {
         await addVoterRoleToUser(prisma, orgAdminUser.user.id, mockWorkflowTemplate.name)
 
         // Intercept getWorkflowById to trigger concurrent modification
-        spy = wrapTaskEitherWithSideEffect(repo, "getWorkflowById", async id => {
+        spy = wrapTaskEitherWithSideEffect(repo, "getWorkflowById", async (_context, id) => {
           if (id === workflowForRaceVoting.id)
             await prisma.workflow.update({
               where: {id: workflowForRaceVoting.id},
@@ -598,23 +636,23 @@ describe("Workflows API", () => {
         expect(body1.requireHighPrivilege).toBe(true) // Required because they vote for group 1
 
         // Test user only in group 2 (Does NOT require High Privilege)
-        const orgMember2User = await createUserWithRefreshToken(prisma, {
-          userOverrides: {
-            orgAdmin: false,
-            roles: [
-              SystemRole.createWorkflowTemplateVoterRole({
-                type: "workflow_template",
-                templateName: complexTemplate.name
-              })
-            ]
-          },
-          tokenOverrides: {createdAt: new Date()}
+        const orgMember2User = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+          orgAdmin: false,
+          organizationId: orgAdminUser.user.organizationId,
+          roles: [
+            SystemRole.createWorkflowTemplateVoterRole({
+              type: "workflow_template",
+              templateName: complexTemplate.name,
+              organizationId: toOrganizationId(complexTemplate.organizationId)
+            })
+          ]
         })
-        const member2Token = TestTokenBuilder.signUserToken(jwtService, configProvider, orgMember2User.user)
 
         await addUserToGroup(prisma, mockGroupId2, orgMember2User.user.id)
 
-        const response2 = await get(app, `${endpoint}/${complexWorkflow.id}/canVote`).withToken(member2Token).build()
+        const response2 = await get(app, `${endpoint}/${complexWorkflow.id}/canVote`)
+          .withToken(orgMember2User.token)
+          .build()
 
         expect(response2).toHaveStatusCode(HttpStatus.OK)
         const body2: CanVoteResponseApi = response2.body
@@ -643,7 +681,8 @@ describe("Workflows API", () => {
         // Given: a new user with voter role but not in any group related to this workflow
         const voterRole = SystemRole.createWorkflowTemplateVoterRole({
           type: "workflow_template",
-          templateName: template.name
+          templateName: template.name,
+          organizationId: toOrganizationId(template.organizationId)
         })
         const {token: nonMemberToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
           orgAdmin: false,
@@ -829,10 +868,62 @@ describe("Workflows API", () => {
         // Expect: a 202 Accepted status and the vote recorded in the database
         expect(response).toHaveStatusCode(HttpStatus.ACCEPTED)
 
-        const tasks = await recalculationQueue.getWaiting()
+        const events = await prisma.tenantOutbox.findMany({
+          where: {organizationId: orgAdminUser.user.organizationId, eventType: "workflow.recalculate"}
+        })
 
-        expect(tasks).toHaveLength(1)
-        expect(tasks[0]).toMatchObject({data: {workflowId: workflowForVoting.id}})
+        expect(events).toHaveLength(1)
+        expect(events.at(0)?.payload).toMatchObject({workflowId: workflowForVoting.id})
+      })
+
+      it("rolls back the vote and recalculation marker when outbox append fails", async () => {
+        await prisma.$executeRawUnsafe(`
+          CREATE FUNCTION fail_vote_recalculation_outbox() RETURNS trigger
+          LANGUAGE plpgsql AS $$
+          BEGIN
+            IF NEW.event_type = 'workflow.recalculate' THEN
+              RAISE EXCEPTION 'Injected outbox failure';
+            END IF;
+            RETURN NEW;
+          END;
+          $$
+        `)
+
+        try {
+          await prisma.$executeRawUnsafe(`
+            CREATE TRIGGER fail_vote_recalculation_outbox
+            BEFORE INSERT ON tenant_outbox
+            FOR EACH ROW EXECUTE FUNCTION fail_vote_recalculation_outbox()
+          `)
+
+          const response = await post(app, `${endpoint}/${workflowForVoting.id}/vote`)
+            .withToken(orgMemberUser.token)
+            .build()
+            .send({voteType: {type: "APPROVE", votedForGroups: [mockGroupId1]}})
+
+          expect(response).toHaveStatusCode(HttpStatus.INTERNAL_SERVER_ERROR)
+          expect(await prisma.vote.count({where: {workflowId: workflowForVoting.id}})).toBe(0)
+          expect(
+            (
+              await prisma.workflow.findUnique({
+                where: {
+                  organizationId_id: {
+                    organizationId: orgAdminUser.user.organizationId,
+                    id: workflowForVoting.id
+                  }
+                }
+              })
+            )?.recalculationRequired
+          ).toBe(false)
+          expect(
+            await prisma.tenantOutbox.count({
+              where: {organizationId: orgAdminUser.user.organizationId, eventType: "workflow.recalculate"}
+            })
+          ).toBe(0)
+        } finally {
+          await prisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS fail_vote_recalculation_outbox ON tenant_outbox")
+          await prisma.$executeRawUnsafe("DROP FUNCTION IF EXISTS fail_vote_recalculation_outbox()")
+        }
       })
 
       it("should enforce high privilege correctly for complex AND rules based on voted groups", async () => {
@@ -884,20 +975,17 @@ describe("Workflows API", () => {
         expect(response1.body).toHaveErrorCode("STEP_UP_CONTEXT_MISSING")
 
         // Test user only in group 2 (Does NOT require High Privilege)
-        const orgMember2User = await createUserWithRefreshToken(prisma, {
-          userOverrides: {
-            orgAdmin: false,
-            roles: [
-              SystemRole.createWorkflowTemplateVoterRole({
-                type: "workflow_template",
-                templateName: complexTemplate.name
-              })
-            ]
-          },
-          tokenOverrides: {createdAt: new Date()}
+        const orgMember2User = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+          orgAdmin: false,
+          organizationId: orgAdminUser.user.organizationId,
+          roles: [
+            SystemRole.createWorkflowTemplateVoterRole({
+              type: "workflow_template",
+              templateName: complexTemplate.name,
+              organizationId: toOrganizationId(complexTemplate.organizationId)
+            })
+          ]
         })
-
-        const member2Token = TestTokenBuilder.signUserToken(jwtService, configProvider, orgMember2User.user)
 
         await addUserToGroup(prisma, mockGroupId2, orgMember2User.user.id)
 
@@ -909,7 +997,7 @@ describe("Workflows API", () => {
         }
 
         const response2 = await post(app, `${endpoint}/${complexWorkflow.id}/vote`)
-          .withToken(member2Token)
+          .withToken(orgMember2User.token)
           .build()
           .send(requestBody2)
 
@@ -968,7 +1056,8 @@ describe("Workflows API", () => {
         // Given: a new user not in any group related to this workflow
         const voterRole = SystemRole.createWorkflowTemplateVoterRole({
           type: "workflow_template",
-          templateName: workflowTemplate.name
+          templateName: workflowTemplate.name,
+          organizationId: toOrganizationId(workflowTemplate.organizationId)
         })
         const {token: nonVoterToken} = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
           orgAdmin: false,

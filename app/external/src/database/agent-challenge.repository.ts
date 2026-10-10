@@ -1,159 +1,121 @@
+import {Injectable, Logger} from "@nestjs/common"
+import {AgentChallenge, AgentChallengeFactory, DecoratedAgentChallenge, TenantContext} from "@domain"
 import {
-  AgentChallenge,
-  AgentChallengeDecoratedValidationError,
-  AgentChallengeFactory,
-  DecoratedAgentChallenge
-} from "@domain"
-import {Injectable} from "@nestjs/common"
-import {Prisma, AgentChallenge as PrismaAgentChallenge, Agent as PrismaAgent} from "@prisma/client"
-import {
-  AgentChallengeRepository,
   AgentChallengeCreateError,
-  AgentChallengeGetError,
+  AgentChallengeRepository,
   AgentChallengeUpdateError,
   GetChallengeByNonceError
 } from "@services"
-import * as TE from "fp-ts/TaskEither"
-import {TaskEither} from "fp-ts/TaskEither"
-import {pipe} from "fp-ts/function"
-import {DatabaseClient} from "./database-client"
+import {AgentChallenge as PrismaAgentChallenge, Prisma} from "@prisma/client"
 import * as E from "fp-ts/Either"
+import * as TE from "fp-ts/TaskEither"
+import {pipe} from "fp-ts/function"
+import {AgentChallengeTenantClient} from "./tenant-database-clients"
+import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "./errors"
 import {chainNullableToLeft} from "./utils"
-import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
-
-type PrismaAgentChallengeWithAgent = PrismaAgentChallenge & {agents: PrismaAgent}
 
 @Injectable()
 export class AgentChallengeDbRepository implements AgentChallengeRepository {
-  constructor(private readonly dbClient: DatabaseClient) {}
+  constructor(private readonly dbClient: AgentChallengeTenantClient) {}
 
-  persistChallenge(challenge: AgentChallenge): TaskEither<AgentChallengeCreateError, AgentChallenge> {
+  persistChallenge(
+    context: TenantContext,
+    challenge: AgentChallenge
+  ): TE.TaskEither<AgentChallengeCreateError, AgentChallenge> {
     return pipe(
-      challenge,
-      TE.right,
-      TE.chainW(this.persistChallengeTask()),
-      TE.chainEitherKW(c => this.mapPrismaChallengeToDomainForCreate(c))
+      TE.tryCatch(
+        async () => {
+          if (context.organizationId !== challenge.organizationId) throw new ChallengeNotFoundError()
+          return this.dbClient.cx.agentChallenge.create({
+            data: {
+              id: challenge.id,
+              organizationId: context.organizationId,
+              agentId: challenge.agentId,
+              nonce: challenge.nonce,
+              expiresAt: challenge.expiresAt,
+              usedAt: challenge.usedAt ?? null,
+              createdAt: challenge.createdAt,
+              occ: 0n
+            }
+          })
+        },
+        error => this.mapCreateError(error)
+      ),
+      TE.chainEitherKW(record => E.mapLeft(() => "agent_challenge_storage_error" as const)(mapChallenge(record)))
     )
   }
 
-  getChallengeByNonce(nonce: string): TaskEither<GetChallengeByNonceError, DecoratedAgentChallenge<{occ: true}>> {
+  getChallengeByNonce(
+    context: TenantContext,
+    nonce: string
+  ): TE.TaskEither<GetChallengeByNonceError, DecoratedAgentChallenge<{occ: true}>> {
     return pipe(
       TE.tryCatch(
         () =>
           this.dbClient.cx.agentChallenge.findUnique({
-            where: {nonce},
-            include: {agents: true}
+            where: {organizationId_nonce: {organizationId: context.organizationId, nonce}}
           }),
-        this.mapGetError
+        error => this.mapGetError(error)
       ),
       chainNullableToLeft("agent_challenge_not_found" as const),
-      TE.chainEitherKW(challengeWithAgent => this.mapPrismaChallengeWithAgentToDecoratedDomain(challengeWithAgent))
+      TE.chainEitherKW(mapChallenge)
     )
   }
 
-  updateChallenge(challenge: DecoratedAgentChallenge<{occ: true}>): TaskEither<AgentChallengeUpdateError, void> {
+  updateChallenge(
+    context: TenantContext,
+    challenge: DecoratedAgentChallenge<{occ: true}>
+  ): TE.TaskEither<AgentChallengeUpdateError, void> {
     return TE.tryCatch(
       async () => {
-        const result = await this.dbClient.cx.agentChallenge.updateMany({
-          where: {
-            id: challenge.id,
-            occ: challenge.occ
-          },
-          data: {
-            usedAt: challenge.usedAt || null,
-            nonce: challenge.nonce,
-            expiresAt: challenge.expiresAt,
-            createdAt: challenge.createdAt,
-            occ: {
-              increment: 1
-            }
-          }
+        if (context.organizationId !== challenge.organizationId) throw new ChallengeConflictError()
+        await this.dbClient.cx.agentChallenge.update({
+          where: {id: challenge.id, organizationId: context.organizationId, occ: challenge.occ},
+          data: {usedAt: challenge.usedAt ?? null, occ: {increment: 1}}
         })
-
-        if (result.count === 0) throw new Error("agent_challenge_concurrent_update")
       },
-      (error: unknown) => {
-        return this.mapUpdateError(error)
-      }
+      error => this.mapUpdateError(error)
     )
   }
 
-  private persistChallengeTask() {
-    return (challenge: AgentChallenge): TaskEither<AgentChallengeCreateError, PrismaAgentChallengeWithAgent> =>
-      TE.tryCatch(
-        () =>
-          this.dbClient.cx.agentChallenge.create({
-            data: this.mapDomainChallengeToPrisma(challenge),
-            include: {
-              agents: true
-            }
-          }),
-        this.mapCreateError
-      )
-  }
-
-  private mapDomainChallengeToPrisma(challenge: AgentChallenge): Prisma.AgentChallengeCreateInput {
-    return {
-      id: challenge.id,
-      agents: {
-        connect: {
-          agentName: challenge.agentName
-        }
-      },
-      nonce: challenge.nonce,
-      expiresAt: challenge.expiresAt,
-      usedAt: challenge.usedAt || null,
-      createdAt: challenge.createdAt,
-      occ: POSTGRES_BIGINT_LOWER_BOUND
-    }
-  }
-
-  private mapPrismaChallengeToDomainForCreate(
-    prismaChallenge: PrismaAgentChallengeWithAgent
-  ): E.Either<AgentChallengeCreateError, AgentChallenge> {
-    const challenge: AgentChallenge = {
-      id: prismaChallenge.id,
-      agentName: prismaChallenge.agents.agentName,
-      nonce: prismaChallenge.nonce,
-      expiresAt: prismaChallenge.expiresAt,
-      usedAt: prismaChallenge.usedAt || undefined,
-      createdAt: prismaChallenge.createdAt
-    }
-
-    return E.right(challenge)
-  }
-
-  private mapPrismaChallengeWithAgentToDecoratedDomain(
-    challengeWithAgent: PrismaAgentChallengeWithAgent
-  ): E.Either<AgentChallengeDecoratedValidationError, DecoratedAgentChallenge<{occ: true}>> {
-    const challenge: DecoratedAgentChallenge<{occ: true}> = {
-      id: challengeWithAgent.id,
-      agentName: challengeWithAgent.agents.agentName,
-      nonce: challengeWithAgent.nonce,
-      expiresAt: challengeWithAgent.expiresAt,
-      usedAt: challengeWithAgent.usedAt || undefined,
-      createdAt: challengeWithAgent.createdAt,
-      occ: challengeWithAgent.occ
-    }
-
-    return pipe(
-      E.right(challenge),
-      E.chainW(data => AgentChallengeFactory.validate(data, {occ: true}))
-    )
-  }
-
-  private mapCreateError = (): AgentChallengeCreateError => {
+  private mapCreateError(error: unknown): AgentChallengeCreateError {
+    if (isPrismaUniqueConstraintError(error, ["organization_id", "nonce"])) return "agent_challenge_storage_error"
+    Logger.error("Agent challenge repository persist failed", error instanceof Error ? error.name : "non_error")
     return "agent_challenge_storage_error"
   }
 
-  private mapGetError = (): AgentChallengeGetError => {
+  private mapGetError(error: unknown): GetChallengeByNonceError {
+    Logger.error("Agent challenge repository lookup failed", error instanceof Error ? error.name : "non_error")
     return "unknown_error"
   }
 
-  private mapUpdateError = (error: unknown): AgentChallengeUpdateError => {
-    if (error instanceof Error && error.message === "agent_challenge_concurrent_update")
-      return "agent_challenge_concurrent_update"
-
-    return "unknown_error"
+  private mapUpdateError(error: unknown): AgentChallengeUpdateError {
+    if (error instanceof ChallengeConflictError) return "agent_challenge_concurrent_update"
+    if (isPrismaRecordNotFoundError(error, Prisma.ModelName.AgentChallenge)) return "agent_challenge_concurrent_update"
+    Logger.error("Agent challenge repository update failed", error instanceof Error ? error.name : "non_error")
+    return "agent_challenge_update_failed"
   }
 }
+
+function mapChallenge(
+  record: PrismaAgentChallenge
+): E.Either<GetChallengeByNonceError, DecoratedAgentChallenge<{occ: true}>> {
+  return E.mapLeft(() => "unknown_error" as const)(
+    AgentChallengeFactory.validate(
+      {
+        id: record.id,
+        organizationId: record.organizationId,
+        agentId: record.agentId,
+        nonce: record.nonce,
+        expiresAt: record.expiresAt,
+        usedAt: record.usedAt ?? undefined,
+        createdAt: record.createdAt,
+        occ: record.occ
+      },
+      {occ: true}
+    )
+  )
+}
+
+class ChallengeNotFoundError extends Error {}
+class ChallengeConflictError extends Error {}

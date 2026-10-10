@@ -68,6 +68,60 @@ export function generateErrorResponseForListAccountOrganizations(error: ListAcco
 
 export function generateErrorResponseForCreateOrganization(error: CreateOrganizationError): HttpException {
   switch (error) {
+    case "user_invalid_organization_id":
+    case "user_invalid_uuid":
+    case "user_invalid_account_id":
+    case "user_display_name_empty":
+    case "user_display_name_too_long":
+    case "user_org_role_invalid":
+    case "user_status_invalid":
+    case "user_update_before_create":
+    case "user_role_assignments_invalid_format":
+    case "user_duplicate_roles":
+    case "user_role_organization_mismatch":
+    case "user_membership_roles_invalid":
+    case "role_invalid_uuid":
+    case "role_name_empty":
+    case "role_name_too_long":
+    case "role_name_invalid_characters":
+    case "role_permissions_empty":
+    case "role_permission_invalid":
+    case "role_invalid_scope":
+    case "role_resource_id_invalid":
+    case "role_resource_required_for_scope":
+    case "role_resource_not_allowed_for_scope":
+    case "role_assignments_empty":
+    case "role_assignments_exceed_maximum":
+    case "role_total_roles_exceed_maximum":
+    case "role_unknown_role_name":
+    case "role_scope_incompatible_with_template":
+    case "role_entity_type_role_restriction":
+    case "role_invalid_structure":
+    case "audit_log_organization_mismatch":
+    case "audit_log_malformed_object":
+    case "audit_log_invalid_audit_type":
+    case "audit_log_invalid_entity_type":
+    case "audit_log_invalid_actor_type":
+    case "audit_log_invalid_schema_version":
+    case "audit_log_invalid_payload":
+    case "audit_log_missing_required_fields":
+    case "organization_summary_malformed_object":
+    case "organization_summary_invalid_id":
+    case "organization_summary_invalid_slug":
+    case "organization_summary_invalid_display_name":
+    case "organization_summary_invalid_status":
+    case "organization_summary_invalid_occ":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
+    case "unknown_error":
+      return new HttpException(
+        generateErrorPayload(error.toUpperCase(), "Invalid domain state"),
+        HttpStatus.INTERNAL_SERVER_ERROR
+      )
+
     case "malformed_object":
     case "missing_field":
     case "invalid_field":

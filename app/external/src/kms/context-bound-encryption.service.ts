@@ -4,16 +4,17 @@ import {createHash} from "node:crypto"
 import * as E from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {CryptoError, EncryptionContext, PlatformEncryption, TenantEncryption} from "@services/encryption/interfaces"
-import {isUUIDv7} from "@utils"
+import {isUUIDv5, isUUIDv7} from "@utils"
 import {KMS_PROVIDER_TOKEN, KmsProvider} from "./kms.provider.interface"
 
 const CIPHERTEXT_PREFIX = "approvio:enc:v1:"
 const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
-// TODO: What is the Authenticated context ? document
+// Authenticated context is the key-value metadata authenticated by the envelope encryption layer.
 type AuthenticatedContext = Readonly<Record<string, string>>
 
-// TODO: Why not extending/refactoring the existing encryption service ? Do we still need it ?
+// This adapter centralizes envelope handling while tenant and platform services expose separate
+// trust-scoped interfaces to their callers.
 class ContextEncryptionAdapter {
   private readonly client = buildClient(CommitmentPolicy.REQUIRE_ENCRYPT_REQUIRE_DECRYPT)
 
@@ -44,7 +45,8 @@ class ContextEncryptionAdapter {
         const {plaintext, messageHeader} = await this.client.decrypt(this.kmsProvider.getKeyring(), encoded.right)
         const authenticated = messageHeader.encryptionContext
         if (!this.hasSupportedMetadata(authenticated)) return E.left("unsupported_format")
-        // TODO: What is the purpose of this check ? Can you explain and document it.
+        // Compare every requested binding component to prevent valid ciphertext from another
+        // tenant/resource being accepted by this caller.
         if (!Object.entries(context).every(([key, value]) => authenticated[key] === value))
           return E.left("binding_mismatch")
         return E.right(plaintext.toString("utf8"))
@@ -66,8 +68,8 @@ class ContextEncryptionAdapter {
   }
 }
 
-// TODO: In this file there are several places where we return 'binding_mismatch'.
-// this hide some of the context (fine) but we should log the reason why this was returned.
+// Binding failures intentionally share one opaque error to avoid revealing which tenant/resource
+// component differed. Detailed context must not be logged because it is security-sensitive.
 @Injectable()
 export class TenantEncryptionService implements TenantEncryption {
   private readonly adapter: ContextEncryptionAdapter
@@ -77,7 +79,7 @@ export class TenantEncryptionService implements TenantEncryption {
   }
 
   encrypt(context: EncryptionContext, plaintext: string): TE.TaskEither<CryptoError, string> {
-    // TODO: This can be refactored to be more fp-tsish by using the pipe
+    // Keep validation synchronous; only the KMS operation is represented as a TaskEither.
     const authenticatedContext = this.toAuthenticatedContext(context)
     return E.isLeft(authenticatedContext)
       ? TE.left(authenticatedContext.left)
@@ -85,7 +87,7 @@ export class TenantEncryptionService implements TenantEncryption {
   }
 
   decrypt(context: EncryptionContext, ciphertext: string): TE.TaskEither<CryptoError, string> {
-    // TODO: This can be refactored to be more fp-tsish by using the pipe
+    // Keep validation synchronous; only the KMS operation is represented as a TaskEither.
     const authenticatedContext = this.toAuthenticatedContext(context)
     return E.isLeft(authenticatedContext)
       ? TE.left(authenticatedContext.left)
@@ -103,13 +105,9 @@ export class TenantEncryptionService implements TenantEncryption {
 
   private toAuthenticatedContext(context: EncryptionContext): E.Either<CryptoError, AuthenticatedContext> {
     if (context.formatVersion !== 1) return E.left("unsupported_format")
-    if (!isUUIDv7(context.organizationId) || !isUUIDv7(context.resourceId)) return E.left("binding_mismatch")
-
-    // TODO: If possible try to enforce via typing, if not possible we can keep it as it is.
-    const fieldMatchesResource =
-      (context.resourceType === "workflow_template" && context.field === "actions") ||
-      (context.resourceType !== "workflow_template" && context.field === "payload")
-    if (!fieldMatchesResource) return E.left("binding_mismatch")
+    const resourceIdIsValid =
+      context.resourceType === "workflow_template" ? isUUIDv7(context.resourceId) : isUUIDv5(context.resourceId)
+    if (!isUUIDv7(context.organizationId) || !resourceIdIsValid) return E.left("binding_mismatch")
 
     return E.right({
       scope: "tenant",
@@ -130,28 +128,28 @@ export class PlatformEncryptionService implements PlatformEncryption {
     this.adapter = new ContextEncryptionAdapter(kmsProvider)
   }
 
-  encryptPkce(state: string, providerConnectionId: string, plaintext: string): TE.TaskEither<CryptoError, string> {
-    // TODO: This can be refactored to be more fp-tsish by using the pipe
-    const authenticatedContext = this.pkceContext(state, providerConnectionId)
+  encryptPkce(state: string, providerId: string, plaintext: string): TE.TaskEither<CryptoError, string> {
+    // Keep the invalid-context branch synchronous before invoking KMS.
+    const authenticatedContext = this.pkceContext(state, providerId)
     return E.isLeft(authenticatedContext)
       ? TE.left(authenticatedContext.left)
       : this.adapter.encrypt(authenticatedContext.right, plaintext)
   }
 
-  decryptPkce(state: string, providerConnectionId: string, ciphertext: string): TE.TaskEither<CryptoError, string> {
-    // TODO: This can be refactored to be more fp-tsish by using the pipe
-    const authenticatedContext = this.pkceContext(state, providerConnectionId)
+  decryptPkce(state: string, providerId: string, ciphertext: string): TE.TaskEither<CryptoError, string> {
+    // Keep the invalid-context branch synchronous before invoking KMS.
+    const authenticatedContext = this.pkceContext(state, providerId)
     return E.isLeft(authenticatedContext)
       ? TE.left(authenticatedContext.left)
       : this.adapter.decrypt(authenticatedContext.right, ciphertext)
   }
 
-  private pkceContext(state: string, providerConnectionId: string): E.Either<CryptoError, AuthenticatedContext> {
-    if (!state || !isUUIDv7(providerConnectionId)) return E.left("binding_mismatch")
+  private pkceContext(state: string, providerId: string): E.Either<CryptoError, AuthenticatedContext> {
+    if (!state || providerId.trim().length === 0) return E.left("binding_mismatch")
     return E.right({
       scope: "platform_pkce",
       state_digest: createHash("sha256").update(state).digest("hex"),
-      provider_connection_id: providerConnectionId,
+      provider_id: providerId,
       field: "verifier",
       format_version: "1"
     })

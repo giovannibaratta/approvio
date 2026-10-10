@@ -9,26 +9,16 @@ import {
   WORKFLOW_ACTION_EMAIL_QUEUE,
   WORKFLOW_ACTION_WEBHOOK_QUEUE,
   WORKFLOW_ACTION_SLACK_QUEUE,
-  WORKFLOW_EXPIRATION_SWEEP_QUEUE
+  WORKFLOW_EXPIRATION_SWEEP_QUEUE,
+  WORKFLOW_EXPIRATION_SWEEP_INTERVAL_MS,
+  TENANT_OUTBOX_RELAY_QUEUE,
+  USAGE_SETTLEMENT_QUEUE,
+  USAGE_CACHE_RECOVERY_QUEUE
 } from "./queue.module"
-import {
-  EnqueueRecalculationError,
-  EnqueueWorkflowActionError,
-  EnqueueWorkflowStatusChangedError,
-  QueueHealthCheckFailed,
-  QueueProvider
-} from "@services"
-import {
-  WorkflowStatusChangedEvent,
-  WorkflowActionEmailEvent,
-  WorkflowActionWebhookEvent,
-  WorkflowActionSlackEvent,
-  WorkflowActionType
-} from "@domain"
-
-export interface RecalculationJobData {
-  workflowId: string
-}
+import {EnqueueTenantEventError, QueueHealthCheckFailed, QueueProvider} from "@services"
+import {TenantEvent} from "@domain"
+import {serializeTenantEvent, TenantEventQueuePayload} from "./tenant-event-payload"
+import {UsageCacheRecoveryRequest} from "@services/usage-metering"
 
 const SHARED_QUEUE_OPTIONS: JobOptions = {
   attempts: 3,
@@ -46,107 +36,103 @@ const SHARED_QUEUE_OPTIONS: JobOptions = {
 
 @Injectable()
 export class BullQueueProvider implements QueueProvider, OnModuleDestroy, OnModuleInit {
+  // The discriminated TenantEvent union is the transport contract. route
+  // narrows it by event type and task kind before selecting a Bull queue.
   constructor(
     @InjectQueue(WORKFLOW_STATUS_RECALCULATION_QUEUE)
-    private readonly queue: Queue<RecalculationJobData>,
+    private readonly queue: Queue<TenantEventQueuePayload>,
     @InjectQueue(WORKFLOW_STATUS_CHANGED_QUEUE)
-    private readonly statusChangedQueue: Queue<WorkflowStatusChangedEvent>,
+    private readonly statusChangedQueue: Queue<TenantEventQueuePayload>,
     @InjectQueue(WORKFLOW_ACTION_EMAIL_QUEUE)
-    private readonly emailActionQueue: Queue<WorkflowActionEmailEvent>,
+    private readonly emailActionQueue: Queue<TenantEventQueuePayload>,
     @InjectQueue(WORKFLOW_ACTION_WEBHOOK_QUEUE)
-    private readonly webhookActionQueue: Queue<WorkflowActionWebhookEvent>,
+    private readonly webhookActionQueue: Queue<TenantEventQueuePayload>,
     @InjectQueue(WORKFLOW_ACTION_SLACK_QUEUE)
-    private readonly slackActionQueue: Queue<WorkflowActionSlackEvent>,
+    private readonly slackActionQueue: Queue<TenantEventQueuePayload>,
     @InjectQueue(WORKFLOW_EXPIRATION_SWEEP_QUEUE)
-    private readonly sweepQueue: Queue<Record<string, never>>
+    private readonly sweepQueue: Queue<Record<string, never>>,
+    @InjectQueue(TENANT_OUTBOX_RELAY_QUEUE)
+    private readonly relayQueue: Queue<Record<string, never>>,
+    @InjectQueue(USAGE_SETTLEMENT_QUEUE)
+    private readonly usageQueue: Queue<TenantEventQueuePayload | Record<string, never>>,
+    @InjectQueue(USAGE_CACHE_RECOVERY_QUEUE)
+    private readonly recoveryQueue: Queue<UsageCacheRecoveryRequest>
   ) {}
 
-  /**
-   * Enqueues a workflow recalculation job.
-   * Uses workflowId as jobId for automatic deduplication.
-   */
-  enqueueWorkflowStatusRecalculation(workflowId: string): TaskEither<EnqueueRecalculationError, void> {
+  requestUsageCacheRecovery(request: UsageCacheRecoveryRequest): TaskEither<"unknown_error", void> {
     return TE.tryCatch(
       async () => {
-        await this.queue.add(
-          "recalculate-workflow",
-          {workflowId},
-          {
-            jobId: workflowId, // Automatic deduplication
-            ...SHARED_QUEUE_OPTIONS
-          }
-        )
-      },
-      error => {
-        Logger.error(`Failed to enqueue recalculation for workflow ${workflowId}`, error)
-        return "unknown_error" as const
-      }
-    )
-  }
-
-  enqueueWorkflowStatusRecalculationBulk(workflowIds: string[]): TaskEither<EnqueueRecalculationError, void> {
-    return TE.tryCatch(
-      async () => {
-        if (workflowIds.length === 0) return
-        const jobs = workflowIds.map(id => ({
-          name: "recalculate-workflow",
-          data: {workflowId: id},
-          opts: {
-            jobId: id, // Retains automatic deduplication per workflow ID!
-            ...SHARED_QUEUE_OPTIONS
-          }
-        }))
-        await this.queue.addBulk(jobs)
-      },
-      error => {
-        Logger.error(`Failed to bulk enqueue recalculation jobs for ${workflowIds.length} workflows`, error)
-        return "unknown_error" as const
-      }
-    )
-  }
-
-  enqueueWorkflowStatusChanged(event: WorkflowStatusChangedEvent): TaskEither<EnqueueWorkflowStatusChangedError, void> {
-    return TE.tryCatch(
-      async () => {
-        await this.statusChangedQueue.add("workflow-status-changed", event, {
+        // Bull deduplicates this ID across waiting, delayed and active jobs. Removal on
+        // completion/failure lets a later cache loss request recovery of the same key.
+        await this.recoveryQueue.add("rebuild-usage-cache", request, {
           ...SHARED_QUEUE_OPTIONS,
-          jobId: event.eventId
+          jobId: `${request.organizationId}:${request.metric}:${request.period}`,
+          priority: 1,
+          attempts: 10,
+          removeOnComplete: true,
+          removeOnFail: true
         })
       },
       error => {
-        Logger.error(`Failed to enqueue status change for workflow ${event.workflowId}`, error)
+        Logger.error(`Failed to request usage cache recovery for ${request.organizationId}`, error)
         return "unknown_error" as const
       }
     )
   }
 
-  enqueueWorkflowAction(
-    event: WorkflowActionEmailEvent | WorkflowActionWebhookEvent | WorkflowActionSlackEvent
-  ): TaskEither<EnqueueWorkflowActionError, void> {
+  enqueue(event: TenantEvent, deliveryAttempt = 0): TaskEither<EnqueueTenantEventError, void> {
+    if (event.type === "usage.settlement")
+      return TE.tryCatch(
+        async () => {
+          await this.usageQueue.add(event.type, serializeTenantEvent(event), this.jobOptions(event, deliveryAttempt))
+        },
+        error => this.logEnqueueError(event, error)
+      )
+
+    const route = this.route(event)
+    if (!route) return TE.left("unsupported_event")
     return TE.tryCatch(
       async () => {
-        const payload = {
-          ...SHARED_QUEUE_OPTIONS,
-          jobId: event.taskId
-        }
-
-        switch (event.type) {
-          case WorkflowActionType.EMAIL:
-            await this.emailActionQueue.add("workflow-action-email", event, payload)
-            break
-          case WorkflowActionType.WEBHOOK:
-            await this.webhookActionQueue.add("workflow-action-webhook", event, payload)
-            break
-          case WorkflowActionType.SLACK:
-            await this.slackActionQueue.add("workflow-action-slack", event, payload)
-            break
-        }
+        await route.queue.add(route.jobName, serializeTenantEvent(event), this.jobOptions(event, deliveryAttempt))
       },
-      error => {
-        Logger.error(`Failed to enqueue action ${event.type} for task ${event.taskId}`, error)
-        return "unknown_error" as const
-      }
+      error => this.logEnqueueError(event, error)
     )
+  }
+
+  private jobOptions(event: TenantEvent, deliveryAttempt: number): JobOptions {
+    return {
+      ...SHARED_QUEUE_OPTIONS,
+      jobId: `${event.organizationId}:${event.eventId}:${deliveryAttempt}`
+    }
+  }
+
+  private logEnqueueError(event: TenantEvent, error: unknown): "unknown_error" {
+    Logger.error(`Failed to enqueue tenant event ${event.type} for organization ${event.organizationId}`, error)
+    return "unknown_error"
+  }
+
+  private route(
+    event: Exclude<TenantEvent, {readonly type: "usage.settlement"}>
+  ): {readonly queue: Queue<TenantEventQueuePayload>; readonly jobName: string} | undefined {
+    switch (event.type) {
+      case "workflow.recalculate":
+        return {queue: this.queue, jobName: "recalculate-workflow"}
+      case "workflow.status_changed":
+        return {queue: this.statusChangedQueue, jobName: "workflow-status-changed"}
+      case "task.ready":
+        return {
+          queue:
+            event.taskKind === "email"
+              ? this.emailActionQueue
+              : event.taskKind === "webhook"
+                ? this.webhookActionQueue
+                : this.slackActionQueue,
+          jobName: "task.ready"
+        }
+      case "organization.resumed":
+        // No worker consumes this event yet; never send it to an unrelated queue.
+        return undefined
+    }
   }
 
   checkHealth(): TaskEither<QueueHealthCheckFailed, void> {
@@ -166,32 +152,15 @@ export class BullQueueProvider implements QueueProvider, OnModuleDestroy, OnModu
   }
 
   async onModuleInit() {
-    const targetCron = "*/5 * * * *"
-    const jobName = "sweep-expired-workflows"
-
     try {
-      // 1. Get all registered repeatable jobs in the sweep queue
-      const repeatableJobs = await this.sweepQueue.getRepeatableJobs()
-
-      // 2. Clean up any obsolete repeatable jobs with different cron frequencies
-      for (const job of repeatableJobs)
-        if (job.name === jobName && job.cron !== targetCron) {
-          Logger.warn(`Removing obsolete repeatable job key ${job.key} (old cron: ${job.cron})`)
-          await this.sweepQueue.removeRepeatableByKey(job.key)
-        }
-
-      // 3. Add/update the repeatable job with the target frequency on the sweep queue
-      await this.sweepQueue.add(
-        jobName,
-        {},
-        {
-          repeat: {cron: targetCron},
-          jobId: jobName // Deduplication key
-        }
-      )
-      Logger.log(`Successfully registered repeatable job "${jobName}" with frequency "${targetCron}" on sweep queue`)
+      const sweepIntervalMinutes = WORKFLOW_EXPIRATION_SWEEP_INTERVAL_MS / (60 * 1000)
+      await this.registerRepeatable(this.sweepQueue, "sweep-expired-workflows", `*/${sweepIntervalMinutes} * * * *`, {})
+      await this.registerRepeatable(this.relayQueue, "relay-tenant-outbox", "* * * * *", {})
+      // Remove the old PostgreSQL usage scan when upgrading an existing queue.
+      for (const job of await this.usageQueue.getRepeatableJobs())
+        if (job.name === "reconcile-usage-settlements") await this.usageQueue.removeRepeatableByKey(job.key)
     } catch (error) {
-      Logger.error(`Failed to manage repeatable job "${jobName}"`, error)
+      Logger.error("Failed to manage repeatable worker jobs", error)
       throw error
     }
   }
@@ -203,7 +172,22 @@ export class BullQueueProvider implements QueueProvider, OnModuleDestroy, OnModu
       this.emailActionQueue.close(),
       this.webhookActionQueue.close(),
       this.slackActionQueue.close(),
-      this.sweepQueue.close()
+      this.sweepQueue.close(),
+      this.relayQueue.close(),
+      this.usageQueue.close(),
+      this.recoveryQueue.close()
     ])
+  }
+
+  private async registerRepeatable<T>(queue: Queue<T>, jobName: string, cron: string, data: T): Promise<void> {
+    const repeatableJobs = await queue.getRepeatableJobs()
+    for (const job of repeatableJobs)
+      if (job.name === jobName && job.cron !== cron) {
+        Logger.warn(`Removing obsolete repeatable job key ${job.key} (old cron: ${job.cron})`)
+        await queue.removeRepeatableByKey(job.key)
+      }
+
+    await queue.add(jobName, data, {repeat: {cron}, jobId: jobName})
+    Logger.log(`Registered repeatable job "${jobName}" with frequency "${cron}"`)
   }
 }

@@ -22,8 +22,8 @@ export class VoteDbRepository implements VoteRepository {
    * @returns A TaskEither with the persisted vote or a persistence error.
    */
   persistVoteAndMarkWorkflowRecalculation(context: TenantContext, vote: Vote): TaskEither<PersistVoteError, Vote> {
-    // TODO: This validation is not responsibility of the pesistence layer. This should be exclussively be done
-    // in the service layer.
+    // Keep this check as defense in depth. The service validates the vote before calling the
+    // repository, while the repository must still reject a mismatched tenant before opening a write.
     if (vote.organizationId !== context.organizationId || vote.voter.organizationId !== context.organizationId)
       return TE.left("organization_mismatch")
     return pipe(
@@ -39,7 +39,7 @@ export class VoteDbRepository implements VoteRepository {
                 agentId: vote.voter.entityType === "agent" ? vote.voter.entityId : null,
                 voteType: vote.type,
                 reason: vote.reason,
-                votedForGroups: vote.type === "APPROVE" ? [...vote.votedForGroups] : undefined,
+                votedForGroups: vote.type === "APPROVE" ? [...vote.votedForGroups] : [],
                 createdAt: vote.castedAt
               }
             })
@@ -83,8 +83,8 @@ export class VoteDbRepository implements VoteRepository {
     workflowId: string,
     voter: EntityReference
   ): TaskEither<GetLatestVoteError, Option<Vote>> {
-    // TODO: This validation is not responsibility of the pesistence layer. This should be exclussively be done
-    // in the service layer.
+    // The service validates this relationship before lookup; retain the check here because the
+    // repository owns the tenant-scoped query and must not issue a cross-tenant read.
     if (voter.organizationId !== context.organizationId) return TE.left("organization_mismatch")
     const whereClause =
       voter.entityType === "user"

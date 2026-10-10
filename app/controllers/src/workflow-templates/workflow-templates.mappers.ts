@@ -383,6 +383,10 @@ export function generateErrorResponseForCreateWorkflowTemplate(
     case "workflow_action_webhook_url_invalid":
     case "workflow_action_redact_invalid":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid workflow template data`))
+    case "workflow_template_approval_group_not_found":
+      return new BadRequestException(
+        generateErrorPayload(errorCode, `${context}: Approval group not found in this organization`)
+      )
     case "workflow_template_already_exists":
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: Workflow template with this name already exists`)
@@ -396,6 +400,11 @@ export function generateErrorResponseForCreateWorkflowTemplate(
     case "unknown_error":
     case "encryption_failed":
     case "decryption_failed":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
       )
@@ -403,13 +412,10 @@ export function generateErrorResponseForCreateWorkflowTemplate(
     case "invalid_organization_id":
     case "tenant_context_required":
     case "organization_mismatch":
-    case "conflicting_isolation_level":
-    case "retry_exhausted":
-    case "commit_outcome_unknown":
-    case "storage_unavailable":
-    case "concurrency_error":
-      // TODO: Cateogrize in the appropriate place the errors above that are not returning an HTTPException
-      throw new NotImplementedException()
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Found internal data inconsistency`)
+      )
   }
 }
 
@@ -428,6 +434,11 @@ export function generateErrorResponseForGetWorkflowTemplate(
     case "unknown_error":
     case "encryption_failed":
     case "decryption_failed":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
       )
@@ -458,21 +469,14 @@ export function generateErrorResponseForGetWorkflowTemplate(
     case "workflow_action_headers_invalid":
     case "workflow_action_webhook_url_invalid":
     case "workflow_action_redact_invalid":
+    case "workflow_template_organization_id_invalid_uuid":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
-    case "invalid_organization_id":
-    case "tenant_context_required":
-    case "organization_mismatch":
-    case "conflicting_isolation_level":
-    case "retry_exhausted":
-    case "commit_outcome_unknown":
-    case "storage_unavailable":
-    case "concurrency_error":
-    case "workflow_template_organization_id_invalid_uuid":
-      // TODO: Cateogrize in the appropriate place the errors above that are not returning an HTTPException
-      throw new NotImplementedException()
   }
 }
 
@@ -529,6 +533,10 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Found internal data inconsistency`)
       )
+    case "workflow_template_approval_group_not_found":
+      return new BadRequestException(
+        generateErrorPayload(errorCode, `${context}: Approval group not found in this organization`)
+      )
     case "workflow_template_already_exists":
       return new ConflictException(
         generateErrorPayload(errorCode, `${context}: Workflow template with this name already exists`)
@@ -543,6 +551,10 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
     case "unknown_error":
     case "encryption_failed":
     case "decryption_failed":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
       )
@@ -553,13 +565,11 @@ export function generateErrorResponseForUpdateWorkflowTemplate(
     case "invalid_organization_id":
     case "tenant_context_required":
     case "organization_mismatch":
-    case "conflicting_isolation_level":
-    case "retry_exhausted":
-    case "commit_outcome_unknown":
-    case "storage_unavailable":
     case "workflow_template_organization_id_invalid_uuid":
-      // TODO: Cateogrize in the appropriate place the errors above that are not returning an HTTPException
-      throw new NotImplementedException()
+      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
+      )
   }
 }
 
@@ -622,6 +632,10 @@ export function generateErrorResponseForDeprecateWorkflowTemplate(
     case "workflow_action_headers_invalid":
     case "workflow_action_webhook_url_invalid":
     case "workflow_action_redact_invalid":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+    case "workflow_template_organization_id_invalid_uuid":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
@@ -629,21 +643,15 @@ export function generateErrorResponseForDeprecateWorkflowTemplate(
     case "unknown_error":
     case "encryption_failed":
     case "decryption_failed":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
       )
     case "workflow_template_not_found":
       return new NotFoundException(generateErrorPayload(errorCode, `${context}: Workflow template not found`))
-    case "invalid_organization_id":
-    case "tenant_context_required":
-    case "organization_mismatch":
-    case "conflicting_isolation_level":
-    case "retry_exhausted":
-    case "commit_outcome_unknown":
-    case "storage_unavailable":
-    case "workflow_template_organization_id_invalid_uuid":
-      // TODO: Cateogrize in the appropriate place the errors above that are not returning an HTTPException
-      throw new NotImplementedException()
   }
 }
 

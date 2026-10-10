@@ -1,3 +1,4 @@
+// String() keeps this boundary defensive for errors originating in transport adapters.
 import {
   AuthError,
   AuthService,
@@ -37,10 +38,97 @@ export type CliAuthError =
   | CliRefreshTokenRequestValidationError
   | CliPrivilegedTokenExchangeRequestValidationError
 
+export type CliOrganizationSelectionError =
+  ExtractLeftFromMethod<typeof AuthService, "selectCliOrganization"> | CliOrganizationSelectionValidationError
+
+export function generateErrorResponseForCliOrganizationSelection(error: CliOrganizationSelectionError): HttpException {
+  switch (error) {
+    case "malformed_object":
+    case "missing_organization_id":
+    case "invalid_organization_id":
+      return new BadRequestException(generateErrorPayload("INVALID_ORGANIZATION", "Invalid organization"))
+    case "invalid_credential":
+      return new UnauthorizedException(generateErrorPayload("INVALID_SESSION", "Session is no longer active"))
+    case "account_not_found":
+      return new UnauthorizedException(generateErrorPayload("ACCOUNT_NOT_FOUND", "Account not found"))
+    case "permission_denied":
+    case "organization_mismatch":
+    case "resource_not_found":
+      return new ForbiddenException(generateErrorPayload("PERMISSION_DENIED", "Organization access denied"))
+    case "organization_not_found":
+    case "organization_deleting":
+      return new NotFoundException(generateErrorPayload("RESOURCE_NOT_FOUND", "Organization not found"))
+    case "organization_suspended":
+      return new HttpException(
+        generateErrorPayload("ORGANIZATION_SUSPENDED", "Organization is suspended"),
+        HttpStatus.LOCKED
+      )
+    case "step_up_required":
+    case "step_up_invalid":
+    case "step_up_consumed":
+    case "organization_owner_required":
+    case "quota_exceeded":
+      return new ForbiddenException(generateErrorPayload(error.toUpperCase(), "Organization selection not authorized"))
+    case "invalid_reference":
+    case "invitation_invalid":
+      return new BadRequestException(
+        generateErrorPayload(error.toUpperCase(), "Invalid organization selection request")
+      )
+    case "organization_context_changed":
+    case "concurrent_modification_error":
+    case "resource_already_exists":
+    case "resource_in_use":
+    case "invalid_transition":
+    case "concurrency_error":
+      return new ConflictException(generateErrorPayload(error.toUpperCase(), "Organization selection conflict"))
+    case "tenant_context_required":
+    case "repository_dependency_error":
+    case "auth_token_generation_failed":
+    case "refresh_token_invalid_organization_id":
+    case "refresh_token_invalid_structure":
+    case "refresh_token_invalid_id":
+    case "refresh_token_invalid_token_hash":
+    case "refresh_token_invalid_family_id":
+    case "refresh_token_invalid_account_id":
+    case "refresh_token_invalid_session_id":
+    case "refresh_token_invalid_provider_id":
+    case "refresh_token_invalid_agent_id":
+    case "refresh_token_invalid_status":
+    case "refresh_token_invalid_created_at":
+    case "refresh_token_invalid_expires_at":
+    case "refresh_token_expire_before_create":
+    case "refresh_token_invalid_used_at":
+    case "refresh_token_used_before_create":
+    case "refresh_token_invalid_next_token_id":
+    case "refresh_token_missing_occ":
+    case "unknown_error":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+      Logger.error(`CLI organization selection failed: ${error}`, "CliAuthController")
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", "Organization selection failed"))
+  }
+}
+
 export function generateErrorResponseForCliInitiate(error: CliAuthError, context: string): HttpException {
   const errorCode = error.toUpperCase()
 
   switch (String(error)) {
+    case "invalid_credential":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
+    case "account_display_name_empty":
+    case "account_display_name_too_long":
+    case "account_invalid_profile_email":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid account profile`))
+    case "session_invalid_id":
+    case "session_invalid_account_id":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid session data`))
+    case "account_malformed_object":
+    case "account_invalid_uuid":
+    case "account_invalid_status":
+    case "account_update_before_create":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid account data`))
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -66,6 +154,7 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
     case "auth_identity_conflict":
+    case "identity_exists":
     case "auth_invalid_oidc_provider":
     case "auth_missing_oidc_provider":
     case "user_identity_already_exists":
@@ -226,7 +315,7 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
       )
   }
 
-  // TODO: No Default case
+  // The fallback protects the HTTP boundary if a new service error is added without a mapping.
   return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
 }
 
@@ -234,6 +323,20 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
   const errorCode = error.toUpperCase()
 
   switch (String(error)) {
+    case "invalid_credential":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
+    case "account_display_name_empty":
+    case "account_display_name_too_long":
+    case "account_invalid_profile_email":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid account profile`))
+    case "session_invalid_id":
+    case "session_invalid_account_id":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid session data`))
+    case "account_malformed_object":
+    case "account_invalid_uuid":
+    case "account_invalid_status":
+    case "account_update_before_create":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid account data`))
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -259,6 +362,7 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
     case "auth_identity_conflict":
+    case "identity_exists":
     case "auth_invalid_oidc_provider":
     case "auth_missing_oidc_provider":
     case "user_identity_already_exists":
@@ -418,7 +522,7 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
   }
-  // TODO: No Default case
+  // Keep an internal-error fallback for newly added service errors.
   return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
 }
 
@@ -426,6 +530,20 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
   const errorCode = error.toUpperCase()
 
   switch (String(error)) {
+    case "invalid_credential":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
+    case "account_display_name_empty":
+    case "account_display_name_too_long":
+    case "account_invalid_profile_email":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid account profile`))
+    case "session_invalid_id":
+    case "session_invalid_account_id":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid session data`))
+    case "account_malformed_object":
+    case "account_invalid_uuid":
+    case "account_invalid_status":
+    case "account_update_before_create":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid account data`))
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -451,6 +569,7 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
     case "auth_identity_conflict":
+    case "identity_exists":
     case "auth_invalid_oidc_provider":
     case "auth_missing_oidc_provider":
     case "user_identity_already_exists":
@@ -610,7 +729,7 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
   }
-  // TODO: No Default case
+  // Keep an internal-error fallback for newly added service errors.
   return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
 }
 
@@ -618,6 +737,20 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
   const errorCode = error.toUpperCase()
 
   switch (String(error)) {
+    case "invalid_credential":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
+    case "account_display_name_empty":
+    case "account_display_name_too_long":
+    case "account_invalid_profile_email":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid account profile`))
+    case "session_invalid_id":
+    case "session_invalid_account_id":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid session data`))
+    case "account_malformed_object":
+    case "account_invalid_uuid":
+    case "account_invalid_status":
+    case "account_update_before_create":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid account data`))
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -643,6 +776,7 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "auth_authorization_url_generation_failed":
     case "auth_missing_email_from_oidc_provider":
     case "auth_identity_conflict":
+    case "identity_exists":
     case "auth_invalid_oidc_provider":
     case "auth_missing_oidc_provider":
     case "user_identity_already_exists":
@@ -657,6 +791,7 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
     case "request_missing_state":
     case "request_invalid_state":
     case "request_invalid_resource_id":
+    case "request_missing_resource_id":
     case "request_missing_operation":
     case "request_invalid_operation":
     case "pkce_code_verification_failed":
@@ -801,6 +936,6 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
         generateErrorPayload("UNKNOWN_ERROR", `${context}: internal data inconsistency`)
       )
   }
-  // TODO: No Default case
+  // Keep an internal-error fallback for newly added service errors.
   return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unexpected error`))
 }

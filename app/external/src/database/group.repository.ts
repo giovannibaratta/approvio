@@ -20,375 +20,231 @@ import {GroupTenantClient} from "./tenant-database-clients"
 import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "./errors"
 import {mapRolesToPrisma} from "./shared"
 import {chainNullableToLeft} from "./utils"
-}
 
+type GroupRecord = PrismaGroup & {
+  readonly _count: {readonly groupMemberships: number; readonly agentGroupMemberships: number}
+}
 @Injectable()
 export class GroupDbRepository implements GroupRepository {
-  constructor(private readonly dbClient: DatabaseClient) {}
+  constructor(private readonly dbClient: GroupTenantClient) {}
 
   createGroupWithMembershipAndUpdateUser(
+    context: TenantContext,
     data: CreateGroupWithMembershipAndUpdateUserRepo
-  ): TaskEither<CreateGroupRepoError, Group> {
-    return pipe(
-      data,
-      TE.right,
-      TE.chainW(this.persistNewGroupWithMembershipAndUpdateUserTask()),
-      TE.chainEitherKW(mapToDomainVersionedGroupWithEntities)
-    )
-  }
-
-  private persistNewGroupWithMembershipAndUpdateUserTask(): (
-    data: CreateGroupWithMembershipAndUpdateUserRepo
-  ) => TaskEither<CreateGroupRepoError, PrismaGroupWithCount> {
-    // Wrap in a lambda to preserve the "this" context
-    return data =>
-      TE.tryCatchK(
-        () =>
-          this.dbClient.transactional(async tx => {
-            // 1. Create the group
-            const createdGroup = await tx.group.create({
-              data: {
-                createdAt: data.group.createdAt,
-                id: data.group.id,
-                name: data.group.name,
-                description: data.group.description,
-                updatedAt: data.group.updatedAt,
-                occ: POSTGRES_BIGINT_LOWER_BOUND
-              },
-              include: {
-                // Include count for mapping later
-                _count: {
-                  select: {
-                    groupMemberships: true,
-                    agentGroupMemberships: true
-                  }
-                }
-              }
-            })
-
-            // 2. Add membership using provided data
-            await tx.groupMembership.create({
-              data: {
-                groupId: createdGroup.id,
-                userId: data.membership.getEntityId(),
-                createdAt: data.membership.createdAt,
-                updatedAt: data.membership.updatedAt
-              }
-            })
-
-            // 3. Update user with all data using shared function
-            await persistExistingUserRaceConditionFree(tx, {
-              userId: data.user.id,
-              userOcc: data.userOcc,
-              displayName: data.user.displayName,
-              email: data.user.email,
-              roles: data.user.roles,
-              createdAt: data.user.createdAt
-            })
-
-            return createdGroup
-          }),
-        error => {
-          if (isPrismaUniqueConstraintError(error, ["name"])) return "group_already_exists"
-          if (isPrismaForeignKeyConstraintError(error, "fk_group_memberships_user")) return "user_not_found"
-
-          // Handle OCC conflicts - P2025 means record not found (likely due to OCC mismatch)
-          if (
-            isPrismaRecordNotFoundError(error, Prisma.ModelName.Group) ||
-            isPrismaRecordNotFoundError(error, Prisma.ModelName.User)
-          )
-            return "concurrency_error" as const
-
-          Logger.error("Error while creating group. Unknown error", error)
-          return "unknown_error"
-        }
-      )()
-  }
-
-  getGroupById(data: GetGroupByIdRepo): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
-    const identifier: Identifier = {type: "id", identifier: data.groupId}
-    return this.getGroup({identifier})
-  }
-
-  getGroupByName(data: GetGroupByNameRepo): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
-    const identifier: Identifier = {type: "name", identifier: data.groupName}
-    return this.getGroup({identifier})
-  }
-
-  getGroupIdByName(groupName: string): TaskEither<GetGroupRepoError, string> {
-    return pipe(
-      TE.tryCatchK(
-        () =>
-          this.dbClient.cx.group.findUnique({
-            where: {name: groupName},
-            select: {id: true}
-          }),
-        error => {
-          Logger.error("Error while retrieving group ID by name. Unknown error", error)
-          return "unknown_error" as const
-        }
-      )(),
-      TE.chainW(result => {
-        if (result === null) return TE.left("group_not_found" as const)
-        return TE.right(result.id)
-      })
-    )
-  }
-
-  getGroupsByIds(groupIds: string[]): TaskEither<"unknown_error", {id: string; name: string}[]> {
+  ): TE.TaskEither<CreateGroupRepoError, Group> {
     return pipe(
       TE.tryCatch(
-        () =>
-          this.dbClient.cx.group.findMany({
-            where: {
-              id: {
-                in: groupIds
-              }
+        async () => {
+          if (
+            context.organizationId !== data.group.organizationId ||
+            context.organizationId !== data.user.organizationId
+          )
+            throw new GroupNotFoundError()
+          const group = await this.dbClient.cx.group.create({
+            data: {
+              id: data.group.id,
+              organizationId: context.organizationId,
+              name: data.group.name,
+              description: data.group.description,
+              createdAt: data.group.createdAt,
+              updatedAt: data.group.updatedAt,
+              occ: 0n
             },
-            select: {
-              id: true,
-              name: true
+            include: countInclude
+          })
+          await this.dbClient.cx.groupMembership.create({
+            data: {
+              organizationId: context.organizationId,
+              groupId: group.id,
+              userId: data.membership.getEntityId(),
+              createdAt: data.membership.createdAt,
+              updatedAt: data.membership.updatedAt
             }
-          }),
-        error => {
-          Logger.error("Error while fetching groups by ids. Unknown error", error)
-          return "unknown_error" as const
-        }
+          })
+          await this.dbClient.cx.user.update({
+            where: {id: data.user.id, organizationId: context.organizationId, occ: data.userOcc},
+            data: {
+              displayName: data.user.displayName,
+              roles: mapRolesToPrisma(data.user.roles),
+              updatedAt: new Date(),
+              occ: {increment: 1}
+            }
+          })
+          return group
+        },
+        error => this.mapCreateError(error)
       ),
-      TE.map(groups => groups.map(g => ({id: g.id, name: g.name})))
+      TE.chainEitherKW(mapGroup)
     )
   }
 
-  getGroupsByUserId(userId: string): TaskEither<GetGroupRepoError, Group[]> {
+  getGroupById(
+    context: TenantContext,
+    data: GetGroupByIdRepo
+  ): TE.TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
+    return this.get({organizationId_id: {organizationId: context.organizationId, id: data.groupId}})
+  }
+
+  getGroupByName(
+    context: TenantContext,
+    data: GetGroupByNameRepo
+  ): TE.TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
+    return this.get({organizationId_name: {organizationId: context.organizationId, name: data.groupName}})
+  }
+
+  getGroupIdByName(context: TenantContext, groupName: string): TE.TaskEither<GetGroupRepoError, string> {
     return pipe(
-      userId,
-      TE.right,
-      TE.chainW(this.getGroupsByUserIdTask()),
-      TE.chainEitherKW(groups =>
-        pipe(groups, RA.traverse(E.Applicative)(mapToDomainVersionedGroupWithEntities), E.map(RA.toArray))
-      )
+      this.getGroupByName(context, {groupName}),
+      TE.map(group => group.id)
     )
   }
 
-  private getGroupsByUserIdTask(): (userId: string) => TaskEither<GetGroupRepoError, PrismaGroupWithCount[]> {
-    return userId =>
-      TE.tryCatchK(
-        () =>
-          this.dbClient.cx.group.findMany({
-            where: {
-              groupMemberships: {
-                some: {
-                  userId
-                }
-              }
-            },
-            include: {
-              _count: {
-                select: {
-                  groupMemberships: true,
-                  agentGroupMemberships: true
-                }
-              }
-            }
-          }),
-        error => {
-          Logger.error("Error while retrieving user groups. Unknown error", error)
-          return "unknown_error" as const
-        }
-      )()
-  }
-
-  getGroupsByAgentId(agentId: string): TaskEither<GetGroupRepoError, Group[]> {
-    return pipe(
-      agentId,
-      TE.right,
-      TE.chainW(this.getGroupsByAgentIdTask()),
-      TE.chainEitherKW(groups =>
-        pipe(groups, RA.traverse(E.Applicative)(mapToDomainVersionedGroupWithEntities), E.map(RA.toArray))
-      )
-    )
-  }
-
-  countGroups(): TaskEither<UnknownError, number> {
+  getGroupsByIds(
+    context: TenantContext,
+    groupIds: string[]
+  ): TE.TaskEither<"unknown_error", {id: string; name: string}[]> {
     return TE.tryCatch(
-      () => this.dbClient.cx.group.count(),
-      error => {
-        Logger.error("Error counting groups", error)
-        return "unknown_error"
-      }
+      () =>
+        this.dbClient.cx.group.findMany({
+          where: {organizationId: context.organizationId, id: {in: groupIds}},
+          select: {id: true, name: true}
+        }),
+      error => this.mapUnknown(error, "get groups by ids")
     )
   }
 
-  private getGroupsByAgentIdTask(): (agentId: string) => TaskEither<GetGroupRepoError, PrismaGroupWithCount[]> {
-    return agentId =>
-      TE.tryCatchK(
-        () =>
-          this.dbClient.cx.group.findMany({
-            where: {
-              agentGroupMemberships: {
-                some: {
-                  agentId
-                }
-              }
-            },
-            include: {
-              _count: {
-                select: {
-                  groupMemberships: true,
-                  agentGroupMemberships: true
-                }
-              }
-            }
-          }),
-        error => {
-          Logger.error("Error while retrieving agent groups. Unknown error", error)
-          return "unknown_error" as const
-        }
-      )()
-  }
-
-  private getGroup(request: GetObjectTaskRequest): TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
+  getGroupsByUserId(context: TenantContext, userId: string): TE.TaskEither<GetGroupRepoError, Group[]> {
     return pipe(
-      request,
-      TE.right,
-      TE.chainW(this.getObjectTask()),
-      chainNullableToLeft("group_not_found" as const),
-      TE.chainEitherKW(mapToDomainVersionedGroupWithEntities)
+      this.findMany(context, {groupMemberships: {some: {organizationId: context.organizationId, userId}}}),
+      TE.chainEitherKW(mapGroups)
     )
   }
 
-  listGroups(data: ListGroupsRepo): TaskEither<ListGroupsRepoError, ListGroupsResult> {
-    const {page, limit, filter} = data
-
-    const skip = (page - 1) * limit
-    const take = limit
-
-    const options: ListOptions = {
-      take,
-      skip,
-      filter
-    }
-
+  getGroupsByAgentId(context: TenantContext, agentId: string): TE.TaskEither<GetGroupRepoError, Group[]> {
     return pipe(
-      options,
-      TE.right,
-      TE.chainW(this.getObjectsTask()),
-      TE.chainEitherKW(([groups, total]) => {
-        const domainGroups = groups.map(group => mapToDomainVersionedGroupWithEntities(group))
+      this.findMany(context, {agentGroupMemberships: {some: {organizationId: context.organizationId, agentId}}}),
+      TE.chainEitherKW(mapGroups)
+    )
+  }
 
-        if (areAllRights(domainGroups)) {
-          const mappedToDomain = {
-            groups: domainGroups.map(e => e.right),
-            total,
-            page,
-            limit
-          }
-          return E.right(mappedToDomain)
-        }
+  countGroups(context: TenantContext): TE.TaskEither<"unknown_error", number> {
+    return TE.tryCatch(
+      () => this.dbClient.cx.group.count({where: {organizationId: context.organizationId}}),
+      error => this.mapUnknown(error, "count groups")
+    )
+  }
 
-        const lefts = domainGroups.filter(e => isLeft(e))
-        const firstLeft = lefts[0]
-        if (firstLeft === undefined) throw new Error("Unexpected error: No rights and no lefts")
-        return firstLeft
+  listGroups(context: TenantContext, data: ListGroupsRepo): TE.TaskEither<ListGroupsRepoError, ListGroupsResult> {
+    if (data.page < 1) return TE.left("invalid_page")
+    if (data.limit < 1) return TE.left("invalid_limit")
+    const membership =
+      data.filter.type === "direct_member"
+        ? {groupMemberships: {some: {organizationId: context.organizationId, userId: data.filter.requestor.id}}}
+        : {}
+    const search = data.filter.search ? {name: {contains: data.filter.search, mode: "insensitive" as const}} : {}
+    const where = {organizationId: context.organizationId, ...membership, ...search}
+    return pipe(
+      TE.tryCatch(
+        async () => {
+          const [groups, total] = await Promise.all([
+            this.dbClient.cx.group.findMany({
+              where,
+              orderBy: {createdAt: "asc"},
+              skip: (data.page - 1) * data.limit,
+              take: data.limit,
+              include: countInclude
+            }),
+            this.dbClient.cx.group.count({where})
+          ])
+          return {groups, total}
+        },
+        error => this.mapUnknown(error, "list groups")
+      ),
+      TE.chainEitherKW(({groups, total}): E.Either<"unknown_error", ListGroupsResult> => {
+        const mapped = mapGroups(groups)
+        return isLeft(mapped) ? mapped : E.right({groups: mapped.right, total, page: data.page, limit: data.limit})
       })
     )
   }
 
-  private buildWhereClauseGetObjectTask(request: GetObjectTaskRequest): Prisma.GroupWhereUniqueInput {
-    return request.identifier.type === "id"
-      ? {id: request.identifier.identifier}
-      : {name: request.identifier.identifier}
+  private get(
+    where: Prisma.GroupWhereUniqueInput
+  ): TE.TaskEither<GetGroupRepoError, Versioned<GroupWithEntitiesCount>> {
+    return pipe(
+      TE.tryCatch(
+        () => this.dbClient.cx.group.findUnique({where, include: countInclude}),
+        error => this.mapGetError(error)
+      ),
+      chainNullableToLeft("group_not_found" as const),
+      TE.chainEitherKW(mapGroup)
+    )
   }
 
-  private getObjectTask(): (
-    request: GetObjectTaskRequest
-  ) => TaskEither<GetGroupRepoError, PrismaGroupWithCount | null> {
-    // Wrap in a lambda to preserve the "this" context
-    return request =>
-      TE.tryCatchK(
-        () =>
-          this.dbClient.cx.group.findUnique({
-            where: this.buildWhereClauseGetObjectTask(request),
-            include: {
-              _count: {
-                select: {
-                  groupMemberships: true,
-                  agentGroupMemberships: true
-                }
-              }
-            }
-          }),
-        error => {
-          Logger.error("Error while retrieving group. Unknown error", error)
-          return "unknown_error" as const
-        }
-      )()
+  private findMany(
+    context: TenantContext,
+    where: Prisma.GroupWhereInput
+  ): TE.TaskEither<GetGroupRepoError, GroupRecord[]> {
+    return TE.tryCatch(
+      () =>
+        this.dbClient.cx.group.findMany({
+          where: {organizationId: context.organizationId, ...where},
+          include: countInclude
+        }),
+      error => this.mapGetError(error)
+    )
   }
 
-  private getObjectsTask(): (
-    options: ListOptions
-  ) => TaskEither<ListGroupsRepoError, [PrismaGroupWithCount[], number]> {
-    // Wrap in a lambda to preserve the "this" context
-    return options =>
-      TE.tryCatchK(
-        async () => {
-          const whereClause: Prisma.GroupWhereInput = this.buildWhereCloseForListingGroups(options.filter)
-
-          const data = this.dbClient.cx.group.findMany({
-            take: options.take,
-            skip: options.skip,
-            orderBy: {
-              createdAt: "asc"
-            },
-            where: whereClause,
-            include: {
-              _count: {
-                select: {
-                  groupMemberships: true,
-                  agentGroupMemberships: true
-                }
-              }
-            }
-          })
-          const stats = this.dbClient.cx.group.count({where: whereClause})
-
-          const [resolvedData, resolvedStats] = await Promise.all([data, stats])
-          return [
-            resolvedData.map((item: PrismaGroupWithCount) => ({
-              ...item,
-              occ: BigInt(item.occ)
-            })),
-            resolvedStats
-          ] as [PrismaGroupWithCount[], number]
-        },
-        error => {
-          Logger.error("Error while retrieving groups. Unknown error", error)
-          return "unknown_error" as const
-        }
-      )()
+  private mapCreateError(error: unknown): CreateGroupRepoError {
+    if (isPrismaUniqueConstraintError(error, ["organization_id", "name"], "groups_organization_name_unique"))
+      return "group_already_exists"
+    if (isPrismaRecordNotFoundError(error, Prisma.ModelName.User)) return "concurrency_error"
+    Logger.error("Group repository create failed", error instanceof Error ? error.name : "non_error")
+    return "unknown_error"
   }
-
-  private buildWhereCloseForListingGroups(filter: ListGroupsFilter): Prisma.GroupWhereInput {
-    const baseWhere: Prisma.GroupWhereInput = filter.search
-      ? {name: {contains: filter.search, mode: "insensitive"}}
-      : {}
-
-    switch (filter.type) {
-      case "all":
-        return baseWhere
-      case "direct_member":
-        return {
-          ...baseWhere,
-          groupMemberships: {
-            some: {
-              userId: filter.requestor.id
-            }
-          }
-        }
-    }
+  private mapGetError(error: unknown): GetGroupRepoError {
+    return this.mapUnknown(error, "group lookup")
+  }
+  private mapUnknown(error: unknown, operation: string): "unknown_error" {
+    Logger.error(`Group repository ${operation} failed`, error instanceof Error ? error.name : "non_error")
+    return "unknown_error"
   }
 }
 
-interface GetObjectTaskRequest {
-  identifier: Identifier
+const countInclude = {_count: {select: {groupMemberships: true, agentGroupMemberships: true}}} as const
+function mapGroup(record: GroupRecord): E.Either<"unknown_error", Versioned<GroupWithEntitiesCount>> {
+  return E.mapLeft(() => "unknown_error" as const)(
+    GroupFactory.validate({
+      id: record.id,
+      organizationId: record.organizationId,
+      name: record.name,
+      description: record.description,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      entitiesCount: record._count.groupMemberships + record._count.agentGroupMemberships,
+      occ: record.occ
+    })
+  )
 }
+function mapUnversionedGroup(record: GroupRecord): E.Either<"unknown_error", GroupWithEntitiesCount> {
+  return E.mapLeft(() => "unknown_error" as const)(
+    GroupFactory.validate({
+      id: record.id,
+      organizationId: record.organizationId,
+      name: record.name,
+      description: record.description,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+      entitiesCount: record._count.groupMemberships + record._count.agentGroupMemberships
+    })
+  )
+}
+function mapGroups(records: ReadonlyArray<GroupRecord>): E.Either<"unknown_error", GroupWithEntitiesCount[]> {
+  const groups: GroupWithEntitiesCount[] = []
+  for (const record of records) {
+    const mapped = mapUnversionedGroup(record)
+    if (isLeft(mapped)) return mapped
+    groups.push(mapped.right)
+  }
+  return E.right(groups)
+}
+class GroupNotFoundError extends Error {}

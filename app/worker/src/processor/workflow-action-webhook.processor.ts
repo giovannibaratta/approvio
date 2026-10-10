@@ -1,113 +1,83 @@
+import {DispatchCompletion, DispatchOutcome} from "@services/durable-work/models"
 import {Process, Processor} from "@nestjs/bull"
+import {Inject, Injectable, Logger} from "@nestjs/common"
 import {Job} from "bull"
-import {Injectable, Logger, Inject} from "@nestjs/common"
+import {isLeft} from "fp-ts/Either"
+import {TaskReadyEvent} from "@domain"
 import {WORKFLOW_ACTION_WEBHOOK_QUEUE} from "@external"
 import {TaskService} from "@services/task/task.service"
 import {WebhookService} from "@services/webhook/webhook.service"
 import {WORKER_ID} from "../worker.constants"
-import {WorkflowActionType, WorkflowActionWebhookEvent, WorkflowActionWebhookTaskFactory} from "@domain"
-import {pipe} from "fp-ts/function"
-import * as TE from "fp-ts/TaskEither"
-import {isLeft} from "fp-ts/Either"
 
 @Injectable()
 @Processor(WORKFLOW_ACTION_WEBHOOK_QUEUE)
 export class WorkflowActionWebhookProcessor {
   constructor(
-    private readonly taskService: TaskService,
-    private readonly webhookService: WebhookService,
+    private readonly tasks: TaskService,
+    private readonly webhook: WebhookService,
     @Inject(WORKER_ID) private readonly workerId: string
   ) {}
 
-  @Process("workflow-action-webhook")
-  async handleWebhookAction(job: Job<WorkflowActionWebhookEvent>) {
+  @Process("task.ready")
+  async handleWebhookAction(job: Pick<Job<TaskReadyEvent>, "data">): Promise<void> {
     const event = job.data
-    Logger.log(`Processing webhook action for task ${event.taskId}`)
+    if (event.type !== "task.ready" || event.taskKind !== "webhook")
+      throw new Error("Expected a webhook task.ready event")
 
-    const processResult = await pipe(
-      TE.Do,
-      TE.bindW("lockOwner", () => TE.right(this.workerId)),
-      TE.bindW("task", () => this.taskService.getWebhookTask(event.taskId)),
-      TE.bindW("lockResult", ({task, lockOwner}) =>
-        this.taskService.lockTask({type: WorkflowActionType.WEBHOOK, taskId: task.id}, lockOwner)
-      ),
-      TE.bindW("webhookResult", ({task}) =>
-        pipe(
-          this.webhookService.executeWebhook(task.url, task.method, task.headers, task.payload, {
-            idempotencyKey: task.id
-          }),
-          // Map all the left errors to right string with the magic meaning that the call failed,
-          // and no response was received. This is needed to keep proceeding on the right path.
-          // It might still possible to it on the left side with a more idiomatic fp-ts way,
-          // but I don't know how to do it. Will revise in the future if needed.
-          TE.orElseW(error => TE.right(error))
-        )
-      ),
-      TE.bindW("updatedResult", ({task, lockResult, webhookResult, lockOwner}) => {
-        const checks = {
-          occ: lockResult.occ,
-          lockOwner
-        }
-
-        if (typeof webhookResult === "string") {
-          // Webhook call failed without reaching the server, we don't have the response.
-          Logger.error(`Webhook execution failed: ${webhookResult}`)
-          return pipe(
-            WorkflowActionWebhookTaskFactory.toFailedWebhook(task, {
-              response: null,
-              errorReason: `Webhook execution failed: ${webhookResult}`
-            }),
-            TE.fromEither,
-            TE.chainW(data => this.taskService.updateWebhookTask(data, checks))
-          )
-        }
-
-        if (webhookResult.status >= 200 && webhookResult.status < 300) {
-          // Webhook succeeded - update task as COMPLETED
-          Logger.log(`Webhook execution completed successfully: ${webhookResult.status}`)
-          return pipe(
-            WorkflowActionWebhookTaskFactory.toCompletedWebhook(task, {
-              response: {
-                status: webhookResult.status,
-                body: webhookResult.body,
-                bodyStatus: webhookResult.bodyStatus
-              }
-            }),
-            TE.fromEither,
-            TE.chainW(data => this.taskService.updateWebhookTask(data, checks))
-          )
-        }
-
-        // Webhook returned error status code - update task as ERROR
-        Logger.log(`Webhook execution completed with error: ${webhookResult.status}`)
-        return pipe(
-          WorkflowActionWebhookTaskFactory.toFailedWebhook(task, {
-            response: {
-              status: webhookResult.status,
-              body: webhookResult.body,
-              bodyStatus: webhookResult.bodyStatus
+    const context = {organizationId: event.organizationId}
+    await this.tasks.withDispatchLease(
+      context,
+      event.taskId,
+      event.taskKind,
+      this.workerId,
+      async (claim, assertLease) => {
+        const task = await this.tasks.getWebhookTask(context, event.taskId)()
+        if (isLeft(task)) {
+          const completion = await this.tasks.completeDispatch(
+            context,
+            claim.attemptId,
+            claim.lease,
+            {
+              state: "failed",
+              outcome: {type: "task_load_failed", error: task.left}
             },
-            errorReason: `Webhook returned error status: ${webhookResult.status}`
-          }),
-          TE.fromEither,
-          TE.chainW(data => this.taskService.updateWebhookTask(data, checks))
-        )
-      }),
-      TE.chainW(({task, updatedResult}) => {
-        Logger.log(`Releasing lock for task ${task.id}`)
-        const checks = {
-          occ: updatedResult.occ,
-          lockOwner: this.workerId
+            event.eventId
+          )()
+          if (isLeft(completion)) throw new Error(`Webhook pre-send failure recording failed: ${completion.left}`)
+          throw new Error(`Webhook task load failed: ${task.left}`)
         }
 
-        return this.taskService.releaseLock({type: WorkflowActionType.WEBHOOK, taskId: task.id}, checks)
-      })
-    )()
+        const executing = await this.tasks.startDispatchExecution(context, claim.attemptId, claim.lease)()
+        if (isLeft(executing)) throw new Error(`Webhook dispatch lease lost: ${executing.left}`)
+        if (executing.right === "parked") return
 
-    if (isLeft(processResult)) {
-      Logger.error(`Task processing failed: ${JSON.stringify(processResult.left)}`)
-      throw new Error(`Starting webhook task failed: ${JSON.stringify(processResult.left)}`)
-    }
-    Logger.log(`Task processing completed successfully for task ${event.taskId}`)
+        await assertLease()
+        const delivery = await this.webhook.executeWebhook(
+          task.right.url,
+          task.right.method,
+          task.right.headers,
+          task.right.payload,
+          {
+            idempotencyKey: event.taskId
+          }
+        )()
+        const outcome: {state: DispatchCompletion["state"]; outcome: DispatchOutcome} = isLeft(delivery)
+          ? {state: "unknown" as const, outcome: {type: "delivery_error", error: delivery.left}}
+          : delivery.right.status >= 200 && delivery.right.status < 300
+            ? {state: "succeeded" as const, outcome: {type: "http_response", statusCode: delivery.right.status}}
+            : {state: "failed" as const, outcome: {type: "http_response", statusCode: delivery.right.status}}
+        const completion = await this.tasks.completeDispatch(
+          context,
+          claim.attemptId,
+          claim.lease,
+          outcome,
+          event.eventId
+        )()
+        if (isLeft(completion)) throw new Error(`Webhook completion failed: ${completion.left}`)
+        if (isLeft(delivery)) throw new Error(`Webhook delivery outcome is unknown: ${delivery.left}`)
+
+        Logger.log(`Webhook task ${event.taskId} dispatched`)
+      }
+    )
   }
 }

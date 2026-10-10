@@ -20,6 +20,10 @@ export class NodemailerEmailProvider implements EmailProviderExternal {
         host: this.emailProviderConfig.value.smtpEndpoint,
         port: this.emailProviderConfig.value.smtpPort,
         secure: true,
+        dnsTimeout: 5000,
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000,
         tls: {
           rejectUnauthorized: !this.emailProviderConfig.value.allowSelfSignedCertificates
         },

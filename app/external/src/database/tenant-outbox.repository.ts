@@ -107,7 +107,7 @@ export class TenantOutboxDbRepository implements OutboxRepository {
           return "repository_dependency_error" as const
         }
       ),
-      TE.map(O.fromNullable)
+      TE.chainEitherKW(toPublicationState)
     )
   }
 
@@ -261,4 +261,16 @@ function toEvent(
   )
     return E.left("event_mismatch")
   return event
+}
+
+function toPublicationState(
+  row: Pick<TenantOutbox, "publishedAt" | "leaseOwner" | "leaseUntil"> | null
+): E.Either<"outbox_publication_state_invalid", O.Option<OutboxPublicationState>> {
+  if (row === null) return E.right(O.none)
+  const {publishedAt, leaseOwner, leaseUntil} = row
+  if (leaseOwner === null && leaseUntil === null)
+    return E.right(O.some(publishedAt === null ? {state: "pending"} : {state: "published", publishedAt}))
+  if (publishedAt === null && leaseOwner !== null && leaseOwner.trim() && leaseUntil !== null)
+    return E.right(O.some({state: "leased", owner: leaseOwner, expiresAt: leaseUntil}))
+  return E.left("outbox_publication_state_invalid")
 }

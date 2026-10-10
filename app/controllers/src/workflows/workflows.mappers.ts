@@ -114,6 +114,8 @@ export function generateErrorResponseForCreateWorkflow(
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    default:
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "quota_exceeded":
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: quota exceeded for creating workflow`))
     case "workflow_name_empty":
@@ -133,8 +135,6 @@ export function generateErrorResponseForCreateWorkflow(
     case "workflow_status_invalid":
     case "quota_check_error":
     case "unknown_error":
-    case "encryption_failed":
-    case "decryption_failed":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unknown error occurred`)
       )
@@ -190,6 +190,8 @@ export function generateErrorResponseForGetWorkflow(
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    default:
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "request_invalid_include":
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request parameter`))
     case "workflow_not_found":
@@ -287,6 +289,8 @@ export function generateErrorResponseForListWorkflows(
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    default:
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "invalid_include":
     case "invalid_page":
     case "invalid_limit":
@@ -517,6 +521,8 @@ export function createCastVoteApiToServiceModel(data: {
 export function generateErrorResponseForCanVote(error: CanVoteError, context: string): HttpException {
   const errorCode = error.toUpperCase()
   switch (error) {
+    default:
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "workflow_not_found":
       return new BadRequestException(
         generateErrorPayload(errorCode, `${context}: Invalid parameters for vote eligibility check`)
@@ -644,6 +650,7 @@ export function generateErrorResponseForCastVote(
   error: CastVoteServiceError | VoteApiValidationError,
   context: string
 ): HttpException {
+  if (isAuthorityError(error)) return mapAuthorityError(error)
   const errorCode = error.toUpperCase()
   switch (error) {
     case "quota_exceeded":
@@ -792,6 +799,61 @@ export function generateErrorResponseForCastVote(
     case "entity_not_in_required_group":
     case "workflow_template_not_active":
       return new UnprocessableEntityException(generateErrorPayload(errorCode, `${context}: Cannot cast vote`))
+
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "conflicting_isolation_level":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
+    case "step_up_required":
+    case "step_up_invalid":
+    case "step_up_consumed":
+    case "invalid_reference":
+    case "resource_already_exists":
+    case "resource_in_use":
+    case "concurrent_modification_error":
+    case "organization_owner_required":
+    case "invalid_transition":
+    case "invitation_invalid":
+    case "agent_not_found":
+    case "membership_organization_mismatch":
+    case "membership_invalid_organization_id":
+    case "user_role_organization_mismatch":
+    case "user_update_before_create":
+    case "user_invalid_organization_id":
+    case "user_invalid_account_id":
+    case "user_status_invalid":
+    case "user_membership_roles_invalid":
+    case "vote_organization_mismatch":
+    case "vote_invalid_organization_id":
+    case "workflow_organization_id_invalid_uuid":
+    case "workflow_template_organization_id_invalid_uuid":
+    case "event_not_found":
+    case "tenant_event_malformed_object":
+    case "tenant_event_organization_id_invalid":
+    case "tenant_event_schema_version_invalid":
+    case "tenant_event_event_id_invalid":
+    case "tenant_event_type_invalid":
+    case "tenant_event_task_id_invalid":
+    case "tenant_event_task_kind_invalid":
+    case "tenant_event_task_occ_invalid":
+    case "tenant_event_workflow_id_invalid":
+    case "tenant_event_workflow_occ_invalid":
+    case "tenant_event_workflow_status_invalid":
+    case "tenant_event_occurred_at_invalid":
+    case "tenant_event_actor_malformed_object":
+    case "tenant_event_actor_display_name_invalid":
+    case "tenant_event_actor_type_invalid":
+    case "tenant_event_actor_id_invalid":
+    case "tenant_event_operation_id_invalid":
+    case "tenant_event_operation_occ_invalid":
+    case "event_mismatch":
+      Logger.error(`${context}: Unhandled service failure: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
+      )
   }
 }
 
@@ -815,6 +877,8 @@ export function mapVoteListToApi(votes: ReadonlyArray<Vote>): GetWorkflowVotes20
 
 export function generateErrorResponseForListVotes(error: FindVotesError, context: string): HttpException {
   switch (error) {
+    default:
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "workflow_not_found":
       return new NotFoundException(generateErrorPayload("WORKFLOW_NOT_FOUND", `${context}: Workflow not found`))
     case "unknown_error":

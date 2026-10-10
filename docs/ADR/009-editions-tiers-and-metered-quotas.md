@@ -2,6 +2,12 @@
 
 **Context / Scope:** Cross-System Architecture (`approvio`, `approvio-api`, `approvio-frontend`)
 
+**ADR-010 amendment:** Organization ownership and cardinality admission now use tenant-scoped,
+transactional checks. The historical tolerated-race assumption is superseded: count and create must
+share the transaction and concurrency boundary. Metered admission remains fail-closed while its
+Redis state is unavailable or being rebuilt from durable facts. Organization onboarding is explicit;
+there is no default organization fallback. See [ADR-010 security boundaries](010-tenancy-security-boundaries.md).
+
 ---
 
 ## 1. Context and Problem Statement
@@ -15,12 +21,12 @@ As Approvio expands from deterministic approval workflows into resource-intensiv
 
 2. **Cost Governance & Quota Classifications:**
    Resource-heavy and AI-driven features introduce variable operational costs. Quotas across the system serve three distinct purposes:
-   - **Monetization & Service Levels (Cardinality limits):** Limits on static resources (spaces, groups, templates) to differentiate subscription tiers. For these non-monetary entity counts, minor race conditions under concurrent creation (e.g. creating 11 spaces against a limit of 10) are acceptable to avoid complex row locks and serialization bottlenecks.
+   - **Monetization & Service Levels (Cardinality limits):** Limits on static resources (spaces, groups, templates) differentiate subscription tiers. ADR-010 requires tenant-scoped count and creation in one concurrency-controlled transaction; concurrent requests must not exceed the admitted limit.
    - **System Health & Technical Guardrails (Concurrency limits):** Guardrails on active operations (concurrent workflows, webhook throughput) to prevent noisy-neighbor degradation.
    - **Direct Financial Cost Protection (Consumption meters):** Hard financial limits on platform-managed LLM tokens and billed compute. Runaway loops generate direct cloud costs, making strict pre-flight admission, token reservations, and settlement non-negotiable.
 
 3. **Multi-Tenancy, Actor Attribution, and Metering Durability:**
-   - The existing system uses a single global organization (`DEFAULT_ORG_ID`). Multi-tenancy requires supporting personal organizations (B2C signup) and team/enterprise organizations (B2B).
+   - The original baseline before ADR-010 used a single global organization (`DEFAULT_ORG_ID`). Multi-tenancy requires supporting personal organizations (B2C signup) and team/enterprise organizations (B2B).
    - Redis counters provide sub-millisecond admission gating for serverless runtimes, but Redis is not a durable system of record. Billing, dispute resolution, audit trails, and customer dashboards require a durable, event-based usage ledger in PostgreSQL.
    - Approvio treats both human **Users** and autonomous **Agents** as first-class actors; attribution must record the specific principal triggering consumption.
 
@@ -201,7 +207,7 @@ We will implement a unified **Entitlement, Tiering, and Serverless-Ready Metered
    │ Custom -> Org Override -> │               │ 1. Redis: Fast Admission  │
    │ Tier Default -> FailClose │               │    (Reserved + Consumed)  │
    │ Enforcement: SQL COUNT    │               │ 2. PostgreSQL: Ledger     │
-   │ (Accepts soft race cond)  │               │    (usage_events table)   │
+   │ Atomic count + creation  │               │    (usage_events table)   │
    └───────────────────────────┘               └───────────────────────────┘
 ```
 

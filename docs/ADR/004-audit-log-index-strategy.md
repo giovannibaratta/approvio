@@ -1,5 +1,13 @@
 # ADR 004: Audit Log Index Strategy & Query Optimization
 
+## ADR-010 amendment
+
+The original global index/query analysis below is historical. Tenant audit lookup, list and count
+operations require organization predicates and runtime RLS; pagination and time filters do not replace
+that boundary. Index and query changes must preserve tenant scoping. Retention remains a read/query
+policy here; physical purge and backup/restore tombstone handling require separate operational work.
+See [ADR-010 security boundaries](010-tenancy-security-boundaries.md).
+
 ## Context and Problem Statement
 
 Following the initial audit log table implementation (ADR 003), we analyzed the existing indexes against the actual query patterns in `audit-log.repository.ts` and the expected scaling trajectory. The analysis identified inefficiencies that should be corrected now, before the table accumulates significant data.

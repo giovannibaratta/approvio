@@ -16,6 +16,7 @@ export class SlackProvider implements SlackProviderExternal {
 
         await axios.post(message.webhookUrl, payload, {
           timeout: 5000,
+          signal: AbortSignal.timeout(5000),
           headers: {
             "Content-Type": "application/json"
           }
@@ -24,7 +25,7 @@ export class SlackProvider implements SlackProviderExternal {
       },
       reason => {
         if (axios.isAxiosError(reason)) {
-          if (reason.code === "ECONNABORTED") {
+          if (reason.code === "ECONNABORTED" || reason.code === "ERR_CANCELED") {
             Logger.error(`Slack notification timed out: ${reason.message}`)
             return "slack_http_timeout"
           }

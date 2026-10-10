@@ -1,10 +1,10 @@
+import {randomOrgId, toOrganizationId} from "@test/organization-id"
 import {Test, TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
 import {NestApplication} from "@nestjs/core"
 import {AppModule} from "@app/app.module"
-import {DatabaseClient} from "@external"
-import {WORKFLOW_TEMPLATES_ENDPOINT_ROOT} from "@controllers"
-import {PrismaClient, WorkflowTemplate as PrismaWorkflowTemplate, Space as PrismaSpace, Prisma} from "@prisma/client"
+import {createEntityTag, WORKFLOW_TEMPLATES_ENDPOINT_ROOT} from "@controllers"
+import {PrismaClient, WorkflowTemplate as PrismaWorkflowTemplate, Space as PrismaSpace} from "@prisma/client"
 import {
   WorkflowTemplateCreate,
   WorkflowTemplateUpdate,
@@ -12,12 +12,16 @@ import {
   ListWorkflowTemplates200Response
 } from "@approvio/api"
 
-import {cleanDatabase, prepareDatabase} from "@test/database"
-import {createMockWorkflowTemplateInDb, MockConfigProvider, createMockSpaceInDb} from "@test/mock-data"
-import {createAuthenticatedUserInDb} from "@test/token-helpers"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
+import {
+  createMockWorkflowTemplateInDb as createMockWorkflowTemplateFixture,
+  MockConfigProvider,
+  createMockSpaceInDb as createMockSpaceFixture
+} from "@test/mock-data"
+import {createAuthenticatedUserInDb as createAuthenticatedUserFixture} from "@test/token-helpers"
 import {HttpStatus} from "@nestjs/common"
 import {JwtService} from "@nestjs/jwt"
-import {ApprovalRuleType} from "@domain"
+import {ApprovalRuleType, WorkflowAction} from "@domain"
 import {get, post, put} from "@test/requests"
 import {UserWithToken} from "@test/types"
 import "expect-more-jest"
@@ -68,9 +72,32 @@ describe("Workflow Templates API", () => {
   let orgMemberUser: UserWithToken
   let jwtService: JwtService
   let configProvider: ConfigProvider
+  let approvalGroupId: string
   let testSpace: PrismaSpace
+  let endpoint: string
+  let organizationId: ReturnType<typeof toOrganizationId>
 
-  const endpoint = `/${WORKFLOW_TEMPLATES_ENDPOINT_ROOT}`
+  const createMockWorkflowTemplateInDb = (
+    prisma: PrismaClient,
+    overrides?: Parameters<typeof createMockWorkflowTemplateFixture>[1]
+  ) =>
+    createMockWorkflowTemplateFixture(prisma, {
+      approvalRule: {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: approvalGroupId, minCount: 1},
+      ...overrides,
+      organizationId: overrides?.organizationId ?? organizationId
+    })
+  const createMockSpaceInDb = (prisma: PrismaClient, overrides?: Parameters<typeof createMockSpaceFixture>[1]) =>
+    createMockSpaceFixture(prisma, {...overrides, organizationId: overrides?.organizationId ?? organizationId})
+  const createAuthenticatedUserInDb = (
+    prisma: PrismaClient,
+    jwtService: JwtService,
+    configProvider: ConfigProvider,
+    overrides?: Parameters<typeof createAuthenticatedUserFixture>[3]
+  ) =>
+    createAuthenticatedUserFixture(prisma, jwtService, configProvider, {
+      ...overrides,
+      organizationId: overrides?.organizationId ?? organizationId
+    })
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -81,7 +108,7 @@ describe("Workflow Templates API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
+        .useValue(MockConfigProvider.fromOriginalProvider({tenantConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -89,7 +116,7 @@ describe("Workflow Templates API", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
 
@@ -97,10 +124,29 @@ describe("Workflow Templates API", () => {
   }, 30000)
 
   beforeEach(async () => {
-    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
-    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
+    organizationId = randomOrgId()
+    orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+      orgAdmin: true,
+      organizationId
+    })
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+      orgAdmin: false,
+      organizationId: orgAdminUser.user.organizationId
+    })
+    endpoint = `/o/${orgAdminUser.user.organizationId}/${WORKFLOW_TEMPLATES_ENDPOINT_ROOT}`
 
-    testSpace = await createMockSpaceInDb(prisma)
+    approvalGroupId = uuidv7()
+    await prisma.group.create({
+      data: {
+        id: approvalGroupId,
+        organizationId,
+        name: `approval-${approvalGroupId}`,
+        occ: 0n,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    })
+    testSpace = await createMockSpaceInDb(prisma, {organizationId: orgAdminUser.user.organizationId})
   })
 
   afterAll(async () => {
@@ -115,13 +161,31 @@ describe("Workflow Templates API", () => {
   describe("POST /workflow-templates", () => {
     let createWorkflowTemplatePayload: WorkflowTemplateCreate
 
+    it("rejects a missing approval group with its specific reference error", async () => {
+      // Given: the space belongs to the caller, but the approval group does not exist.
+      const requestBody: WorkflowTemplateCreate = {
+        name: "Missing approval group",
+        spaceId: testSpace.id,
+        approvalRule: {type: ApprovalRuleType.GROUP_REQUIREMENT, groupId: uuidv7(), minCount: 1},
+        actions: []
+      }
+
+      // When: an administrator attempts to persist the template.
+      const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(requestBody)
+
+      // Expect: the reference error reaches the controller without becoming an infrastructure error.
+      expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
+      expect(response.body).toHaveErrorCode("WORKFLOW_TEMPLATE_APPROVAL_GROUP_NOT_FOUND")
+      expect(await prisma.workflowTemplate.count({where: {organizationId}})).toBe(0)
+    })
+
     beforeEach(() => {
       createWorkflowTemplatePayload = {
         name: "Test Workflow Template",
         description: "A test workflow template",
         approvalRule: {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
-          groupId: uuidv7(),
+          groupId: approvalGroupId,
           minCount: 1
         },
         actions: [],
@@ -161,7 +225,7 @@ describe("Workflow Templates API", () => {
           name: "High Privilege Template",
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: uuidv7(),
+            groupId: approvalGroupId,
             minCount: 1,
             requireHighPrivilege: true
           },
@@ -187,7 +251,7 @@ describe("Workflow Templates API", () => {
           name: "Minimal Template",
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: uuidv7(),
+            groupId: approvalGroupId,
             minCount: 1
           },
           spaceId: testSpace.id
@@ -215,7 +279,7 @@ describe("Workflow Templates API", () => {
             rules: [
               {
                 type: ApprovalRuleType.GROUP_REQUIREMENT,
-                groupId: uuidv7(),
+                groupId: approvalGroupId,
                 minCount: 2
               },
               {
@@ -223,7 +287,7 @@ describe("Workflow Templates API", () => {
                 rules: [
                   {
                     type: ApprovalRuleType.GROUP_REQUIREMENT,
-                    groupId: uuidv7(),
+                    groupId: approvalGroupId,
                     minCount: 1
                   }
                 ]
@@ -250,7 +314,7 @@ describe("Workflow Templates API", () => {
           name: "Webhook Template",
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: uuidv7(),
+            groupId: approvalGroupId,
             minCount: 1
           },
           actions: [
@@ -277,12 +341,10 @@ describe("Workflow Templates API", () => {
         const templateDbObject = await prisma.workflowTemplate.findUnique({where: {id: responseUuid}})
 
         // Verify actions are encrypted at rest in the database and do not leak clear text
-        const dbActionsString = JSON.stringify(templateDbObject?.actions)
+        const dbActionsString = JSON.stringify(templateDbObject?.encActions)
         expect(dbActionsString).not.toContain("https://example.com/webhook")
         expect(dbActionsString).not.toContain("X-Custom-Header")
-        expect(templateDbObject?.actions).toMatchObject({
-          __encrypted_v1: expect.any(String)
-        })
+        expect(templateDbObject?.encActions).toEqual(expect.toBeVisibleString())
 
         // Verify actions are decrypted in the API response
         const responseBody: WorkflowTemplateApi = response.body
@@ -317,7 +379,7 @@ describe("Workflow Templates API", () => {
           name: existingName,
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: uuidv7(),
+            groupId: approvalGroupId,
             minCount: 1
           },
           spaceId: testSpace.id
@@ -337,7 +399,7 @@ describe("Workflow Templates API", () => {
           name: "  ", // Whitespace only
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: uuidv7(),
+            groupId: approvalGroupId,
             minCount: 1
           },
           spaceId: testSpace.id
@@ -358,7 +420,7 @@ describe("Workflow Templates API", () => {
           name: longName,
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: uuidv7(),
+            groupId: approvalGroupId,
             minCount: 1
           },
           spaceId: testSpace.id
@@ -378,7 +440,7 @@ describe("Workflow Templates API", () => {
           name: "template@name!",
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: uuidv7(),
+            groupId: approvalGroupId,
             minCount: 1
           },
           spaceId: testSpace.id
@@ -400,7 +462,7 @@ describe("Workflow Templates API", () => {
           description: longDescription,
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: uuidv7(),
+            groupId: approvalGroupId,
             minCount: 1
           },
           spaceId: testSpace.id
@@ -420,7 +482,7 @@ describe("Workflow Templates API", () => {
           name: "Invalid Expires Template",
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: uuidv7(),
+            groupId: approvalGroupId,
             minCount: 1
           },
           defaultExpiresInHours: 0, // Invalid: must be >= 1
@@ -441,7 +503,7 @@ describe("Workflow Templates API", () => {
           name: "Invalid MinCount Template",
           approvalRule: {
             type: ApprovalRuleType.GROUP_REQUIREMENT,
-            groupId: uuidv7(),
+            groupId: approvalGroupId,
             minCount: 0 // Invalid: minCount must be at least 1
           },
           spaceId: testSpace.id
@@ -520,7 +582,7 @@ describe("Workflow Templates API", () => {
         name: "Invalid Webhook URL Template",
         approvalRule: {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
-          groupId: uuidv7(),
+          groupId: approvalGroupId,
           minCount: 1
         },
         actions: [
@@ -547,7 +609,7 @@ describe("Workflow Templates API", () => {
         name: "Unsupported Protocol Template",
         approvalRule: {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
-          groupId: uuidv7(),
+          groupId: approvalGroupId,
           minCount: 1
         },
         actions: [
@@ -574,7 +636,7 @@ describe("Workflow Templates API", () => {
         name: "Missing Method Template",
         approvalRule: {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
-          groupId: uuidv7(),
+          groupId: approvalGroupId,
           minCount: 1
         },
         actions: [
@@ -601,7 +663,7 @@ describe("Workflow Templates API", () => {
         name: "Invalid Headers Template",
         approvalRule: {
           type: ApprovalRuleType.GROUP_REQUIREMENT,
-          groupId: uuidv7(),
+          groupId: approvalGroupId,
           minCount: 1
         },
         actions: [
@@ -1062,7 +1124,7 @@ describe("Workflow Templates API", () => {
                 Authorization: "Bearer sensitive-token"
               }
             }
-          ] as Prisma.InputJsonValue
+          ] as ReadonlyArray<WorkflowAction>
         })
 
         // When: We fetch the template details
@@ -1128,7 +1190,7 @@ describe("Workflow Templates API", () => {
               type: "SLACK",
               webhookUrl: "https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX"
             }
-          ] as Prisma.InputJsonValue
+          ] as ReadonlyArray<WorkflowAction>
         })
 
         // When: We fetch the template details
@@ -1233,17 +1295,20 @@ describe("Workflow Templates API", () => {
       })
 
       updatePayload = {
-        concurrencyControl: {version: createdTemplate.occ.toString()},
         description: "Updated description",
         defaultExpiresInHours: 48
       }
     })
+
+    const ifMatchFor = (identifier: string, occ = createdTemplate.occ) =>
+      createEntityTag(configProvider.jwtConfig.secret, orgAdminUser.user.organizationId, identifier, occ)
 
     describe("good cases", () => {
       it("should update workflow template and return updated data (as OrgAdmin)", async () => {
         // When
         const response = await put(app, `${endpoint}/${createdTemplate.name}`)
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", ifMatchFor(createdTemplate.name))
           .build()
           .send(updatePayload)
 
@@ -1277,6 +1342,7 @@ describe("Workflow Templates API", () => {
         // When
         const response = await put(app, `${endpoint}/${createdTemplate.id}`)
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", ifMatchFor(createdTemplate.id))
           .build()
           .send(updatePayload)
 
@@ -1298,6 +1364,7 @@ describe("Workflow Templates API", () => {
         // When
         const response = await put(app, `${endpoint}/${createdTemplate.id}`)
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", ifMatchFor(createdTemplate.id))
           .build()
           .send(updatePayload)
 
@@ -1309,13 +1376,13 @@ describe("Workflow Templates API", () => {
       it("should update only provided fields", async () => {
         // Given
         const partialUpdate: WorkflowTemplateUpdate = {
-          concurrencyControl: {version: createdTemplate.occ.toString()},
           description: "Partially Updated Description"
         }
 
         // When
         const response = await put(app, `${endpoint}/${createdTemplate.name}`)
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", ifMatchFor(createdTemplate.name))
           .build()
           .send(partialUpdate)
 
@@ -1329,13 +1396,13 @@ describe("Workflow Templates API", () => {
       it("should create new version and deprecate old version on update", async () => {
         // Given
         const updatePayload: WorkflowTemplateUpdate = {
-          concurrencyControl: {version: createdTemplate.occ.toString()},
           description: "New version description"
         }
 
         // When
         const response = await put(app, `${endpoint}/${createdTemplate.name}`)
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", ifMatchFor(createdTemplate.name))
           .build()
           .send(updatePayload)
 
@@ -1379,6 +1446,7 @@ describe("Workflow Templates API", () => {
         // When
         const response = await put(app, `${endpoint}/${nonExistentId}`)
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", ifMatchFor(nonExistentId, 0n))
           .build()
           .send(updatePayload)
 
@@ -1390,13 +1458,13 @@ describe("Workflow Templates API", () => {
       it("should return 400 BAD_REQUEST (WORKFLOW_TEMPLATE_DESCRIPTION_TOO_LONG) for very long description in update", async () => {
         // Given
         const invalidUpdate: WorkflowTemplateUpdate = {
-          concurrencyControl: {version: createdTemplate.occ.toString()},
           description: "a".repeat(2049) // Too long
         }
 
         // When
         const response = await put(app, `${endpoint}/${createdTemplate.name}`)
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", ifMatchFor(createdTemplate.name))
           .build()
           .send(invalidUpdate)
 
@@ -1417,7 +1485,7 @@ describe("Workflow Templates API", () => {
         const repo = app.get<WorkflowTemplateRepository>(WORKFLOW_TEMPLATE_REPOSITORY_TOKEN)
 
         // Intercept getActiveWorkflowTemplateByName to trigger concurrent modification
-        spy = wrapTaskEitherWithSideEffect(repo, "getActiveWorkflowTemplateByName", async name => {
+        spy = wrapTaskEitherWithSideEffect(repo, "getActiveWorkflowTemplateByName", async (_context, name) => {
           if (name === createdTemplate.name)
             await prisma.workflowTemplate.update({
               where: {id: createdTemplate.id},
@@ -1428,12 +1496,45 @@ describe("Workflow Templates API", () => {
         // When
         const response = await put(app, `${endpoint}/${createdTemplate.name}`)
           .withToken(orgAdminUser.token)
+          .withHeader("If-Match", ifMatchFor(createdTemplate.name))
           .build()
           .send(updatePayload)
 
         // Then
         expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
         expect(response.body.code).toBe("CONCURRENCY_ERROR")
+      })
+
+      it("allocates only one next version when concurrent updates use the same ETag", async () => {
+        const repo = app.get<WorkflowTemplateRepository>(WORKFLOW_TEMPLATE_REPOSITORY_TOKEN)
+        let releaseReaders: () => void = () => undefined
+        const bothReadersReady = new Promise<void>(resolve => {
+          releaseReaders = resolve
+        })
+        let readers = 0
+
+        spy = wrapTaskEitherWithSideEffect(repo, "getActiveWorkflowTemplateByName", async (_context, name) => {
+          if (name !== createdTemplate.name) return
+          readers += 1
+          if (readers === 2) releaseReaders()
+          await bothReadersReady
+        })
+
+        const update = () =>
+          put(app, `${endpoint}/${createdTemplate.name}`)
+            .withToken(orgAdminUser.token)
+            .withHeader("If-Match", ifMatchFor(createdTemplate.name))
+            .build()
+            .send(updatePayload)
+        const [first, second] = await Promise.all([update(), update()])
+
+        expect([first.status, second.status].sort((a, b) => a - b)).toEqual([HttpStatus.OK, HttpStatus.CONFLICT])
+        const versions = await prisma.workflowTemplate.findMany({
+          where: {organizationId, name: createdTemplate.name},
+          select: {version: true, status: true}
+        })
+        expect(versions.map(({version}) => version).sort((a, b) => a - b)).toEqual([1, 2])
+        expect(versions.filter(({status}) => status === "ACTIVE")).toHaveLength(1)
       })
     })
   })

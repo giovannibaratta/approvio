@@ -134,6 +134,7 @@ export class AxiosWebhookClient implements HttpClient {
           headers: requestHeaders,
           data: payload,
           timeout: TIMEOUT,
+          signal: AbortSignal.timeout(TIMEOUT),
           // A redirect is a new destination. Do not follow it without applying
           // the full destination policy again.
           maxRedirects: 0,
@@ -184,7 +185,7 @@ export class AxiosWebhookClient implements HttpClient {
           }
 
           Logger.error(`Webhook request failed: ${error.message} - ${error.code}`)
-          if (error.code === "ECONNABORTED") return {type: "http_timeout" as const}
+          if (error.code === "ECONNABORTED" || error.code === "ERR_CANCELED") return {type: "http_timeout" as const}
           // Network/connection failures
           return {type: "http_request_failed" as const, code: error.code}
         }

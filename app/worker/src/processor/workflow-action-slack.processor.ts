@@ -1,92 +1,77 @@
 import {Process, Processor} from "@nestjs/bull"
+import {Inject, Injectable, Logger} from "@nestjs/common"
 import {Job} from "bull"
-import {Injectable, Logger, Inject} from "@nestjs/common"
-import {WORKFLOW_ACTION_SLACK_QUEUE} from "@external"
-import {TaskService} from "@services"
-import {SlackService} from "@services"
-import {WORKER_ID} from "../worker.constants"
-import {WorkflowActionType, WorkflowActionSlackEvent, WorkflowActionSlackTaskFactory, ResponseBodyStatus} from "@domain"
-import {pipe} from "fp-ts/function"
-import * as TE from "fp-ts/TaskEither"
 import {isLeft} from "fp-ts/Either"
+import {TaskReadyEvent} from "@domain"
+import {WORKFLOW_ACTION_SLACK_QUEUE} from "@external"
+import {TaskService} from "@services/task/task.service"
+import {SlackService} from "@services/slack/slack.service"
+import {WORKER_ID} from "../worker.constants"
 
 @Injectable()
 @Processor(WORKFLOW_ACTION_SLACK_QUEUE)
 export class WorkflowActionSlackProcessor {
   constructor(
-    private readonly taskService: TaskService,
-    private readonly slackService: SlackService,
+    private readonly tasks: TaskService,
+    private readonly slack: SlackService,
     @Inject(WORKER_ID) private readonly workerId: string
   ) {}
 
-  @Process("workflow-action-slack")
-  async handleSlackAction(job: Job<WorkflowActionSlackEvent>) {
+  @Process("task.ready")
+  async handleSlackAction(job: Pick<Job<TaskReadyEvent>, "data">): Promise<void> {
     const event = job.data
-    Logger.log(`Processing slack action for task ${event.taskId}`)
+    if (event.type !== "task.ready" || event.taskKind !== "slack") throw new Error("Expected a Slack task.ready event")
 
-    const processResult = await pipe(
-      TE.Do,
-      TE.bindW("lockOwner", () => TE.right(this.workerId)),
-      TE.bindW("task", () => this.taskService.getSlackTask(event.taskId)),
-      TE.bindW("lockResult", ({task, lockOwner}) =>
-        this.taskService.lockTask({type: WorkflowActionType.SLACK, taskId: task.id}, lockOwner)
-      ),
-      TE.bindW("slackResult", ({task}) =>
-        pipe(
-          this.slackService.sendNotification({
-            webhookUrl: task.webhookUrl,
-            text: task.message || ""
-          }),
-          TE.map(() => ({status: 200, body: "ok", bodyStatus: ResponseBodyStatus.OK})),
-          TE.orElseW(error => TE.right(error))
-        )
-      ),
-      TE.bindW("updatedResult", ({task, lockResult, slackResult, lockOwner}) => {
-        const checks = {
-          occ: lockResult.occ,
-          lockOwner
+    const context = {organizationId: event.organizationId}
+    await this.tasks.withDispatchLease(
+      context,
+      event.taskId,
+      event.taskKind,
+      this.workerId,
+      async (claim, assertLease) => {
+        const task = await this.tasks.getSlackTask(context, event.taskId)()
+        if (isLeft(task)) {
+          const completion = await this.tasks.completeDispatch(
+            context,
+            claim.attemptId,
+            claim.lease,
+            {
+              state: "failed",
+              outcome: {type: "task_load_failed", error: task.left}
+            },
+            event.eventId
+          )()
+          if (isLeft(completion)) throw new Error(`Slack pre-send failure recording failed: ${completion.left}`)
+          throw new Error(`Slack task load failed: ${task.left}`)
         }
 
-        if (typeof slackResult === "string") {
-          Logger.error(`Slack execution failed: ${slackResult}`)
-          return pipe(
-            WorkflowActionSlackTaskFactory.toFailedSlack(task, {
-              response: null,
-              errorReason: `Slack execution failed: ${slackResult}`
-            }),
-            TE.fromEither,
-            TE.chainW(data => this.taskService.updateSlackTask(data, checks))
-          )
+        const executing = await this.tasks.startDispatchExecution(context, claim.attemptId, claim.lease)()
+        if (isLeft(executing)) throw new Error(`Slack dispatch lease lost: ${executing.left}`)
+        if (executing.right === "parked") return
+
+        await assertLease()
+        const delivery = await this.slack.sendNotification({
+          webhookUrl: task.right.webhookUrl,
+          text: task.right.message || ""
+        })()
+        const completion = await this.tasks.completeDispatch(
+          context,
+          claim.attemptId,
+          claim.lease,
+          {
+            state: isLeft(delivery) ? "unknown" : "succeeded",
+            outcome: isLeft(delivery) ? {type: "delivery_error", error: delivery.left} : {type: "delivered"}
+          },
+          event.eventId
+        )()
+        if (isLeft(completion)) throw new Error(`Slack completion failed: ${completion.left}`)
+        if (isLeft(delivery)) {
+          Logger.error(`Slack delivery outcome is unknown for task ${event.taskId}: ${delivery.left}`)
+          return
         }
 
-        Logger.log("Slack execution completed successfully")
-        return pipe(
-          WorkflowActionSlackTaskFactory.toCompletedSlack(task, {
-            response: {
-              status: 200,
-              body: "ok",
-              bodyStatus: ResponseBodyStatus.OK
-            }
-          }),
-          TE.fromEither,
-          TE.chainW(data => this.taskService.updateSlackTask(data, checks))
-        )
-      }),
-      TE.chainW(({task, updatedResult}) => {
-        Logger.log(`Releasing lock for task ${task.id}`)
-        const checks = {
-          occ: updatedResult.occ,
-          lockOwner: this.workerId
-        }
-
-        return this.taskService.releaseLock({type: WorkflowActionType.SLACK, taskId: task.id}, checks)
-      })
-    )()
-
-    if (isLeft(processResult)) {
-      Logger.error(`Task processing failed: ${JSON.stringify(processResult.left)}`)
-      throw new Error(`Starting slack task failed: ${JSON.stringify(processResult.left)}`)
-    }
-    Logger.log(`Task processing completed successfully for task ${event.taskId}`)
+        Logger.log(`Slack task ${event.taskId} dispatched`)
+      }
+    )
   }
 }

@@ -1,8 +1,7 @@
-import {Injectable} from "@nestjs/common"
+import {Inject, Injectable} from "@nestjs/common"
 import {AuditLogRepository, FindManyError, ListAuditLogResponse, UnknownError} from "@services"
-import {CreateAuditLog, AuditLogFactory} from "@domain"
-import {DatabaseClient} from "./database-client"
-import {v7 as uuidv7} from "uuid"
+import {AuditLog, AuditLogFactory, TenantContext} from "@domain"
+import {AuditLogTenantClient} from "./tenant-database-clients"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
 import * as E from "fp-ts/Either"
@@ -14,25 +13,24 @@ import {pipe} from "fp-ts/function"
 
 @Injectable()
 export class PostgresAuditLogRepository implements AuditLogRepository {
-  constructor(private readonly dbClient: DatabaseClient) {}
+  constructor(@Inject(AuditLogTenantClient) private readonly dbClient: Pick<AuditLogTenantClient, "cx">) {}
 
-  public persist(data: CreateAuditLog): TaskEither<UnknownError, void> {
+  public persist(context: TenantContext, data: AuditLog): TaskEither<UnknownError | "organization_mismatch", void> {
+    if (data.organizationId !== context.organizationId) return TE.left("organization_mismatch")
     return TE.tryCatch(
       async () => {
-        await this.dbClient.cx.auditLog.create({
-          data: this.mapToPrisma(data),
-          select: {id: true}
-        })
+        await this.dbClient.cx.auditLog.createMany({data: [this.mapToPrisma(context, data)]})
         return
       },
       e => {
-        Logger.error(e)
-        return "unknown_error" as const
+        // Let the transaction boundary handle storage failures and serialization retries.
+        throw e
       }
     )
   }
 
   public findMany(
+    context: TenantContext,
     limit: number,
     fromDate: Date,
     cursor: string | undefined,
@@ -50,7 +48,7 @@ export class PostgresAuditLogRepository implements AuditLogRepository {
           // the extra element off before returning the payload to the caller.
           const take = limit + 1
           const decodedCursor = this.decodeCursor(cursor)
-          const where = this.buildWhere(fromDate, filters, decodedCursor)
+          const where = this.buildWhere(context, fromDate, filters, decodedCursor)
 
           const items = await this.dbClient.cx.auditLog.findMany({
             where,
@@ -123,6 +121,7 @@ export class PostgresAuditLogRepository implements AuditLogRepository {
   }
 
   private buildWhere(
+    context: TenantContext,
     fromDate: Date,
     filters: {
       targets?: Array<{entityType: string; entityId: string}>
@@ -131,7 +130,10 @@ export class PostgresAuditLogRepository implements AuditLogRepository {
     },
     cursor: {createdAt: Date; id: string} | undefined
   ): Prisma.AuditLogWhereInput {
-    const andConditions: Prisma.AuditLogWhereInput[] = [{createdAt: {gte: fromDate}}]
+    const andConditions: Prisma.AuditLogWhereInput[] = [
+      {organizationId: context.organizationId},
+      {createdAt: {gte: fromDate}}
+    ]
 
     if (filters.targets && filters.targets.length > 0)
       andConditions.push({
@@ -162,15 +164,19 @@ export class PostgresAuditLogRepository implements AuditLogRepository {
     return {AND: andConditions}
   }
 
-  private mapToPrisma(data: CreateAuditLog): Prisma.AuditLogCreateInput {
+  private mapToPrisma(context: TenantContext, data: AuditLog): Prisma.AuditLogUncheckedCreateInput {
     return {
-      id: uuidv7(),
+      id: data.id,
+      organizationId: context.organizationId,
       auditType: data.auditType,
       entityType: data.entityType,
       entityId: data.entityId,
+      entityDisplayName: null,
       actorId: data.actor.id,
       actorType: data.actor.type,
+      actorDisplayName: data.actor.displayName,
       payload: mapToJsonValue(data.payload),
+      schemaVersion: data.schemaVersion,
       createdAt: data.createdAt
     }
   }
@@ -178,12 +184,15 @@ export class PostgresAuditLogRepository implements AuditLogRepository {
   private mapToDomain(record: PrismaAuditLog) {
     return AuditLogFactory.validate({
       id: record.id,
+      organizationId: record.organizationId,
       auditType: record.auditType,
+      schemaVersion: record.schemaVersion,
       entityType: record.entityType,
       entityId: record.entityId,
       actor: {
         id: record.actorId,
-        type: record.actorType
+        type: record.actorType,
+        displayName: record.actorDisplayName
       },
       payload: record.payload,
       createdAt: record.createdAt

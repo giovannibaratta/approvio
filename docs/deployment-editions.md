@@ -27,6 +27,10 @@ To run Approvio self-hosted, set:
 DEPLOYMENT_EDITION=self_hosted
 ```
 
+New self-hosted organizations receive the `SELF_HOSTED_UNLIMITED` tier as the uniform entitlement
+representation; operators do not configure a plan tier. Existing organizations retain their stored
+tier.
+
 In this mode:
 
 - There are no built-in limits on the number of spaces, groups, users, workflow templates, or concurrent workflows.
@@ -49,6 +53,10 @@ In Approvio Cloud:
 - Organizations choose a subscription plan that fits their team size and approval volume.
 - Workflows, spaces, and automated operations are governed by the allowances of your active plan.
 - Organization administrators can inspect current usage and limits at any time through the dashboard or API.
+
+Cloud deployments set `DEPLOYMENT_EDITION=saas_cloud`. New organizations start on `FREE`; an
+organization that pays at signup can be assigned its purchased tier by the billing/provisioning
+flow. Plan changes do not alter existing organizations unless that flow updates them.
 
 ## Related Documentation
 

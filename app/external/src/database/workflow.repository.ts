@@ -25,487 +25,475 @@ import {
   WorkflowRepository,
   WorkflowUpdateError
 } from "@services"
+import {WorkflowExpirationSchedule, WorkflowExpirationScheduleRepository} from "@services/workflow/interfaces"
 import {EncryptionError, UnknownError} from "@services/error"
 import {Prisma, Workflow as PrismaWorkflow, WorkflowTemplate as PrismaWorkflowTemplate} from "@prisma/client"
 import * as E from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
-import {DatabaseClient} from "./database-client"
+import {WorkflowTenantClient} from "./tenant-database-clients"
 import {isPrismaUniqueConstraintError} from "./errors"
 
+type WorkflowWithTemplate = PrismaWorkflow & {readonly workflowTemplates: PrismaWorkflowTemplate}
+type WorkflowResult =
+  Versioned<Workflow> | (Versioned<Workflow> & {readonly workflowTemplate: Versioned<WorkflowTemplate>})
+
 @Injectable()
-export class WorkflowDbRepository implements WorkflowRepository {
+export class WorkflowDbRepository implements WorkflowRepository, WorkflowExpirationScheduleRepository {
   constructor(
-    private readonly dbClient: DatabaseClient,
-    private readonly encryptionService: EncryptionService
+    private readonly dbClient: WorkflowTenantClient,
+    private readonly tenantEncryption: TenantEncryptionService
   ) {}
 
-  private decryptWorkflow<T extends PrismaWorkflowDecoratorSelector>(
-    workflow: PrismaDecoratedWorkflow<T>
-  ): TE.TaskEither<EncryptionError, PrismaDecoratedWorkflow<T>> {
-    if (iPrismaDecoratedWorkflow(workflow, "workflowTemplates")) {
-      const template = workflow.workflowTemplates
-      return pipe(
-        decryptActions(template.actions, this.encryptionService),
-        TE.map(decryptedActions => {
-          const updatedTemplate = {
-            ...template,
-            actions: decryptedActions
-          }
-          return {
-            ...workflow,
-            workflowTemplates: updatedTemplate
-          }
-        })
-      )
-    }
-
-    return TE.right(workflow)
-  }
-
-  /**
-   * Creates a new workflow in the database.
-   * @param data The workflow data to persist.
-   * @returns A TaskEither with the created workflow or an error.
-   */
   createWorkflow(
+    context: TenantContext,
     data: CreateWorkflowRepo
-  ): TaskEither<CreateWorkflowRepoError | WorkflowValidationError | WorkflowTemplateValidationError, Workflow> {
+  ): TE.TaskEither<CreateWorkflowRepoError | WorkflowValidationError | WorkflowTemplateValidationError, Workflow> {
+    if (data.workflow.organizationId !== context.organizationId) return TE.left("organization_mismatch")
     return pipe(
-      data,
-      TE.right,
-      TE.chainW(this.persistWorkflow()),
-      TE.chainEitherKW(result => mapWorkflowToDomain(result))
-    )
-  }
-
-  /**
-   * Gets a workflow by its UUID.
-   * @param workflowId The ID of the workflow.
-   * @param includeRef Include options for related data.
-   * @returns A TaskEither with the workflow result or an error if not found.
-   */
-  getWorkflowById<T extends WorkflowDecoratorSelector>(
-    workflowId: string,
-    includeRef?: T
-  ): TaskEither<WorkflowGetError, DecoratedWorkflow<T>> {
-    const identifier: Identifier = {type: "id", identifier: workflowId}
-    return this.getWorkflow(identifier, includeRef)
-  }
-
-  /**
-   * Gets a workflow by its unique name.
-   * @param name The name of the workflow.
-   * @param includeRef Include options for related data.
-   * @returns A TaskEither with the workflow result or an error if not found.
-   */
-  getWorkflowByName<T extends WorkflowDecoratorSelector>(
-    workflowName: string,
-    includeRef?: T
-  ): TaskEither<WorkflowGetError, DecoratedWorkflow<T>> {
-    const identifier: Identifier = {type: "name", identifier: workflowName}
-    return this.getWorkflow(identifier, includeRef)
-  }
-
-  /**
-   * Lists workflows with pagination.
-   * @param request The request containing pagination and include options.
-   * @returns A TaskEither with the list of workflows or an error.
-   */
-  listWorkflows<TInclude extends WorkflowDecoratorSelector>(
-    request: ListWorkflowsRequestRepo<TInclude>
-  ): TaskEither<WorkflowGetError, ListWorkflowsResponse<TInclude>> {
-    const prismaInclude = mapDomainSelectorToPrismaSelector(request.include)
-
-    return pipe(
-      request,
-      TE.right,
-      TE.chainW(this.listWorkflowsTask<TInclude, PrismaWorkflowDecoratorSelector>()),
-      TE.chainEitherKW(result => {
-        const workflowsEither = E.traverseArray((workflow: PrismaDecoratedWorkflow<PrismaWorkflowDecoratorSelector>) =>
-          mapWorkflowToDomain(workflow, prismaInclude)
-        )(result.workflows)
-
-        if (E.isLeft(workflowsEither)) return workflowsEither
-
-        return E.right({
-          workflows: workflowsEither.right as DecoratedWorkflow<TInclude>[],
-          pagination: result.pagination
-        })
-      })
-    )
-  }
-
-  updateWorkflow<T extends WorkflowDecoratorSelector>(
-    workflowId: string,
-    data: ConcurrentSafeWorkflowUpdateData,
-    includeRef?: T
-  ): TaskEither<WorkflowUpdateError, DecoratedWorkflow<T>> {
-    const prismaInclude = mapDomainSelectorToPrismaSelector(includeRef)
-
-    return pipe(
-      {workflowId, data, includeRef: prismaInclude},
-      TE.right,
-      TE.chainW(this.updateWorkflowTask<PrismaWorkflowDecoratorSelector>()),
-      TE.chainEitherKW(result => mapWorkflowToDomain(result, prismaInclude))
-    )
-  }
-
-  updateWorkflowConcurrentSafe<T extends WorkflowDecoratorSelector>(
-    workflowId: string,
-    occCheck: bigint,
-    data: ConcurrentUnsafeWorkflowUpdateData,
-    includeRef?: T
-  ): TaskEither<WorkflowUpdateError, DecoratedWorkflow<T>> {
-    const prismaInclude = mapDomainSelectorToPrismaSelector(includeRef)
-
-    return pipe(
-      {workflowId, data, occCheck, includeRef: prismaInclude},
-      TE.right,
-      TE.chainW(this.updateWorkflowTask<PrismaWorkflowDecoratorSelector>()),
-      TE.chainEitherKW(result => mapWorkflowToDomain(result, prismaInclude))
-    )
-  }
-
-  countActiveWorkflowsByTemplateId(templateId: string): TaskEither<UnknownError, number> {
-    return TE.tryCatch(
-      () =>
-        this.dbClient.cx.workflow.count({
-          where: {
-            workflowTemplateId: templateId,
-            status: {
-              notIn: WORKFLOW_TERMINAL_STATUSES
-            }
-          }
-        }),
-      error => {
-        Logger.error(`Error counting active workflows for template ${templateId}`, error)
-        return "unknown_error"
-      }
-    )
-  }
-
-  countActiveWorkflows(): TaskEither<UnknownError, number> {
-    return TE.tryCatch(
-      () =>
-        this.dbClient.cx.workflow.count({
-          where: {
-            status: {
-              notIn: WORKFLOW_TERMINAL_STATUSES
-            }
-          }
-        }),
-      error => {
-        Logger.error("Error counting all active workflows", error)
-        return "unknown_error"
-      }
-    )
-  }
-
-  getParentWorkflowTemplate(workflowId: string): TaskEither<WorkflowGetParentTemplateError, string> {
-    return pipe(
-      TE.tryCatch(
-        () =>
-          this.dbClient.cx.workflow.findUnique({
-            where: {id: workflowId},
-            select: {workflowTemplateId: true}
-          }),
-        error => {
-          Logger.error(`Error getting parent workflow template for workflow ${workflowId}`, error)
-          return "unknown_error" as const
-        }
-      ),
-      chainNullableToLeft("workflow_not_found" as const),
-      TE.map(workflow => workflow.workflowTemplateId)
-    )
-  }
-
-  findExpiredWorkflows(now: Date, limit = 1000): TaskEither<UnknownError, string[]> {
-    return TE.tryCatch(
-      async () => {
-        // RISK ACCEPTANCE COMMENT:
-        // If any database validation/parsing failure occurs for this batch, the entire execution halts.
-        // Since we only select the basic string UUID 'id', the risk is minimal for this iteration.
-        // TODO (long-term): Implement a row-by-row parsing/validation wrapper to handle corrupt records gracefully.
-        const workflows = await this.dbClient.cx.workflow.findMany({
-          where: {
-            status: {
-              notIn: WORKFLOW_TERMINAL_STATUSES
-            },
-            expiresAt: {
-              lt: now
-            },
-            recalculationRequired: false
-          },
-          select: {
-            id: true
-          },
-          take: limit
-        })
-        return workflows.map(w => w.id)
-      },
-      error => {
-        Logger.error("Error finding expired workflows", error)
-        return "unknown_error" as const
-      }
-    )
-  }
-
-  markWorkflowsAsRecalculationRequired(workflowIds: string[]): TaskEither<UnknownError, void> {
-    return TE.tryCatch(
-      async () => {
-        if (workflowIds.length === 0) return
-        await this.dbClient.cx.workflow.updateMany({
-          where: {
-            id: {
-              in: workflowIds
-            }
-          },
-          data: {
-            recalculationRequired: true
-          }
-        })
-      },
-      error => {
-        Logger.error(`Error marking workflows as recalculation required: ${workflowIds.join(", ")}`, error)
-        return "unknown_error" as const
-      }
-    )
-  }
-
-  private updateWorkflowTask<T extends PrismaWorkflowDecoratorSelector>(): (data: {
-    workflowId: string
-    data: Omit<Prisma.WorkflowUpdateInput, "id" | "occ">
-    occCheck?: bigint
-    includeRef?: T
-  }) => TaskEither<WorkflowUpdateError, PrismaDecoratedWorkflow<T>> {
-    return ({workflowId, data, occCheck, includeRef}) =>
-      pipe(
-        TE.tryCatch(
-          () => this.updateWorkflowTaskNoErrorHandling({workflowId, data, occCheck, includeRef}),
-          error => {
-            if (isPrismaRecordNotFoundError(error, Prisma.ModelName.Workflow)) return "concurrency_error" as const
-            Logger.error(`Error while updating workflow ${workflowId}. Unknown error`, error)
-            return "unknown_error" as const
-          }
-        ),
-        TE.chainW(result => this.decryptWorkflow(result))
-      )
-  }
-
-  private updateWorkflowTaskNoErrorHandling<T extends PrismaWorkflowDecoratorSelector>(input: {
-    workflowId: string
-    data: Omit<Prisma.WorkflowUpdateInput, "id" | "occ">
-    occCheck?: bigint
-    includeRef?: T
-  }): Promise<PrismaDecoratedWorkflow<T>> {
-    const {workflowId, data, occCheck, includeRef} = input
-    const where: Prisma.WorkflowWhereUniqueInput = {id: workflowId, occ: occCheck}
-    const include = includeRef?.workflowTemplates ? {workflowTemplates: true} : undefined
-
-    // TODO(long-term): try to remove the cast
-    return this.dbClient.cx.workflow.update({where, data, include}) as unknown as Promise<PrismaDecoratedWorkflow<T>>
-  }
-
-  private getWorkflow<T extends WorkflowDecoratorSelector>(
-    identifier: Identifier,
-    include?: T
-  ): TaskEither<WorkflowGetError, DecoratedWorkflow<T>> {
-    const prismaInclude = mapDomainSelectorToPrismaSelector(include)
-
-    return pipe(
-      identifier,
-      TE.right,
-      TE.chainW(this.getObjectTask(prismaInclude)),
-      chainNullableToLeft("workflow_not_found" as const),
-      TE.chainEitherKW(result => mapWorkflowToDomain(result, prismaInclude))
-    )
-  }
-
-  private getObjectTask<T extends PrismaWorkflowDecoratorSelector>(
-    include?: T
-  ): (identifier: Identifier) => TaskEither<WorkflowGetError, PrismaDecoratedWorkflow<T> | null> {
-    return identifier =>
-      pipe(
-        TE.tryCatch(
-          () => this.getObjectTaskNoErrorHandling(identifier, include),
-          error => {
-            Logger.error(`Error while retrieving workflow by ${identifier.type}. Unknown error`, error)
-            return "unknown_error" as const
-          }
-        ),
-        TE.chainW(result => {
-          if (!result) return TE.right(null)
-          return this.decryptWorkflow(result)
-        })
-      )
-  }
-
-  private async getObjectTaskNoErrorHandling<T extends PrismaWorkflowDecoratorSelector>(
-    identifier: Identifier,
-    include?: T
-  ): Promise<PrismaDecoratedWorkflow<T> | null> {
-    const where: Prisma.WorkflowWhereUniqueInput = {
-      id: identifier.type === "id" ? identifier.identifier : undefined,
-      name: identifier.type === "name" ? identifier.identifier : undefined
-    }
-
-    const includeOptions = include?.workflowTemplates !== undefined ? {workflowTemplates: true} : undefined
-
-    return this.dbClient.cx.workflow.findUnique({
-      where,
-      include: includeOptions
-    }) as Promise<PrismaDecoratedWorkflow<T> | null>
-  }
-
-  private persistWorkflow(): (data: CreateWorkflowRepo) => TaskEither<CreateWorkflowRepoError, PrismaWorkflow> {
-    return data =>
-      TE.tryCatchK(
+      TE.tryCatch<"workflow_already_exists" | UnknownError, PrismaWorkflow>(
         () =>
           this.dbClient.cx.workflow.create({
             data: {
               id: data.workflow.id,
+              organizationId: context.organizationId,
               name: data.workflow.name,
-              description: data.workflow.description,
+              description: data.workflow.description ?? null,
               status: data.workflow.status,
-              createdAt: data.workflow.createdAt,
-              updatedAt: data.workflow.updatedAt,
-              occ: POSTGRES_BIGINT_LOWER_BOUND,
               recalculationRequired: data.workflow.recalculationRequired,
               workflowTemplateId: data.workflow.workflowTemplateId,
-              expiresAt: data.workflow.expiresAt
+              expiresAt: data.workflow.expiresAt,
+              createdAt: data.workflow.createdAt,
+              updatedAt: data.workflow.updatedAt,
+              occ: 0n
             }
           }),
-        error => {
-          if (isPrismaUniqueConstraintError(error, ["name"])) return "workflow_already_exists"
-          Logger.error(`Error creating workflow: ${String(error)}`, error)
-          return "unknown_error" as const
-        }
-      )()
+        error => this.mapCreateError(error)
+      ),
+      TE.chainEitherKW(mapWorkflow),
+      TE.chainFirstW(() => this.registerWorkflowExpiration(context, data.workflow.expiresAt))
+    )
   }
 
-  private listWorkflowsTask<
-    DomainSelectors extends WorkflowDecoratorSelector,
-    PrismaSelectors extends PrismaWorkflowDecoratorSelector
-  >(): (
-    request: ListWorkflowsRequestRepo<DomainSelectors>
-  ) => TaskEither<
-    WorkflowGetError,
-    {workflows: PrismaDecoratedWorkflow<PrismaSelectors>[]; pagination: {total: number; page: number; limit: number}}
-  > {
-    return request =>
-      pipe(
-        TE.tryCatch(
-          () => this.listWorkflowsTaskNoErrorHandling<DomainSelectors, PrismaSelectors>()(request),
-          error => {
-            Logger.error("Error while listing workflows. Unknown error", error)
-            return "unknown_error" as const
-          }
+  getDueExpirationSchedule(
+    context: TenantContext,
+    dueBefore: Date,
+    scheduledBefore: Date
+  ): TE.TaskEither<UnknownError, WorkflowExpirationSchedule | null> {
+    return TE.tryCatch(
+      async () => {
+        const schedule = await this.dbClient.cx.getDueExpirationSchedule(
+          context.organizationId,
+          dueBefore,
+          scheduledBefore
+        )
+        return schedule
+          ? {
+              organizationId: context.organizationId,
+              ...(schedule.lastSweptAt === null ? {} : {lastSweptAt: schedule.lastSweptAt})
+            }
+          : null
+      },
+      error => this.mapUnknownError(error, "get due expiration schedule")
+    )
+  }
+
+  claimExpirationSchedule(
+    context: TenantContext,
+    scheduledAt: Date,
+    scheduledBefore: Date
+  ): TE.TaskEither<UnknownError, boolean> {
+    return TE.tryCatch(
+      () => this.dbClient.cx.claimExpirationSchedule(context.organizationId, scheduledAt, scheduledBefore),
+      error => this.mapUnknownError(error, "claim expiration schedule")
+    )
+  }
+
+  completeExpirationSchedule(context: TenantContext, sweptAt: Date): TE.TaskEither<UnknownError, void> {
+    return TE.tryCatch(
+      () => this.dbClient.cx.completeExpirationSchedule(context.organizationId, sweptAt),
+      error => this.mapUnknownError(error, "complete expiration schedule")
+    )
+  }
+
+  private registerWorkflowExpiration(context: TenantContext, expiresAt: Date): TE.TaskEither<UnknownError, void> {
+    return TE.tryCatch(
+      () => this.dbClient.cx.registerWorkflowExpiration(context.organizationId, expiresAt),
+      error => this.mapUnknownError(error, "register workflow expiration")
+    )
+  }
+
+  getWorkflowById<T extends WorkflowDecoratorSelector>(
+    context: TenantContext,
+    workflowId: string,
+    includeRef?: T
+  ): TE.TaskEither<WorkflowGetError, DecoratedWorkflow<T>>
+  getWorkflowById(
+    context: TenantContext,
+    workflowId: string,
+    includeRef?: WorkflowDecoratorSelector
+  ): TE.TaskEither<WorkflowGetError, DecoratedWorkflow<WorkflowDecoratorSelector>> {
+    return this.get(context, {organizationId_id: {organizationId: context.organizationId, id: workflowId}}, includeRef)
+  }
+
+  getWorkflowByName<T extends WorkflowDecoratorSelector>(
+    context: TenantContext,
+    workflowName: string,
+    includeRef?: T
+  ): TE.TaskEither<WorkflowGetError, DecoratedWorkflow<T>>
+  getWorkflowByName(
+    context: TenantContext,
+    workflowName: string,
+    includeRef?: WorkflowDecoratorSelector
+  ): TE.TaskEither<WorkflowGetError, DecoratedWorkflow<WorkflowDecoratorSelector>> {
+    return this.get(
+      context,
+      {organizationId_name: {organizationId: context.organizationId, name: workflowName}},
+      includeRef
+    )
+  }
+
+  listWorkflows<T extends WorkflowDecoratorSelector>(
+    context: TenantContext,
+    request: ListWorkflowsRequestRepo<T>
+  ): TE.TaskEither<WorkflowGetError, ListWorkflowsResponse<T>>
+  listWorkflows(
+    context: TenantContext,
+    request: ListWorkflowsRequestRepo<WorkflowDecoratorSelector>
+  ): TE.TaskEither<WorkflowGetError, ListWorkflowsResponse<WorkflowDecoratorSelector>> {
+    const where = this.listWhere(context, request)
+    const pagination = request.pagination
+    const orderBy = toOrderBy(request.sort)
+    if (request.include?.workflowTemplate === true)
+      return pipe(
+        TE.tryCatch<UnknownError, {readonly rows: WorkflowWithTemplate[]; readonly total: number}>(
+          async () => ({
+            rows: await this.dbClient.cx.workflow.findMany({
+              where,
+              orderBy,
+              skip: pagination ? (pagination.page - 1) * pagination.limit : undefined,
+              take: pagination?.limit,
+              include: {workflowTemplates: true}
+            }),
+            total: await this.dbClient.cx.workflow.count({where})
+          }),
+          error => this.mapUnknownError(error, "list with template")
         ),
-        TE.chainW(result =>
+        TE.chainW(({rows, total}) =>
           pipe(
-            result.workflows,
-            TE.traverseArray(w => this.decryptWorkflow(w)),
-            TE.map(decryptedWorkflows => ({
-              workflows: decryptedWorkflows as PrismaDecoratedWorkflow<PrismaSelectors>[],
-              pagination: result.pagination
+            rows,
+            TE.traverseArray(row => this.mapWorkflowWithTemplate(context, row)),
+            TE.map(workflows => ({
+              workflows,
+              pagination: {total, page: pagination?.page ?? 1, limit: pagination?.limit ?? total}
             }))
           )
         )
       )
+    return pipe(
+      TE.tryCatch<UnknownError, {readonly rows: PrismaWorkflow[]; readonly total: number}>(
+        async () => {
+          const total = await this.dbClient.cx.workflow.count({where})
+          const rows = await this.dbClient.cx.workflow.findMany({
+            where,
+            orderBy,
+            skip: pagination ? (pagination.page - 1) * pagination.limit : undefined,
+            take: pagination?.limit
+          })
+          return {rows, total}
+        },
+        error => this.mapUnknownError(error, "list")
+      ),
+      TE.chainW(({rows, total}) =>
+        pipe(
+          rows,
+          TE.traverseArray(row => TE.fromEither(mapWorkflow(row))),
+          TE.map(workflows => ({
+            workflows,
+            pagination: {total, page: pagination?.page ?? 1, limit: pagination?.limit ?? total}
+          }))
+        )
+      )
+    )
   }
 
-  private listWorkflowsTaskNoErrorHandling<
-    DomainSelectors extends WorkflowDecoratorSelector,
-    PrismaSelectors extends PrismaWorkflowDecoratorSelector = object
-  >(): (request: ListWorkflowsRequestRepo<DomainSelectors>) => Promise<{
-    workflows: PrismaDecoratedWorkflow<PrismaSelectors>[]
-    pagination: {total: number; page: number; limit: number}
-  }> {
-    return async request => {
-      const {pagination, include, filters} = request
+  updateWorkflow<T extends WorkflowDecoratorSelector>(
+    context: TenantContext,
+    workflowId: string,
+    data: ConcurrentSafeWorkflowUpdateData,
+    includeRef?: T
+  ): TE.TaskEither<WorkflowUpdateError, DecoratedWorkflow<T>>
+  updateWorkflow(
+    context: TenantContext,
+    workflowId: string,
+    data: ConcurrentSafeWorkflowUpdateData,
+    includeRef?: WorkflowDecoratorSelector
+  ): TE.TaskEither<WorkflowUpdateError, DecoratedWorkflow<WorkflowDecoratorSelector>> {
+    return this.update(context, workflowId, undefined, data, includeRef)
+  }
 
-      const prismaInclude: Prisma.WorkflowInclude = include?.workflowTemplate ? {workflowTemplates: true} : {}
+  updateWorkflowConcurrentSafe<T extends WorkflowDecoratorSelector>(
+    context: TenantContext,
+    workflowId: string,
+    occCheck: bigint,
+    data: ConcurrentUnsafeWorkflowUpdateData,
+    includeRef?: T
+  ): TE.TaskEither<WorkflowUpdateError, DecoratedWorkflow<T>>
+  updateWorkflowConcurrentSafe(
+    context: TenantContext,
+    workflowId: string,
+    occCheck: bigint,
+    data: ConcurrentUnsafeWorkflowUpdateData,
+    includeRef?: WorkflowDecoratorSelector
+  ): TE.TaskEither<WorkflowUpdateError, DecoratedWorkflow<WorkflowDecoratorSelector>> {
+    return this.update(context, workflowId, occCheck, data, includeRef)
+  }
 
-      // Build the where clause based on the selected filters
-      const where: Prisma.WorkflowWhereInput = {}
-
-      if (filters?.includeOnlyNonTerminalState)
-        where.status = {
-          notIn: WORKFLOW_TERMINAL_STATUSES
-        }
-
-      if (filters?.workflowTemplateId) where.workflowTemplateId = filters.workflowTemplateId
-      else if (filters?.workflowTemplateName) where.workflowTemplates = {name: filters.workflowTemplateName}
-
-      if (filters?.includeGroups && filters.includeGroups.length > 0)
-        where.workflowTemplates = {
-          ...(where.workflowTemplates as Prisma.WorkflowTemplateWhereInput),
-          OR: filters.includeGroups.map(groupId => ({
-            approvalRule: {
-              string_contains: groupId
-            }
-          }))
-        }
-
-      const orderBy: Prisma.WorkflowOrderByWithRelationInput[] = []
-      const sortItems = request.sort ?? []
-
-      if (sortItems.length > 0) for (const sortItem of sortItems) orderBy.push({[sortItem.param]: sortItem.order})
-
-      if (orderBy.length === 0) orderBy.push({updatedAt: "desc"})
-
-      const [rawWorkflows, total] = await Promise.all([
-        this.dbClient.cx.workflow.findMany({
-          skip: pagination ? (pagination.page - 1) * pagination.limit : undefined,
-          take: pagination ? pagination.limit : undefined,
-          include: prismaInclude,
-          where,
-          orderBy
+  countActiveWorkflowsByTemplateId(context: TenantContext, templateId: string): TE.TaskEither<UnknownError, number> {
+    return TE.tryCatch(
+      () =>
+        this.dbClient.cx.workflow.count({
+          where: {
+            organizationId: context.organizationId,
+            workflowTemplateId: templateId,
+            status: {notIn: WORKFLOW_TERMINAL_STATUSES}
+          }
         }),
-        this.dbClient.cx.workflow.count({where})
-      ])
+      error => this.mapUnknownError(error, "count by template")
+    )
+  }
 
-      const workflows = rawWorkflows.map(w => ({...w, occ: BigInt(w.occ)}))
-      return {
-        workflows: workflows,
-        pagination: {total, page: pagination ? pagination.page : 1, limit: pagination ? pagination.limit : total}
-      }
+  countActiveWorkflows(context: TenantContext): TE.TaskEither<UnknownError, number> {
+    return TE.tryCatch(
+      () =>
+        this.dbClient.cx.workflow.count({
+          where: {organizationId: context.organizationId, status: {notIn: WORKFLOW_TERMINAL_STATUSES}}
+        }),
+      error => this.mapUnknownError(error, "count")
+    )
+  }
+
+  getParentWorkflowTemplate(
+    context: TenantContext,
+    workflowId: string
+  ): TE.TaskEither<WorkflowGetParentTemplateError, string> {
+    return pipe(
+      TE.tryCatch<UnknownError, {readonly workflowTemplateId: string} | null>(
+        () =>
+          this.dbClient.cx.workflow.findUnique({
+            where: {organizationId_id: {organizationId: context.organizationId, id: workflowId}},
+            select: {workflowTemplateId: true}
+          }),
+        error => this.mapUnknownError(error, "get parent template")
+      ),
+      TE.chainW(row => (row ? TE.right(row.workflowTemplateId) : TE.left("workflow_not_found" as const)))
+    )
+  }
+
+  findExpiredWorkflows(
+    context: TenantContext,
+    expiresBefore: Date,
+    limit = 1000
+  ): TE.TaskEither<UnknownError, string[]> {
+    return pipe(
+      TE.tryCatch<UnknownError, ReadonlyArray<{id: string}>>(
+        () =>
+          this.dbClient.cx.workflow.findMany({
+            where: {
+              organizationId: context.organizationId,
+              status: {notIn: WORKFLOW_TERMINAL_STATUSES},
+              expiresAt: {lt: expiresBefore},
+              recalculationRequired: false
+            },
+            select: {id: true},
+            orderBy: [{expiresAt: "asc"}, {id: "asc"}],
+            take: limit
+          }),
+        error => this.mapUnknownError(error, "find expired")
+      ),
+      TE.map(rows => rows.map(row => row.id))
+    )
+  }
+
+  markWorkflowsAsRecalculationRequired(
+    context: TenantContext,
+    workflowIds: string[]
+  ): TE.TaskEither<UnknownError, void> {
+    if (workflowIds.length === 0) return TE.right(undefined)
+    return TE.map(() => undefined)(
+      TE.tryCatch(
+        () =>
+          this.dbClient.cx.workflow.updateMany({
+            where: {organizationId: context.organizationId, id: {in: workflowIds}},
+            data: {recalculationRequired: true}
+          }),
+        error => this.mapUnknownError(error, "mark recalculation")
+      )
+    )
+  }
+
+  private get(
+    context: TenantContext,
+    where: Prisma.WorkflowWhereUniqueInput,
+    include?: WorkflowDecoratorSelector
+  ): TE.TaskEither<WorkflowGetError, WorkflowResult> {
+    if (include?.workflowTemplate)
+      return pipe(
+        TE.tryCatch<UnknownError, WorkflowWithTemplate | null>(
+          () => this.dbClient.cx.workflow.findUnique({where, include: {workflowTemplates: true}}),
+          error => this.mapUnknownError(error, "get with template")
+        ),
+        TE.chainW(row => (row ? this.mapWorkflowWithTemplate(context, row) : TE.left("workflow_not_found" as const)))
+      )
+
+    return pipe(
+      TE.tryCatch<UnknownError, PrismaWorkflow | null>(
+        () => this.dbClient.cx.workflow.findUnique({where}),
+        error => this.mapUnknownError(error, "get")
+      ),
+      TE.chainW(row => (row ? TE.fromEither(mapWorkflow(row)) : TE.left("workflow_not_found" as const)))
+    )
+  }
+
+  private update(
+    context: TenantContext,
+    workflowId: string,
+    occCheck: bigint | undefined,
+    data: ConcurrentSafeWorkflowUpdateData | ConcurrentUnsafeWorkflowUpdateData,
+    include?: WorkflowDecoratorSelector
+  ): TE.TaskEither<WorkflowUpdateError, WorkflowResult> {
+    return pipe(
+      TE.tryCatch<UnknownError, {count: number}>(
+        () =>
+          this.dbClient.cx.workflow.updateMany({
+            where: {
+              organizationId: context.organizationId,
+              id: workflowId,
+              ...(occCheck === undefined ? {} : {occ: occCheck})
+            },
+            data: {
+              ...("status" in data && data.status !== undefined ? {status: data.status} : {}),
+              recalculationRequired: data.recalculationRequired,
+              updatedAt: "updatedAt" in data ? data.updatedAt : new Date(),
+              ...(occCheck === undefined ? {} : {occ: {increment: 1}})
+            }
+          }),
+        error => this.mapUnknownError(error, "update")
+      ),
+      TE.chainW(result =>
+        result.count === 1
+          ? this.get(context, {organizationId_id: {organizationId: context.organizationId, id: workflowId}}, include)
+          : TE.left("concurrency_error" as const)
+      )
+    )
+  }
+
+  private mapWorkflowWithTemplate(
+    context: TenantContext,
+    row: WorkflowWithTemplate
+  ): TE.TaskEither<WorkflowGetError, WorkflowResult> {
+    return pipe(
+      this.decryptTemplate(context, row.workflowTemplates),
+      TE.chainEitherKW(template => {
+        const workflow = mapWorkflow(row)
+        return E.isLeft(workflow) ? workflow : E.right({...workflow.right, workflowTemplate: template})
+      })
+    )
+  }
+
+  private decryptTemplate(
+    context: TenantContext,
+    row: PrismaWorkflowTemplate
+  ): TE.TaskEither<EncryptionError, Versioned<WorkflowTemplate>> {
+    if (!row.encActions) return TE.left("decryption_failed")
+    return pipe(
+      this.tenantEncryption.decrypt(encryptionContext(context, row.id), row.encActions),
+      TE.mapLeft(() => "decryption_failed" as const),
+      TE.chainEitherKW(plaintext => {
+        const actions = E.tryCatch(
+          () => JSON.parse(plaintext) as unknown,
+          () => "decryption_failed" as const
+        )
+        if (E.isLeft(actions)) return actions
+        const template = WorkflowTemplateFactory.validate({
+          id: row.id,
+          organizationId: row.organizationId,
+          name: row.name,
+          version: row.version,
+          description: row.description ?? undefined,
+          approvalRule: row.approvalRule,
+          actions: actions.right,
+          defaultExpiresInHours: row.defaultExpiresInHours ?? undefined,
+          status: row.status,
+          allowVotingOnDeprecatedTemplate: row.allowVotingOnDeprecatedTemplate,
+          spaceId: row.spaceId,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt
+        })
+        return E.isLeft(template) ? E.left("decryption_failed" as const) : E.right({...template.right, occ: row.occ})
+      })
+    )
+  }
+
+  private listWhere(
+    context: TenantContext,
+    request: ListWorkflowsRequestRepo<WorkflowDecoratorSelector>
+  ): Prisma.WorkflowWhereInput {
+    const filters = request.filters
+    return {
+      organizationId: context.organizationId,
+      ...(filters?.includeOnlyNonTerminalState ? {status: {notIn: WORKFLOW_TERMINAL_STATUSES}} : {}),
+      ...(filters?.workflowTemplateId ? {workflowTemplateId: filters.workflowTemplateId} : {}),
+      ...(filters?.workflowTemplateName ? {workflowTemplates: {is: {name: filters.workflowTemplateName}}} : {})
     }
   }
-}
 
-export interface PrismaWorkflowDecorators {
-  workflowTemplates: PrismaWorkflowTemplate
-}
-
-export type PrismaWorkflowDecoratorSelector = Partial<Record<keyof PrismaWorkflowDecorators, boolean>>
-
-export type PrismaDecoratedWorkflow<T extends PrismaWorkflowDecoratorSelector> = DecorableEntity<
-  PrismaWorkflow,
-  PrismaWorkflowDecorators,
-  T
->
-
-export function iPrismaDecoratedWorkflow<K extends keyof PrismaWorkflowDecorators>(
-  workflow: PrismaDecoratedWorkflow<PrismaWorkflowDecoratorSelector>,
-  key: K,
-  options?: PrismaWorkflowDecoratorSelector
-): workflow is PrismaDecoratedWorkflow<PrismaWorkflowDecoratorSelector & Record<K, true>> {
-  return isDecoratedWith<
-    PrismaDecoratedWorkflow<PrismaWorkflowDecoratorSelector>,
-    PrismaWorkflowDecorators,
-    PrismaWorkflowDecoratorSelector,
-    keyof PrismaWorkflowDecorators
-  >(workflow, key, options)
-}
-
-export function mapDomainSelectorToPrismaSelector<T extends WorkflowDecoratorSelector>(
-  domainSelector?: T
-): PrismaWorkflowDecoratorSelector | undefined {
-  if (!domainSelector) return undefined
-
-  return {
-    workflowTemplates: domainSelector.workflowTemplate
+  private mapCreateError(error: unknown): "workflow_already_exists" | UnknownError {
+    if (isPrismaUniqueConstraintError(error, ["organization_id", "name"], "workflows_organization_name_unique"))
+      return "workflow_already_exists"
+    return this.mapUnknownError(error, "create")
   }
+
+  private mapUnknownError(error: unknown, operation: string): UnknownError {
+    Logger.error(`Workflow repository ${operation} failed`, error instanceof Error ? error.name : "non_error")
+    return "unknown_error"
+  }
+}
+
+function mapWorkflow(row: PrismaWorkflow): E.Either<"workflow_status_invalid", Versioned<Workflow>> {
+  const workflow = WorkflowFactory.validate({
+    id: row.id,
+    organizationId: row.organizationId,
+    name: row.name,
+    description: row.description ?? undefined,
+    status: row.status,
+    recalculationRequired: row.recalculationRequired,
+    workflowTemplateId: row.workflowTemplateId,
+    expiresAt: row.expiresAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt
+  })
+  return E.isLeft(workflow) ? E.left("workflow_status_invalid") : E.right({...workflow.right, occ: row.occ})
+}
+
+function encryptionContext(context: TenantContext, templateId: string) {
+  return {
+    organizationId: context.organizationId,
+    resourceType: "workflow_template" as const,
+    resourceId: templateId,
+    field: "actions" as const,
+    formatVersion: 1 as const
+  }
+}
+
+function toOrderBy(
+  sort: ListWorkflowsRequestRepo<WorkflowDecoratorSelector>["sort"]
+): Prisma.WorkflowOrderByWithRelationInput[] {
+  if (!sort || sort.length === 0) return [{updatedAt: "desc"}, {id: "asc"}]
+  const orderBy: Prisma.WorkflowOrderByWithRelationInput[] = []
+  for (const item of sort)
+    if (item.param === "createdAt") orderBy.push({createdAt: item.order})
+    else orderBy.push({updatedAt: item.order})
+
+  return [...orderBy, {id: "asc"}]
 }

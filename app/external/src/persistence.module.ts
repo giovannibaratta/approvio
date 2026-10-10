@@ -46,7 +46,6 @@ import {
   InvitationDbRepository,
   PlatformSecurityEventDbRepository,
   DiscoveryDatabaseClient,
-  ProvisioningDatabaseClient,
   PlatformSecurityDatabaseClient
 } from "./database"
 import {
@@ -60,6 +59,7 @@ import {
   LifecycleTenantClient,
   MembershipTenantClient,
   OrganizationDirectoryTenantClient,
+  OrganizationProvisionerTenantClient,
   QuotaTenantClient,
   SpaceTenantClient,
   StepUpReceiptTenantClient,
@@ -348,7 +348,6 @@ const repositories = [
   IdentityDatabaseClient,
   SessionDatabaseClient,
   DiscoveryDatabaseClient,
-  ProvisioningDatabaseClient,
   PlatformSecurityDatabaseClient,
   SchedulerDatabaseClient,
   WorkerDatabaseClient
@@ -365,6 +364,7 @@ const tenantDatabaseClients = [
   LifecycleTenantClient,
   MembershipTenantClient,
   OrganizationDirectoryTenantClient,
+  OrganizationProvisionerTenantClient,
   QuotaTenantClient,
   SpaceTenantClient,
   StepUpReceiptTenantClient,

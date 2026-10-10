@@ -111,7 +111,7 @@ export class WebAuthController {
             session.occ
           )
         )
-        return {selectedOrganizationId: session.selectedOrganizationId}
+        return {selectedOrganizationId: session.selectedOrganizationId ?? null}
       })
     )()
 

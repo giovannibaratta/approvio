@@ -204,7 +204,7 @@ describe("Workflow Action Email Processor Integration", () => {
     const claim = requireAdmitted(
       unwrapRight(await taskService.claimDispatch(context, task.id, "email", uuidv7(), new Date())())
     )
-    unwrapRight(await taskService.markDispatchSending(context, claim.attemptId, claim.lease)())
+    unwrapRight(await taskService.startDispatchExecution(context, claim.attemptId, claim.lease)())
     const workBefore = await prisma.durableWork.findUniqueOrThrow({where: {id: task.id}})
     const attemptBefore = await prisma.dispatchAttempt.findUniqueOrThrow({where: {id: claim.attemptId}})
 
@@ -219,10 +219,16 @@ describe("Workflow Action Email Processor Integration", () => {
     })
 
     // When
-    const result = await taskService.completeDispatch(context, claim.attemptId, claim.lease, {
-      state: "succeeded",
-      outcome: {type: "delivered"}
-    })()
+    const result = await taskService.completeDispatch(
+      context,
+      claim.attemptId,
+      claim.lease,
+      {
+        state: "succeeded",
+        outcome: {type: "delivered"}
+      },
+      uuidv7()
+    )()
 
     // Expect
     expect(result).toBeLeftOf("invalid_transition")
@@ -247,14 +253,20 @@ describe("Workflow Action Email Processor Integration", () => {
     const claim = requireAdmitted(
       unwrapRight(await taskService.claimDispatch(context, task.id, "email", uuidv7(), new Date())())
     )
-    unwrapRight(await taskService.markDispatchSending(context, claim.attemptId, claim.lease)())
+    unwrapRight(await taskService.startDispatchExecution(context, claim.attemptId, claim.lease)())
     const before = await prisma.dispatchAttempt.findUniqueOrThrow({where: {id: claim.attemptId}})
 
     // When
-    const result = await taskService.completeDispatch(context, claim.attemptId, claim.lease, {
-      state: "succeeded",
-      outcome: {type: "http_response", statusCode}
-    })()
+    const result = await taskService.completeDispatch(
+      context,
+      claim.attemptId,
+      claim.lease,
+      {
+        state: "succeeded",
+        outcome: {type: "http_response", statusCode}
+      },
+      uuidv7()
+    )()
 
     // Expect
     expect(result).toBeLeftOf("dispatch_invalid_http_status")
@@ -277,10 +289,16 @@ describe("Workflow Action Email Processor Integration", () => {
     )
     // The first worker fails before sending, making retry safe for email.
     unwrapRight(
-      await taskService.completeDispatch(context, first.attemptId, first.lease, {
-        state: "failed",
-        outcome: {type: "task_load_failed", error: "task_not_found"}
-      })()
+      await taskService.completeDispatch(
+        context,
+        first.attemptId,
+        first.lease,
+        {
+          state: "failed",
+          outcome: {type: "task_load_failed", error: "task_not_found"}
+        },
+        uuidv7()
+      )()
     )
     const nextOwner = uuidv7()
     const second = requireAdmitted(
@@ -289,11 +307,17 @@ describe("Workflow Action Email Processor Integration", () => {
     const before = await prisma.durableWork.findUniqueOrThrow({where: {id: task.id}})
 
     // When: The old worker tries to start delivery and report completion using its stale lease.
-    const staleSending = await taskService.markDispatchSending(context, first.attemptId, first.lease)()
-    const staleCompletion = await taskService.completeDispatch(context, first.attemptId, first.lease, {
-      state: "succeeded",
-      outcome: {type: "delivered"}
-    })()
+    const staleSending = await taskService.startDispatchExecution(context, first.attemptId, first.lease)()
+    const staleCompletion = await taskService.completeDispatch(
+      context,
+      first.attemptId,
+      first.lease,
+      {
+        state: "succeeded",
+        outcome: {type: "delivered"}
+      },
+      uuidv7()
+    )()
 
     // Expect: Both operations are rejected and the second worker's work remains unchanged.
     expect(second.lease.fencing).toBeGreaterThan(first.lease.fencing)
@@ -303,12 +327,18 @@ describe("Workflow Action Email Processor Integration", () => {
     expect(before.leaseOwner).toBe(nextOwner)
 
     // When: The current owner starts delivery and reports success using its valid lease.
-    unwrapRight(await taskService.markDispatchSending(context, second.attemptId, second.lease)())
+    unwrapRight(await taskService.startDispatchExecution(context, second.attemptId, second.lease)())
     unwrapRight(
-      await taskService.completeDispatch(context, second.attemptId, second.lease, {
-        state: "succeeded",
-        outcome: {type: "delivered"}
-      })()
+      await taskService.completeDispatch(
+        context,
+        second.attemptId,
+        second.lease,
+        {
+          state: "succeeded",
+          outcome: {type: "delivered"}
+        },
+        uuidv7()
+      )()
     )
     // Expect: Rejecting the stale worker has not prevented the current owner from completing the task.
     expect((await prisma.durableWork.findUniqueOrThrow({where: {id: task.id}})).state).toBe("succeeded")
@@ -327,17 +357,23 @@ describe("Workflow Action Email Processor Integration", () => {
     const claimed = requireAdmitted(
       unwrapRight(await taskService.claimDispatch(context, task.id, "email", uuidv7(), new Date())())
     )
-    unwrapRight(await taskService.markDispatchSending(context, claimed.attemptId, claimed.lease)())
+    unwrapRight(await taskService.startDispatchExecution(context, claimed.attemptId, claimed.lease)())
     // Expire the stored lease deterministically; no timing-dependent sleep or second email send.
     await prisma.durableWork.update({where: {id: task.id}, data: {leaseUntil: new Date(0)}})
     const before = await prisma.durableWork.findUniqueOrThrow({where: {id: task.id}})
     const attemptBefore = await prisma.dispatchAttempt.findUniqueOrThrow({where: {id: claimed.attemptId}})
 
     // When: The worker reports success using the expired lease.
-    const result = await taskService.completeDispatch(context, claimed.attemptId, claimed.lease, {
-      state: "succeeded",
-      outcome: {type: "delivered"}
-    })()
+    const result = await taskService.completeDispatch(
+      context,
+      claimed.attemptId,
+      claimed.lease,
+      {
+        state: "succeeded",
+        outcome: {type: "delivered"}
+      },
+      uuidv7()
+    )()
 
     // Expect: Completion is rejected and neither the work nor its attempt is changed.
     expect(result).toBeLeftOf("lease_lost")

@@ -1,4 +1,4 @@
-import {ListUsers200Response, RoleOperationRequestValidationError} from "@approvio/api"
+import {ListUsers200Response, RoleOperationRequestValidationError, User as UserApi} from "@approvio/api"
 import {
   BadRequestException,
   ConflictException,
@@ -7,9 +7,12 @@ import {
   InternalServerErrorException,
   Logger,
   NotFoundException,
+  PreconditionFailedException,
   UnprocessableEntityException
 } from "@nestjs/common"
 import {
+  GetUserError,
+  UserDetails,
   ListUsersRequest,
   PaginatedUsersList,
   UserListError,
@@ -17,110 +20,49 @@ import {
   UserRoleRemovalError
 } from "@services"
 import {bindW, Do, Either, map, right, left} from "fp-ts/Either"
-import {generateErrorPayload} from "../error"
+import {generateErrorPayload, isAuthorityError, mapAuthorityError} from "../error"
 import {pipe} from "fp-ts/function"
 import * as O from "fp-ts/Option"
 import {Option} from "fp-ts/Option"
-import {ExtractLeftFromMethod} from "@utils"
+import {AuthenticatedEntity, OrganizationId} from "@domain"
 
-export function createUserApiToServiceModel(data: {
-  userData: UserCreate
-  requestor: AuthenticatedEntity
-}): Either<never, CreateUserRequest> {
-  return right({
-    userData: data.userData,
-    requestor: data.requestor
-  })
-}
-
-export function mapUserToApi(user: Versioned<UserDomain>, groups: Group[]): UserApi {
+export function mapUserToApi({user, groups}: UserDetails): UserApi {
   return {
     id: user.id,
+    organizationId: user.organizationId,
+    accountId: user.accountId,
     displayName: user.displayName,
-    email: user.email,
-    createdAt: user.createdAt.toISOString(),
     orgRole: user.orgRole,
-    groups: groups.map(g => ({
-      groupId: g.id,
-      groupName: g.name
-    })),
-    roles: user.roles.map(r => ({
-      roleName: r.name,
-      scope: r.scope
-    })),
-    concurrencyControl: {version: user.occ.toString()}
+    createdAt: user.createdAt.toISOString(),
+    groups: groups.map(group => ({groupId: group.id, groupName: group.name})),
+    roles: user.roles.map(role => ({roleName: role.name, scope: role.scope}))
   }
 }
 
-export function generateErrorResponseForCreateUser(
-  error: UserCreateError | AuthorizationError,
-  context: string
-): HttpException {
-  const errorCode = error.toUpperCase()
-
-  switch (error) {
-    case "user_display_name_empty":
-    case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid user data`))
-    case "user_already_exists":
-      return new ConflictException(generateErrorPayload(errorCode, `${context}: User with this email already exists`))
-    case "requestor_not_authorized":
-      return new ForbiddenException(
-        generateErrorPayload(errorCode, `${context}: You are not authorized to perform this action`)
-      )
-    case "user_invalid_uuid":
-    case "quota_check_error":
-    case "unknown_error":
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
-      )
-    case "user_org_role_invalid":
-    case "role_name_empty":
-    case "role_name_too_long":
-    case "role_name_invalid_characters":
-    case "role_permissions_empty":
-    case "role_permission_invalid":
-    case "role_invalid_scope":
-    case "role_resource_id_invalid":
-    case "role_resource_required_for_scope":
-    case "role_resource_not_allowed_for_scope":
-    case "role_invalid_uuid":
-    case "user_role_assignments_invalid_format":
-    case "user_duplicate_roles":
-    case "role_invalid_structure":
-    case "role_entity_type_role_restriction":
-    case "role_assignments_empty":
-    case "role_assignments_exceed_maximum":
-    case "role_total_roles_exceed_maximum":
-    case "role_unknown_role_name":
-    case "role_scope_incompatible_with_template":
-      Logger.error(`${context}: Found internal data inconsistency: ${error}`)
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
-      )
-  }
-}
-
-type GetUserLeft = ExtractLeftFromMethod<typeof UserService, "getUserWithGroupsByIdentifier">
-
-export function generateErrorResponseForGetUser(error: GetUserLeft, context: string): HttpException {
-  const errorCode = error.toUpperCase()
+export function generateErrorResponseForGetUser(error: GetUserError, context: string): HttpException {
+  if (isAuthorityError(error)) return mapAuthorityError(error)
+  const payload = generateErrorPayload(error.toUpperCase(), `${context}: ${error}`)
 
   switch (error) {
     case "user_not_found":
-      return new NotFoundException(generateErrorPayload(errorCode, `${context}: User not found`))
+      return new NotFoundException(payload)
     case "request_invalid_user_identifier":
-      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid identifier`))
+      return new BadRequestException(payload)
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "user_invalid_organization_id":
     case "user_invalid_uuid":
+    case "user_invalid_account_id":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "user_org_role_invalid":
+    case "user_status_invalid":
+    case "user_update_before_create":
+    case "user_role_assignments_invalid_format":
+    case "user_duplicate_roles":
+    case "user_role_organization_mismatch":
+    case "user_membership_roles_invalid":
+    case "role_invalid_uuid":
     case "role_name_empty":
     case "role_name_too_long":
     case "role_name_invalid_characters":
@@ -130,30 +72,25 @@ export function generateErrorResponseForGetUser(error: GetUserLeft, context: str
     case "role_resource_id_invalid":
     case "role_resource_required_for_scope":
     case "role_resource_not_allowed_for_scope":
-    case "role_invalid_uuid":
-    case "role_invalid_structure":
-    case "user_role_assignments_invalid_format":
-    case "user_duplicate_roles":
-    case "unknown_error":
-    case "role_entity_type_role_restriction":
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
-      )
     case "role_assignments_empty":
     case "role_assignments_exceed_maximum":
     case "role_total_roles_exceed_maximum":
     case "role_unknown_role_name":
     case "role_scope_incompatible_with_template":
+    case "role_entity_type_role_restriction":
+    case "role_invalid_structure":
+    case "unknown_error":
+    case "conflicting_isolation_level":
+    case "concurrency_error":
     case "group_not_found":
+    case "group_invalid_organization_id":
+    case "group_update_before_create":
     case "group_name_empty":
     case "group_name_too_long":
     case "group_name_invalid_characters":
-    case "group_update_before_create":
     case "group_description_too_long":
     case "group_entities_count_invalid":
-      return new InternalServerErrorException(
-        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
-      )
+      return new InternalServerErrorException(payload)
   }
 }
 

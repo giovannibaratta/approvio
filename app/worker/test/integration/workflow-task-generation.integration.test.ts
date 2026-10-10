@@ -1,44 +1,70 @@
-import {v7 as uuidv7} from "uuid"
-import {WorkflowEventsProcessor} from "../../src/processor/workflow-events.processor"
+import {randomOrgId, toOrganizationId} from "@test/organization-id"
+import {v5 as uuidv5, v7 as uuidv7} from "uuid"
 import {TestingModule} from "@nestjs/testing"
+import {PrismaClient} from "@prisma/client"
+import {Job} from "bull"
+import {WorkflowEventsProcessor} from "../../src/processor/workflow-events.processor"
 import {ConfigProvider} from "@external/config"
 import {MockConfigProvider, createMockWorkflowTemplateInDb, createMockSpaceInDb} from "@test/mock-data"
-import {cleanDatabase, prepareDatabase, prepareRedisPrefix, cleanRedisByPrefix} from "@test/database"
-import {DatabaseClient} from "@external"
-import {PrismaClient, Prisma} from "@prisma/client"
-import {Job} from "bull"
-import {WorkflowStatusChangedEvent, WorkflowStatus, WorkflowActionType, EmailAction, WebhookAction} from "@domain"
-
+import {
+  createFixturePrismaClient,
+  cleanDatabase,
+  prepareDatabase,
+  prepareRedisPrefix,
+  cleanRedisByPrefix
+} from "@test/database"
+import {TaskService} from "@services"
+import {OUTBOX_REPOSITORY_TOKEN, OutboxRepository} from "@services/durable-work/interfaces"
+import {QueueService} from "@services"
+import * as TE from "fp-ts/TaskEither"
+import {EmailAction, WorkflowActionType, WorkflowStatus, WorkflowTaskGenerationEvent, WebhookAction} from "@domain"
 import {WebhookActionHttpMethod} from "@domain/workflow-actions"
-import {setupWorkerTestModule} from "./test-helpers"
+import {unwrapRight} from "@utils/either"
+import {appendTenantEvent, setupWorkerTestModule} from "./test-helpers"
+import {TRANSACTION_MANAGER_TOKEN, TenantTransactionManager} from "@services/transaction/interfaces"
+import {TenantEncryptionService} from "@external/kms/context-bound-encryption.service"
 
-type WorkflowStatusChangedJobData = WorkflowStatusChangedEvent
+type Action = EmailAction | WebhookAction
+
+function emailAction(recipients: string[]): EmailAction {
+  return {type: WorkflowActionType.EMAIL, recipients}
+}
+
+function webhookAction(url: string, method: WebhookActionHttpMethod = WebhookActionHttpMethod.POST): WebhookAction {
+  return {type: WorkflowActionType.WEBHOOK, url, method}
+}
 
 async function createWorkflowWithTemplate(
   prisma: PrismaClient,
-  config: {
-    workflowName: string
-    workflowStatus: WorkflowStatus
-    actions: ReadonlyArray<EmailAction | WebhookAction>
-  }
-): Promise<{
-  workflowId: string
-  templateId: string
-  spaceId: string
-  actions: ReadonlyArray<EmailAction | WebhookAction>
-}> {
-  const spaceId = (await createMockSpaceInDb(prisma)).id
-
+  tenantEncryption: TenantEncryptionService,
+  actions: ReadonlyArray<Action>,
+  status: WorkflowStatus = WorkflowStatus.APPROVED
+): Promise<{workflowId: string; templateId: string; organizationId: string}> {
+  const space = await createMockSpaceInDb(prisma)
   const template = await createMockWorkflowTemplateInDb(prisma, {
-    spaceId,
-    actions: config.actions as Prisma.InputJsonValue
+    organizationId: space.organizationId,
+    spaceId: space.id,
+    actions
   })
-
+  const encryptedActions = unwrapRight(
+    await tenantEncryption.encrypt(
+      {
+        organizationId: toOrganizationId(template.organizationId),
+        resourceType: "workflow_template",
+        resourceId: template.id,
+        field: "actions",
+        formatVersion: 1
+      },
+      JSON.stringify(actions)
+    )()
+  )
+  await prisma.workflowTemplate.update({where: {id: template.id}, data: {encActions: encryptedActions}})
   const workflow = await prisma.workflow.create({
     data: {
       id: uuidv7(),
-      name: config.workflowName,
-      status: config.workflowStatus,
+      organizationId: template.organizationId,
+      name: `test-workflow-${uuidv7()}`,
+      status,
       workflowTemplateId: template.id,
       expiresAt: new Date(Date.now() + 86400000),
       createdAt: new Date(),
@@ -47,498 +73,376 @@ async function createWorkflowWithTemplate(
       recalculationRequired: false
     }
   })
+  return {workflowId: workflow.id, templateId: template.id, organizationId: workflow.organizationId}
+}
 
+function statusChangedEvent(
+  workflowId: string,
+  organizationId: string,
+  previousStatus: WorkflowStatus,
+  newStatus: WorkflowStatus,
+  actions: ReadonlyArray<Action> = []
+): WorkflowTaskGenerationEvent {
   return {
-    workflowId: workflow.id,
-    templateId: template.id,
-    spaceId,
-    actions: config.actions
+    eventId: uuidv7(),
+    workflowId,
+    organizationId: toOrganizationId(organizationId),
+    actor: {type: "system", displayName: "Workflow test"},
+    previousStatus,
+    newStatus,
+    workflowTemplateActions: actions,
+    occurredAt: new Date()
   }
 }
 
-function createEmailAction(recipients: string[]): EmailAction {
-  return {
-    type: WorkflowActionType.EMAIL,
-    recipients
-  }
+function job(data: WorkflowTaskGenerationEvent): Pick<Job<unknown>, "data"> {
+  return {data: {...data, status: data.newStatus}}
 }
 
-function createWebhookAction(
-  url: string,
-  method: WebhookActionHttpMethod = WebhookActionHttpMethod.POST,
-  headers?: Record<string, string>
-): WebhookAction {
-  return {
-    type: WorkflowActionType.WEBHOOK,
-    url,
-    method,
-    headers
-  }
-}
-
-describe("Workflow Task Generation Integration", () => {
+describe("Workflow task generation integration", () => {
   let processor: WorkflowEventsProcessor
+  let taskService: TaskService
+  let outbox: OutboxRepository
+  let transactionManager: TenantTransactionManager
   let prisma: PrismaClient
   let redisPrefix: string
   let module: TestingModule
+  let tenantEncryption: TenantEncryptionService
+  let queue: QueueService
+  let ready = false
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
     redisPrefix = prepareRedisPrefix()
-
-    try {
-      const moduleBuilder = setupWorkerTestModule([WorkflowEventsProcessor])
-        .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix))
-
-      module = await moduleBuilder.compile()
-    } catch (error) {
-      console.error(error)
-      throw error
-    }
-
-    processor = module.get<WorkflowEventsProcessor>(WorkflowEventsProcessor)
-    prisma = module.get(DatabaseClient).prisma
-
+    module = await setupWorkerTestModule([WorkflowEventsProcessor])
+      .overrideProvider(ConfigProvider)
+      .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb, redisPrefix))
+      // Queue delivery is covered by the queue serialization/worker integration tests. This suite
+      // isolates durable task generation and verifies the rows that the queue will later consume.
+      .overrideProvider(QueueService)
+      .useValue({enqueue: () => TE.right(undefined)})
+      .compile()
+    queue = module.get(QueueService)
+    processor = module.get(WorkflowEventsProcessor)
+    taskService = module.get(TaskService)
+    outbox = module.get<OutboxRepository>(OUTBOX_REPOSITORY_TOKEN)
+    transactionManager = module.get<TenantTransactionManager>(TRANSACTION_MANAGER_TOKEN)
+    tenantEncryption = module.get(TenantEncryptionService)
+    prisma = createFixturePrismaClient(isolatedDb)
     await module.init()
+    ready = true
   }, 30000)
 
   afterAll(async () => {
+    if (!ready) return
     await prisma.$disconnect()
     await module.close()
   })
 
   afterEach(async () => {
+    jest.restoreAllMocks()
+    if (!ready) return
     await cleanDatabase(prisma)
     await cleanRedisByPrefix(redisPrefix)
   })
 
-  it("should be defined", () => {
-    expect(processor).toBeDefined()
+  it("publishes task-ready events only after the task, receipt and outbox commit", async () => {
+    const actions = [emailAction(["committed@example.com"])] as const
+    const workflow = await createWorkflowWithTemplate(prisma, tenantEncryption, actions)
+    const event = statusChangedEvent(
+      workflow.workflowId,
+      workflow.organizationId,
+      WorkflowStatus.EVALUATION_IN_PROGRESS,
+      WorkflowStatus.APPROVED,
+      actions
+    )
+    await appendStatusEvent(transactionManager, outbox, event)
+    const enqueue = jest.spyOn(queue, "enqueue").mockImplementation(readyEvent =>
+      TE.tryCatch(
+        async () => {
+          // An independent connection can see all three facts before enqueue starts.
+          expect(await prisma.durableWork.count({where: {organizationId: event.organizationId}})).toBe(1)
+          expect(
+            await prisma.tenantEventReceipt.count({
+              where: {
+                organizationId: event.organizationId,
+                consumer: "task_generation",
+                eventId: event.eventId
+              }
+            })
+          ).toBe(1)
+          const row = await prisma.tenantOutbox.findUniqueOrThrow({
+            where: {
+              organizationId_eventId: {organizationId: readyEvent.organizationId, eventId: readyEvent.eventId}
+            }
+          })
+          expect(row.publishedAt).toBeNull()
+        },
+        () => "unknown_error" as const
+      )
+    )
+
+    await processor.handleWorkflowStatusChanged(job(event))
+
+    expect(enqueue).toHaveBeenCalledTimes(1)
+    const readyRow = await prisma.tenantOutbox.findFirstOrThrow({
+      where: {
+        organizationId: event.organizationId,
+        eventType: "task.ready"
+      }
+    })
+    expect(readyRow.publishedAt).toBeInstanceOf(Date)
+    await processor.handleWorkflowStatusChanged(job(event))
+    expect(enqueue).toHaveBeenCalledTimes(1)
   })
 
-  describe("handleWorkflowStatusChanged", () => {
-    describe("good cases", () => {
-      it("should create EMAIL and WEBHOOK tasks when workflow is approved", async () => {
-        // Given: A workflow with EMAIL and WEBHOOK actions
-        const {workflowId, actions} = await createWorkflowWithTemplate(prisma, {
-          workflowName: "Test-Workflow-With-Actions",
-          workflowStatus: WorkflowStatus.APPROVED,
-          actions: [
-            createEmailAction(["test@example.com"]),
-            createWebhookAction("https://example.com/webhook", WebhookActionHttpMethod.POST)
-          ]
-        })
+  it("keeps committed tasks and unpublished outbox facts when best-effort enqueue fails", async () => {
+    const actions = [emailAction(["recover@example.com"])] as const
+    const workflow = await createWorkflowWithTemplate(prisma, tenantEncryption, actions)
+    const event = statusChangedEvent(
+      workflow.workflowId,
+      workflow.organizationId,
+      WorkflowStatus.EVALUATION_IN_PROGRESS,
+      WorkflowStatus.APPROVED,
+      actions
+    )
+    await appendStatusEvent(transactionManager, outbox, event)
+    const enqueue = jest.spyOn(queue, "enqueue").mockReturnValue(TE.left("unknown_error"))
 
-        const event: WorkflowStatusChangedEvent = {
-          eventId: uuidv7(),
-          workflowId,
-          oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
-          newStatus: WorkflowStatus.APPROVED,
-          workflowTemplateActions: actions,
-          timestamp: new Date()
+    await expect(processor.handleWorkflowStatusChanged(job(event))).resolves.toBeUndefined()
+
+    expect(enqueue).toHaveBeenCalledTimes(1)
+    expect(await prisma.durableWork.count({where: {organizationId: event.organizationId}})).toBe(1)
+    expect(
+      await prisma.tenantEventReceipt.count({
+        where: {
+          organizationId: event.organizationId,
+          consumer: "task_generation",
+          eventId: event.eventId
         }
-
-        const job = {
-          data: event,
-          attemptsMade: 0,
-          opts: {attempts: 3},
-          id: "job-1"
-        } as Job<WorkflowStatusChangedJobData>
-
-        // When
-        await processor.handleWorkflowStatusChanged(job)
-
-        // Expect: EMAIL task created
-        const emailTasks = await prisma.workflowActionsEmailTask.findMany({where: {workflowId}})
-        expect(emailTasks).toHaveLength(1)
-        expect(emailTasks[0]!.status).toBe("PENDING")
-        expect(emailTasks[0]!.recipients).toEqual(["test@example.com"])
-        expect(emailTasks[0]!.subject).toBe("Workflow Test-Workflow-With-Actions status update")
-        expect(emailTasks[0]!.body).toContain(
-          "The workflow Test-Workflow-With-Actions has transitioned from EVALUATION_IN_PROGRESS to APPROVED"
-        )
-
-        // And: WEBHOOK task created
-        const webhookTasks = await prisma.workflowActionsWebhookTask.findMany({where: {workflowId}})
-        expect(webhookTasks).toHaveLength(1)
-        expect(webhookTasks[0]!.status).toBe("PENDING")
-        expect(webhookTasks[0]!.url).toBe("https://example.com/webhook")
-        expect(webhookTasks[0]!.method).toBe("POST")
       })
+    ).toBe(1)
+    const readyRow = await prisma.tenantOutbox.findFirstOrThrow({
+      where: {
+        organizationId: event.organizationId,
+        eventType: "task.ready"
+      }
+    })
+    expect(readyRow.publishedAt).toBeNull()
+  })
 
-      it("should create multiple EMAIL tasks when multiple EMAIL actions are defined", async () => {
-        // Given: A workflow with multiple EMAIL actions
-        const {workflowId, actions} = await createWorkflowWithTemplate(prisma, {
-          workflowName: "Test-Multiple-Emails",
-          workflowStatus: WorkflowStatus.APPROVED,
-          actions: [
-            createEmailAction(["admin@example.com"]),
-            createEmailAction(["user@example.com", "team@example.com"]),
-            createEmailAction(["ops@example.com"])
-          ]
-        })
-
-        const event: WorkflowStatusChangedEvent = {
-          eventId: uuidv7(),
-          workflowId,
-          oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
-          newStatus: WorkflowStatus.APPROVED,
-          workflowTemplateActions: actions,
-          timestamp: new Date()
-        }
-
-        const job = {
-          data: event,
-          attemptsMade: 0,
-          opts: {attempts: 3},
-          id: "job-2"
-        } as Job<WorkflowStatusChangedJobData>
-
-        // When
-        await processor.handleWorkflowStatusChanged(job)
-
-        // Expect: 3 EMAIL tasks created
-        const emailTasks = await prisma.workflowActionsEmailTask.findMany({
-          where: {workflowId}
-        })
-        expect(emailTasks).toHaveLength(3)
-
-        const allRecipients = emailTasks.map(task => task.recipients)
-
-        // Verify all expected recipient groups are present (order doesn't matter)
-        expect(allRecipients).toContainEqual(["admin@example.com"])
-        expect(allRecipients).toContainEqual(["user@example.com", "team@example.com"])
-        expect(allRecipients).toContainEqual(["ops@example.com"])
-
-        // check subject and body for one task
-        const firstTask = emailTasks[0]!
-        expect(firstTask.subject).toBe("Workflow Test-Multiple-Emails status update")
-        expect(firstTask.body).toContain(
-          "The workflow Test-Multiple-Emails has transitioned from EVALUATION_IN_PROGRESS to APPROVED"
-        )
-      })
-
-      it("should create multiple WEBHOOK tasks with different configurations", async () => {
-        // Given: A workflow with multiple WEBHOOK actions
-        const {workflowId, actions} = await createWorkflowWithTemplate(prisma, {
-          workflowName: "Test-Multiple-Webhooks",
-          workflowStatus: WorkflowStatus.APPROVED,
-          actions: [
-            createWebhookAction("https://api1.example.com/hook", WebhookActionHttpMethod.POST),
-            createWebhookAction("https://api2.example.com/hook", WebhookActionHttpMethod.PUT, {
-              "X-Custom-Header": "value1"
-            }),
-            createWebhookAction("https://api3.example.com/hook", WebhookActionHttpMethod.GET)
-          ]
-        })
-
-        const event: WorkflowStatusChangedEvent = {
-          eventId: uuidv7(),
-          workflowId,
-          oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
-          newStatus: WorkflowStatus.APPROVED,
-          workflowTemplateActions: actions,
-          timestamp: new Date()
-        }
-
-        const job = {
-          data: event,
-          attemptsMade: 0,
-          opts: {attempts: 3},
-          id: "job-3"
-        } as Job<WorkflowStatusChangedJobData>
-
-        // When
-        await processor.handleWorkflowStatusChanged(job)
-
-        // Expect: 3 WEBHOOK tasks created
-        const webhookTasks = await prisma.workflowActionsWebhookTask.findMany({
-          where: {workflowId},
-          orderBy: {url: "asc"}
-        })
-        expect(webhookTasks).toHaveLength(3)
-
-        expect(webhookTasks[0]!.url).toBe("https://api1.example.com/hook")
-        expect(webhookTasks[0]!.method).toBe("POST")
-        expect(webhookTasks[0]!.headers).toBeNull()
-
-        expect(webhookTasks[1]!.url).toBe("https://api2.example.com/hook")
-        expect(webhookTasks[1]!.method).toBe("PUT")
-        const headers1 = webhookTasks[1]!.headers as Record<string, string>
-        expect(headers1["X-Custom-Header"]).toBe("value1")
-
-        expect(webhookTasks[2]!.url).toBe("https://api3.example.com/hook")
-        expect(webhookTasks[2]!.method).toBe("GET")
-      })
-
-      it("should be idempotent (processing the same event twice should not create duplicate tasks)", async () => {
-        // Given: A workflow definition
-        const {workflowId, actions} = await createWorkflowWithTemplate(prisma, {
-          workflowName: "Test-Idempotency",
-          workflowStatus: WorkflowStatus.APPROVED,
-          actions: [createEmailAction(["idempotency@example.com"])]
-        })
-
-        const event: WorkflowStatusChangedEvent = {
-          eventId: uuidv7(),
-          workflowId,
-          oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
-          newStatus: WorkflowStatus.APPROVED,
-          workflowTemplateActions: actions,
-          timestamp: new Date()
-        }
-
-        const job = {
-          data: event,
-          attemptsMade: 0,
-          opts: {attempts: 3},
-          id: "job-idempotency"
-        } as Job<WorkflowStatusChangedJobData>
-
-        // When: Processed once
-        await processor.handleWorkflowStatusChanged(job)
-
-        // Then: Task created
-        let emailTasks = await prisma.workflowActionsEmailTask.findMany({where: {workflowId}})
-        expect(emailTasks).toHaveLength(1)
-        const firstTaskId = emailTasks[0]!.id
-
-        // When: Processed a second time
-        await processor.handleWorkflowStatusChanged(job)
-
-        // Then: Still only one task, same ID
-        emailTasks = await prisma.workflowActionsEmailTask.findMany({where: {workflowId}})
-        expect(emailTasks).toHaveLength(1)
-        expect(emailTasks[0]!.id).toBe(firstTaskId)
-      })
-
-      it("should recover from partial failure (create missing tasks)", async () => {
-        // Given: A workflow with 2 actions
-        const {workflowId, actions} = await createWorkflowWithTemplate(prisma, {
-          workflowName: "Test-Partial-Recovery",
-          workflowStatus: WorkflowStatus.APPROVED,
-          actions: [createEmailAction(["recovery@example.com"]), createWebhookAction("https://recovery.example.com")]
-        })
-
-        const event: WorkflowStatusChangedEvent = {
-          eventId: uuidv7(),
-          workflowId,
-          oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
-          newStatus: WorkflowStatus.APPROVED,
-          workflowTemplateActions: actions,
-          timestamp: new Date()
-        }
-
-        // And: One task already exists (simulating partial success)
-        // We need to generate the deterministic ID to simulate the exact task that would be created
-        // Since we can't easily import uuidv5 and the namespace in the test without exporting them or duplicating constants,
-        // we will let the processor run once to generate valid IDs, then delete one, then run again.
-
-        // Step 1: Run normal
-        const job = {
-          data: event,
-          attemptsMade: 0,
-          opts: {attempts: 3},
-          id: "job-recovery"
-        } as Job<WorkflowStatusChangedJobData>
-
-        await processor.handleWorkflowStatusChanged(job)
-
-        // Verify both exist
-        expect(await prisma.workflowActionsEmailTask.count({where: {workflowId}})).toBe(1)
-        expect(await prisma.workflowActionsWebhookTask.count({where: {workflowId}})).toBe(1)
-
-        // Step 2: Delete one task (simulating it didn't exist or was lost)
-        await prisma.workflowActionsWebhookTask.deleteMany({where: {workflowId}})
-        expect(await prisma.workflowActionsWebhookTask.count({where: {workflowId}})).toBe(0)
-
-        // Step 3: Run again
-        await processor.handleWorkflowStatusChanged(job)
-
-        // Expect: Both exist again
-        expect(await prisma.workflowActionsEmailTask.count({where: {workflowId}})).toBe(1)
-        expect(await prisma.workflowActionsWebhookTask.count({where: {workflowId}})).toBe(1)
-      })
-
-      it("should create tasks when workflow is rejected", async () => {
-        // Given: A workflow transitioning to REJECTED status
-        const {workflowId, actions} = await createWorkflowWithTemplate(prisma, {
-          workflowName: "Test-Rejected-Workflow",
-          workflowStatus: WorkflowStatus.REJECTED,
-          actions: [createEmailAction(["rejection@example.com"])]
-        })
-
-        const event: WorkflowStatusChangedEvent = {
-          eventId: uuidv7(),
-          workflowId,
-          oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
-          newStatus: WorkflowStatus.REJECTED,
-          workflowTemplateActions: actions,
-          timestamp: new Date()
-        }
-
-        const job = {
-          data: event,
-          attemptsMade: 0,
-          opts: {attempts: 3},
-          id: "job-4"
-        } as Job<WorkflowStatusChangedJobData>
-
-        // When
-        await processor.handleWorkflowStatusChanged(job)
-
-        // Expect: EMAIL task created
-        const emailTasks = await prisma.workflowActionsEmailTask.findMany({where: {workflowId}})
-        expect(emailTasks).toHaveLength(1)
-      })
-
-      it("should not create tasks when workflow status is EVALUATION_IN_PROGRESS", async () => {
-        // Given: A workflow in EVALUATION_IN_PROGRESS status
-        const {workflowId, actions} = await createWorkflowWithTemplate(prisma, {
-          workflowName: "Test-In-Progress",
-          workflowStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
-          actions: [createEmailAction(["test@example.com"])]
-        })
-
-        const event: WorkflowStatusChangedEvent = {
-          eventId: uuidv7(),
-          workflowId,
-          oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
-          newStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
-          workflowTemplateActions: actions,
-          timestamp: new Date()
-        }
-
-        const job = {
-          data: event,
-          attemptsMade: 0,
-          opts: {attempts: 3},
-          id: "job-5"
-        } as Job<WorkflowStatusChangedJobData>
-
-        // When
-        await processor.handleWorkflowStatusChanged(job)
-
-        // Expect: No tasks created
-        const emailTasks = await prisma.workflowActionsEmailTask.findMany({where: {workflowId}})
-        const webhookTasks = await prisma.workflowActionsWebhookTask.findMany({where: {workflowId}})
-        expect(emailTasks).toHaveLength(0)
-        expect(webhookTasks).toHaveLength(0)
-      })
-
-      it("should not create tasks when template has no actions", async () => {
-        // Given: A workflow with a template that has no actions
-        const {workflowId, actions} = await createWorkflowWithTemplate(prisma, {
-          workflowName: "Test-No-Actions",
-          workflowStatus: WorkflowStatus.APPROVED,
-          actions: []
-        })
-
-        const event: WorkflowStatusChangedEvent = {
-          eventId: uuidv7(),
-          workflowId,
-          oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
-          newStatus: WorkflowStatus.APPROVED,
-          workflowTemplateActions: actions,
-          timestamp: new Date()
-        }
-
-        const job = {
-          data: event,
-          attemptsMade: 0,
-          opts: {attempts: 3},
-          id: "job-6"
-        } as Job<WorkflowStatusChangedJobData>
-
-        // When
-        await processor.handleWorkflowStatusChanged(job)
-
-        // Expect: No tasks created
-        const emailTasks = await prisma.workflowActionsEmailTask.findMany({where: {workflowId}})
-        const webhookTasks = await prisma.workflowActionsWebhookTask.findMany({where: {workflowId}})
-        expect(emailTasks).toHaveLength(0)
-        expect(webhookTasks).toHaveLength(0)
-      })
-
-      it("should use snapshot actions from event instead of updated template actions in DB", async () => {
-        // Given: A workflow with initial actions
-        const initialActions = [
-          createEmailAction(["initial@example.com"]),
-          createWebhookAction("https://initial.example.com/webhook")
-        ]
-        const {workflowId, templateId} = await createWorkflowWithTemplate(prisma, {
-          workflowName: "Test-Snapshot-Actions",
-          workflowStatus: WorkflowStatus.APPROVED,
-          actions: initialActions
-        })
-
-        // And: The template has been updated with different actions in the DB
-        const updatedActions = [
-          createEmailAction(["updated@example.com", "another@example.com"]),
-          createWebhookAction("https://updated.example.com/webhook", WebhookActionHttpMethod.PUT)
-        ]
-        await prisma.workflowTemplate.update({
-          where: {id: templateId},
-          data: {
-            actions: updatedActions
-          }
-        })
-
-        // And: An event with the snapshot of the initial actions
-        const event: WorkflowStatusChangedEvent = {
-          eventId: uuidv7(),
-          workflowId,
-          oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
-          newStatus: WorkflowStatus.APPROVED,
-          workflowTemplateActions: initialActions,
-          timestamp: new Date()
-        }
-
-        const job = {
-          data: event,
-          attemptsMade: 0,
-          opts: {attempts: 3},
-          id: "job-snapshot"
-        } as Job<WorkflowStatusChangedJobData>
-
-        // When: Processing the event
-        await processor.handleWorkflowStatusChanged(job)
-
-        // Expect: Tasks created using the snapshot actions (initial), not the updated template actions
-        const emailTasks = await prisma.workflowActionsEmailTask.findMany({where: {workflowId}})
-        expect(emailTasks).toHaveLength(1)
-        expect(emailTasks[0]!.recipients).toEqual(["initial@example.com"])
-
-        const webhookTasks = await prisma.workflowActionsWebhookTask.findMany({where: {workflowId}})
-        expect(webhookTasks).toHaveLength(1)
-        expect(webhookTasks[0]!.url).toBe("https://initial.example.com/webhook")
-        expect(webhookTasks[0]!.method).toBe("POST")
-      })
+  it("creates encrypted tenant-bound tasks with the event action indexes", async () => {
+    const actions = [
+      emailAction(["first@example.com"]),
+      webhookAction("https://first.example.com/webhook"),
+      emailAction(["second@example.com", "team@example.com"]),
+      webhookAction("https://second.example.com/webhook", WebhookActionHttpMethod.PUT)
+    ] as const
+    const workflow = await createWorkflowWithTemplate(prisma, tenantEncryption, actions)
+    const event = statusChangedEvent(
+      workflow.workflowId,
+      workflow.organizationId,
+      WorkflowStatus.EVALUATION_IN_PROGRESS,
+      WorkflowStatus.APPROVED,
+      actions
+    )
+    const changedTemplateActions = unwrapRight(
+      await tenantEncryption.encrypt(
+        {
+          organizationId: toOrganizationId(workflow.organizationId),
+          resourceType: "workflow_template",
+          resourceId: workflow.templateId,
+          field: "actions",
+          formatVersion: 1
+        },
+        JSON.stringify([])
+      )()
+    )
+    await prisma.workflowTemplate.update({
+      where: {id: workflow.templateId},
+      data: {encActions: changedTemplateActions}
     })
 
-    describe("bad cases", () => {
-      it("should throw an error if workflow does not exist", async () => {
-        // Given: A job with a non-existent workflow ID
-        const job = {
-          data: {
-            eventId: uuidv7(),
-            workflowId: uuidv7(),
-            oldStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
-            newStatus: WorkflowStatus.APPROVED,
-            workflowTemplateActions: [],
-            timestamp: new Date()
-          },
-          attemptsMade: 0,
-          opts: {attempts: 3},
-          id: "job-error-1"
-        } as unknown as Job<WorkflowStatusChangedJobData>
+    await appendStatusEvent(transactionManager, outbox, event)
+    await processor.handleWorkflowStatusChanged(job(event))
 
-        // When/Expect: The processor should throw an error
-        await expect(processor.handleWorkflowStatusChanged(job)).rejects.toThrow(
-          "Failed to process workflow status change"
-        )
-      })
+    const emailRows = await prisma.workflowActionsEmailTask.findMany({
+      where: {workflowId: workflow.workflowId},
+      orderBy: {actionIndex: "asc"}
     })
+    const webhookRows = await prisma.workflowActionsWebhookTask.findMany({
+      where: {workflowId: workflow.workflowId},
+      orderBy: {actionIndex: "asc"}
+    })
+    expect(emailRows).toHaveLength(2)
+    expect(webhookRows).toHaveLength(2)
+    expect(emailRows[0]!.organizationId).toBe(workflow.organizationId)
+    expect(emailRows[0]!.actionIndex).toBe(0)
+    expect(emailRows[1]!.actionIndex).toBe(2)
+    expect(webhookRows[0]!.actionIndex).toBe(1)
+    expect(webhookRows[1]!.actionIndex).toBe(3)
+    expect(emailRows[0]!.state).toBe("ready")
+    expect(emailRows[0]!.encPayload).toBeTruthy()
+    expect(webhookRows[0]!.encPayload).toBeTruthy()
+
+    const emailTask = unwrapRight(
+      await taskService.getEmailTask({organizationId: toOrganizationId(workflow.organizationId)}, emailRows[0]!.id)()
+    )
+    const webhookTask = unwrapRight(
+      await taskService.getWebhookTask(
+        {organizationId: toOrganizationId(workflow.organizationId)},
+        webhookRows[0]!.id
+      )()
+    )
+    expect(emailTask.recipients).toEqual(["first@example.com"])
+    expect(webhookTask.url).toBe("https://first.example.com/webhook")
+  })
+
+  it("does not create duplicate tasks when the same event is replayed", async () => {
+    const actions = [emailAction(["idempotent@example.com"])] as const
+    const workflow = await createWorkflowWithTemplate(prisma, tenantEncryption, actions)
+    const event = statusChangedEvent(
+      workflow.workflowId,
+      workflow.organizationId,
+      WorkflowStatus.EVALUATION_IN_PROGRESS,
+      WorkflowStatus.APPROVED,
+      actions
+    )
+    const eventJob = job(event)
+
+    await appendStatusEvent(transactionManager, outbox, event)
+    await Promise.all([
+      processor.handleWorkflowStatusChanged(eventJob),
+      processor.handleWorkflowStatusChanged(eventJob)
+    ])
+
+    const rows = await prisma.workflowActionsEmailTask.findMany({where: {workflowId: workflow.workflowId}})
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.eventId).toBe(event.eventId)
+    expect(rows[0]!.actionIndex).toBe(0)
+    expect(
+      await prisma.tenantEventReceipt.count({
+        where: {
+          organizationId: event.organizationId,
+          consumer: "task_generation",
+          eventId: event.eventId
+        }
+      })
+    ).toBe(1)
+    expect(
+      await prisma.tenantOutbox.count({
+        where: {
+          organizationId: event.organizationId,
+          eventType: "task.ready",
+          resourceId: rows[0]!.id
+        }
+      })
+    ).toBe(1)
+  })
+
+  it("rolls back tasks and the event receipt when any task-ready event conflicts", async () => {
+    const enqueue = jest.spyOn(queue, "enqueue")
+    const actions = [emailAction(["atomic@example.com"])] as const
+    const workflow = await createWorkflowWithTemplate(prisma, tenantEncryption, actions)
+    const event = statusChangedEvent(
+      workflow.workflowId,
+      workflow.organizationId,
+      WorkflowStatus.EVALUATION_IN_PROGRESS,
+      WorkflowStatus.APPROVED,
+      actions
+    )
+    await appendStatusEvent(transactionManager, outbox, event)
+
+    const taskId = uuidv5(`${event.eventId}-${WorkflowActionType.EMAIL}-0`, "95650ca4-d361-11f0-8d0d-325096b39f47")
+    const readyEventId = uuidv5(`${event.eventId}:task.ready:${taskId}`, "95650ca4-d361-11f0-8d0d-325096b39f47")
+    unwrapRight(
+      await appendTenantEvent(transactionManager, outbox, {
+        schemaVersion: 1,
+        eventId: readyEventId,
+        organizationId: event.organizationId,
+        type: "workflow.recalculate",
+        workflowId: event.workflowId
+      })()
+    )
+
+    await expect(processor.handleWorkflowStatusChanged(job(event))).rejects.toThrow(
+      "Failed to process workflow status change"
+    )
+    expect(enqueue).not.toHaveBeenCalled()
+    expect(await prisma.workflowActionsEmailTask.count({where: {workflowId: workflow.workflowId}})).toBe(0)
+    const receiptBeforeRetry = await prisma.$queryRaw<Array<{readonly count: bigint}>>`
+      SELECT COUNT(*) AS count FROM tenant_event_receipts
+      WHERE organization_id = ${event.organizationId}::uuid AND consumer = 'task_generation'
+        AND event_id = ${event.eventId}::uuid
+    `
+    expect(receiptBeforeRetry[0]?.count).toBe(0n)
+
+    await prisma.tenantOutbox.deleteMany({where: {organizationId: event.organizationId, eventId: readyEventId}})
+    await processor.handleWorkflowStatusChanged(job(event))
+    expect(await prisma.workflowActionsEmailTask.count({where: {workflowId: workflow.workflowId}})).toBe(1)
+    const receiptAfterRetry = await prisma.$queryRaw<Array<{readonly count: bigint}>>`
+      SELECT COUNT(*) AS count FROM tenant_event_receipts
+      WHERE organization_id = ${event.organizationId}::uuid AND consumer = 'task_generation'
+        AND event_id = ${event.eventId}::uuid
+    `
+    expect(receiptAfterRetry[0]?.count).toBe(1n)
+  })
+
+  it("does not generate tasks for an evaluation-in-progress result", async () => {
+    const enqueue = jest.spyOn(queue, "enqueue")
+    const workflow = await createWorkflowWithTemplate(
+      prisma,
+      tenantEncryption,
+      [emailAction(["ignored@example.com"])],
+      WorkflowStatus.EVALUATION_IN_PROGRESS
+    )
+    const event = statusChangedEvent(
+      workflow.workflowId,
+      workflow.organizationId,
+      WorkflowStatus.EVALUATION_IN_PROGRESS,
+      WorkflowStatus.EVALUATION_IN_PROGRESS,
+      [emailAction(["ignored@example.com"])]
+    )
+
+    await appendStatusEvent(transactionManager, outbox, event)
+    await processor.handleWorkflowStatusChanged(job(event))
+
+    expect(enqueue).not.toHaveBeenCalled()
+    expect(await prisma.workflowActionsEmailTask.count({where: {workflowId: workflow.workflowId}})).toBe(0)
+  })
+
+  it("rejects a status event without valid status-event attribution", async () => {
+    const invalidEvent = {
+      eventId: uuidv7(),
+      workflowId: uuidv7(),
+      organizationId: randomOrgId(),
+      previousStatus: WorkflowStatus.EVALUATION_IN_PROGRESS,
+      status: WorkflowStatus.APPROVED,
+      occurredAt: new Date().toISOString()
+    }
+    await expect(processor.handleWorkflowStatusChanged({data: invalidEvent})).rejects.toThrow(
+      "Missing or invalid actor"
+    )
   })
 })
+
+async function appendStatusEvent(
+  transactionManager: TenantTransactionManager,
+  outbox: OutboxRepository,
+  event: WorkflowTaskGenerationEvent
+): Promise<void> {
+  unwrapRight(
+    await appendTenantEvent(transactionManager, outbox, {
+      schemaVersion: 1,
+      eventId: event.eventId,
+      organizationId: event.organizationId,
+      type: "workflow.status_changed",
+      workflowId: event.workflowId,
+      workflowOcc: 0n,
+      previousStatus: event.previousStatus,
+      status: event.newStatus,
+      actor: event.actor,
+      occurredAt: event.occurredAt
+    })()
+  )
+}

@@ -136,14 +136,22 @@ describe("Resources Resolve API", () => {
             resourceType: "space",
             permissions: ["read"],
             scopeType: "space",
-            scope: {type: "space", organizationId: toOrganizationId(spaceAllowed.organizationId), spaceId: spaceAllowed.id}
+            scope: {
+              type: "space",
+              organizationId: toOrganizationId(spaceAllowed.organizationId),
+              spaceId: spaceAllowed.id
+            }
           },
           {
             name: "GroupReader",
             resourceType: "group",
             permissions: ["read"],
             scopeType: "group",
-            scope: {type: "group", organizationId: toOrganizationId(groupAllowed.organizationId), groupId: groupAllowed.id}
+            scope: {
+              type: "group",
+              organizationId: toOrganizationId(groupAllowed.organizationId),
+              groupId: groupAllowed.id
+            }
           }
         ]
       })

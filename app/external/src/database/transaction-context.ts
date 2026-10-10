@@ -10,16 +10,17 @@ import {Prisma} from "@prisma/client"
  * @example
  * ```typescript
  * // When starting a transaction
- * await txManager.execute(async () => {
- *   // Repositories can access the transaction context like this:
- *   const client = transactionContext.getStore()
- *   await client.user.create(...)
- * })
+ * txManager.execute({organizationId}, () => TE.tryCatch(
+ *   async () => transactionContext.getStore()?.tx.user.create(...),
+ *   () => "storage_unavailable"
+ * ))
  * ```
  */
 export type TransactionContextData = {
   tx: Prisma.TransactionClient
+  organizationId: string
   isolationLevel: Prisma.TransactionIsolationLevel
+  runtimeRole: "approvio_tenant_runtime" | "approvio_worker_runtime"
 }
 
 export const transactionContext = new AsyncLocalStorage<TransactionContextData>()

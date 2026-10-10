@@ -1,357 +1,186 @@
-import {User} from "@domain"
-import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "@external/database/errors"
 import {Injectable, Logger} from "@nestjs/common"
-import {Prisma, User as PrismaUser, OrganizationAdmin as PrismaOrganizationAdmin} from "@prisma/client"
+import {TenantContext, User, UserFactory, UserSummary, Versioned} from "@domain"
 import {
+  ListUsersRepoRequest,
+  PaginatedUsersList,
   UserCreateError,
   UserGetError,
-  UserRepository,
   UserListError,
-  PaginatedUsersList,
-  ListUsersRepoRequest,
-  UserUpdateError,
-  UserIdentityCreate
+  UserRepository,
+  UserUpdateError
 } from "@services"
-import {Versioned} from "@domain"
-import * as TE from "fp-ts/TaskEither"
-import {TaskEither} from "fp-ts/TaskEither"
-import {pipe} from "fp-ts/function"
-import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
-import {DatabaseClient} from "./database-client"
-import {mapRolesToPrisma, mapToDomainUserSummary, mapToDomainVersionedUser, mapUserToDomain} from "./shared"
-import {areAllRights, chainNullableToLeft} from "./utils"
-import {isLeft} from "fp-ts/Either"
+import {Prisma, User as PrismaUser} from "@prisma/client"
 import * as E from "fp-ts/Either"
-import {v7 as uuidv7} from "uuid"
-
-interface Identifier {
-  identifier: string
-  type: "id" | "email"
-}
-
-export type UserSummaryRepo = Pick<PrismaUser, "id" | "displayName" | "email">
-export type PrismaUserWithOrgAdmin = PrismaUser & {
-  organizationAdmins: PrismaOrganizationAdmin | null
-}
+import * as TE from "fp-ts/TaskEither"
+import {pipe} from "fp-ts/function"
+import {UserTenantClient} from "./tenant-database-clients"
+import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "./errors"
+import {mapToDomainVersionedUser} from "./shared"
+import {chainNullableToLeft} from "./utils"
 
 @Injectable()
 export class UserDbRepository implements UserRepository {
-  constructor(private readonly dbClient: DatabaseClient) {}
+  constructor(private readonly dbClient: UserTenantClient) {}
 
-  createUser(user: User): TaskEither<UserCreateError, User> {
-    return pipe(user, TE.right, TE.chainW(this.persistObjectTask()), TE.chainEitherKW(mapUserToDomain))
-  }
-
-  createUserWithOrgAdmin(user: User): TaskEither<UserCreateError, User> {
-    return pipe(user, TE.right, TE.chainW(this.persistUserWithOrgAdminTask()), TE.chainEitherKW(mapUserToDomain))
-  }
-
-  createUserWithIdentity(user: User, identity: UserIdentityCreate): TaskEither<UserCreateError, User> {
-    return pipe(
-      user,
-      TE.right,
-      TE.chainW(this.persistUserWithIdentityTask(identity)),
-      TE.chainEitherKW(mapUserToDomain)
-    )
-  }
-
-  createUserWithOrgAdminAndIdentity(user: User, identity: UserIdentityCreate): TaskEither<UserCreateError, User> {
-    return pipe(
-      user,
-      TE.right,
-      TE.chainW(this.persistUserWithOrgAdminAndIdentityTask(identity)),
-      TE.chainEitherKW(mapUserToDomain)
-    )
-  }
-
-  getUserById(userId: string): TaskEither<UserGetError, Versioned<User>> {
-    const identifier: Identifier = {type: "id", identifier: userId}
-    return this.getUser(identifier)
-  }
-
-  getUserByEmail(email: string): TaskEither<UserGetError, Versioned<User>> {
-    const identifier: Identifier = {type: "email", identifier: email}
-    return this.getUser(identifier)
-  }
-
-  listUsers(request: ListUsersRepoRequest): TaskEither<UserListError, PaginatedUsersList> {
-    return pipe(
-      request,
-      TE.right,
-      TE.chainW(this.getObjectsTask()),
-      TE.chainEitherKW(([users, total]) => {
-        const domainUsers = users.map(user => mapToDomainUserSummary(user))
-
-        if (areAllRights(domainUsers)) {
-          const mappedToDomain = {
-            users: domainUsers.map(e => e.right),
-            total,
-            page: request.page,
-            limit: request.limit
-          }
-          return E.right(mappedToDomain)
-        }
-
-        const lefts = domainUsers.filter(e => isLeft(e))
-        const firstLeft = lefts[0]
-        if (firstLeft === undefined) throw new Error("Unexpected error: No rights and no lefts")
-        return firstLeft
-      })
-    )
-  }
-
-  hasAnyOrganizationAdmins(): TaskEither<"unknown_error", boolean> {
-    return TE.tryCatchK(
-      async () => {
-        const count = await this.dbClient.cx.organizationAdmin.count()
-        return count > 0
-      },
-      error => {
-        Logger.error("Error while checking for organization admins", error)
-        return "unknown_error" as const
-      }
-    )()
-  }
-
-  updateUser(user: Versioned<User>): TaskEither<UserUpdateError, User> {
-    return TE.tryCatchK(
-      async (): Promise<User> => {
-        const updatedUser = await this.dbClient.cx.user.update({
-          where: {id: user.id, occ: user.occ},
-          data: {
-            roles: mapRolesToPrisma(user.roles),
-            occ: {
-              increment: 1
+  createUser(context: TenantContext, user: User): TE.TaskEither<UserCreateError, User> {
+    if (user.organizationId !== context.organizationId) return TE.left("organization_mismatch")
+    return TE.tryCatch(
+      async () =>
+        mapUser(
+          await this.dbClient.cx.user.create({
+            data: {
+              id: user.id,
+              organizationId: context.organizationId,
+              platformAccountId: user.accountId,
+              displayName: user.displayName,
+              status: user.status,
+              orgRole: user.orgRole,
+              roles: rolesToJson(user.roles),
+              createdAt: user.createdAt,
+              updatedAt: user.updatedAt,
+              occ: 0n
             }
-          },
-          include: {
-            organizationAdmins: true
-          }
-        })
-
-        const mappedUser = mapUserToDomain(updatedUser)
-        if (E.isLeft(mappedUser)) throw new Error("Failed to map updated user to domain")
-
-        return mappedUser.right
-      },
-      error => {
-        // Prisma uses P2025 (RecordNotFound) for missing rows in update, which triggers when OCC check fails
-        if (isPrismaRecordNotFoundError(error, Prisma.ModelName.User)) {
-          Logger.warn("Optimistic concurrency control conflict during user role update", error)
-          return "concurrent_modification_error" as const
-        }
-
-        Logger.error("Error while updating user roles", error)
-        return "unknown_error" as const
-      }
-    )()
+          })
+        ),
+      error => this.mapCreateError(error)
+    )
   }
 
-  private getUser(identifier: Identifier): TaskEither<UserGetError, Versioned<User>> {
+  getUserById(context: TenantContext, userId: string): TE.TaskEither<UserGetError, Versioned<User>> {
     return pipe(
-      identifier,
-      TE.right,
-      TE.chainW(this.getObjectTask()),
+      TE.tryCatch(
+        () =>
+          this.dbClient.cx.user.findUnique({
+            where: {organizationId_id: {organizationId: context.organizationId, id: userId}}
+          }),
+        error => this.mapGetError(error)
+      ),
       chainNullableToLeft("user_not_found" as const),
       TE.chainEitherKW(mapToDomainVersionedUser)
     )
   }
 
-  private createUserInDb(dbClient: Prisma.TransactionClient, user: User): Promise<PrismaUserWithOrgAdmin> {
-    return dbClient.user.create({
-      data: {
-        id: user.id,
-        displayName: user.displayName,
-        email: user.email,
-        createdAt: user.createdAt,
-        occ: POSTGRES_BIGINT_LOWER_BOUND
+  listUsers(context: TenantContext, params: ListUsersRepoRequest): TE.TaskEither<UserListError, PaginatedUsersList> {
+    if (params.page < 1) return TE.left("invalid_page_number")
+    if (params.limit < 1) return TE.left("invalid_limit_number")
+    if (params.search && params.search.length > 255) return TE.left("search_too_long")
+    return TE.tryCatch(
+      async () => {
+        const where: Prisma.UserWhereInput = {
+          organizationId: context.organizationId,
+          ...(params.search
+            ? {
+                OR: [
+                  {displayName: {contains: params.search, mode: "insensitive"}},
+                  {platformAccounts: {profileEmail: {equals: params.search, mode: "insensitive"}}}
+                ]
+              }
+            : {})
+        }
+        const [records, total] = await Promise.all([
+          this.dbClient.cx.user.findMany({
+            where,
+            orderBy: [{displayName: "asc"}, {id: "asc"}],
+            skip: (params.page - 1) * params.limit,
+            take: params.limit
+          }),
+          this.dbClient.cx.user.count({where})
+        ])
+        return {users: records.map(mapSummary), page: params.page, limit: params.limit, total}
       },
-      include: {
-        organizationAdmins: true
-      }
-    })
+      error => this.mapListError(error)
+    )
   }
 
-  private persistObjectTask(): (user: User) => TaskEither<UserCreateError, PrismaUserWithOrgAdmin> {
-    return user =>
-      TE.tryCatchK(
-        () => this.createUserInDb(this.dbClient.cx, user),
-        error => {
-          if (isPrismaUniqueConstraintError(error, ["email"])) return "user_already_exists"
-          if (isPrismaUniqueConstraintError(error, ["id"])) return "user_already_exists"
-
-          Logger.error("Error while creating user. Unknown error", error)
-          return "unknown_error"
-        }
-      )()
-  }
-
-  private persistUserWithOrgAdminTask(): (user: User) => TaskEither<UserCreateError, PrismaUserWithOrgAdmin> {
-    return user =>
-      TE.tryCatchK(
-        () =>
-          this.dbClient.transactional(async tx => {
-            const createdUser = await this.createUserInDb(tx, user)
-
-            const orgAdmin = await tx.organizationAdmin.create({
-              data: {
-                id: uuidv7(),
-                email: user.email,
-                createdAt: new Date()
-              }
-            })
-
-            return {
-              ...createdUser,
-              organizationAdmins: orgAdmin
+  updateUser(context: TenantContext, user: Versioned<User>): TE.TaskEither<UserUpdateError, Versioned<User>> {
+    if (user.organizationId !== context.organizationId) return TE.left("organization_mismatch")
+    return TE.tryCatch(
+      async () => {
+        try {
+          const updated = await this.dbClient.cx.user.update({
+            where: {id: user.id, organizationId: context.organizationId, occ: user.occ},
+            data: {
+              displayName: user.displayName,
+              status: user.status,
+              orgRole: user.orgRole,
+              roles: rolesToJson(user.roles),
+              updatedAt: user.updatedAt,
+              occ: {increment: 1}
             }
-          }),
-        error => {
-          if (isPrismaUniqueConstraintError(error, ["email"])) return "user_already_exists"
-
-          Logger.error("Error while creating user with organization admin. Unknown error", error)
-          return "unknown_error"
-        }
-      )()
-  }
-
-  private persistUserWithIdentityTask(
-    identity: UserIdentityCreate
-  ): (user: User) => TaskEither<UserCreateError, PrismaUserWithOrgAdmin> {
-    return user =>
-      TE.tryCatchK(
-        () =>
-          this.dbClient.transactional(async tx => {
-            const createdUser = await this.createUserInDb(tx, user)
-
-            await tx.userIdentity.create({
-              data: {
-                id: uuidv7(),
-                userId: createdUser.id,
-                providerId: identity.providerId,
-                subjectId: identity.subjectId,
-                email: identity.email
-              }
-            })
-
-            return createdUser
-          }),
-        error => {
-          if (isPrismaUniqueConstraintError(error, ["email"])) return "user_already_exists"
-          if (isPrismaUniqueConstraintError(error, ["id"])) return "user_already_exists"
-          if (isPrismaUniqueConstraintError(error, ["provider_id", "subject_id"])) return "user_already_exists"
-
-          Logger.error("Error while creating user with identity. Unknown error", error)
-          return "unknown_error"
-        }
-      )()
-  }
-
-  private persistUserWithOrgAdminAndIdentityTask(
-    identity: UserIdentityCreate
-  ): (user: User) => TaskEither<UserCreateError, PrismaUserWithOrgAdmin> {
-    return user =>
-      TE.tryCatchK(
-        () =>
-          this.dbClient.transactional(async tx => {
-            const createdUser = await this.createUserInDb(tx, user)
-
-            const orgAdmin = await tx.organizationAdmin.create({
-              data: {
-                id: uuidv7(),
-                email: user.email,
-                createdAt: new Date()
-              }
-            })
-
-            await tx.userIdentity.create({
-              data: {
-                id: uuidv7(),
-                userId: createdUser.id,
-                providerId: identity.providerId,
-                subjectId: identity.subjectId,
-                email: identity.email
-              }
-            })
-
-            return {
-              ...createdUser,
-              organizationAdmins: orgAdmin
-            }
-          }),
-        error => {
-          if (isPrismaUniqueConstraintError(error, ["email"])) return "user_already_exists"
-          if (isPrismaUniqueConstraintError(error, ["id"])) return "user_already_exists"
-          if (isPrismaUniqueConstraintError(error, ["provider_id", "subject_id"])) return "user_already_exists"
-
-          Logger.error("Error while creating user with organization admin and identity. Unknown error", error)
-          return "unknown_error"
-        }
-      )()
-  }
-
-  private getObjectTask(): (identifier: Identifier) => TaskEither<UserGetError, PrismaUserWithOrgAdmin | null> {
-    // Wrap in a lambda to preserve the "this" context
-    return identifier =>
-      TE.tryCatchK(
-        () =>
-          this.dbClient.cx.user.findUnique({
-            where: {
-              id: identifier.type === "id" ? identifier.identifier : undefined,
-              email: identifier.type === "email" ? identifier.identifier : undefined
-            },
-            include: {
-              organizationAdmins: true
-            }
-          }),
-        error => {
-          Logger.error("Error while retrieving user. Unknown error", error)
-          return "unknown_error" as const
-        }
-      )()
-  }
-
-  private getObjectsTask(): (request: ListUsersRepoRequest) => TaskEither<UserListError, [UserSummaryRepo[], number]> {
-    return request =>
-      TE.tryCatchK(
-        async () => {
-          const {search, page, limit} = request
-          const skip = (page - 1) * limit
-
-          const whereClause: Prisma.UserWhereInput = this.buildWhereCloseForListingUsers(search)
-
-          const data = this.dbClient.cx.user.findMany({
-            take: limit,
-            skip,
-            orderBy: {
-              createdAt: "asc"
-            },
-            select: {
-              id: true,
-              displayName: true,
-              email: true
-            },
-            where: whereClause
           })
-          const stats = this.dbClient.cx.user.count({where: whereClause})
-
-          const [resolvedData, resolvedStats] = await Promise.all([data, stats])
-          return [resolvedData, resolvedStats] as [UserSummaryRepo[], number]
-        },
-        error => {
-          Logger.error("Error while listing users.", error)
-          return "unknown_error" as const
+          return {...mapUser(updated), occ: updated.occ}
+        } catch (error) {
+          if (isPrismaRecordNotFoundError(error, Prisma.ModelName.User)) {
+            const exists = await this.dbClient.cx.user.findUnique({
+              where: {organizationId_id: {organizationId: context.organizationId, id: user.id}}
+            })
+            if (!exists) throw new UserNotFoundError()
+            throw new UserConflictError()
+          }
+          throw error
         }
-      )()
+      },
+      error => this.mapUpdateError(error)
+    )
   }
 
-  private buildWhereCloseForListingUsers(search?: string): Prisma.UserWhereInput {
-    const whereClause: Prisma.UserWhereInput = search
-      ? {
-          OR: [{displayName: {contains: search, mode: "insensitive"}}, {email: {contains: search, mode: "insensitive"}}]
-        }
-      : {}
-
-    return whereClause
+  private mapCreateError(error: unknown): UserCreateError {
+    if (isPrismaUniqueConstraintError(error, ["organization_id", "platform_account_id"])) return "user_already_exists"
+    Logger.error("User repository create failed", error instanceof Error ? error.name : "non_error")
+    return "unknown_error"
   }
+
+  private mapGetError(error: unknown): UserGetError {
+    Logger.error("User repository get failed", error instanceof Error ? error.name : "non_error")
+    return "unknown_error"
+  }
+
+  private mapListError(error: unknown): UserListError {
+    Logger.error("User repository list failed", error instanceof Error ? error.name : "non_error")
+    return "unknown_error"
+  }
+
+  private mapUpdateError(error: unknown): UserUpdateError {
+    if (error instanceof UserNotFoundError) return "user_not_found"
+    if (error instanceof UserConflictError) return "concurrent_modification_error"
+    Logger.error("User repository update failed", error instanceof Error ? error.name : "non_error")
+    return "unknown_error"
+  }
+}
+
+function mapUser(record: PrismaUser): User {
+  const parsed = UserFactory.validate({
+    id: record.id,
+    organizationId: record.organizationId,
+    accountId: record.platformAccountId,
+    displayName: record.displayName,
+    status: record.status,
+    orgRole: record.orgRole,
+    roles: record.roles,
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt
+  })
+  if (E.isLeft(parsed)) throw new Error("Invalid user record")
+  return parsed.right
+}
+
+function mapSummary(record: PrismaUser): UserSummary {
+  const summary = {
+    id: record.id,
+    organizationId: record.organizationId,
+    accountId: record.platformAccountId,
+    displayName: record.displayName,
+    status: record.status,
+    orgRole: record.orgRole
+  }
+  const validated = UserFactory.validateUserSummary(summary)
+  if (E.isLeft(validated)) throw new Error("Invalid user summary record")
+  return validated.right
+}
+
+class UserNotFoundError extends Error {}
+class UserConflictError extends Error {}
+
+function rolesToJson(roles: User["roles"]): Prisma.JsonArray {
+  return roles.map(role => ({...role, permissions: [...role.permissions], scope: {...role.scope}}))
 }

@@ -1,5 +1,13 @@
 # ADR 008: Support for Multi-Identity Provider (Multi-IDP) User Authentication
 
+## ADR-010 amendment
+
+Configured provider keys identify login connections; identities bind the verified provider/issuer and
+subject to a platform account. Email alone does not authorize identity linking or tenant membership.
+Membership and selected organization are persisted separately from the login identity; request
+admission checks their current state. Organization selection advances the session context version.
+The provider controls its subject values. See [ADR-010 security boundaries](010-tenancy-security-boundaries.md).
+
 **Date:** 2026-06-16
 **Status:** Proposed
 **Context / Scope:** Backend (Auth Service, OIDC, Config Provider) & Frontend (Login Page)

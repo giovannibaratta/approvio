@@ -1,3 +1,4 @@
+import {randomOrgId, toOrganizationId} from "@test/organization-id"
 import {
   OrganizationEntitlementsResponse,
   OrganizationUsageResponse,
@@ -5,25 +6,29 @@ import {
   validateOrganizationUsageResponse
 } from "@approvio/api"
 import {AppModule} from "@app/app.module"
-import {ORGANIZATIONS_ENDPOINT_ROOT} from "@controllers/organizations"
-import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
 import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient} from "@prisma/client"
-import {cleanDatabase, prepareDatabase} from "@test/database"
+import {
+  createFixturePrismaClient,
+  cleanDatabase,
+  prepareDatabase,
+  prepareRedisPrefix,
+  cleanRedisByPrefix
+} from "@test/database"
 import {createMockAgentInDb, MockConfigProvider} from "@test/mock-data"
 import {get} from "@test/requests"
 import {createAuthenticatedUserInDb, TestTokenBuilder} from "@test/token-helpers"
 import {UserWithToken} from "@test/types"
-import {QuotaRepository, QUOTA_REPOSITORY_TOKEN} from "@services"
-import {QuotaFactory} from "@domain"
+import {QuotaRepository, QUOTA_REPOSITORY_TOKEN, UsageMeteringService} from "@services"
+import {QuotaFactory, ALL_METERED_METRICS, formatBillingPeriod} from "@domain"
+import {TRANSACTION_MANAGER_TOKEN, TenantTransactionManager} from "@services/transaction/interfaces"
 import {unwrapRight} from "@utils/either"
 import {mapAgentToDomain} from "@external/database/shared"
 import {isRight} from "fp-ts/Either"
-import {v7 as uuidv7} from "uuid"
 import "@utils/matchers"
 
 describe("Organizations API (Entitlements & Usage)", () => {
@@ -34,10 +39,12 @@ describe("Organizations API (Entitlements & Usage)", () => {
   let jwtService: JwtService
   let configProvider: ConfigProvider
   let quotaRepo: QuotaRepository
+  let transactionManager: TenantTransactionManager
 
-  const endpoint = `/${ORGANIZATIONS_ENDPOINT_ROOT}`
-  const nonExistentOrgId = uuidv7()
-  let validOrgId: string
+  const endpoint = "/o"
+  const redisPrefix = prepareRedisPrefix()
+  const nonExistentOrgId = randomOrgId()
+  let validOrgId: ReturnType<typeof toOrganizationId>
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -48,27 +55,31 @@ describe("Organizations API (Entitlements & Usage)", () => {
       .overrideProvider(ConfigProvider)
       .useValue(
         MockConfigProvider.fromOriginalProvider({
-          dbConnectionUrl: isolatedDb,
+          tenantConnectionUrl: isolatedDb,
           deploymentEdition: "saas_cloud",
-          planTier: "FREE"
+          redisPrefix
         })
       )
       .compile()
 
     app = module.createNestApplication({logger: false})
 
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
     quotaRepo = module.get<QuotaRepository>(QUOTA_REPOSITORY_TOKEN)
+    transactionManager = module.get(TRANSACTION_MANAGER_TOKEN)
 
     await app.init()
   }, 30000)
 
   beforeEach(async () => {
     orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
-    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
     validOrgId = orgAdminUser.user.organizationId
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+      orgAdmin: false,
+      organizationId: validOrgId
+    })
   })
 
   afterAll(async () => {
@@ -78,9 +89,10 @@ describe("Organizations API (Entitlements & Usage)", () => {
 
   afterEach(async () => {
     await cleanDatabase(prisma)
+    await cleanRedisByPrefix(redisPrefix)
   })
 
-  describe("GET /organizations/:orgId/entitlements", () => {
+  describe("GET /o/:organizationId/entitlements", () => {
     describe("good cases", () => {
       it("should return 200 and valid entitlements for authorized Admin caller", async () => {
         const response = await get(app, `${endpoint}/${validOrgId}/entitlements`).withToken(orgAdminUser.token).build()
@@ -112,9 +124,13 @@ describe("Organizations API (Entitlements & Usage)", () => {
 
       it("should reflect org-level quota overrides configured in the database", async () => {
         const customQuota = unwrapRight(
-          QuotaFactory.newQuota({node: {type: "Org", identifier: validOrgId}, quotaType: "MAX_SPACES"}, 42)
+          QuotaFactory.newQuota(
+            {organizationId: validOrgId, node: {type: "Org", identifier: validOrgId}, quotaType: "MAX_SPACES"},
+            42
+          )
         )
-        await quotaRepo.createQuota({organizationId: validOrgId}, customQuota)()
+        const context = {organizationId: validOrgId}
+        await transactionManager.execute(context, () => quotaRepo.createQuota(context, customQuota))()
 
         const response = await get(app, `${endpoint}/${validOrgId}/entitlements`).withToken(orgAdminUser.token).build()
 
@@ -133,7 +149,7 @@ describe("Organizations API (Entitlements & Usage)", () => {
       })
 
       it("should return 403 Forbidden for Agent caller", async () => {
-        const agent = await createMockAgentInDb(prisma)
+        const agent = await createMockAgentInDb(prisma, {organizationId: validOrgId})
         const domainAgent = unwrapRight(mapAgentToDomain(agent))
         const agentToken = TestTokenBuilder.signAgentToken(jwtService, configProvider, domainAgent)
 
@@ -147,7 +163,7 @@ describe("Organizations API (Entitlements & Usage)", () => {
           .withToken(orgAdminUser.token)
           .build()
 
-        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
+        expect(response).toHaveStatusCode(HttpStatus.FORBIDDEN)
       })
 
       it("should return 400 Bad Request for malformed organization UUID", async () => {
@@ -160,8 +176,16 @@ describe("Organizations API (Entitlements & Usage)", () => {
     })
   })
 
-  describe("GET /organizations/:orgId/usage", () => {
+  describe("GET /o/:organizationId/usage", () => {
     describe("good cases", () => {
+      beforeEach(async () => {
+        // Given: background recovery has rebuilt the current period before these successful reads.
+        const metering = app.get(UsageMeteringService)
+        const period = formatBillingPeriod(new Date())
+        for (const metric of ALL_METERED_METRICS)
+          unwrapRight(await metering.rebuildUsageCache({organizationId: validOrgId}, metric, period)())
+      })
+
       it("should return 200 and usage summary for authorized Admin caller (default active period)", async () => {
         const response = await get(app, `${endpoint}/${validOrgId}/usage`).withToken(orgAdminUser.token).build()
 
@@ -214,6 +238,16 @@ describe("Organizations API (Entitlements & Usage)", () => {
     })
 
     describe("bad / unauthorized cases", () => {
+      it("should return 503 while current-period cache recovery is pending", async () => {
+        // Given: this organization's Redis namespace is empty; no recovery has run.
+        // When: an authorized administrator requests current-period usage.
+        const response = await get(app, `${endpoint}/${validOrgId}/usage`).withToken(orgAdminUser.token).build()
+
+        // Expect: an unavailable cache cannot be reported as zero usage.
+        expect(response).toHaveStatusCode(HttpStatus.SERVICE_UNAVAILABLE)
+        expect(response.body).toHaveErrorCode("QUOTA_CACHE_UNAVAILABLE")
+      })
+
       it("should return 403 Forbidden for non-admin Member caller", async () => {
         const response = await get(app, `${endpoint}/${validOrgId}/usage`).withToken(orgMemberUser.token).build()
 
@@ -221,7 +255,7 @@ describe("Organizations API (Entitlements & Usage)", () => {
       })
 
       it("should return 403 Forbidden for Agent caller", async () => {
-        const agent = await createMockAgentInDb(prisma)
+        const agent = await createMockAgentInDb(prisma, {organizationId: validOrgId})
         const domainAgent = unwrapRight(mapAgentToDomain(agent))
         const agentToken = TestTokenBuilder.signAgentToken(jwtService, configProvider, domainAgent)
 
@@ -239,7 +273,7 @@ describe("Organizations API (Entitlements & Usage)", () => {
       it("should return 404 Not Found for non-existent organization", async () => {
         const response = await get(app, `${endpoint}/${nonExistentOrgId}/usage`).withToken(orgAdminUser.token).build()
 
-        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
+        expect(response).toHaveStatusCode(HttpStatus.FORBIDDEN)
       })
 
       it("should return 400 Bad Request for malformed organization UUID", async () => {

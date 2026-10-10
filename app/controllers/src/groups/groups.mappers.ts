@@ -22,14 +22,14 @@ import {
   CreateGroupError,
   GetGroupError,
   GetGroupMembershipResult,
-  ListGroupsRepoError,
+  ListGroupsError,
   ListGroupsResult,
   AuthorizationError,
   CreateGroupRequest,
   GroupMembershipService
 } from "@services"
 import {Either, right} from "fp-ts/Either"
-import {generateErrorPayload} from "../error"
+import {generateErrorPayload, isAuthorityError, mapAuthorityError} from "../error"
 import {ExtractLeftFromMethod} from "@utils"
 
 export type CreateGroupRequestValidationError = never
@@ -37,9 +37,15 @@ export type CreateGroupRequestValidationError = never
 export function createGroupApiToServiceModel(data: {
   request: GroupCreate
   requestor: AuthenticatedEntity
+  context: TenantContext
 }): Either<CreateGroupRequestValidationError, CreateGroupRequest> {
   return right({
-    groupData: {description: data.request.description ?? null, name: data.request.name},
+    groupData: {
+      description: data.request.description ?? null,
+      name: data.request.name,
+      organizationId: data.context.organizationId
+    },
+    organizationId: data.context.organizationId,
     requestor: data.requestor
   })
 }
@@ -64,6 +70,7 @@ export function mapGroupWithMembershipToApi(data: GetGroupMembershipResult): Gro
 
 function mapGroupToApi(group: GroupDomain): Omit<GroupApi, "entitiesCount"> {
   return {
+    organizationId: group.organizationId,
     id: group.id,
     name: group.name,
     description: group.description ?? undefined,
@@ -103,6 +110,7 @@ export function mapListGroupMembersResultToApi(
 }
 
 export function generateErrorResponseForCreateGroup(error: CreateGroupError, context: string): HttpException {
+  if (isAuthorityError(error)) return mapAuthorityError(error)
   const errorCode = error.toUpperCase()
   switch (error) {
     case "quota_exceeded":
@@ -153,9 +161,6 @@ export function generateErrorResponseForCreateGroup(error: CreateGroupError, con
     case "quota_check_error":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "membership_inconsistent_dates":
     case "membership_invalid_entity_uuid":
     case "user_role_assignments_invalid_format":
@@ -190,6 +195,62 @@ export function generateErrorResponseForCreateGroup(error: CreateGroupError, con
     case "audit_log_missing_required_fields":
       Logger.error(`${context}: An expected error occurred: ${error}`)
       return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
+
+    case "agent_name_empty":
+    case "agent_name_too_long":
+    case "agent_name_cannot_be_uuid":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "agent_key_decode_error":
+    case "agent_invalid_uuid":
+    case "agent_invalid_occ":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
+    case "agent_role_invalid_uuid":
+    case "agent_role_name_empty":
+    case "agent_role_name_too_long":
+    case "agent_role_name_invalid_characters":
+    case "agent_role_permissions_empty":
+    case "agent_role_permission_invalid":
+    case "agent_role_invalid_scope":
+    case "agent_role_resource_id_invalid":
+    case "agent_role_resource_required_for_scope":
+    case "agent_role_resource_not_allowed_for_scope":
+    case "agent_role_assignments_empty":
+    case "agent_role_assignments_exceed_maximum":
+    case "agent_role_total_roles_exceed_maximum":
+    case "agent_role_unknown_role_name":
+    case "agent_role_scope_incompatible_with_template":
+    case "agent_role_entity_type_role_restriction":
+    case "agent_role_invalid_structure":
+    case "step_up_required":
+    case "step_up_invalid":
+    case "step_up_consumed":
+    case "invalid_reference":
+    case "resource_already_exists":
+    case "resource_in_use":
+    case "concurrent_modification_error":
+    case "organization_owner_required":
+    case "invalid_transition":
+    case "invitation_invalid":
+    case "agent_not_found":
+    case "audit_log_organization_mismatch":
+    case "audit_log_invalid_schema_version":
+    case "group_invalid_organization_id":
+    case "membership_organization_mismatch":
+    case "membership_invalid_organization_id":
+    case "user_role_organization_mismatch":
+    case "user_update_before_create":
+    case "user_invalid_organization_id":
+    case "user_invalid_account_id":
+    case "user_status_invalid":
+    case "user_membership_roles_invalid":
+      Logger.error(`${context}: Unhandled service failure: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
+      )
   }
 }
 
@@ -211,11 +272,20 @@ export function generateErrorResponseForGetGroup(
     case "group_description_too_long":
     case "group_entities_count_invalid":
     case "group_update_before_create":
+    case "group_invalid_organization_id":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
     case "unknown_error":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
@@ -223,7 +293,7 @@ export function generateErrorResponseForGetGroup(
 }
 
 export function generateErrorResponseForListGroups(
-  error: ListGroupsRepoError | AuthorizationError | "invalid_search" | "malformed_object",
+  error: ListGroupsError | "invalid_search" | "malformed_object",
   context: string
 ): HttpException {
   const errorCode = error.toUpperCase()
@@ -243,11 +313,20 @@ export function generateErrorResponseForListGroups(
     case "group_entities_count_invalid":
     case "group_description_too_long":
     case "group_update_before_create":
+    case "group_invalid_organization_id":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
     case "unknown_error":
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
@@ -260,6 +339,7 @@ export function generateErrorResponseForAddMembersToGroup(
   error: AddMembersToGroupServiceError | AuthorizationError | "conflicting_isolation_level",
   context: string
 ): HttpException {
+  if (isAuthorityError(error)) return mapAuthorityError(error)
   const errorCode = error.toUpperCase()
   switch (error) {
     case "group_not_found":
@@ -297,9 +377,6 @@ export function generateErrorResponseForAddMembersToGroup(
     case "group_update_before_create":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "user_org_role_invalid":
     case "user_role_assignments_invalid_format":
     case "role_invalid_uuid":
@@ -364,6 +441,38 @@ export function generateErrorResponseForAddMembersToGroup(
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
+
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "concurrency_error":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
+    case "step_up_required":
+    case "step_up_invalid":
+    case "step_up_consumed":
+    case "invalid_reference":
+    case "resource_already_exists":
+    case "resource_in_use":
+    case "organization_owner_required":
+    case "invalid_transition":
+    case "invitation_invalid":
+    case "audit_log_organization_mismatch":
+    case "audit_log_invalid_schema_version":
+    case "group_invalid_organization_id":
+    case "membership_organization_mismatch":
+    case "membership_invalid_organization_id":
+    case "user_role_organization_mismatch":
+    case "user_update_before_create":
+    case "user_invalid_organization_id":
+    case "user_invalid_account_id":
+    case "user_status_invalid":
+    case "user_membership_roles_invalid":
+      Logger.error(`${context}: Unhandled service failure: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
+      )
   }
 }
 
@@ -376,6 +485,7 @@ export function generateErrorResponseForRemoveMembersFromGroup(
   error: RemoveMembersFromGroupServiceError | AuthorizationError | "conflicting_isolation_level",
   context: string
 ): HttpException {
+  if (isAuthorityError(error)) return mapAuthorityError(error)
   const errorCode = error.toUpperCase()
   switch (error) {
     case "group_not_found":
@@ -406,9 +516,6 @@ export function generateErrorResponseForRemoveMembersFromGroup(
     case "group_update_before_create":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_invalid":
-    case "user_email_too_long":
     case "user_org_role_invalid":
     case "user_role_assignments_invalid_format":
     case "role_invalid_uuid":
@@ -472,6 +579,40 @@ export function generateErrorResponseForRemoveMembersFromGroup(
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
       )
+
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "concurrency_error":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_invalid_status":
+    case "agent_update_before_create":
+    case "step_up_required":
+    case "step_up_invalid":
+    case "step_up_consumed":
+    case "invalid_reference":
+    case "resource_already_exists":
+    case "resource_in_use":
+    case "organization_owner_required":
+    case "invalid_transition":
+    case "quota_exceeded":
+    case "invitation_invalid":
+    case "agent_not_found":
+    case "audit_log_organization_mismatch":
+    case "audit_log_invalid_schema_version":
+    case "group_invalid_organization_id":
+    case "membership_organization_mismatch":
+    case "membership_invalid_organization_id":
+    case "user_role_organization_mismatch":
+    case "user_update_before_create":
+    case "user_invalid_organization_id":
+    case "user_invalid_account_id":
+    case "user_status_invalid":
+    case "user_membership_roles_invalid":
+      Logger.error(`${context}: Unhandled service failure: ${error}`)
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: An unexpected error occurred`)
+      )
   }
 }
 
@@ -507,14 +648,16 @@ export function generateErrorResponseForListMembersInGroup(
     case "group_description_too_long":
     case "group_entities_count_invalid":
     case "group_update_before_create":
+    case "group_invalid_organization_id":
     case "user_invalid_uuid":
     case "user_display_name_empty":
     case "user_display_name_too_long":
-    case "user_email_empty":
-    case "user_email_too_long":
-    case "user_email_invalid":
     case "user_org_role_invalid":
     case "user_role_assignments_invalid_format":
+    case "user_duplicate_roles":
+    case "user_update_before_create":
+    case "user_invalid_organization_id":
+    case "user_invalid_account_id":
     case "role_invalid_uuid":
     case "role_name_empty":
     case "role_name_too_long":
@@ -526,9 +669,10 @@ export function generateErrorResponseForListMembersInGroup(
     case "role_resource_required_for_scope":
     case "role_resource_not_allowed_for_scope":
     case "role_invalid_structure":
-    case "user_duplicate_roles":
     case "membership_inconsistent_dates":
     case "membership_invalid_entity_uuid":
+    case "membership_invalid_organization_id":
+    case "membership_organization_mismatch":
     case "agent_key_decode_error":
     case "agent_invalid_uuid":
     case "agent_name_empty":
@@ -555,14 +699,28 @@ export function generateErrorResponseForListMembersInGroup(
     case "agent_role_unknown_role_name":
     case "agent_role_scope_incompatible_with_template":
     case "agent_invalid_occ":
+    case "agent_invalid_organization_id":
+    case "agent_role_organization_mismatch":
+    case "agent_update_before_create":
+    case "agent_invalid_status":
     case "role_entity_type_role_restriction":
     case "agent_role_entity_type_role_restriction":
     case "agent_name_cannot_be_uuid":
+    case "user_status_invalid":
+    case "user_role_organization_mismatch":
+    case "user_membership_roles_invalid":
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
       Logger.error(`${context}: Found internal data inconsistency: ${error}`)
       return new InternalServerErrorException(
         generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
       )
     case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "commit_outcome_unknown":
+    case "storage_unavailable":
+    case "concurrency_error":
     case "unknown_error":
       Logger.error(`${context}: An expected error occurred: ${error}`)
       return new InternalServerErrorException(

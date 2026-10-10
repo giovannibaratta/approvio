@@ -1,128 +1,191 @@
 import {Injectable, Logger} from "@nestjs/common"
+import {PkceError, PkceSessionData, PkceSessionRepository, PkceStorageData} from "@services/auth"
 import * as TE from "fp-ts/TaskEither"
-import {TaskEither} from "fp-ts/TaskEither"
-import {DatabaseClient} from "./database-client"
-import {PkceError, PkceStorageData, PkceSessionData, PkceSessionRepository} from "@services/auth"
-import {EncryptionService} from "../kms"
 import {pipe} from "fp-ts/function"
+import {PlatformEncryptionService} from "../kms"
+import {SessionDatabaseClient} from "./capability-database-client"
 
 @Injectable()
 export class PkceSessionDbRepository implements PkceSessionRepository {
   constructor(
-    private readonly dbClient: DatabaseClient,
-    private readonly encryptionService: EncryptionService
+    private readonly sessions: SessionDatabaseClient,
+    private readonly encryption: PlatformEncryptionService
   ) {}
 
-  storePkceData(state: string, data: PkceStorageData): TaskEither<PkceError, void> {
+  storePkceData(state: string, data: PkceStorageData): TE.TaskEither<PkceError, void> {
+    const stepUpTarget = data.flow === "step_up" ? data.stepUpTarget : undefined
     return pipe(
-      this.encryptionService.encrypt(data.codeVerifier),
-      TE.chainW(encryptedVerifier =>
+      this.encryption.encryptPkce(state, data.providerId, data.codeVerifier),
+      TE.mapLeft(mapCryptoError),
+      TE.chainW(encCodeVerifier =>
         TE.tryCatch(
           async () => {
-            await this.dbClient.cx.pkceSession.create({
-              data: {
-                state,
-                codeVerifier: encryptedVerifier,
-                redirectUri: data.redirectUri,
-                oidcState: data.oidcState,
-                providerId: data.providerId,
-                expiresAt: data.expiresAt,
-                occ: 0
-              }
-            })
+            await this.sessions.transactional(tx =>
+              tx.pkceSession.create({
+                data: {
+                  state,
+                  encCodeVerifier,
+                  redirectUri: data.redirectUri,
+                  oidcState: data.oidcState,
+                  providerId: data.providerId,
+                  flow: data.flow,
+                  sessionId: data.flow === "step_up" ? data.sessionId : null,
+                  stepUpOrganizationId: stepUpTarget?.organizationId ?? null,
+                  stepUpOperation: stepUpTarget?.operation ?? null,
+                  stepUpResourceId: stepUpTarget?.resourceId ?? null,
+                  stepUpContextVersion: stepUpTarget?.contextVersion ?? null,
+                  createdAt: new Date(),
+                  expiresAt: data.expiresAt,
+                  usedAt: null,
+                  occ: 0n
+                }
+              })
+            )
           },
-          error => {
-            Logger.error("Error storing PKCE data", error)
-            return "pkce_code_storage_failed" as const
-          }
+          error => this.mapStorageError(error, "store")
         )
       )
     )
   }
 
-  retrievePkceData(state: string): TaskEither<PkceError, PkceSessionData> {
+  retrievePkceData(state: string): TE.TaskEither<PkceError, PkceSessionData> {
     return pipe(
       TE.tryCatch(
         async () => {
-          const session = await this.dbClient.cx.pkceSession.findUnique({
-            where: {state}
-          })
-
-          if (!session) throw new Error("PKCE session not found")
+          const session = await this.sessions.transactional(tx => tx.pkceSession.findUnique({where: {state}}))
+          if (!session) throw new PkceNotFoundError()
           return session
         },
-        error => {
-          Logger.error("Error retrieving PKCE data", error)
-          if (error instanceof Error && error.message === "PKCE session not found")
-            return "pkce_code_not_found" as const
-
-          return "pkce_code_storage_failed" as const
-        }
+        error => this.mapStorageError(error, "retrieve")
       ),
       TE.chainW(session =>
         pipe(
-          this.encryptionService.decrypt(session.codeVerifier),
-          TE.map((decryptedVerifier): PkceSessionData => ({
-            state: session.state,
-            codeVerifier: decryptedVerifier,
-            redirectUri: session.redirectUri,
-            oidcState: session.oidcState,
-            providerId: session.providerId,
-            expiresAt: session.expiresAt,
-            occ: session.occ,
-            usedAt: session.usedAt || undefined
-          }))
+          this.encryption.decryptPkce(session.state, session.providerId, session.encCodeVerifier),
+          TE.mapLeft(mapCryptoError),
+          TE.chainEitherKW(codeVerifier => mapSession(session, codeVerifier))
         )
       )
     )
   }
 
-  deletePkceData(state: string): TaskEither<PkceError, void> {
+  deletePkceData(state: string): TE.TaskEither<PkceError, void> {
     return TE.tryCatch(
       async () => {
-        await this.dbClient.cx.pkceSession.delete({
-          where: {state}
-        })
+        const deleted = await this.sessions.transactional(tx => tx.pkceSession.deleteMany({where: {state}}))
+        if (deleted.count !== 1) throw new PkceNotFoundError()
       },
-      error => {
-        Logger.error("Error deleting PKCE data", error)
-        return "pkce_code_storage_failed" as const
-      }
+      error => this.mapStorageError(error, "delete")
     )
   }
 
-  updatePkceSession(sessionData: PkceSessionData, currentOcc: bigint): TaskEither<PkceError, void> {
+  updatePkceSession(sessionData: PkceSessionData, occCheck: bigint): TE.TaskEither<PkceError, void> {
     return pipe(
-      this.encryptionService.encrypt(sessionData.codeVerifier),
-      TE.chainW(encryptedVerifier =>
+      this.encryption.encryptPkce(sessionData.state, sessionData.providerId, sessionData.codeVerifier),
+      TE.mapLeft(mapCryptoError),
+      TE.chainW(encCodeVerifier =>
         TE.tryCatch(
           async () => {
-            const result = await this.dbClient.cx.pkceSession.updateMany({
-              where: {
-                state: sessionData.state,
-                occ: currentOcc
-              },
-              data: {
-                codeVerifier: encryptedVerifier,
-                redirectUri: sessionData.redirectUri,
-                oidcState: sessionData.oidcState,
-                expiresAt: sessionData.expiresAt,
-                usedAt: sessionData.usedAt,
-                occ: currentOcc + 1n
-              }
-            })
-
-            if (result.count === 0) throw new Error("PKCE session OCC conflict or not found")
+            const updated = await this.sessions.transactional(tx =>
+              tx.pkceSession.updateMany({
+                where: {state: sessionData.state, occ: occCheck},
+                data: {
+                  encCodeVerifier,
+                  expiresAt: sessionData.expiresAt,
+                  usedAt: sessionData.usedAt ?? null,
+                  occ: {increment: 1}
+                }
+              })
+            )
+            if (updated.count !== 1) throw new PkceConflictError()
           },
-          error => {
-            Logger.error("Error updating PKCE session", error)
-            if (error instanceof Error && error.message === "PKCE session OCC conflict or not found")
-              return "pkce_code_not_found" as const
-
-            return "pkce_code_storage_failed" as const
-          }
+          error => this.mapStorageError(error, "update")
         )
       )
     )
   }
+
+  private mapStorageError(error: unknown, operation: string): PkceError {
+    if (error instanceof PkceNotFoundError) return "pkce_code_not_found"
+    if (error instanceof PkceConflictError) return "pkce_code_concurrency_conflict"
+    Logger.error(`PKCE session repository ${operation} failed`, error instanceof Error ? error.name : "non_error")
+    return "pkce_code_storage_failed"
+  }
+}
+
+function mapSession(
+  session: {
+    readonly state: string
+    readonly redirectUri: string
+    readonly oidcState: string
+    readonly providerId: string
+    readonly flow: string
+    readonly sessionId: string | null
+    readonly stepUpOrganizationId: string | null
+    readonly stepUpOperation: string | null
+    readonly stepUpResourceId: string | null
+    readonly stepUpContextVersion: bigint | null
+    readonly expiresAt: Date
+    readonly occ: bigint
+    readonly usedAt: Date | null
+  },
+  codeVerifier: string
+): import("fp-ts/Either").Either<PkceError, PkceSessionData> {
+  const stepUpValues = [
+    session.stepUpOrganizationId,
+    session.stepUpOperation,
+    session.stepUpResourceId,
+    session.stepUpContextVersion
+  ]
+  const hasStepUp = stepUpValues.every(value => value !== null)
+  if (!hasStepUp && stepUpValues.some(value => value !== null)) return {_tag: "Left", left: "pkce_code_storage_failed"}
+  if (session.flow !== "initial_login" && session.flow !== "initial_cli_login" && session.flow !== "step_up")
+    return {_tag: "Left", left: "pkce_code_storage_failed"}
+  if (
+    (session.flow === "initial_login" || session.flow === "initial_cli_login") &&
+    (session.sessionId !== null || hasStepUp)
+  )
+    return {_tag: "Left", left: "pkce_code_storage_failed"}
+  if (session.flow === "step_up" && (session.sessionId === null || !hasStepUp))
+    return {_tag: "Left", left: "pkce_code_storage_failed"}
+  if (
+    session.stepUpOperation !== null &&
+    session.stepUpOperation !== "admin_action" &&
+    session.stepUpOperation !== "delete_organization"
+  )
+    return {_tag: "Left", left: "pkce_code_storage_failed"}
+  const metadata = {
+    state: session.state,
+    codeVerifier,
+    redirectUri: session.redirectUri,
+    oidcState: session.oidcState,
+    providerId: session.providerId,
+    expiresAt: session.expiresAt,
+    occ: session.occ,
+    ...(session.usedAt === null ? {} : {usedAt: session.usedAt})
+  }
+  if (session.flow === "initial_login" || session.flow === "initial_cli_login")
+    return {_tag: "Right", right: {...metadata, flow: session.flow}}
+  return {
+    _tag: "Right",
+    right: {
+      ...metadata,
+      flow: "step_up",
+      sessionId: session.sessionId!,
+      stepUpTarget: {
+        organizationId: session.stepUpOrganizationId!,
+        operation: session.stepUpOperation!,
+        resourceId: session.stepUpResourceId!,
+        contextVersion: session.stepUpContextVersion!
+      }
+    }
+  }
+}
+
+class PkceNotFoundError extends Error {}
+class PkceConflictError extends Error {}
+
+function mapCryptoError(
+  error: "encryption_failed" | "decryption_failed" | "binding_mismatch" | "unsupported_format"
+): PkceError {
+  return error === "encryption_failed" || error === "decryption_failed" ? error : "pkce_code_storage_failed"
 }

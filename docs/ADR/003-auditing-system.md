@@ -1,5 +1,13 @@
 # ADR 003: Approvio Auditing System Architecture
 
+## ADR-010 amendment
+
+Tenant audit writes and reads carry an explicit organization context. Audit persistence shares the
+business mutation transaction; a failed audit write rolls back that mutation. Historical records retain
+an immutable actor snapshot, including explicit operator attribution for operational recovery. Platform
+security events use a separate append-only capability. Neither audit payloads nor platform metadata
+may expose credentials, tokens or webhook secrets. See [ADR-010 security boundaries](010-tenancy-security-boundaries.md).
+
 ## Context and Problem Statement
 
 The Approvio platform requires a comprehensive auditing system to track modifications to core entities. The system must provide a reliable historical ledger of who changed what and when, ensuring data integrity without significantly degrading the performance of the primary transactional database or imposing massive maintenance burdens on the development team.

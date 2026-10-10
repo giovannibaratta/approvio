@@ -4,6 +4,15 @@
 **Date:** 2026-03-01  
 **Context:** OIDC authentication flow improvements for browser, CLI, and agent clients
 
+## ADR-010 amendment
+
+The token-mediated transport decision remains in force. ADR-010 supersedes the stateless-authority
+assumption below: signed user tokens are checked against persisted account/session state, selected
+organization and current membership. Organization switching advances the session context version;
+committed revocation and stale contexts deny subsequent requests. Agent credentials are checked
+against their current persisted status. Signature verification alone does not establish current access.
+See [ADR-010 security boundaries](010-tenancy-security-boundaries.md).
+
 ## Problem
 
 The current authentication flow stores JWT access tokens and refresh tokens in `localStorage`, making them accessible to JavaScript. This exposes them to Cross-Site Scripting (XSS) attacks: any malicious script injected into the page (via a vulnerable npm dependency, CDN compromise, or input validation flaw) can exfiltrate tokens and gain persistent access to the user's account from any machine.
@@ -37,7 +46,7 @@ JWT access token and refresh token are delivered via **HttpOnly cookies** for br
 
 - ✅ HttpOnly cookies are invisible to JavaScript → XSS cannot steal tokens
 - ✅ Worst-case XSS: attacker can make requests during the active session, but cannot exfiltrate tokens for use elsewhere
-- ✅ Stateless JWT verification — no Redis session lookup needed
+- ✅ Local JWT signature verification; current authority additionally requires ADR-010 persisted checks
 - ✅ Microservice-friendly — any service can verify JWT with the public key
 - ✅ Single JWT format across all clients
 - ⚠️ Requires CSRF protection (`SameSite` cookie attribute)
@@ -48,6 +57,9 @@ JWT access token and refresh token are delivered via **HttpOnly cookies** for br
 **Use Option 3: Token Mediated Backend.**
 
 ### Rationale
+
+The following records the original transport decision. ADR-010 now requires persisted authority checks;
+the earlier preference against session lookup no longer describes request admission.
 
 The full BFF architecture (Option 2) is the theoretical gold standard for browser security, but it introduces **stateful session management** that conflicts with our architectural goals:
 

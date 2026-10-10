@@ -1,20 +1,28 @@
 import {Processor, Process} from "@nestjs/bull"
-import {Logger} from "@nestjs/common"
+import {Inject, Logger} from "@nestjs/common"
 import {Job} from "bull"
 import {WorkflowRecalculationService} from "@services/workflow/workflow-recalculation.service"
-import {RecalculationJobData} from "@external/queue/queue.provider"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {WORKFLOW_STATUS_RECALCULATION_QUEUE} from "@external"
 import {isUUIDv7} from "@utils"
+import {TenantEvent, TenantEventFactory} from "@domain"
+import * as E from "fp-ts/Either"
 
 @Processor(WORKFLOW_STATUS_RECALCULATION_QUEUE)
 export class WorkflowRecalculationProcessor {
-  constructor(private readonly recalcService: WorkflowRecalculationService) {}
+  constructor(
+    @Inject(WorkflowRecalculationService)
+    private readonly recalculation: Pick<WorkflowRecalculationService, "recalculateWorkflowStatus">
+  ) {}
 
   @Process("recalculate-workflow")
-  async process(job: Job<RecalculationJobData>): Promise<void> {
-    const {workflowId} = job.data
+  async process(job: Pick<Job<TenantEvent>, "data" | "attemptsMade" | "opts" | "id">): Promise<void> {
+    const validated = TenantEventFactory.validate(job.data)
+    if (E.isLeft(validated)) throw new Error(`Invalid recalculation event: ${validated.left}`)
+    const event = validated.right
+    if (event.type !== "workflow.recalculate") throw new Error("Expected a workflow.recalculate tenant event")
+    const workflowId = event.workflowId
 
     Logger.log(
       `Processing recalculation for workflow ${workflowId} (attempt ${job.attemptsMade + 1}/${job.opts.attempts})`
@@ -33,7 +41,7 @@ export class WorkflowRecalculationProcessor {
     const startTime = Date.now()
 
     return pipe(
-      this.recalcService.recalculateWorkflowStatusByWorkflowId(workflowId),
+      this.recalculation.recalculateWorkflowStatus(event),
       TE.match(
         error => {
           const duration = Date.now() - startTime
@@ -62,23 +70,22 @@ export class WorkflowRecalculationProcessor {
   /**
    * Called when job completes successfully.
    */
-  onCompleted(job: Job<RecalculationJobData>) {
-    Logger.log(`Recalculation job ${job.id} completed`, {
-      workflowId: job.data.workflowId
-    })
+  onCompleted(job: Job<TenantEvent>) {
+    if (job.data.type === "workflow.recalculate")
+      Logger.log(`Recalculation job ${job.id} completed`, {workflowId: job.data.workflowId})
   }
 
   /**
    * Called when job fails after all retries.
    */
-  onFailed(job: Job<RecalculationJobData> | undefined, error: Error) {
+  onFailed(job: Job<TenantEvent> | undefined, error: Error) {
     if (!job) {
       Logger.error("Recalculation job failed with no job data", {error: error.message})
       return
     }
 
     Logger.error(`Recalculation job ${job.id} failed after all retries`, {
-      workflowId: job.data.workflowId,
+      workflowId: job.data.type === "workflow.recalculate" ? job.data.workflowId : undefined,
       error: error.message,
       attemptsMade: job.attemptsMade
     })

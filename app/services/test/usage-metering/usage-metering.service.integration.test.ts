@@ -75,24 +75,27 @@ describe("UsageMeteringService Integration Tests", () => {
   const adminRequestor = {
     entityType: "user" as const,
     providerId: "test",
-    user: {...adminUser, occ: 1n}
+    user: {...adminUser, organizationId: orgId, accountId: uuidv7()},
+    sessionId: uuidv7(),
+    sessionContextVersion: 1n
   }
   const memberRequestor = {
     entityType: "user" as const,
     providerId: "test",
-    user: {...memberUser, occ: 1n}
+    user: {...memberUser, organizationId: orgId, accountId: uuidv7()},
+    sessionId: uuidv7(),
+    sessionContextVersion: 1n
   }
 
-  const createModuleWithTier = async (planTier: PlanTier): Promise<TestingModule> => {
+  const createModule = async (): Promise<TestingModule> => {
     const testModule = await Test.createTestingModule({
-      imports: [ConfigModule, ServiceModule]
+      imports: [ConfigModule, ServiceModule.register({runtime: "api"})]
     })
       .overrideProvider(ConfigProvider)
       .useValue(
         MockConfigProvider.fromOriginalProvider({
-          dbConnectionUrl: isolatedDb,
-          redisPrefix,
-          planTier
+          tenantConnectionUrl: isolatedDb,
+          redisPrefix
         })
       )
       .compile()
@@ -105,9 +108,9 @@ describe("UsageMeteringService Integration Tests", () => {
     isolatedDb = await prepareDatabase()
     redisPrefix = prepareRedisPrefix()
 
-    module = await createModuleWithTier("SELF_HOSTED_UNLIMITED")
+    module = await createModule()
     service = module.get<UsageMeteringService>(UsageMeteringService)
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     redisClient = module.get(RedisClient)
   }, 30000)
 
@@ -122,13 +125,273 @@ describe("UsageMeteringService Integration Tests", () => {
   beforeEach(async () => {
     await cleanDatabase(prisma)
     await cleanRedisByPrefix(redisPrefix)
+    const now = new Date()
+    await prisma.organization.create({
+      data: {
+        id: orgId,
+        slug: `test-${orgId}`,
+        displayName: "Usage test organization",
+        planTier: "SELF_HOSTED_UNLIMITED",
+        status: "active",
+        occ: 0n,
+        createdAt: now,
+        updatedAt: now
+      }
+    })
+    for (const metric of ALL_METERED_METRICS)
+      unwrapRight(await service.rebuildUsageCache({organizationId: orgId}, metric, period)())
+  })
+
+  describe("cache recovery", () => {
+    const metric: UsageMetric = "MAX_LLM_TOKENS_PER_MONTH"
+    const input: AdmitAndReserveParams = {
+      organizationId: orgId,
+      operationId,
+      entity,
+      actor,
+      metric,
+      estimatedUnits: 100,
+      period
+    }
+    const key = () => `${redisPrefix}usage:${orgId}:${metric}:${period}`
+    const usage = async () =>
+      unwrapRight(await service.getOrganizationUsage(adminRequestor, {organizationId: orgId}, period, metric)())
+        .metrics[0]
+
+    it("restores acknowledged consumption and outstanding holds after cache loss without replaying consumption", async () => {
+      unwrapRight(await service.admitAndReserve(input)())
+      unwrapRight(await service.settleUsage({...input, actualUnits: 70})())
+      unwrapRight(await service.applySettlement({organizationId: orgId}, operationId, "1")())
+      const outstanding = {...input, operationId: uuidv7(), estimatedUnits: 40}
+      unwrapRight(await service.admitAndReserve(outstanding)())
+      await redisClient.del(key())
+      unwrapRight(await service.rebuildUsageCache({organizationId: orgId}, metric, period)())
+
+      expect(await usage()).toMatchObject({consumed: 70, reserved: 40})
+      unwrapRight(await service.applySettlement({organizationId: orgId}, operationId, "1")())
+      unwrapRight(await service.admitAndReserve(outstanding)())
+      expect(await usage()).toMatchObject({consumed: 70, reserved: 40})
+      expect(await redisClient.ttl(key())).toBe(-1)
+
+      unwrapRight(
+        await service.cancelReservation({
+          organizationId: orgId,
+          operationId: outstanding.operationId,
+          metric,
+          estimatedUnits: 40,
+          period
+        })()
+      )
+      unwrapRight(await service.applySettlement({organizationId: orgId}, outstanding.operationId, "1")())
+      expect(await usage()).toMatchObject({consumed: 70, reserved: 0})
+      expect(await redisClient.ttl(key())).toBeGreaterThan(0)
+      await redisClient.del(key())
+      unwrapRight(await service.rebuildUsageCache({organizationId: orgId}, metric, period)())
+      expect(await usage()).toMatchObject({consumed: 70, reserved: 0})
+      expect(await service.admitAndReserve({...outstanding, estimatedUnits: 41})()).toBeLeftOf("operation_mismatch")
+    })
+
+    it("rolls back the terminal operation and delivery records when the ledger write fails", async () => {
+      unwrapRight(await service.admitAndReserve(input)())
+      const ledger = module.get<UsageEventRepository>(USAGE_EVENT_REPOSITORY_TOKEN)
+      const persist = jest.spyOn(ledger, "persistOperation").mockReturnValueOnce(TE.left("event_mismatch"))
+      const result = await service.settleUsage({...input, actualUnits: 70})()
+      persist.mockRestore()
+
+      expect(result).toBeLeftOf("event_mismatch")
+      expect(await prisma.usageOperation.findFirstOrThrow()).toMatchObject({status: "reserved", occ: 0n})
+      expect(await prisma.usageEvent.count()).toBe(0)
+      expect(await prisma.usageSettlementIntent.count()).toBe(0)
+      expect(await prisma.tenantOutbox.count()).toBe(0)
+    })
+
+    it("rolls back settlement when the database rejects its outbox insert", async () => {
+      unwrapRight(await service.admitAndReserve(input)())
+      await prisma.$executeRawUnsafe(`ALTER TABLE public.tenant_outbox
+        ADD CONSTRAINT reject_usage_settlement CHECK (event_type <> 'usage.settlement')`)
+      try {
+        const result = await service.settleUsage({...input, actualUnits: 70})()
+
+        expect(result).toBeLeftOf("repository_dependency_error")
+        expect(await prisma.usageOperation.findFirstOrThrow()).toMatchObject({status: "reserved", occ: 0n})
+        expect(await prisma.usageSettlementIntent.count()).toBe(0)
+        expect(await prisma.usageEvent.count()).toBe(0)
+        expect(await prisma.tenantOutbox.count()).toBe(0)
+      } finally {
+        await prisma.$executeRawUnsafe("ALTER TABLE public.tenant_outbox DROP CONSTRAINT reject_usage_settlement")
+      }
+    })
+
+    it("keeps the committed ledger and pending outbox when queue publication fails", async () => {
+      unwrapRight(await service.admitAndReserve(input)())
+      const enqueue = jest.spyOn(module.get(QueueService), "enqueue").mockReturnValueOnce(TE.left("unknown_error"))
+      const result = await service.settleUsage({...input, actualUnits: 70})()
+      enqueue.mockRestore()
+
+      expect(result).toBeRight()
+      expect(await prisma.usageOperation.findFirstOrThrow()).toMatchObject({status: "settled", actualUnits: 70n})
+      expect(await prisma.usageEvent.count()).toBe(1)
+      expect(await prisma.usageSettlementIntent.findFirstOrThrow()).toMatchObject({appliedAt: null})
+      expect(await prisma.tenantOutbox.findFirstOrThrow()).toMatchObject({publishedAt: null})
+    })
+
+    it("reads historical usage without rebuilding an expired Redis key", async () => {
+      unwrapRight(await service.admitAndReserve(input)())
+      unwrapRight(await service.settleUsage({...input, actualUnits: 70})())
+      await redisClient.del(key())
+      expect(await usage()).toMatchObject({consumed: 70, reserved: 0})
+      expect(await redisClient.exists(key())).toBe(0)
+    })
+
+    it("keeps same operation IDs separate across organizations and billing periods", async () => {
+      const otherOrg = randomOrgId()
+      await prisma.organization.create({
+        data: {
+          id: otherOrg,
+          slug: `usage-${otherOrg}`,
+          displayName: "Other usage",
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          planTier: "SELF_HOSTED_UNLIMITED",
+          status: "active",
+          occ: 0n
+        }
+      })
+      for (const [organizationId, actualUnits] of [
+        [orgId, 70],
+        [otherOrg, 30]
+      ] as const) {
+        unwrapRight(await service.rebuildUsageCache({organizationId}, metric, period)())
+        const operation = {...input, organizationId}
+        unwrapRight(await service.admitAndReserve(operation)())
+        unwrapRight(await service.settleUsage({...operation, actualUnits})())
+        unwrapRight(await service.applySettlement({organizationId}, operationId, "1")())
+        await redisClient.del(`${redisPrefix}usage:${organizationId}:${metric}:${period}`)
+        unwrapRight(await service.rebuildUsageCache({organizationId}, metric, period)())
+        // Settlement replay sees the terminal markers restored by the recovery worker.
+        unwrapRight(await service.applySettlement({organizationId}, operationId, "1")())
+        expect(
+          await redisClient.hmget(`${redisPrefix}usage:${organizationId}:${metric}:${period}`, "consumed", "reserved")
+        ).toEqual([String(actualUnits), "0"])
+      }
+      unwrapRight(await service.rebuildUsageCache({organizationId: orgId}, metric, "2026-09")())
+      unwrapRight(
+        await service.admitAndReserve({...input, operationId: uuidv7(), period: "2026-09", estimatedUnits: 25})()
+      )
+      expect(await redisClient.hmget(`${redisPrefix}usage:${orgId}:${metric}:2026-09`, "consumed", "reserved")).toEqual(
+        ["0", "25"]
+      )
+      expect(await usage()).toMatchObject({consumed: 70, reserved: 0})
+      expect(await prisma.usageEvent.count()).toBe(2)
+    })
+
+    it("blocks admission before writing a reservation while another rebuild owns the lease", async () => {
+      const cache = module.get<QuotaAdmissionClient>(QUOTA_ADMISSION_CLIENT_TOKEN)
+      await redisClient.del(key())
+      expect(unwrapRight(await cache.beginRebuild(key(), uuidv7())())).toBe("claimed")
+      expect(await service.admitAndReserve(input)()).toBeLeftOf("quota_cache_unavailable")
+      expect(await prisma.usageOperation.count()).toBe(0)
+      await redisClient.hset(key(), "rebuildUntil", "0")
+      unwrapRight(await service.rebuildUsageCache({organizationId: orgId}, metric, period)())
+      unwrapRight(await service.admitAndReserve(input)())
+      expect(await usage()).toMatchObject({consumed: 0, reserved: 100})
+    })
+
+    it("keeps admission closed after a failed durable snapshot and rejects an incomplete immutable ledger", async () => {
+      await redisClient.del(key())
+      const repository = module.get<UsageOperationRepository>(USAGE_OPERATION_REPOSITORY_TOKEN)
+      const snapshot = jest
+        .spyOn(repository, "getUsageSnapshot")
+        .mockReturnValueOnce(TE.left("repository_dependency_error"))
+      expect(await service.rebuildUsageCache({organizationId: orgId}, metric, period)()).toBeLeftOf(
+        "repository_dependency_error"
+      )
+      snapshot.mockRestore()
+      expect(await prisma.usageOperation.count()).toBe(0)
+      expect(await redisClient.hget(key(), "ready")).toBeNull()
+      await redisClient.hset(key(), "rebuildUntil", "0")
+      unwrapRight(await service.rebuildUsageCache({organizationId: orgId}, metric, period)())
+      unwrapRight(await service.admitAndReserve(input)())
+      unwrapRight(await service.settleUsage({...input, actualUnits: 70})())
+      unwrapRight(await service.rebuildUsageCache({organizationId: orgId}, metric, period)())
+      // Fixture corruption deliberately breaks the operation/event invariant.
+      await prisma.usageEvent.deleteMany({where: {organizationId: orgId}})
+      await redisClient.del(key())
+      expect(await service.rebuildUsageCache({organizationId: orgId}, metric, period)()).toBeLeftOf(
+        "operation_mismatch"
+      )
+      expect(await service.applySettlement({organizationId: orgId}, operationId, "1")()).toBeLeftOf(
+        "quota_cache_unavailable"
+      )
+      expect(await redisClient.hget(key(), "ready")).toBeNull()
+      expect(await prisma.usageSettlementIntent.findFirstOrThrow()).toMatchObject({appliedAt: null})
+    })
+
+    it("replays a settlement committed after the rebuild snapshot without losing or doubling it", async () => {
+      unwrapRight(await service.admitAndReserve(input)())
+      await redisClient.del(key())
+      const cache = module.get<QuotaAdmissionClient>(QUOTA_ADMISSION_CLIENT_TOKEN)
+      const restoreCache = cache.restore.bind(cache)
+      const restore = jest.spyOn(cache, "restore").mockImplementationOnce((...args) =>
+        pipe(
+          service.settleUsage({...input, actualUnits: 70}),
+          TE.mapLeft(error => ({type: "admission_error" as const, error})),
+          TE.chain(() => restoreCache(...args))
+        )
+      )
+      unwrapRight(await service.rebuildUsageCache({organizationId: orgId}, metric, period)())
+      expect(await redisClient.hmget(key(), "consumed", "reserved")).toEqual(["0", "100"])
+      restore.mockRestore()
+      unwrapRight(await service.applySettlement({organizationId: orgId}, operationId, "1")())
+      unwrapRight(await service.applySettlement({organizationId: orgId}, operationId, "1")())
+      expect(await usage()).toMatchObject({consumed: 70, reserved: 0})
+    })
+
+    it("keeps admission closed when Redis cannot install a rebuilt snapshot", async () => {
+      await redisClient.del(key())
+      const cache = module.get<QuotaAdmissionClient>(QUOTA_ADMISSION_CLIENT_TOKEN)
+      const restore = jest
+        .spyOn(cache, "restore")
+        .mockReturnValueOnce(TE.left({type: "admission_error", error: new Error("cache unavailable")}))
+      expect(await service.rebuildUsageCache({organizationId: orgId}, metric, period)()).toEqual(
+        E.left({type: "admission_error", error: expect.any(Error)})
+      )
+      restore.mockRestore()
+      expect(await redisClient.hget(key(), "ready")).toBeNull()
+      expect(await prisma.usageOperation.count()).toBe(0)
+      await redisClient.hset(key(), "rebuildUntil", "0")
+      unwrapRight(await service.rebuildUsageCache({organizationId: orgId}, metric, period)())
+      unwrapRight(await service.admitAndReserve(input)())
+      expect(await usage()).toMatchObject({consumed: 0, reserved: 100})
+    })
+
+    it("recovers an ambiguous Redis reservation without releasing its durable hold", async () => {
+      const cache = module.get<QuotaAdmissionClient>(QUOTA_ADMISSION_CLIENT_TOKEN)
+      const reserveOperation = cache.reserveOperation.bind(cache)
+      const reserve = jest.spyOn(cache, "reserveOperation").mockImplementationOnce((...args) =>
+        pipe(
+          reserveOperation(...args),
+          TE.chainW(() => TE.left({type: "admission_error" as const, error: new Error("lost reply")}))
+        )
+      )
+      expect(await service.admitAndReserve(input)()).toEqual(
+        E.left({type: "admission_error", error: expect.any(Error)})
+      )
+      reserve.mockRestore()
+      expect(await prisma.usageOperation.findFirstOrThrow()).toMatchObject({status: "reserved"})
+      await redisClient.del(key())
+      unwrapRight(await service.rebuildUsageCache({organizationId: orgId}, metric, period)())
+      unwrapRight(await service.admitAndReserve(input)())
+      expect(await usage()).toMatchObject({consumed: 0, reserved: 100})
+    })
   })
 
   describe("admitAndReserve", () => {
     it("should successfully admit and reserve capacity in UNLIMITED tier", async () => {
       // Given: SELF_HOSTED_UNLIMITED tier
       const params: AdmitAndReserveParams = {
-        orgId,
+        organizationId: orgId,
+        operationId,
         entity,
         actor,
         metric: "MAX_LLM_TOKENS_PER_MONTH",
@@ -138,12 +401,19 @@ describe("UsageMeteringService Integration Tests", () => {
 
       // When
       const result = await service.admitAndReserve(params)()
+      const duplicate = await service.admitAndReserve(params)()
 
       // Expect
       expect(result).toBeRight()
+      expect(duplicate).toBeRight()
 
       // Verify in Redis
-      const usage = await service.getOrganizationUsage(adminRequestor, orgId, period, "MAX_LLM_TOKENS_PER_MONTH")()
+      const usage = await service.getOrganizationUsage(
+        adminRequestor,
+        {organizationId: orgId},
+        period,
+        "MAX_LLM_TOKENS_PER_MONTH"
+      )()
       const summary = unwrapRight(usage)
       const firstMetric = summary.metrics[0]
       expect(firstMetric?.limit).toBe("UNLIMITED")
@@ -154,12 +424,10 @@ describe("UsageMeteringService Integration Tests", () => {
 
     it("should reject reservation when estimated units exceed FREE tier limit", async () => {
       // Given: FREE tier has limit 0 for metered tokens
-      const freeTierModule = await createModuleWithTier("FREE")
-      const freeTierService = freeTierModule.get<UsageMeteringService>(UsageMeteringService)
-      const freeTierRedis = freeTierModule.get(RedisClient)
-
+      await prisma.organization.update({where: {id: orgId}, data: {planTier: "FREE"}})
       const exceedingReservation: AdmitAndReserveParams = {
-        orgId,
+        organizationId: orgId,
+        operationId,
         entity,
         actor,
         metric: "MAX_LLM_TOKENS_PER_MONTH",
@@ -168,19 +436,17 @@ describe("UsageMeteringService Integration Tests", () => {
       }
 
       // When
-      const result = await freeTierService.admitAndReserve(exceedingReservation)()
+      const result = await service.admitAndReserve(exceedingReservation)()
 
       // Expect
       expect(result).toBeLeftOf("quota_exceeded")
-
-      freeTierRedis.disconnect()
-      await freeTierModule.close()
     })
 
     it("should return validation error on malformed billing period", async () => {
       // Given
       const params: AdmitAndReserveParams = {
-        orgId,
+        organizationId: orgId,
+        operationId,
         entity,
         actor,
         metric: "MAX_LLM_TOKENS_PER_MONTH",
@@ -197,11 +463,12 @@ describe("UsageMeteringService Integration Tests", () => {
   })
 
   describe("settleUsage", () => {
-    it("should atomically settle reservation in Redis and write immutable event to PostgreSQL", async () => {
+    it("should persist settlement intent and immutable usage event before applying the cache update", async () => {
       // Given: First reserve 2000 units
       const metric: UsageMetric = "MAX_EVALUATIONS_PER_MONTH"
       await service.admitAndReserve({
-        orgId,
+        organizationId: orgId,
+        operationId,
         entity,
         actor,
         metric,
@@ -210,7 +477,8 @@ describe("UsageMeteringService Integration Tests", () => {
       })()
 
       const settleParams: SettleUsageParams = {
-        orgId,
+        organizationId: orgId,
+        operationId,
         entity,
         actor,
         metric,
@@ -227,8 +495,10 @@ describe("UsageMeteringService Integration Tests", () => {
       // Expect
       expect(result).toBeRight()
 
+      unwrapRight(await service.applySettlement({organizationId: orgId}, operationId, "1")())
+
       // 1. Verify Redis balances: reservation released, actual consumed recorded
-      const usage = await service.getOrganizationUsage(adminRequestor, orgId, period, metric)()
+      const usage = await service.getOrganizationUsage(adminRequestor, {organizationId: orgId}, period, metric)()
       const summary = unwrapRight(usage)
       const firstMetric = summary.metrics[0]
       expect(firstMetric?.reserved).toBe(0)
@@ -255,7 +525,8 @@ describe("UsageMeteringService Integration Tests", () => {
     it("should return validation error on malformed billing period", async () => {
       // Given
       const params: SettleUsageParams = {
-        orgId,
+        organizationId: orgId,
+        operationId,
         entity,
         actor,
         metric: "MAX_LLM_TOKENS_PER_MONTH",
@@ -273,11 +544,12 @@ describe("UsageMeteringService Integration Tests", () => {
   })
 
   describe("cancelReservation", () => {
-    it("should release reserved capacity hold from Redis", async () => {
+    it("should persist cancellation before releasing the reserved capacity hold", async () => {
       // Given: Reserve 1500 units
       const metric: UsageMetric = "MAX_CREDITS_PER_MONTH"
       await service.admitAndReserve({
-        orgId,
+        organizationId: orgId,
+        operationId,
         entity,
         actor,
         metric,
@@ -286,7 +558,8 @@ describe("UsageMeteringService Integration Tests", () => {
       })()
 
       const cancelParams: CancelReservationParams = {
-        orgId,
+        organizationId: orgId,
+        operationId,
         metric,
         estimatedUnits: 1500,
         period
@@ -298,8 +571,10 @@ describe("UsageMeteringService Integration Tests", () => {
       // Expect
       expect(result).toBeRight()
 
+      unwrapRight(await service.applySettlement({organizationId: orgId}, operationId, "1")())
+
       // Verify in Redis
-      const usage = await service.getOrganizationUsage(adminRequestor, orgId, period, metric)()
+      const usage = await service.getOrganizationUsage(adminRequestor, {organizationId: orgId}, period, metric)()
       const summary = unwrapRight(usage)
       const firstMetric = summary.metrics[0]
       expect(firstMetric?.reserved).toBe(0)
@@ -309,7 +584,8 @@ describe("UsageMeteringService Integration Tests", () => {
     it("should return validation error on malformed billing period", async () => {
       // Given
       const params: CancelReservationParams = {
-        orgId,
+        organizationId: orgId,
+        operationId,
         metric: "MAX_CREDITS_PER_MONTH",
         estimatedUnits: 100,
         period: "2026-99"
@@ -327,7 +603,8 @@ describe("UsageMeteringService Integration Tests", () => {
     it("should retrieve organization usage across all metrics with date boundaries and units", async () => {
       // Given: Consume some tokens
       await service.admitAndReserve({
-        orgId,
+        organizationId: orgId,
+        operationId,
         entity,
         actor,
         metric: "MAX_LLM_TOKENS_PER_MONTH",
@@ -335,7 +612,8 @@ describe("UsageMeteringService Integration Tests", () => {
         period
       })()
       await service.settleUsage({
-        orgId,
+        organizationId: orgId,
+        operationId,
         entity,
         actor,
         metric: "MAX_LLM_TOKENS_PER_MONTH",
@@ -343,14 +621,15 @@ describe("UsageMeteringService Integration Tests", () => {
         actualUnits: 3000,
         period
       })()
+      unwrapRight(await service.applySettlement({organizationId: orgId}, operationId, "1")())
 
       // When
-      const result = await service.getOrganizationUsage(adminRequestor, orgId, period)()
+      const result = await service.getOrganizationUsage(adminRequestor, {organizationId: orgId}, period)()
 
       // Expect
       expect(result).toBeRight()
       const summary = unwrapRight(result)
-      expect(summary.orgId).toBe(orgId)
+      expect(summary.organizationId).toBe(orgId)
       expect(summary.period).toBe(period)
       expect(summary.periodStartsAt).toEqual(new Date(Date.UTC(2026, 7, 1, 0, 0, 0, 0)))
       expect(summary.periodEndsAt).toEqual(new Date(Date.UTC(2026, 7, 31, 23, 59, 59, 999)))
@@ -370,7 +649,7 @@ describe("UsageMeteringService Integration Tests", () => {
 
     it("should return billing_period_invalid_format on malformed period strings", async () => {
       // When
-      const result = await service.getOrganizationUsage(adminRequestor, orgId, "invalid-period")()
+      const result = await service.getOrganizationUsage(adminRequestor, {organizationId: orgId}, "invalid-period")()
 
       // Expect
       expect(result).toBeLeftOf("billing_period_invalid_format")
@@ -378,7 +657,19 @@ describe("UsageMeteringService Integration Tests", () => {
 
     it("should return requestor_not_authorized when caller is not an Org Admin", async () => {
       // When
-      const result = await service.getOrganizationUsage(memberRequestor, orgId, period)()
+      const result = await service.getOrganizationUsage(memberRequestor, {organizationId: orgId}, period)()
+
+      // Expect
+      expect(result).toBeLeftOf("requestor_not_authorized")
+    })
+
+    it("should reject an admin whose active organization differs from the requested tenant context", async () => {
+      // When
+      const result = await service.getOrganizationUsage(
+        adminRequestor,
+        {organizationId: toOrganizationId("018d9f1b-5b5c-7d9a-8e5f-1a2b3c4d5e64")},
+        period
+      )()
 
       // Expect
       expect(result).toBeLeftOf("requestor_not_authorized")

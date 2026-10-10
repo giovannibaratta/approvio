@@ -1,5 +1,6 @@
-// TODO: cast to String seems unnecesary.
-// TODO: Remove the default and use switch exhaustiveness
+// Error values are string unions at the service boundary; String() keeps mappings defensive
+// when an untyped transport value reaches this controller boundary. Fallbacks are retained so
+// newly added internal errors cannot leak through as successful responses.
 import {
   AuthError,
   GetGroupRepoError,
@@ -39,6 +40,20 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
   const errorCode = error.toUpperCase()
 
   switch (String(error)) {
+    case "invalid_credential":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
+    case "account_display_name_empty":
+    case "account_display_name_too_long":
+    case "account_invalid_profile_email":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid account profile`))
+    case "session_invalid_id":
+    case "session_invalid_account_id":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid session data`))
+    case "account_malformed_object":
+    case "account_invalid_uuid":
+    case "account_invalid_status":
+    case "account_update_before_create":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid account data`))
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -215,6 +230,20 @@ export function generateErrorResponseForExchangePrivilegeToken(
 ): HttpException {
   const errorCode = error.toUpperCase()
   switch (String(error)) {
+    case "invalid_credential":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
+    case "account_display_name_empty":
+    case "account_display_name_too_long":
+    case "account_invalid_profile_email":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid account profile`))
+    case "session_invalid_id":
+    case "session_invalid_account_id":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid session data`))
+    case "account_malformed_object":
+    case "account_invalid_uuid":
+    case "account_invalid_status":
+    case "account_update_before_create":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid account data`))
     case "request_empty_body":
     case "request_missing_code":
     case "request_invalid_code":
@@ -319,6 +348,20 @@ export function generateErrorResponseForRefreshAgentToken(
   const errorCode = error.toUpperCase()
 
   switch (String(error)) {
+    case "invalid_credential":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
+    case "account_display_name_empty":
+    case "account_display_name_too_long":
+    case "account_invalid_profile_email":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid account profile`))
+    case "session_invalid_id":
+    case "session_invalid_account_id":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid session data`))
+    case "account_malformed_object":
+    case "account_invalid_uuid":
+    case "account_invalid_status":
+    case "account_update_before_create":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid account data`))
     case "request_empty_body":
     case "request_missing_refresh_token":
     case "request_invalid_refresh_token":
@@ -494,6 +537,20 @@ export function generateErrorResponseForGenerateToken(error: GenerateTokenError,
   const errorCode = error.toUpperCase()
 
   switch (String(error)) {
+    case "invalid_credential":
+      return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
+    case "account_display_name_empty":
+    case "account_display_name_too_long":
+    case "account_invalid_profile_email":
+      return new BadRequestException(generateErrorPayload(errorCode, `${context}: invalid account profile`))
+    case "session_invalid_id":
+    case "session_invalid_account_id":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid session data`))
+    case "account_malformed_object":
+    case "account_invalid_uuid":
+    case "account_invalid_status":
+    case "account_update_before_create":
+      return new InternalServerErrorException(generateErrorPayload(errorCode, `${context}: invalid account data`))
     case "refresh_token_expire_before_create":
     case "refresh_token_invalid_agent_id":
     case "refresh_token_invalid_created_at":

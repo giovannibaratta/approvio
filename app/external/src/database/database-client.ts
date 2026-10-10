@@ -54,7 +54,7 @@ export class TransactionRetryExhaustedError extends Error {
 }
 
 export const DATABASE_RUNTIME_ROLE_TOKEN = Symbol("DATABASE_RUNTIME_ROLE_TOKEN")
-type DatabaseRuntimeRole = "approvio_tenant_runtime" | "approvio_worker_runtime" | "approvio_provisioning_runtime"
+type DatabaseRuntimeRole = "approvio_tenant_runtime" | "approvio_worker_runtime"
 
 @Injectable()
 export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
@@ -71,7 +71,12 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
   private static readonly DEFAULT_ISOLATION_LEVEL: Prisma.TransactionIsolationLevel =
     Prisma.TransactionIsolationLevel.ReadCommitted
 
-  constructor(@Inject(ConfigProvider) readonly config: Pick<ConfigProvider, "databaseConfig">) {
+  constructor(
+    @Inject(ConfigProvider) readonly config: Pick<ConfigProvider, "databaseConfig">,
+    @Optional()
+    @Inject(DATABASE_RUNTIME_ROLE_TOKEN)
+    readonly runtimeRole: DatabaseRuntimeRole = "approvio_tenant_runtime"
+  ) {
     const basePrisma = new PrismaClient({
       adapter: new PrismaPg({
         connectionString: config.databaseConfig.tenantConnectionUrl,
@@ -129,10 +134,11 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
     const isolationLevel = options?.isolationLevel ?? DatabaseClient.DEFAULT_ISOLATION_LEVEL
 
     // If an active transaction exists, reuse it and check isolation level
-    if (activeContext) {
-      if (activeContext.organizationId !== organizationId)
-        throw new OrganizationMismatchError(organizationId, activeContext.organizationId)
+    if (activeContext && activeContext.organizationId !== organizationId)
+      throw new OrganizationMismatchError(organizationId, activeContext.organizationId)
 
+    // Different process capabilities must not borrow each other's transaction privileges.
+    if (activeContext?.runtimeRole === this.runtimeRole) {
       const requestedStrictness = DatabaseClient.ISOLATION_STRICTNESS[isolationLevel]
       const currentStrictness = DatabaseClient.ISOLATION_STRICTNESS[activeContext.isolationLevel]
 
@@ -159,9 +165,11 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
             // SET LOCAL clears the runtime role at transaction end. The role
             // activates tenant RLS; the setting supplies its only accepted
             // organization identifier and also clears at transaction end.
-            await tx.$executeRawUnsafe(`SET LOCAL ROLE "${TENANT_RUNTIME_ROLE}"`)
+            await tx.$executeRawUnsafe(`SET LOCAL ROLE "${this.runtimeRole}"`)
             await tx.$queryRaw`SELECT set_config('approvio.organization_id', ${organizationId}, true)`
-            return transactionContext.run({tx, organizationId, isolationLevel}, () => computation(tx))
+            return transactionContext.run({tx, organizationId, isolationLevel, runtimeRole: this.runtimeRole}, () =>
+              computation(tx)
+            )
           },
           {isolationLevel}
         )
@@ -181,22 +189,25 @@ export class DatabaseClient implements OnModuleInit, OnModuleDestroy {
     throw new TransactionRetryExhaustedError(new Error("Retry loop exhausted without a captured database error"))
   }
 
-  private static isRetryableTransactionError(error: unknown): boolean {
+  static isRetryableTransactionError(error: unknown): boolean {
     // OCC/domain conflicts are returned to services; only Prisma-confirmed
     // transaction write conflicts/deadlocks are retried at this boundary.
-    return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034"
+    // Commit-time conflicts can escape directly from Prisma's PostgreSQL adapter.
+    return (
+      (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") ||
+      (isDriverAdapterError(error) && error.cause.kind === "TransactionWriteConflict")
+    )
   }
 
   private checkDbVersion(): TE.TaskEither<string, void> {
     return pipe(
       TE.tryCatch(
         async () => {
-          const result = await this.prisma.databasechangelog.findFirst({
-            orderBy: {
-              id: "desc"
-            }
-          })
-          return result
+          // Startup reads only the migration identifier column from the Liquibase history.
+          const [version] = await this.prisma.$queryRaw<Array<{id: string | null}>>`
+            SELECT id FROM public.databasechangelog ORDER BY id DESC LIMIT 1
+          `
+          return version?.id ? {id: version.id} : null
         },
         reason => `Failed to query database changelog: ${String(reason)}`
       ),

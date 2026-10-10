@@ -1,572 +1,570 @@
 import {Injectable, Logger} from "@nestjs/common"
 import {
-  TaskRepository,
-  TaskCreateError,
-  TaskUpdateError,
-  TaskLockError,
-  TaskUpdateChecks,
-  TaskReference,
-  TaskGetErrorWebhookTask,
-  TaskGetErrorEmailTask,
-  TaskGetErrorSlackTask
-} from "@services/task/interfaces"
-import {
-  Occ,
-  WorkflowActionTaskDecoratorSelector,
-  WorkflowActionWebhookTaskFactory,
-  WorkflowActionSlackTaskFactory,
-  DecoratedWorkflowActionWebhookPendingTask,
-  DecoratedWorkflowActionSlackPendingTask,
-  TaskStatus,
-  Lock
-} from "@domain"
-import {WorkflowActionType} from "@domain"
-import {
   DecoratedWorkflowActionEmailTask,
-  WorkflowActionEmailTask,
-  DecoratedWorkflowActionWebhookTask,
+  DecoratedWorkflowActionSlackPendingTask,
   DecoratedWorkflowActionSlackTask,
-  WorkflowActionEmailTaskFactory
+  DecoratedWorkflowActionWebhookPendingTask,
+  DecoratedWorkflowActionWebhookTask,
+  TaskStatus,
+  TaskReadyEvent,
+  TenantContext,
+  WorkflowActionEmailTask,
+  WorkflowActionEmailTaskFactory,
+  WorkflowActionSlackTaskFactory,
+  WorkflowActionTaskDecoratorSelector,
+  WorkflowActionWebhookTaskFactory
 } from "@domain"
-import {TaskEither} from "fp-ts/TaskEither"
-import * as TE from "fp-ts/TaskEither"
-import {DatabaseClient} from "../database/database-client"
-
+import {TenantEncryptionService} from "@external/kms/context-bound-encryption.service"
+import {Prisma} from "@prisma/client"
+import {isPrismaForeignKeyConstraintError} from "./errors"
 import {
-  Prisma,
-  WorkflowActionsWebhookTask as PrismaWorkflowActionsWebhookTask,
-  WorkflowActionsSlackTask as PrismaWorkflowActionsSlackTask
-} from "@prisma/client"
-import {ConcurrentUpdateError} from "./shared"
-import {TaskLockedByOtherError, TaskNotFoundError, TaskUnknownError} from "./task.exceptions"
-import {mapToNullableJsonValue} from "./shared/json-mappers"
+  TaskCreateError,
+  TaskCreateRequest,
+  TaskGetErrorEmailTask,
+  TaskGetErrorSlackTask,
+  TaskGetErrorWebhookTask,
+  TaskRepository,
+  TaskGenerationRequest,
+  TaskGenerationResult,
+  TaskPersistenceMetadata,
+  TaskUpdateChecks,
+  TaskUpdateError
+} from "@services/task/interfaces"
+import {Occ} from "@domain"
+import * as E from "fp-ts/Either"
+import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
-import {isPrismaUniqueConstraintError} from "./errors"
+import {WorkerDatabaseClient, WorkerTransaction} from "./capability-database-client"
+import {v5 as uuidv5, v7 as uuidv7} from "uuid"
+import {mapToJsonValue} from "./shared/json-mappers"
+
+type TaskKind = "email" | "webhook" | "slack"
+const TASK_READY_EVENT_NAMESPACE = "95650ca4-d361-11f0-8d0d-325096b39f47"
+type TaskRow = {
+  readonly id: string
+  readonly organizationId: string
+  readonly workflowId: string
+  readonly state: string
+  readonly encPayload: string
+  readonly attempts: number
+  readonly createdAt: Date
+  readonly updatedAt: Date
+  readonly occ: bigint
+  readonly fencing: bigint
+  readonly leaseOwner: string | null
+  readonly leaseUntil: Date | null
+}
+
+type TaskCreateFields = {
+  readonly id: string
+  readonly organizationId: string
+  readonly workflowId: string
+  readonly status: TaskStatus
+  readonly occ: bigint
+  readonly createdAt: Date
+  readonly updatedAt: Date
+}
+
+type PreparedEventTask = {
+  readonly task: TaskCreateFields
+  readonly metadata: TaskPersistenceMetadata
+  readonly kind: TaskKind
+  readonly encPayload: string
+}
 
 @Injectable()
 export class PrismaTaskRepository implements TaskRepository {
-  constructor(private readonly dbClient: DatabaseClient) {}
+  constructor(
+    private readonly workers: WorkerDatabaseClient,
+    private readonly tenantEncryption: TenantEncryptionService
+  ) {}
 
-  createEmailTask(task: DecoratedWorkflowActionEmailTask<{occ: true}>): TaskEither<TaskCreateError, void> {
-    return TE.tryCatch(
-      async () => {
-        await this.dbClient.cx.workflowActionsEmailTask.create({
-          data: {
-            id: task.id,
-            workflowId: task.workflowId,
-            status: task.status,
-            retryCount: task.retryCount,
-            recipients: task.recipients,
-            subject: task.subject,
-            body: task.body,
-            errorReason: task.status === TaskStatus.ERROR ? task.errorReason : undefined,
-            createdAt: task.createdAt,
-            updatedAt: task.updatedAt,
-            occ: task.occ
-          }
-        })
-      },
-      error => {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
-          return "task_already_exists" as const
-
-        Logger.error(`Failed to create email task ${task.id}`, error)
-        return "unknown_error" as const
-      }
-    )
-  }
-
-  createSlackTask(task: DecoratedWorkflowActionSlackPendingTask<{occ: true}>): TaskEither<TaskCreateError, void> {
-    return TE.tryCatch(
-      async () => {
-        await this.dbClient.cx.workflowActionsSlackTask.create({
-          data: {
-            id: task.id,
-            workflowId: task.workflowId,
-            status: task.status,
-            webhookUrl: task.webhookUrl,
-            message: task.message,
-            responseStatus: undefined,
-            responseBody: undefined,
-            responseBodyStatus: undefined,
-            retryCount: task.retryCount,
-            errorReason: undefined,
-            createdAt: task.createdAt,
-            updatedAt: task.updatedAt,
-            occ: task.occ
-          }
-        })
-      },
-      error => {
-        if (isPrismaUniqueConstraintError(error, ["id"])) return "task_already_exists" as const
-        Logger.error(`Failed to create slack task ${task.id}`, error)
-        return "unknown_error" as const
-      }
-    )
-  }
-
-  updateSlackTask<T extends WorkflowActionTaskDecoratorSelector>(
-    task: DecoratedWorkflowActionSlackTask<T>,
-    checks: TaskUpdateChecks
-  ): TaskEither<TaskUpdateError, Occ> {
-    return TE.tryCatch(
-      async () => {
-        const {responseStatus, responseBody, responseBodyStatus} = extractResponseAttributes(task)
-
-        const updatedTasks = await this.dbClient.cx.workflowActionsSlackTask.updateManyAndReturn({
-          where: {
-            id: task.id,
-            occ: checks.occ,
-            lockedBy: checks.lockOwner
-          },
-          data: {
-            status: task.status,
-            retryCount: task.retryCount,
-            errorReason: task.status === TaskStatus.ERROR ? task.errorReason : undefined,
-            responseStatus,
-            responseBody,
-            responseBodyStatus,
-            updatedAt: task.updatedAt,
-            occ: {increment: 1}
-          }
-        })
-
-        if (updatedTasks.length === 0 || updatedTasks[0] === undefined)
-          return await this.categorizeErrorTypeAndRaise("WorkflowActionsSlackTask", task.id, checks)
-
-        return {occ: updatedTasks[0].occ}
-      },
-      error => {
-        if (error instanceof ConcurrentUpdateError) return "task_concurrent_update" as const
-        if (error instanceof TaskNotFoundError) return "task_concurrent_update" as const
-        if (error instanceof TaskLockedByOtherError) return "task_locked_by_other" as const
-        Logger.error(`Failed to update slack task ${task.id}`, error)
-        return "unknown_error" as const
-      }
-    )
-  }
-
-  getSlackTask(taskId: string): TaskEither<TaskGetErrorSlackTask, DecoratedWorkflowActionSlackTask<{occ: true}>> {
+  createEventTasks(
+    context: TenantContext,
+    eventId: string,
+    requests: ReadonlyArray<TaskGenerationRequest>
+  ): TE.TaskEither<TaskCreateError, TaskGenerationResult> {
     return pipe(
-      this.getSlackTaskTE(taskId),
-      TE.chainW(rawData => {
-        const {lockedBy, lockedAt, ...rest} = rawData
+      TE.sequenceArray(requests.map(request => this.prepareEventTask(context, request, eventId))),
+      TE.chainW(tasks =>
+        TE.tryCatch(
+          () =>
+            this.workers.transactional(context.organizationId, async cx => {
+              const receipt = await cx.eventReceipts.record("task_generation", eventId)
+              if (receipt === "duplicate") return {outcome: "duplicate" as const, events: []}
 
-        if (lockedBy !== null && lockedAt === null) return TE.left("task_lock_inconsistent" as const)
-        if (lockedBy === null && lockedAt !== null) return TE.left("task_lock_inconsistent" as const)
-
-        let lock: Lock | undefined = undefined
-
-        if (lockedBy !== null && lockedAt !== null)
-          lock = {
-            lockedBy,
-            lockedAt
-          }
-
-        return TE.right({
-          ...rest,
-          lock
-        })
-      }),
-      TE.chainW(mappedTask => TE.fromEither(WorkflowActionSlackTaskFactory.validate<{occ: true}>(mappedTask)))
+              const events: TaskReadyEvent[] = []
+              for (const task of tasks) {
+                const event = await this.persistEventTask(context, task, cx)
+                if (event) events.push(event)
+              }
+              return {outcome: "new" as const, events}
+            }),
+          error => this.mapEventTaskCreateError(error)
+        )
+      )
     )
   }
 
-  updateEmailTask(task: WorkflowActionEmailTask, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, Occ> {
-    return TE.tryCatch(
-      async () => {
-        const updatedTasks = await this.dbClient.cx.workflowActionsEmailTask.updateManyAndReturn({
-          where: {
-            id: task.id,
-            occ: checks.occ,
-            lockedBy: checks.lockOwner
-          },
-          data: {
-            status: task.status,
-            retryCount: task.retryCount,
-            errorReason: task.status === TaskStatus.ERROR ? task.errorReason : undefined,
-            updatedAt: task.updatedAt,
-            occ: {increment: 1}
-          }
-        })
-
-        if (updatedTasks.length === 0 || updatedTasks[0] === undefined)
-          return await this.categorizeErrorTypeAndRaise("WorkflowActionsEmailTask", task.id, checks)
-
-        return {occ: updatedTasks[0].occ}
-      },
-      error => {
-        if (error instanceof ConcurrentUpdateError) return "task_concurrent_update" as const
-        if (error instanceof TaskNotFoundError) return "task_concurrent_update" as const
-        if (error instanceof TaskLockedByOtherError) return "task_locked_by_other" as const
-        Logger.error(`Failed to update email task ${task.id}`, error)
-        return "unknown_error" as const
-      }
-    )
+  createEmailTask(
+    context: TenantContext,
+    request: TaskCreateRequest<DecoratedWorkflowActionEmailTask<{occ: true}>>
+  ): TE.TaskEither<TaskCreateError, TaskReadyEvent> {
+    const task = request.task
+    return this.create(context, task, request.metadata, "email", {
+      recipients: task.recipients,
+      subject: task.subject,
+      body: task.body
+    })
   }
 
-  createWebhookTask(task: DecoratedWorkflowActionWebhookPendingTask<{occ: true}>): TaskEither<TaskCreateError, void> {
-    return TE.tryCatch(
-      async () => {
-        await this.dbClient.cx.workflowActionsWebhookTask.create({
-          data: {
-            id: task.id,
-            workflowId: task.workflowId,
-            status: task.status,
-            url: task.url,
-            method: task.method,
-            headers: mapHeadersToJsonValue(task.headers),
-            payload: mapToNullableJsonValue(task.payload),
-            responseStatus: undefined,
-            responseBody: undefined,
-            responseBodyStatus: undefined,
-            retryCount: task.retryCount,
-            errorReason: undefined,
-            createdAt: task.createdAt,
-            updatedAt: task.updatedAt,
-            occ: task.occ
-          }
-        })
-      },
-      error => {
-        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
-          return "task_already_exists" as const
+  createWebhookTask(
+    context: TenantContext,
+    request: TaskCreateRequest<DecoratedWorkflowActionWebhookPendingTask<{occ: true}>>
+  ): TE.TaskEither<TaskCreateError, TaskReadyEvent> {
+    const task = request.task
+    return this.create(context, task, request.metadata, "webhook", {
+      url: task.url,
+      method: task.method,
+      ...(task.headers === undefined ? {} : {headers: task.headers}),
+      ...(task.payload === undefined ? {} : {payload: task.payload})
+    })
+  }
 
-        Logger.error(`Failed to create webhook task ${task.id}`, error)
-        return "unknown_error" as const
-      }
-    )
+  createSlackTask(
+    context: TenantContext,
+    request: TaskCreateRequest<DecoratedWorkflowActionSlackPendingTask<{occ: true}>>
+  ): TE.TaskEither<TaskCreateError, TaskReadyEvent> {
+    const task = request.task
+    return this.create(context, task, request.metadata, "slack", {
+      webhookUrl: task.webhookUrl,
+      ...(task.message === undefined ? {} : {message: task.message})
+    })
+  }
+
+  updateEmailTask(
+    context: TenantContext,
+    task: WorkflowActionEmailTask,
+    checks: TaskUpdateChecks
+  ): TE.TaskEither<TaskUpdateError, Occ> {
+    return this.update(context, task, checks, "email", {
+      recipients: task.recipients,
+      subject: task.subject,
+      body: task.body
+    })
   }
 
   updateWebhookTask<T extends WorkflowActionTaskDecoratorSelector>(
+    context: TenantContext,
     task: DecoratedWorkflowActionWebhookTask<T>,
     checks: TaskUpdateChecks
-  ): TaskEither<TaskUpdateError, Occ> {
-    return TE.tryCatch(
-      async () => {
-        const {responseStatus, responseBody, responseBodyStatus} = extractResponseAttributes(task)
-
-        const updatedTasks = await this.dbClient.cx.workflowActionsWebhookTask.updateManyAndReturn({
-          where: {
-            id: task.id,
-            occ: checks.occ,
-            lockedBy: checks.lockOwner
-          },
-          data: {
-            status: task.status,
-            retryCount: task.retryCount,
-            errorReason: task.status === TaskStatus.ERROR ? task.errorReason : undefined,
-            responseStatus,
-            responseBody,
-            responseBodyStatus,
-            updatedAt: task.updatedAt,
-            occ: {increment: 1}
-          }
-        })
-
-        if (updatedTasks.length === 0 || updatedTasks[0] === undefined)
-          return await this.categorizeErrorTypeAndRaise("WorkflowActionsWebhookTask", task.id, checks)
-
-        return {occ: updatedTasks[0].occ}
-      },
-      error => {
-        if (error instanceof ConcurrentUpdateError) return "task_concurrent_update" as const
-        if (error instanceof TaskNotFoundError) return "task_concurrent_update" as const
-        if (error instanceof TaskLockedByOtherError) return "task_locked_by_other" as const
-        Logger.error(`Failed to update webhook task ${task.id}`, error)
-        return "unknown_error" as const
-      }
-    )
+  ): TE.TaskEither<TaskUpdateError, Occ> {
+    return this.update(context, task, checks, "webhook", {
+      url: task.url,
+      method: task.method,
+      ...(task.headers === undefined ? {} : {headers: task.headers}),
+      ...(task.payload === undefined ? {} : {payload: task.payload})
+    })
   }
 
-  getWebhookTask(taskId: string): TaskEither<TaskGetErrorWebhookTask, DecoratedWorkflowActionWebhookTask<{occ: true}>> {
-    return pipe(
-      this.getWebhookTaskTE(taskId),
-      TE.chainW(rawData => {
-        const {lockedBy, lockedAt, headers, ...rest} = rawData
-
-        if (lockedBy !== null && lockedAt === null) return TE.left("task_lock_inconsistent" as const)
-        if (lockedBy === null && lockedAt !== null) return TE.left("task_lock_inconsistent" as const)
-
-        let lock: Lock | undefined = undefined
-
-        if (lockedBy !== null && lockedAt !== null)
-          lock = {
-            lockedBy,
-            lockedAt
-          }
-
-        return TE.right({
-          ...rest,
-          headers: headers === null ? undefined : headers,
-          lock
-        })
-      }),
-      TE.chainW(mappedTask => TE.fromEither(WorkflowActionWebhookTaskFactory.validate<{occ: true}>(mappedTask)))
-    )
-  }
-
-  getEmailTask(taskId: string): TaskEither<TaskGetErrorEmailTask, DecoratedWorkflowActionEmailTask<{occ: true}>> {
-    return pipe(
-      this.getEmailTaskTE(taskId),
-      TE.chainW(rawData => {
-        const {lockedBy, lockedAt, ...rest} = rawData
-
-        if (lockedBy !== null && lockedAt === null) return TE.left("task_lock_inconsistent" as const)
-        if (lockedBy === null && lockedAt !== null) return TE.left("task_lock_inconsistent" as const)
-
-        let lock: Lock | undefined = undefined
-
-        if (lockedBy !== null && lockedAt !== null)
-          lock = {
-            lockedBy,
-            lockedAt
-          }
-
-        return TE.right({
-          ...rest,
-          lock
-        })
-      }),
-      TE.chainW(mappedTask => TE.fromEither(WorkflowActionEmailTaskFactory.validate<{occ: true}>(mappedTask)))
-    )
-  }
-
-  private getWebhookTaskTE(taskId: string): TaskEither<TaskGetErrorWebhookTask, PrismaWorkflowActionsWebhookTask> {
-    return TE.tryCatch(
-      async () => {
-        const task = await this.dbClient.cx.workflowActionsWebhookTask.findUnique({
-          where: {id: taskId}
-        })
-        if (!task) throw new TaskNotFoundError()
-        return task
-      },
-      error => {
-        if (error instanceof TaskNotFoundError) {
-          Logger.warn(`Task ${taskId} not found`)
-          return "task_not_found" as const
-        }
-
-        Logger.error(`Failed to get webhook task ${taskId}`, error)
-        return "unknown_error" as const
-      }
-    )
-  }
-
-  private getEmailTaskTE(
-    taskId: string
-  ): TaskEither<TaskGetErrorEmailTask, Prisma.WorkflowActionsEmailTaskGetPayload<object>> {
-    return TE.tryCatch(
-      async () => {
-        const task = await this.dbClient.cx.workflowActionsEmailTask.findUnique({
-          where: {id: taskId}
-        })
-        if (!task) throw new TaskNotFoundError()
-        return task
-      },
-      error => {
-        if (error instanceof TaskNotFoundError) {
-          Logger.warn(`Task ${taskId} not found`)
-          return "task_not_found" as const
-        }
-
-        Logger.error(`Failed to get email task ${taskId}`, error)
-        return "unknown_error" as const
-      }
-    )
-  }
-
-  private getSlackTaskTE(taskId: string): TaskEither<TaskGetErrorSlackTask, PrismaWorkflowActionsSlackTask> {
-    return TE.tryCatch(
-      async () => {
-        const task = await this.dbClient.cx.workflowActionsSlackTask.findUnique({
-          where: {id: taskId}
-        })
-        if (!task) throw new TaskNotFoundError()
-        return task
-      },
-      error => {
-        if (error instanceof TaskNotFoundError) {
-          Logger.warn(`Task ${taskId} not found`)
-          return "task_not_found" as const
-        }
-
-        Logger.error(`Failed to get slack task ${taskId}`, error)
-        return "unknown_error" as const
-      }
-    )
-  }
-
-  lockTask(taskReference: TaskReference, lockOwner: string): TaskEither<TaskLockError, Occ> {
-    // This method is a generic method to lock any task type.
-    // Since the tasks are stored in different tables, we need to handle each type separately.
-
-    const {type, taskId} = taskReference
-
-    return TE.tryCatch(
-      async () => {
-        if (type === WorkflowActionType.EMAIL) {
-          const updatedTasks = await this.dbClient.cx.workflowActionsEmailTask.updateManyAndReturn({
-            where: {id: taskId, lockedBy: null},
-            data: {lockedBy: lockOwner, lockedAt: new Date(), occ: {increment: 1}}
-          })
-
-          if (updatedTasks.length === 0 || updatedTasks[0] === undefined) {
-            const task = await this.dbClient.cx.workflowActionsEmailTask.findUnique({where: {id: taskId}})
-            if (!task) throw new TaskNotFoundError()
-            if (task.lockedBy === lockOwner) return {occ: task.occ}
-            throw new TaskLockedByOtherError()
-          }
-
-          return {occ: updatedTasks[0].occ}
-        } else if (type === WorkflowActionType.WEBHOOK) {
-          const updatedTasks = await this.dbClient.cx.workflowActionsWebhookTask.updateManyAndReturn({
-            where: {id: taskId, lockedBy: null},
-            data: {lockedBy: lockOwner, lockedAt: new Date(), occ: {increment: 1}}
-          })
-
-          if (updatedTasks.length === 0 || updatedTasks[0] === undefined) {
-            const task = await this.dbClient.cx.workflowActionsWebhookTask.findUnique({where: {id: taskId}})
-            if (!task) throw new TaskNotFoundError()
-            if (task.lockedBy === lockOwner) return {occ: task.occ}
-            throw new TaskLockedByOtherError()
-          }
-
-          return {occ: updatedTasks[0].occ}
-        } else {
-          const updatedTasks = await this.dbClient.cx.workflowActionsSlackTask.updateManyAndReturn({
-            where: {id: taskId, lockedBy: null},
-            data: {lockedBy: lockOwner, lockedAt: new Date(), occ: {increment: 1}}
-          })
-
-          if (updatedTasks.length === 0 || updatedTasks[0] === undefined) {
-            const task = await this.dbClient.cx.workflowActionsSlackTask.findUnique({where: {id: taskId}})
-            if (!task) throw new TaskNotFoundError()
-            if (task.lockedBy === lockOwner) return {occ: task.occ}
-            throw new TaskLockedByOtherError()
-          }
-
-          return {occ: updatedTasks[0].occ}
-        }
-      },
-      error => {
-        if (error instanceof TaskLockedByOtherError) return "task_locked_by_other" as const
-        if (error instanceof TaskNotFoundError) {
-          Logger.error(`Task ${taskId} not found during lock attempt`)
-          return "task_not_found" as const
-        }
-        Logger.error(`Failed to lock task ${taskId}`, error)
-        return "unknown_error" as const
-      }
-    )
-  }
-
-  releaseLock(taskReference: TaskReference, checks: TaskUpdateChecks): TaskEither<TaskUpdateError, void> {
-    // This method is a generic method to lock any task type.
-    // Since the tasks are stored in different tables, we need to handle each type separately.
-
-    const {type, taskId} = taskReference
-
-    return TE.tryCatch(
-      async () => {
-        const baseData = {
-          lockedBy: null,
-          lockedAt: null,
-          occ: {increment: 1}
-        }
-
-        if (type === WorkflowActionType.EMAIL) {
-          const result = await this.dbClient.cx.workflowActionsEmailTask.updateMany({
-            where: {id: taskId, occ: checks.occ, lockedBy: checks.lockOwner},
-            data: baseData
-          })
-          if (result.count === 0) await this.categorizeErrorTypeAndRaise("WorkflowActionsEmailTask", taskId, checks)
-        } else if (type === WorkflowActionType.WEBHOOK) {
-          const result = await this.dbClient.cx.workflowActionsWebhookTask.updateMany({
-            where: {id: taskId, occ: checks.occ, lockedBy: checks.lockOwner},
-            data: baseData
-          })
-          if (result.count === 0) await this.categorizeErrorTypeAndRaise("WorkflowActionsWebhookTask", taskId, checks)
-        } else {
-          const result = await this.dbClient.cx.workflowActionsSlackTask.updateMany({
-            where: {id: taskId, occ: checks.occ, lockedBy: checks.lockOwner},
-            data: baseData
-          })
-          if (result.count === 0) await this.categorizeErrorTypeAndRaise("WorkflowActionsSlackTask", taskId, checks)
-        }
-      },
-      error => {
-        if (error instanceof ConcurrentUpdateError) return "task_concurrent_update" as const
-        if (error instanceof TaskNotFoundError) return "task_concurrent_update" as const
-        if (error instanceof TaskLockedByOtherError) return "task_locked_by_other" as const
-        Logger.error(`Failed to release lock for task ${taskId}`, error)
-        return "unknown_error" as const
-      }
-    )
-  }
-
-  private async categorizeErrorTypeAndRaise(
-    table: Extract<
-      Prisma.ModelName | "WorkflowActionsSlackTask",
-      "WorkflowActionsEmailTask" | "WorkflowActionsWebhookTask" | "WorkflowActionsSlackTask"
-    >,
-    id: string,
+  updateSlackTask<T extends WorkflowActionTaskDecoratorSelector>(
+    context: TenantContext,
+    task: DecoratedWorkflowActionSlackTask<T>,
     checks: TaskUpdateChecks
-  ): Promise<never> {
-    Logger.error(`Failed to update task ${id}: no records have been updated`)
+  ): TE.TaskEither<TaskUpdateError, Occ> {
+    return this.update(context, task, checks, "slack", {
+      webhookUrl: task.webhookUrl,
+      ...(task.message === undefined ? {} : {message: task.message})
+    })
+  }
 
-    const retrievers = {
-      WorkflowActionsEmailTask: () => this.dbClient.cx.workflowActionsEmailTask.findUnique({where: {id}}),
-      WorkflowActionsWebhookTask: () => this.dbClient.cx.workflowActionsWebhookTask.findUnique({where: {id}}),
-      WorkflowActionsSlackTask: () => this.dbClient.cx.workflowActionsSlackTask.findUnique({where: {id}})
+  getEmailTask(
+    context: TenantContext,
+    taskId: string
+  ): TE.TaskEither<TaskGetErrorEmailTask, DecoratedWorkflowActionEmailTask<{occ: true}>> {
+    return pipe(
+      this.get(context, taskId, "email"),
+      TE.chainW(row => this.decryptPayload(context, row, "email")),
+      TE.chainEitherKW(({row, payload}) =>
+        WorkflowActionEmailTaskFactory.validate<{occ: true}>({...toLegacyTask(row), ...payload})
+      )
+    )
+  }
+
+  getWebhookTask(
+    context: TenantContext,
+    taskId: string
+  ): TE.TaskEither<TaskGetErrorWebhookTask, DecoratedWorkflowActionWebhookTask<{occ: true}>> {
+    return pipe(
+      this.get(context, taskId, "webhook"),
+      TE.chainW(row => this.decryptPayload(context, row, "webhook")),
+      TE.chainEitherKW(({row, payload}) =>
+        WorkflowActionWebhookTaskFactory.validate<{occ: true}>({...toLegacyTask(row), ...payload})
+      )
+    )
+  }
+
+  getSlackTask(
+    context: TenantContext,
+    taskId: string
+  ): TE.TaskEither<TaskGetErrorSlackTask, DecoratedWorkflowActionSlackTask<{occ: true}>> {
+    return pipe(
+      this.get(context, taskId, "slack"),
+      TE.chainW(row => this.decryptPayload(context, row, "slack")),
+      TE.chainEitherKW(({row, payload}) =>
+        WorkflowActionSlackTaskFactory.validate<{occ: true}>({...toLegacyTask(row), ...payload})
+      )
+    )
+  }
+
+  private create(
+    context: TenantContext,
+    task: TaskCreateFields,
+    metadata: TaskCreateRequest<DecoratedWorkflowActionEmailTask<{occ: true}>>["metadata"],
+    kind: TaskKind,
+    payload: Record<string, unknown>
+  ): TE.TaskEither<TaskCreateError, TaskReadyEvent> {
+    if (task.organizationId !== context.organizationId) return TE.left("organization_mismatch")
+    return pipe(
+      this.encryptPayload(context, task.id, kind, payload),
+      TE.chainW(encPayload =>
+        TE.tryCatch(
+          () =>
+            this.workers.transactional(context.organizationId, cx =>
+              this.persistCreate(context, task, metadata, kind, encPayload, cx)
+            ),
+          error => this.mapCreateError(error)
+        )
+      )
+    )
+  }
+
+  private prepareEventTask(
+    context: TenantContext,
+    request: TaskGenerationRequest,
+    eventId: string
+  ): TE.TaskEither<TaskCreateError, PreparedEventTask> {
+    switch (request.kind) {
+      case "email":
+        return this.prepareEventTaskPayload(context, request, eventId, "email", {
+          recipients: request.request.task.recipients,
+          subject: request.request.task.subject,
+          body: request.request.task.body
+        })
+      case "webhook":
+        return this.prepareEventTaskPayload(context, request, eventId, "webhook", {
+          url: request.request.task.url,
+          method: request.request.task.method,
+          ...(request.request.task.headers === undefined ? {} : {headers: request.request.task.headers}),
+          ...(request.request.task.payload === undefined ? {} : {payload: request.request.task.payload})
+        })
+      case "slack":
+        return this.prepareEventTaskPayload(context, request, eventId, "slack", {
+          webhookUrl: request.request.task.webhookUrl,
+          ...(request.request.task.message === undefined ? {} : {message: request.request.task.message})
+        })
     }
+  }
 
-    let actualTask
+  private prepareEventTaskPayload(
+    context: TenantContext,
+    request: TaskGenerationRequest,
+    eventId: string,
+    kind: TaskKind,
+    payload: Record<string, unknown>
+  ): TE.TaskEither<TaskCreateError, PreparedEventTask> {
+    const {task, metadata} = request.request
+    if (task.organizationId !== context.organizationId) return TE.left("organization_mismatch")
+    if (metadata.eventId !== eventId) return TE.left("event_mismatch")
+    return pipe(
+      this.encryptPayload(context, task.id, kind, payload),
+      TE.map(encPayload => ({task, metadata, kind, encPayload}))
+    )
+  }
 
-    try {
-      actualTask = await retrievers[table]()
-    } catch {
-      throw new TaskUnknownError()
+  private async persistEventTask(context: TenantContext, prepared: PreparedEventTask, cx: WorkerTransaction) {
+    const {task, metadata, kind, encPayload} = prepared
+    const existing = await cx.durableWork.findUnique({
+      where: {organizationId_id: {organizationId: context.organizationId, id: task.id}},
+      select: {kind: true}
+    })
+    if (existing) {
+      if (existing.kind !== kind) throw new TaskEventMismatchError()
+      const existingAction =
+        kind === "email"
+          ? await cx.workflowActionsEmailTask.findUnique({
+              where: {organizationId_id: {organizationId: context.organizationId, id: task.id}},
+              select: {eventId: true, actionIndex: true}
+            })
+          : kind === "webhook"
+            ? await cx.workflowActionsWebhookTask.findUnique({
+                where: {organizationId_id: {organizationId: context.organizationId, id: task.id}},
+                select: {eventId: true, actionIndex: true}
+              })
+            : await cx.workflowActionsSlackTask.findUnique({
+                where: {organizationId_id: {organizationId: context.organizationId, id: task.id}},
+                select: {eventId: true, actionIndex: true}
+              })
+      if (existingAction?.eventId !== metadata.eventId || existingAction.actionIndex !== metadata.actionIndex)
+        throw new TaskEventMismatchError()
+      return
     }
+    return this.persistCreate(context, task, metadata, kind, encPayload, cx)
+  }
 
-    if (!actualTask) throw new TaskNotFoundError()
-    if (actualTask.lockedBy !== checks.lockOwner) throw new TaskLockedByOtherError()
-    if (actualTask.occ !== checks.occ) throw new ConcurrentUpdateError()
+  private async persistCreate(
+    context: TenantContext,
+    task: TaskCreateFields,
+    metadata: TaskPersistenceMetadata,
+    kind: TaskKind,
+    encPayload: string,
+    cx: WorkerTransaction
+  ): Promise<TaskReadyEvent> {
+    const data = {
+      id: task.id,
+      organizationId: context.organizationId,
+      workflowId: task.workflowId,
+      eventId: metadata.eventId,
+      actionIndex: metadata.actionIndex,
+      encPayload,
+      state: toDurableState(task.status),
+      availableAt: metadata.availableAt,
+      attempts: 0,
+      fencing: 0n,
+      createdAt: task.createdAt,
+      updatedAt: task.updatedAt,
+      occ: task.occ
+    }
+    await cx.durableWork.create({
+      data: {
+        id: task.id,
+        organizationId: context.organizationId,
+        kind,
+        state: toDurableState(task.status),
+        availableAt: metadata.availableAt,
+        attempts: 0,
+        fencing: 0n,
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt,
+        occ: task.occ
+      }
+    })
+    switch (kind) {
+      case "email":
+        await cx.workflowActionsEmailTask.create({data})
+        break
+      case "webhook":
+        await cx.workflowActionsWebhookTask.create({data})
+        break
+      case "slack":
+        await cx.workflowActionsSlackTask.create({data})
+        break
+    }
+    const readyEventId = uuidv5(`${metadata.eventId}:task.ready:${task.id}`, TASK_READY_EVENT_NAMESPACE)
+    const readyEvent: TaskReadyEvent = {
+      schemaVersion: 1,
+      eventId: readyEventId,
+      taskOcc: task.occ,
+      organizationId: context.organizationId,
+      type: "task.ready",
+      taskId: task.id,
+      taskKind: kind
+    }
+    await cx.tenantOutbox.create({
+      data: {
+        id: uuidv7(),
+        organizationId: context.organizationId,
+        eventId: readyEventId,
+        eventType: "task.ready",
+        schemaVersion: 1,
+        resourceId: task.id,
+        resourceVersion: task.occ,
+        payload: mapToJsonValue(readyEvent),
+        availableAt: metadata.availableAt,
+        attempts: 0,
+        createdAt: task.createdAt
+      }
+    })
+    return readyEvent
+  }
 
-    throw new TaskUnknownError()
+  private update(
+    context: TenantContext,
+    task: {
+      readonly id: string
+      readonly organizationId: string
+      readonly status: TaskStatus
+      readonly createdAt: Date
+      readonly updatedAt: Date
+    },
+    checks: TaskUpdateChecks,
+    kind: TaskKind,
+    payload: Record<string, unknown>
+  ): TE.TaskEither<TaskUpdateError, Occ> {
+    if (task.organizationId !== context.organizationId) return TE.left("organization_mismatch")
+    return pipe(
+      this.encryptPayload(context, task.id, kind, payload),
+      TE.chainW(encPayload =>
+        TE.tryCatch(
+          async () => {
+            const where = {
+              organizationId: context.organizationId,
+              id: task.id,
+              occ: checks.occ,
+              fencing: checks.fencing,
+              leaseOwner: checks.leaseOwner
+            }
+            const data = {
+              encPayload,
+              state: toDurableState(task.status),
+              updatedAt: task.updatedAt,
+              occ: {increment: 1}
+            }
+            const result = await this.workers.transactional(context.organizationId, cx =>
+              kind === "email"
+                ? cx.workflowActionsEmailTask.updateMany({where, data})
+                : kind === "webhook"
+                  ? cx.workflowActionsWebhookTask.updateMany({where, data})
+                  : cx.workflowActionsSlackTask.updateMany({where, data})
+            )
+            if (result.count !== 1) throw new LeaseLostError()
+            return {occ: checks.occ + 1n}
+          },
+          error => this.mapUpdateError(error)
+        )
+      )
+    )
+  }
+
+  private get(
+    context: TenantContext,
+    taskId: string,
+    kind: TaskKind
+  ): TE.TaskEither<"task_not_found" | "unknown_error", TaskRow> {
+    return pipe(
+      TE.tryCatch(
+        async () => {
+          const where = {organizationId_id: {organizationId: context.organizationId, id: taskId}}
+          const row = await this.workers.transactional(context.organizationId, cx =>
+            kind === "email"
+              ? cx.workflowActionsEmailTask.findUnique({where})
+              : kind === "webhook"
+                ? cx.workflowActionsWebhookTask.findUnique({where})
+                : cx.workflowActionsSlackTask.findUnique({where})
+          )
+          if (!row) throw new TaskNotFoundError()
+          return row
+        },
+        error => this.mapGetError(error)
+      )
+    )
+  }
+
+  private encryptPayload(
+    context: TenantContext,
+    taskId: string,
+    kind: TaskKind,
+    payload: Record<string, unknown>
+  ): TE.TaskEither<"encryption_failed", string> {
+    return pipe(
+      TE.fromEither(
+        E.tryCatch(
+          () => JSON.stringify(payload),
+          () => "encryption_failed" as const
+        )
+      ),
+      TE.chainW(plaintext => this.tenantEncryption.encrypt(encryptionContext(context, taskId, kind), plaintext)),
+      TE.mapLeft(() => "encryption_failed" as const)
+    )
+  }
+
+  private decryptPayload(
+    context: TenantContext,
+    row: TaskRow,
+    kind: TaskKind
+  ): TE.TaskEither<"decryption_failed", {readonly row: TaskRow; readonly payload: Record<string, unknown>}> {
+    return pipe(
+      this.tenantEncryption.decrypt(encryptionContext(context, row.id, kind), row.encPayload),
+      TE.mapLeft(() => "decryption_failed" as const),
+      TE.chainEitherKW(plaintext => {
+        const parsed = E.tryCatch(
+          () => JSON.parse(plaintext) as unknown,
+          () => "decryption_failed" as const
+        )
+        if (E.isLeft(parsed) || !isRecord(parsed.right)) return E.left("decryption_failed" as const)
+        return E.right({row, payload: parsed.right})
+      })
+    )
+  }
+
+  private mapCreateError(error: unknown): TaskCreateError {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return "task_already_exists"
+    Logger.error("Task create failed", error instanceof Error ? `${error.name}: ${error.message}` : "non_error")
+    return "unknown_error"
+  }
+
+  private mapEventTaskCreateError(error: unknown): TaskCreateError {
+    if (isPrismaForeignKeyConstraintError(error, "fk_tenant_event_receipts_outbox")) return "event_mismatch"
+    if (error instanceof TaskEventMismatchError) return "event_mismatch"
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") return "task_already_exists"
+    Logger.error("Event task creation failed", error instanceof Error ? error.name : "non_error")
+    return "repository_dependency_error"
+  }
+
+  private mapUpdateError(error: unknown): TaskUpdateError {
+    if (error instanceof LeaseLostError) return "lease_lost"
+    Logger.error("Task update failed", error instanceof Error ? error.name : "non_error")
+    return "unknown_error"
+  }
+
+  private mapGetError(error: unknown): "task_not_found" | "unknown_error" {
+    if (error instanceof TaskNotFoundError) return "task_not_found"
+    Logger.error("Task get failed", error instanceof Error ? error.name : "non_error")
+    return "unknown_error"
   }
 }
 
-function mapHeadersToJsonValue(
-  headers?: Record<string, string>
-): Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput {
-  if (!headers) return Prisma.JsonNull
-  const result: Record<string, Prisma.InputJsonValue | null> = {}
-  for (const [key, value] of Object.entries(headers)) result[key] = value
-
-  return result
-}
-
-function extractResponseAttributes(
-  task: DecoratedWorkflowActionWebhookTask<object> | DecoratedWorkflowActionSlackTask<object>
-) {
-  if (task.status === TaskStatus.ERROR)
-    return {
-      responseStatus: task.response?.status,
-      responseBody: task.response?.body,
-      responseBodyStatus: task.response?.bodyStatus
-    }
-
-  if (task.status === TaskStatus.COMPLETED)
-    return {
-      responseStatus: task.response.status,
-      responseBody: task.response.body,
-      responseBodyStatus: task.response.bodyStatus
-    }
-
+function encryptionContext(context: TenantContext, taskId: string, kind: TaskKind) {
   return {
-    responseStatus: undefined,
-    responseBody: undefined,
-    responseBodyStatus: undefined
+    organizationId: context.organizationId,
+    resourceType:
+      kind === "email"
+        ? ("email_task" as const)
+        : kind === "webhook"
+          ? ("webhook_task" as const)
+          : ("slack_task" as const),
+    resourceId: taskId,
+    field: "payload" as const,
+    formatVersion: 1 as const
   }
 }
+
+function toDurableState(status: TaskStatus): "ready" | "succeeded" | "failed" {
+  if (status === TaskStatus.PENDING) return "ready"
+  if (status === TaskStatus.COMPLETED) return "succeeded"
+  return "failed"
+}
+
+function toLegacyTask(row: TaskRow) {
+  const status =
+    row.state === "succeeded" ? TaskStatus.COMPLETED : row.state === "failed" ? TaskStatus.ERROR : TaskStatus.PENDING
+  return {
+    id: row.id,
+    organizationId: row.organizationId,
+    workflowId: row.workflowId,
+    status,
+    retryCount: status === TaskStatus.PENDING ? 0 : row.attempts,
+    ...(status === TaskStatus.ERROR ? {errorReason: "dispatch failed"} : {}),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    occ: row.occ
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+class LeaseLostError extends Error {}
+class TaskEventMismatchError extends Error {}
+class TaskNotFoundError extends Error {}

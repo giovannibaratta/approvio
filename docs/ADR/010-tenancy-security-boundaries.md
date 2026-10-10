@@ -71,4 +71,4 @@ ADR 010 has not selected one strategy for every mutation. Until it does, APIs re
 
 The transactional outbox publishes at least once. A tenant event receipt is an inbox record. Add one only when a named internal consumer records the receipt and its local state change in the same transaction. It cannot make an email, webhook, or Slack delivery exactly-once. Those deliveries use durable-work attempts, fencing, and an idempotency key derived from the immutable task identity.
 
-No current internal consumer requires an inbox receipt, so `tenant_event_receipts` is deferred. Add it with the first consumer that needs atomic local deduplication, naming the consumer and its state transition in the migration and repository contract.
+The current recalculation and task-generation consumers record receipts in `tenant_event_receipts` in the same transaction as their durable state changes. Add future consumers only when they can commit the receipt and local state transition atomically, and name each consumer in the migration and repository contract.

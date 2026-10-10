@@ -45,6 +45,15 @@ export class AgentTenantClient extends TenantDatabaseView<Pick<Prisma.Transactio
 }
 
 @Injectable()
+export class OrganizationProvisionerTenantClient extends TenantDatabaseView<
+  Pick<Prisma.TransactionClient, "organization" | "user">
+> {
+  constructor(databaseClient: DatabaseClient) {
+    super(databaseClient, tx => ({organization: tx.organization, user: tx.user}))
+  }
+}
+
+@Injectable()
 export class AuditLogTenantClient extends TenantDatabaseView<Pick<Prisma.TransactionClient, "auditLog">> {
   constructor(databaseClient: DatabaseClient) {
     super(databaseClient, tx => ({auditLog: tx.auditLog}))
@@ -75,19 +84,17 @@ export class GroupTenantClient extends TenantDatabaseView<
 
 @Injectable()
 export class InvitationTenantClient extends TenantDatabaseView<
-  Pick<Prisma.TransactionClient, "$queryRaw" | "organizationInvitation">
+  Pick<Prisma.TransactionClient, "organizationInvitation">
 > {
   constructor(databaseClient: DatabaseClient) {
-    super(databaseClient, tx => ({$queryRaw: tx.$queryRaw.bind(tx), organizationInvitation: tx.organizationInvitation}))
+    super(databaseClient, tx => ({organizationInvitation: tx.organizationInvitation}))
   }
 }
 
 @Injectable()
-export class LifecycleTenantClient extends TenantDatabaseView<
-  Pick<Prisma.TransactionClient, "$queryRaw" | "organization">
-> {
+export class LifecycleTenantClient extends TenantDatabaseView<Pick<Prisma.TransactionClient, "organization">> {
   constructor(databaseClient: DatabaseClient) {
-    super(databaseClient, tx => ({$queryRaw: tx.$queryRaw.bind(tx), organization: tx.organization}))
+    super(databaseClient, tx => ({organization: tx.organization}))
   }
 }
 
@@ -201,8 +208,74 @@ export class WorkflowTemplateTenantClient extends TenantDatabaseView<
 }
 
 @Injectable()
-export class WorkflowTenantClient extends TenantDatabaseView<Pick<Prisma.TransactionClient, "workflow">> {
+export class WorkflowTenantClient extends TenantDatabaseView<WorkflowTenantClientView> {
   constructor(databaseClient: DatabaseClient) {
-    super(databaseClient, tx => ({workflow: tx.workflow}))
+    super(databaseClient, tx => ({
+      workflow: tx.workflow,
+      getDueExpirationSchedule: async (organizationId, dueBefore, scheduledBefore) => {
+        const schedules = await tx.$queryRaw<Array<{readonly lastSweptAt: Date | null}>>`
+          SELECT last_swept_at AS "lastSweptAt"
+          FROM workflow_expiration_schedules
+          WHERE organization_id = ${organizationId}::uuid
+            AND next_sweep_at <= ${dueBefore}
+            AND (last_scheduled_at IS NULL OR last_scheduled_at <= ${scheduledBefore})
+        `
+        return schedules[0] ?? null
+      },
+      claimExpirationSchedule: async (organizationId, scheduledAt, scheduledBefore) => {
+        const claimed = await tx.$queryRaw<Array<{readonly organizationId: string}>>`
+          UPDATE workflow_expiration_schedules
+          SET last_scheduled_at = ${scheduledAt}
+          WHERE organization_id = ${organizationId}::uuid
+            AND next_sweep_at <= ${scheduledAt}
+            AND (last_scheduled_at IS NULL OR last_scheduled_at <= ${scheduledBefore})
+          RETURNING organization_id AS "organizationId"
+        `
+        return claimed.length > 0
+      },
+      // Lock the schedule row so a concurrent create cannot register an earlier deadline
+      // between this workflow scan and the schedule update.
+      completeExpirationSchedule: async (organizationId, sweptAt) => {
+        await tx.$queryRaw<Array<{readonly organizationId: string}>>`
+          SELECT organization_id AS "organizationId"
+          FROM workflow_expiration_schedules
+          WHERE organization_id = ${organizationId}::uuid
+          FOR UPDATE
+        `
+        const [next] = await tx.$queryRaw<Array<{readonly nextSweepAt: Date | null}>>`
+          SELECT MIN(expires_at) AS "nextSweepAt"
+          FROM workflows
+          WHERE organization_id = ${organizationId}::uuid
+            AND status NOT IN ('APPROVED', 'CANCELED', 'EXPIRED')
+            AND recalculation_required = false
+        `
+        await tx.$executeRaw`
+          UPDATE workflow_expiration_schedules
+          SET next_sweep_at = ${next?.nextSweepAt ?? null}, last_swept_at = ${sweptAt}
+          WHERE organization_id = ${organizationId}::uuid
+        `
+      },
+      registerWorkflowExpiration: async (organizationId, expiresAt) => {
+        await tx.$executeRaw`
+          INSERT INTO workflow_expiration_schedules (organization_id, next_sweep_at)
+          VALUES (${organizationId}::uuid, ${expiresAt})
+          ON CONFLICT (organization_id) DO UPDATE
+          SET next_sweep_at = EXCLUDED.next_sweep_at
+          WHERE workflow_expiration_schedules.next_sweep_at IS NULL
+             OR workflow_expiration_schedules.next_sweep_at > EXCLUDED.next_sweep_at
+        `
+      }
+    }))
   }
+}
+
+interface WorkflowTenantClientView extends Pick<Prisma.TransactionClient, "workflow"> {
+  getDueExpirationSchedule(
+    organizationId: string,
+    dueBefore: Date,
+    scheduledBefore: Date
+  ): Promise<{readonly lastSweptAt: Date | null} | null>
+  claimExpirationSchedule(organizationId: string, scheduledAt: Date, scheduledBefore: Date): Promise<boolean>
+  completeExpirationSchedule(organizationId: string, sweptAt: Date): Promise<void>
+  registerWorkflowExpiration(organizationId: string, expiresAt: Date): Promise<void>
 }

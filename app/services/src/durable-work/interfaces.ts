@@ -1,4 +1,11 @@
-import {DispatchWork, DispatchAttemptSnapshot, DispatchTransition} from "./dispatch.models"
+import {
+  DispatchWork,
+  DispatchAttempt,
+  DispatchTransitionResult,
+  DispatchWorkValidationError,
+  DispatchAttemptValidationError,
+  DispatchTransitionError
+} from "./dispatch.models"
 export * from "./dispatch.models"
 import {Option} from "fp-ts/Option"
 import {TaskEither} from "fp-ts/TaskEither"
@@ -39,6 +46,9 @@ export type WorkError =
   | "outbox_publication_state_invalid"
   | OutboxClaimValidationError
   | DispatchValidationError
+  | DispatchWorkValidationError
+  | DispatchAttemptValidationError
+  | DispatchTransitionError
   | LeaseValidationError
   | TransactionError
   | "organization_not_found"
@@ -46,7 +56,11 @@ export type WorkError =
   | BoundaryError
   | "task_not_found"
   | "lease_lost"
-  | "invalid_transition"
+  | "dispatch_recovery_already_unknown"
+  | "dispatch_recovery_not_applicable"
+  | "dispatch_work_already_paused"
+  | "dispatch_attempt_not_found"
+  | "dispatch_attempt_concurrent_modification"
   | "event_mismatch"
   | "organization_suspended"
   | "repository_dependency_error"
@@ -112,15 +126,44 @@ export interface OutboxRepository {
   ): TaskEither<WorkError, boolean>
 }
 
-/** Reads dispatch snapshots and persists guarded transitions in the service-owned transaction. */
+/**
+ * Persistence boundary for a task's durable delivery state and internal attempts.
+ * A task represents the entire unit of work and retains its ID across retries.
+ * A dispatch attempt represents one execution of that task under a fenced lease.
+ * Finishing an attempt may leave the task pending in retry_due.
+ *
+ * Reads snapshots and persists guarded transitions in the service-owned
+ * transaction. DispatchService and DispatchTransitionFactory decide transitions;
+ * the repository compares the original models and persists the resulting
+ * models atomically.
+ */
 export interface DispatchRepository {
+  /** Reads the task's delivery state across all attempts; taskId is stable across retries. */
   getWork(context: TenantContext, taskId: string, kind?: TaskKind): TaskEither<WorkError, DispatchWork>
+  /** Reads one internal attempt, identified directly or by the task and its lease fence. */
   getAttempt(
     context: TenantContext,
     selector: {readonly attemptId: string} | {readonly taskId: string; readonly fencing: bigint}
-  ): TaskEither<WorkError, Option<DispatchAttemptSnapshot>>
-  countActive(context: TenantContext, now: Date): TaskEither<WorkError, number>
-  persistTransition(context: TenantContext, transition: DispatchTransition): TaskEither<WorkError, void>
+  ): TaskEither<WorkError, Option<DispatchAttempt>>
+  /**
+   * Counts this organization's claimed or executing tasks with unexpired leases.
+   * Admission uses Read Committed; concurrent claims may temporarily exceed the
+   * limit when Redis undercounts. This count is an approximate capacity fallback.
+   */
+  countActiveTaskLeases(context: TenantContext, evaluateAt: Date): TaskEither<WorkError, number>
+  /**
+   * Saves the resulting domain models atomically, comparing the original work
+   * and attempt revisions, states, leases and fences. Ownership or expiry is
+   * rechecked at write time. An attempt present only in next is newly admitted.
+   * A missed work guard returns lease_lost; a missed attempt guard returns
+   * dispatch_attempt_concurrent_modification. Snapshot validation
+   * errors propagate unchanged from reads.
+   */
+  persistTransition(
+    context: TenantContext,
+    previous: DispatchTransitionResult,
+    next: DispatchTransitionResult
+  ): TaskEither<WorkError, void>
   /** Inserts a receipt only if its outbox FK target still exists; old Bull jobs may outlive it. */
   recordReceipt(context: TenantContext, eventId: string): TaskEither<WorkError, void>
 }
@@ -145,7 +188,7 @@ export interface TenantAuditRepository {
 
 export interface DispatchLeaseClient {
   acquire(context: TenantContext, taskId: string, owner: string): TaskEither<WorkError | "capacity_exceeded", Lease>
-  renew(context: TenantContext, taskId: string, lease: Lease): TaskEither<WorkError, Lease>
+  assertLease(context: TenantContext, taskId: string, lease: Lease): TaskEither<WorkError, void>
   release(context: TenantContext, taskId: string, lease: Lease): TaskEither<WorkError, void>
 }
 

@@ -15,7 +15,7 @@ function getDriverAdapterError(error: Prisma.PrismaClientKnownRequestError): Dri
   return undefined
 }
 
-export function isPrismaUniqueConstraintError(error: unknown, fields: string[]): boolean {
+export function isPrismaUniqueConstraintError(error: unknown, fields: string[], constraintName?: string): boolean {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") return false
 
   const adapterError = getDriverAdapterError(error)
@@ -25,7 +25,14 @@ export function isPrismaUniqueConstraintError(error: unknown, fields: string[]):
   if (cause.kind !== "UniqueConstraintViolation") return false
 
   const violatedFields = cause.constraint && "fields" in cause.constraint ? cause.constraint.fields : []
-  return fields.length === violatedFields.length && fields.every(field => violatedFields.includes(field))
+  if (fields.length === violatedFields.length && fields.every(field => violatedFields.includes(field))) return true
+
+  return (
+    constraintName !== undefined &&
+    "originalMessage" in cause &&
+    typeof cause.originalMessage === "string" &&
+    cause.originalMessage.includes(`unique constraint "${constraintName}"`)
+  )
 }
 
 export function isPrismaForeignKeyConstraintError(error: unknown, constraintName: string): boolean {

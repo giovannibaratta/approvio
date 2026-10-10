@@ -1,5 +1,13 @@
 # ADR-005: Generic Framework for Encrypting Sensitive Data at Rest
 
+## ADR-010 amendment
+
+Tenant ciphertext is authenticated against organization, resource type, immutable resource ID, field
+and context version. Decryption requires the same binding; copying ciphertext to another tenant or
+resource fails. Legitimate copies decrypt and re-encrypt for the destination binding. Platform PKCE
+ciphertext uses its state/provider binding. Historical generic encryption examples below do not
+replace these context checks. See [ADR-010 security boundaries](010-tenancy-security-boundaries.md).
+
 ## Problem
 
 The application processes and stores sensitive data, such as API keys, authentication tokens, and webhook action configurations that contain secrets. Storing this information in plain text in the database exposes it to severe risks in the event of a database compromise, unauthorized access, or backup theft. We need a reusable, generic framework to ensure all sensitive fields across various domain entities are securely encrypted at rest.

@@ -1,88 +1,78 @@
 import {Process, Processor} from "@nestjs/bull"
+import {Inject, Injectable, Logger} from "@nestjs/common"
 import {Job} from "bull"
-import {Injectable, Logger, Inject} from "@nestjs/common"
+import {isLeft} from "fp-ts/Either"
+import {TaskReadyEvent} from "@domain"
 import {WORKFLOW_ACTION_EMAIL_QUEUE} from "@external"
 import {TaskService} from "@services/task/task.service"
 import {EmailService} from "@services/email/email.service"
 import {WORKER_ID} from "../worker.constants"
-import {WorkflowActionType, WorkflowActionEmailEvent, WorkflowActionEmailTaskFactory} from "@domain"
-import {pipe} from "fp-ts/function"
-import * as TE from "fp-ts/TaskEither"
-import {isLeft} from "fp-ts/Either"
 
 @Injectable()
 @Processor(WORKFLOW_ACTION_EMAIL_QUEUE)
 export class WorkflowActionEmailProcessor {
   constructor(
-    private readonly taskService: TaskService,
-    private readonly emailService: EmailService,
+    private readonly tasks: TaskService,
+    private readonly email: EmailService,
     @Inject(WORKER_ID) private readonly workerId: string
   ) {}
 
-  @Process("workflow-action-email")
-  async handleEmailAction(job: Job<WorkflowActionEmailEvent>) {
+  @Process("task.ready")
+  async handleEmailAction(job: Pick<Job<TaskReadyEvent>, "data">): Promise<void> {
     const event = job.data
-    Logger.log(`Processing email action for task ${event.taskId}`)
+    if (event.type !== "task.ready" || event.taskKind !== "email") throw new Error("Expected an email task.ready event")
 
-    const processResult = await pipe(
-      TE.Do,
-      TE.bindW("lockOwner", () => TE.right(this.workerId)),
-      TE.bindW("task", () => this.taskService.getEmailTask(event.taskId)),
-      TE.bindW("lockResult", ({task, lockOwner}) =>
-        this.taskService.lockTask({type: WorkflowActionType.EMAIL, taskId: task.id}, lockOwner)
-      ),
-      TE.bindW("emailResult", ({task}) =>
-        pipe(
-          this.emailService.sendEmail({
-            to: task.recipients,
-            subject: task.subject,
-            htmlBody: task.body
-          }),
-          TE.orElseW(error => TE.right(error))
-        )
-      ),
-      TE.bindW("updatedResult", ({task, lockResult, emailResult, lockOwner}) => {
-        const checks = {
-          occ: lockResult.occ,
-          lockOwner
+    const context = {organizationId: event.organizationId}
+    await this.tasks.withDispatchLease(
+      context,
+      event.taskId,
+      event.taskKind,
+      this.workerId,
+      async (claim, assertLease) => {
+        const task = await this.tasks.getEmailTask(context, event.taskId)()
+        if (isLeft(task)) {
+          const completion = await this.tasks.completeDispatch(
+            context,
+            claim.attemptId,
+            claim.lease,
+            {
+              state: "failed",
+              outcome: {type: "task_load_failed", error: task.left}
+            },
+            event.eventId
+          )()
+          if (isLeft(completion)) throw new Error(`Email pre-send failure recording failed: ${completion.left}`)
+          throw new Error(`Email task load failed: ${task.left}`)
         }
 
-        if (typeof emailResult === "string") {
-          // Email sending failed
-          Logger.error(`Email execution failed: ${emailResult}`)
-          return pipe(
-            WorkflowActionEmailTaskFactory.toFailedEmail(task, {
-              errorReason: `Unable to send email: ${emailResult}`
-            }),
-            TE.fromEither,
-            TE.chainW(data => this.taskService.updateEmailTask(data, checks))
-          )
+        const executing = await this.tasks.startDispatchExecution(context, claim.attemptId, claim.lease)()
+        if (isLeft(executing)) throw new Error(`Email dispatch lease lost: ${executing.left}`)
+        if (executing.right === "parked") return
+
+        await assertLease()
+        const delivery = await this.email.sendEmail({
+          to: task.right.recipients,
+          subject: task.right.subject,
+          htmlBody: task.right.body
+        })()
+        const completion = await this.tasks.completeDispatch(
+          context,
+          claim.attemptId,
+          claim.lease,
+          {
+            state: isLeft(delivery) ? "unknown" : "succeeded",
+            outcome: isLeft(delivery) ? {type: "delivery_error", error: delivery.left} : {type: "delivered"}
+          },
+          event.eventId
+        )()
+        if (isLeft(completion)) throw new Error(`Email completion failed: ${completion.left}`)
+        if (isLeft(delivery)) {
+          Logger.error(`Email delivery outcome is unknown for task ${event.taskId}: ${delivery.left}`)
+          return
         }
 
-        // Email succeeded
-        Logger.log("Email execution completed successfully")
-        return pipe(
-          WorkflowActionEmailTaskFactory.toCompletedEmail(task),
-          TE.fromEither,
-          TE.chainW(data => this.taskService.updateEmailTask(data, checks))
-        )
-      }),
-      TE.chainW(({task, updatedResult}) => {
-        Logger.log(`Releasing lock for task ${task.id}`)
-
-        const releaseChecks = {
-          occ: updatedResult.occ,
-          lockOwner: this.workerId
-        }
-
-        return this.taskService.releaseLock({type: WorkflowActionType.EMAIL, taskId: task.id}, releaseChecks)
-      })
-    )()
-
-    if (isLeft(processResult)) {
-      Logger.error(`Task processing failed: ${JSON.stringify(processResult.left)}`)
-      throw new Error(`Starting email task failed: ${JSON.stringify(processResult.left)}`)
-    }
-    Logger.log(`Task processing completed successfully for task ${event.taskId}`)
+        Logger.log(`Email task ${event.taskId} dispatched`)
+      }
+    )
   }
 }

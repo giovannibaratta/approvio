@@ -1,0 +1,43 @@
+// Fixture client for the isolated RLS experiment, independent of the application schema.
+generator client {
+  provider = "prisma-client"
+  output   = "../../../../generated/tenancy-probe"
+}
+datasource db {
+  provider = "postgresql"
+}
+model Group {
+  id                    String                 @id @db.Uuid
+  name                  String                 @unique
+  description           String?
+  createdAt             DateTime               @map("created_at")
+  updatedAt             DateTime               @map("updated_at")
+  occ                   BigInt
+  orgId                 String                 @default(dbgenerated("nullif(current_setting('app.current_org_id', true), '')::uuid")) @map("org_id") @db.Uuid
+  agentGroupMemberships AgentGroupMembership[]
+  @@unique([orgId, id])
+  @@map("groups")
+}
+model Agent {
+  id                    String                 @id @db.Uuid
+  agentName             String                 @unique @map("agent_name")
+  base64PublicKey       String                 @map("base64_public_key")
+  createdAt             DateTime               @map("created_at")
+  roles                 Json?
+  occ                   BigInt
+  orgId                 String                 @default(dbgenerated("nullif(current_setting('app.current_org_id', true), '')::uuid")) @map("org_id") @db.Uuid
+  agentGroupMemberships AgentGroupMembership[]
+  @@unique([orgId, id])
+  @@map("agents")
+}
+model AgentGroupMembership {
+  groupId   String   @map("group_id") @db.Uuid
+  agentId   String   @map("agent_id") @db.Uuid
+  createdAt DateTime @map("created_at")
+  updatedAt DateTime @map("updated_at")
+  orgId     String   @default(dbgenerated("nullif(current_setting('app.current_org_id', true), '')::uuid")) @map("org_id") @db.Uuid
+  groups    Group    @relation(fields: [groupId], references: [id])
+  agents    Agent    @relation(fields: [agentId], references: [id])
+  @@id([groupId, agentId])
+  @@map("agent_group_memberships")
+}
