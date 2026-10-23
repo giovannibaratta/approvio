@@ -6,7 +6,7 @@ Workflow Templates are reusable blueprints that define the structure and approva
 
 ### Template Structure
 
-A template serves as a comprehensive definition for a workflow process. It specifies the necessary approval rules, dictating exactly who can approve and what voting logic must be satisfied. It also outlines actions, which are automated tasks—such as email notifications—that the system will execute when specific conditions are met, like when a workflow is finally approved. Furthermore, the template system inherently supports versioning, allowing administrators to update templates while ensuring that existing workflows are safely preserved. Finally, every template requires a space assignment to ensure proper organizational grouping.
+A template serves as a comprehensive definition for a workflow process. It specifies the necessary approval rules, dictating exactly who can approve and what voting logic must be satisfied. It also outlines actions, which are automated tasks that the system will execute when specific conditions are met, like when a workflow is finally approved. Supported actions include Email notifications, Slack messages, and Webhooks. Webhook actions automatically inject an `Idempotency-Key` header using the task ID to safely retry non-idempotent methods and preserve exactly-once semantics. Furthermore, the template system inherently supports versioning, allowing administrators to update templates while ensuring that existing workflows are safely preserved. Finally, every template requires a space assignment to ensure proper organizational grouping.
 
 ### Space Relationship
 
