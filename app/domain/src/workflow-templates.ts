@@ -325,10 +325,10 @@ function canVote(
   const hasVotePermission = hasVotePermissionForWorkflowTemplate(workflowTemplate, entityRoles)
   if (!hasVotePermission) return left("entity_not_eligible_to_vote")
 
-  const votingGroups = workflowTemplate.approvalRule.getVotingGroupIds()
+  const votingGroups = new Set(workflowTemplate.approvalRule.getVotingGroupIds())
 
   // Is it possible to vote if at least one of the membership group is listed in approval rules
-  const hasValidMembership = memberships.some(membership => votingGroups.includes(membership.groupId))
+  const hasValidMembership = memberships.some(membership => votingGroups.has(membership.groupId))
 
   if (!hasValidMembership) return left("entity_not_in_required_group")
 
