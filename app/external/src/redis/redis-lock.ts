@@ -5,7 +5,17 @@ import {pipe} from "fp-ts/function"
 interface RedisLockClient {
   set(key: string, value: string, mode: "PX", duration: number, flag: "NX"): Promise<unknown>
   eval(script: string, numKeys: number, ...args: (string | number)[]): Promise<unknown>
+  defineCommand?(name: string, definition: {numberOfKeys: number; lua: string}): void
+  releaseLock?(key: string, value: string): Promise<unknown>
 }
+
+const RELEASE_SCRIPT = `
+  if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+  else
+    return 0
+  end
+`
 
 export type RedisLockError =
   | {type: "lock_already_acquired"}
@@ -26,7 +36,13 @@ export class RedisLock {
     private readonly redis: RedisLockClient,
     private readonly key: string,
     private readonly ttlMs: number
-  ) {}
+  ) {
+    if (this.redis.defineCommand && !this.redis.releaseLock)
+      this.redis.defineCommand("releaseLock", {
+        numberOfKeys: 1,
+        lua: RELEASE_SCRIPT
+      })
+  }
 
   /**
    * Tries to acquire the lock. Returns the lock value (string) if acquired,
@@ -47,16 +63,12 @@ export class RedisLock {
    * Releases the lock safely using a Lua script to ensure we only release our own lock value.
    */
   release(value: string): TE.TaskEither<RedisLockError, void> {
-    const releaseScript = `
-      if redis.call("get", KEYS[1]) == ARGV[1] then
-        return redis.call("del", KEYS[1])
-      else
-        return 0
-      end
-    `
     return pipe(
       TE.tryCatch(
-        () => this.redis.eval(releaseScript, 1, this.key, value),
+        () => {
+          if (this.redis.releaseLock) return this.redis.releaseLock(this.key, value)
+          return Promise.reject(new Error("releaseLock command is not defined on the Redis client"))
+        },
         error => ({type: "lock_release_failed" as const, error})
       ),
       TE.chain(result => (result === 1 ? TE.right(undefined) : TE.left({type: "lock_release_failed" as const})))
