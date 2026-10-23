@@ -38,12 +38,13 @@ Both **users** and **agents** can vote on workflows if they meet the requirement
 
 ### Vote Types
 
-Both users and agents can cast two types of votes:
+Both users and agents can cast three types of votes:
 
 | Vote Type   | Description                                         |
 | :---------- | :-------------------------------------------------- |
 | **APPROVE** | Positive vote contributing to approval requirements |
 | **VETO**    | Negative vote that immediately rejects the workflow |
+| **WITHDRAW**| Withdraws a previously cast vote |
 
 ### Approval Logic
 
