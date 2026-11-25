@@ -1,8 +1,9 @@
-import {AuthenticatedEntity, getEntityId, getEntityType, Actor} from "@domain"
+import {AuthenticatedEntity, getEntityId, getEntityType, OriginatingActor} from "@domain"
 
-export function extractActorDetails(requestor: AuthenticatedEntity): Actor {
+export function extractActorDetails(requestor: AuthenticatedEntity): OriginatingActor {
   return {
     id: getEntityId(requestor),
-    type: getEntityType(requestor)
+    type: getEntityType(requestor),
+    displayName: requestor.entityType === "user" ? requestor.user.displayName : requestor.agent.agentName
   }
 }

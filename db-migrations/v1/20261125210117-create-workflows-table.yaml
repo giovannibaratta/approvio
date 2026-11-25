@@ -1,0 +1,98 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20261125210117-create-workflows-table
+      author: giovannibaratta
+      changes:
+        - insert:
+            tableName: approvio_security_table_registry
+            columns:
+              - column:
+                  name: table_name
+                  value: workflows
+              - column:
+                  name: security_class
+                  value: tenant
+              - column:
+                  name: capability_profile
+                  value: tenant_workflow_update
+        - createTable:
+            tableName: workflows
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: text
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: recalculation_required
+                  type: boolean
+                  constraints:
+                    nullable: false
+              - column:
+                  name: workflow_template_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: expires_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: workflows
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_workflows_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: workflows
+            baseColumnNames: organization_id, workflow_template_id
+            referencedTableName: workflow_templates
+            referencedColumnNames: organization_id, id
+            constraintName: fk_workflows_template
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: workflows
+            columnNames: organization_id, id
+            constraintName: workflows_organization_id_unique
+        - addUniqueConstraint:
+            tableName: workflows
+            columnNames: organization_id, name
+            constraintName: workflows_organization_name_unique

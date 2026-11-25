@@ -1,0 +1,111 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20261125210118-create-votes-table
+      author: giovannibaratta
+      changes:
+        - insert:
+            tableName: approvio_security_table_registry
+            columns:
+              - column:
+                  name: table_name
+                  value: votes
+              - column:
+                  name: security_class
+                  value: tenant
+              - column:
+                  name: capability_profile
+                  value: tenant_workflow_read
+        - createTable:
+            tableName: votes
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: workflow_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: user_id
+                  type: uuid
+              - column:
+                  name: agent_id
+                  type: uuid
+              - column:
+                  name: vote_type
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: reason
+                  type: text
+              - column:
+                  name: voted_for_groups
+                  type: text[]
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: votes
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_votes_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: votes
+            baseColumnNames: organization_id, workflow_id
+            referencedTableName: workflows
+            referencedColumnNames: organization_id, id
+            constraintName: fk_votes_workflow
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: votes
+            baseColumnNames: organization_id, user_id
+            referencedTableName: users
+            referencedColumnNames: organization_id, id
+            constraintName: fk_votes_user
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: votes
+            baseColumnNames: organization_id, agent_id
+            referencedTableName: agents
+            referencedColumnNames: organization_id, id
+            constraintName: fk_votes_agent
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: votes
+            columnNames: organization_id, id
+            constraintName: votes_organization_id_unique
+        - createIndex:
+            tableName: votes
+            indexName: idx_votes_organization_workflow_actor_created
+            columns:
+              - column:
+                  name: organization_id
+              - column:
+                  name: workflow_id
+              - column:
+                  name: user_id
+              - column:
+                  name: agent_id
+              - column:
+                  name: created_at
+                  descending: true

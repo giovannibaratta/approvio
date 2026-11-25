@@ -1,6 +1,6 @@
 import {Body, Controller, HttpCode, HttpStatus, Post} from "@nestjs/common"
-import {GetAuthenticatedEntity} from "@app/auth"
-import {AuthenticatedEntity} from "@domain"
+import {GetAuthenticatedEntity, GetTenantContext} from "@app/auth"
+import {AuthenticatedEntity, TenantContext} from "@domain"
 import {isLeft} from "fp-ts/Either"
 import * as E from "fp-ts/Either"
 import {generateErrorResponseForResolveResources, mapToResourceResolveResponse} from "./resources.mappers"
@@ -10,7 +10,7 @@ import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {logSuccess} from "@utils"
 
-@Controller("resources")
+@Controller("o/:organizationId/resources")
 export class ResourcesController {
   constructor(private readonly resourcesService: ResourcesService) {}
 
@@ -18,6 +18,7 @@ export class ResourcesController {
   @HttpCode(HttpStatus.OK)
   async resolveResources(
     @GetAuthenticatedEntity() requestor: AuthenticatedEntity,
+    @GetTenantContext() context: TenantContext,
     @Body() body: unknown
   ): Promise<ApiResourceResolveResponse> {
     const serviceResolveResources = (req: ResolveResourcesRequest) => this.resourcesService.resolveResources(req)
@@ -27,7 +28,7 @@ export class ResourcesController {
       validateResourceResolveRequest,
       E.chain(request => (request.resources.length > 50 ? E.left("too_many_resources" as const) : E.right(request))),
       TE.fromEither,
-      TE.map(request => ({requestor, request})),
+      TE.map(request => ({organizationId: context.organizationId, requestor, request})),
       TE.chainW(serviceResolveResources),
       logSuccess("Resources resolved", "ResourcesController", result => ({
         resolvedCount: result.resolved.length,

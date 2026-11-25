@@ -1,3 +1,4 @@
+import {OrganizationId, isOrganizationId} from "./shared"
 import {Either, left, right, isLeft} from "fp-ts/Either"
 
 import {isUUIDv7, PrefixUnion} from "@utils"
@@ -8,8 +9,11 @@ export const SPACE_DESCRIPTION_MAX_LENGTH = 2048
 
 export type Space = Readonly<PrivateSpace>
 
+type SpaceInput = Omit<Space, "organizationId"> & {readonly organizationId: string}
+
 interface PrivateSpace {
   id: string
+  organizationId: OrganizationId
   name: string
   description?: string
   createdAt: Date
@@ -23,19 +27,23 @@ type TimestampValidationError = "update_before_create"
 
 export type SpaceValidationError = PrefixUnion<
   "space",
-  NameValidationError | DescriptionValidationError | IdValidationError | TimestampValidationError
+  | NameValidationError
+  | DescriptionValidationError
+  | IdValidationError
+  | TimestampValidationError
+  | "invalid_organization_id"
 >
 
 export class SpaceFactory {
-  static validate(data: Space): Either<SpaceValidationError, Space> {
+  static validate(data: SpaceInput): Either<SpaceValidationError, Space> {
     return SpaceFactory.createSpace(data)
   }
 
-  static newSpace(data: Omit<Space, "id" | "createdAt" | "updatedAt">): Either<SpaceValidationError, Space> {
+  static newSpace(data: Omit<SpaceInput, "id" | "createdAt" | "updatedAt">): Either<SpaceValidationError, Space> {
     const uuid = uuidv7()
     const now = new Date()
 
-    const space: Space = {
+    const space = {
       ...data,
       id: uuid,
       createdAt: now,
@@ -45,7 +53,9 @@ export class SpaceFactory {
     return SpaceFactory.validate(space)
   }
 
-  private static createSpace(data: Space): Either<SpaceValidationError, Space> {
+  private static createSpace(data: SpaceInput): Either<SpaceValidationError, Space> {
+    const organizationId = data.organizationId
+    if (!isOrganizationId(organizationId)) return left("space_invalid_organization_id")
     const idValidation = validateId(data.id)
     const nameValidation = validateName(data.name)
     const descriptionValidation = data.description ? validateDescription(data.description) : right(undefined)
@@ -57,6 +67,7 @@ export class SpaceFactory {
 
     return right({
       id: idValidation.right,
+      organizationId,
       name: nameValidation.right,
       description: descriptionValidation.right,
       createdAt: data.createdAt,

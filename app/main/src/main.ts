@@ -47,7 +47,7 @@ async function bootstrap() {
   app.enableCors({
     origin,
     credentials: true, // Required for the browser to send/receive cookies and 'Authorization' headers.
-    exposedHeaders: ["Location"]
+    exposedHeaders: ["Location", "ETag"]
   })
   const trustProxy = process.env.TRUST_PROXY
   if (trustProxy !== undefined) {

@@ -1,11 +1,13 @@
 import {Inject, Injectable} from "@nestjs/common"
 import {AuditLogRepository, AUDIT_LOG_REPOSITORY_TOKEN, ListAuditLogResponse, FindManyError} from "./interfaces"
-import {AuthenticatedEntity, getEntityRoles, RolePermissionChecker, OrgRole} from "@domain"
+import {AuthenticatedEntity, getEntityRoles, RolePermissionChecker, OrgRole, createEntityReference} from "@domain"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
 import {AuthorizationError} from "../error"
 import {logSuccess} from "@utils"
 import {pipe} from "fp-ts/function"
+import {TRANSACTION_MANAGER_TOKEN, TenantTransactionManager, TransactionError} from "@services/transaction/interfaces"
+import {inTransaction} from "@services/transaction/in-transaction"
 
 const MAX_HISTORY = 7 * 24 * 60 * 60 * 1000 // 7 days in milliseconds
 
@@ -13,7 +15,8 @@ const MAX_HISTORY = 7 * 24 * 60 * 60 * 1000 // 7 days in milliseconds
 export class AuditLogService {
   constructor(
     @Inject(AUDIT_LOG_REPOSITORY_TOKEN)
-    private readonly auditLogRepo: AuditLogRepository
+    private readonly auditLogRepo: AuditLogRepository,
+    @Inject(TRANSACTION_MANAGER_TOKEN) private readonly transactionManager: TenantTransactionManager
   ) {}
 
   public listAuditLogs(
@@ -21,18 +24,26 @@ export class AuditLogService {
     request: ListAuditLogsRequest
   ): TaskEither<AuditLogListError, ListAuditLogResponse> {
     const isOrgAdmin = requestor.entityType === "user" && requestor.user.orgRole === OrgRole.ADMIN
-    const isAuditor = RolePermissionChecker.hasAuditPermission(getEntityRoles(requestor), {type: "org"}, "read")
+    const context = createEntityReference(requestor)
+    const isAuditor = RolePermissionChecker.hasAuditPermission(
+      getEntityRoles(requestor),
+      {type: "org", organizationId: context.organizationId},
+      "read"
+    )
 
     if (!isOrgAdmin && !isAuditor) return TE.left("requestor_not_authorized" as const)
 
     const fromDate = new Date(Date.now() - MAX_HISTORY)
 
     return pipe(
-      this.auditLogRepo.findMany(request.limit, fromDate, request.cursor, {
-        targets: request.targets,
-        actors: request.actors,
-        auditTypes: request.auditTypes
-      }),
+      TE.Do,
+      inTransaction(this.transactionManager, context, () =>
+        this.auditLogRepo.findMany(context, request.limit, fromDate, request.cursor, {
+          targets: request.targets,
+          actors: request.actors,
+          auditTypes: request.auditTypes
+        })
+      ),
       logSuccess("Audit logs listed by admin", "AuditLogService", result => ({
         hasMore: result.hasMore,
         returned: result.items.length
@@ -45,14 +56,18 @@ export class AuditLogService {
     request: ListMyAuditLogsRequest
   ): TaskEither<AuditLogListError, ListAuditLogResponse> {
     const actorId = requestor.entityType === "user" ? requestor.user.id : requestor.agent.id
+    const context = createEntityReference(requestor)
     const fromDate = new Date(Date.now() - MAX_HISTORY)
 
     return pipe(
-      this.auditLogRepo.findMany(request.limit, fromDate, request.cursor, {
-        targets: request.targets,
-        actors: [{actorType: requestor.entityType, actorId}],
-        auditTypes: request.auditTypes
-      }),
+      TE.Do,
+      inTransaction(this.transactionManager, context, () =>
+        this.auditLogRepo.findMany(context, request.limit, fromDate, request.cursor, {
+          targets: request.targets,
+          actors: [{actorType: requestor.entityType, actorId}],
+          auditTypes: request.auditTypes
+        })
+      ),
       logSuccess("Audit logs listed by self", "AuditLogService", result => ({
         hasMore: result.hasMore,
         returned: result.items.length
@@ -61,7 +76,7 @@ export class AuditLogService {
   }
 }
 
-export type AuditLogListError = AuthorizationError | FindManyError
+export type AuditLogListError = AuthorizationError | FindManyError | TransactionError
 
 export interface ListAuditLogsRequest {
   cursor?: string

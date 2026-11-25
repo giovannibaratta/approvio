@@ -1,4 +1,4 @@
-import {Quota, QuotaFactory, QuotaIdentifier, Versioned, QuotaValidationError} from "@domain"
+import {Quota, QuotaFactory, QuotaIdentifier, TenantContext, Versioned, QuotaValidationError} from "@domain"
 import {Injectable, Logger} from "@nestjs/common"
 import {
   QuotaCreateError,
@@ -13,7 +13,7 @@ import {
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
-import {DatabaseClient} from "./database-client"
+import {QuotaTenantClient} from "./tenant-database-clients"
 import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "./errors"
 import {Prisma} from "@prisma/client"
 import * as E from "fp-ts/Either"
@@ -21,12 +21,13 @@ import * as RA from "fp-ts/ReadonlyArray"
 
 @Injectable()
 export class QuotaDbRepository implements QuotaRepository {
-  constructor(private readonly dbClient: DatabaseClient) {}
+  constructor(private readonly dbClient: QuotaTenantClient) {}
 
-  getQuotaById(id: string): TE.TaskEither<QuotaGetError, Versioned<Quota>> {
+  getQuotaById(context: TenantContext, id: string): TE.TaskEither<QuotaGetError, Versioned<Quota>> {
     return pipe(
       TE.tryCatch(
-        () => this.dbClient.cx.quota.findUnique({where: {id}}),
+        () =>
+          this.dbClient.cx.quota.findUnique({where: {organizationId_id: {organizationId: context.organizationId, id}}}),
         error => {
           Logger.error("Error retrieving quota by id", error)
           return "quota_unknown_error" as const
@@ -36,7 +37,7 @@ export class QuotaDbRepository implements QuotaRepository {
     )
   }
 
-  getQuota(identifier: QuotaIdentifier): TE.TaskEither<QuotaGetError, Versioned<Quota>> {
+  getQuota(context: TenantContext, identifier: QuotaIdentifier): TE.TaskEither<QuotaGetError, Versioned<Quota>> {
     const scope = identifier.node.type
     const targetId = identifier.node.identifier
 
@@ -45,10 +46,11 @@ export class QuotaDbRepository implements QuotaRepository {
         () =>
           this.dbClient.cx.quota.findUnique({
             where: {
-              scope_quotaType_targetId: {
-                scope: scope,
+              organizationId_scope_quotaType_targetId: {
+                organizationId: context.organizationId,
+                scope,
                 quotaType: identifier.quotaType,
-                targetId: targetId
+                targetId
               }
             }
           }),
@@ -61,7 +63,7 @@ export class QuotaDbRepository implements QuotaRepository {
     )
   }
 
-  createQuota(quota: Quota): TE.TaskEither<QuotaCreateError, Versioned<Quota>> {
+  createQuota(context: TenantContext, quota: Quota): TE.TaskEither<QuotaCreateError, Versioned<Quota>> {
     const scope = quota.node.type
     const targetId = quota.node.identifier
 
@@ -71,6 +73,7 @@ export class QuotaDbRepository implements QuotaRepository {
           this.dbClient.cx.quota.create({
             data: {
               id: quota.id,
+              organizationId: context.organizationId,
               scope: scope,
               quotaType: quota.quotaType,
               limit: quota.limit,
@@ -81,7 +84,13 @@ export class QuotaDbRepository implements QuotaRepository {
             }
           }),
         error => {
-          if (isPrismaUniqueConstraintError(error, ["scope", "quota_type", "target_id"]))
+          if (
+            isPrismaUniqueConstraintError(
+              error,
+              ["organization_id", "scope", "quota_type", "target_id"],
+              "quotas_organization_scope_type_target_unique"
+            )
+          )
             return "quota_already_exists" as const
 
           Logger.error("Error creating quota", error)
@@ -92,16 +101,21 @@ export class QuotaDbRepository implements QuotaRepository {
     )
   }
 
-  updateQuota(quota: Quota, occCheck: bigint): TE.TaskEither<QuotaUpdateError, Versioned<Quota>> {
+  updateQuota(
+    context: TenantContext,
+    quota: Quota,
+    occCheck: bigint
+  ): TE.TaskEither<QuotaUpdateError, Versioned<Quota>> {
     const scope = quota.node.type
     const targetId = quota.node.identifier
 
     return pipe(
       TE.tryCatch(
         async () => {
-          return await this.dbClient.transactional(async tx => {
+          return await this.dbClient.transactional(context.organizationId, async tx => {
             const updatedQuotas = await tx.quota.updateManyAndReturn({
               where: {
+                organizationId: context.organizationId,
                 scope: scope,
                 quotaType: quota.quotaType,
                 targetId: targetId,
@@ -119,10 +133,11 @@ export class QuotaDbRepository implements QuotaRepository {
               // Check if it failed due to OCC or Not Found
               const existing = await tx.quota.findUnique({
                 where: {
-                  scope_quotaType_targetId: {
-                    scope: scope,
+                  organizationId_scope_quotaType_targetId: {
+                    organizationId: context.organizationId,
+                    scope,
                     quotaType: quota.quotaType,
-                    targetId: targetId
+                    targetId
                   }
                 }
               })
@@ -155,11 +170,13 @@ export class QuotaDbRepository implements QuotaRepository {
     )
   }
 
-  deleteQuota(id: string): TE.TaskEither<QuotaDeleteError, void> {
+  deleteQuota(context: TenantContext, id: string): TE.TaskEither<QuotaDeleteError, void> {
     return pipe(
       TE.tryCatch(
         async () => {
-          await this.dbClient.cx.quota.delete({where: {id}})
+          await this.dbClient.cx.quota.delete({
+            where: {organizationId_id: {organizationId: context.organizationId, id}}
+          })
         },
         error => {
           if (isPrismaRecordNotFoundError(error, Prisma.ModelName.Quota)) return "quota_not_found" as const
@@ -170,11 +187,16 @@ export class QuotaDbRepository implements QuotaRepository {
     )
   }
 
-  listQuotas(page: number, limit: number, filter?: ListQuotasFilter): TE.TaskEither<QuotaListError, ListQuotasResult> {
+  listQuotas(
+    context: TenantContext,
+    page: number,
+    limit: number,
+    filter?: ListQuotasFilter
+  ): TE.TaskEither<QuotaListError, ListQuotasResult> {
     return pipe(
       TE.tryCatch(
         async () => {
-          const where: Prisma.QuotaWhereInput = {}
+          const where: Prisma.QuotaWhereInput = {organizationId: context.organizationId}
           if (filter) {
             if (filter.nodeType) where.scope = filter.nodeType
             if (filter.quotaType) where.quotaType = filter.quotaType
@@ -182,6 +204,7 @@ export class QuotaDbRepository implements QuotaRepository {
           }
 
           return this.dbClient.transactional(
+            context.organizationId,
             async cx => {
               const [total, items] = await Promise.all([
                 cx.quota.count({where}),

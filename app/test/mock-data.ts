@@ -1,10 +1,11 @@
+import {randomOrgId, toOrganizationId} from "@test/organization-id"
 import {v7 as uuidv7} from "uuid"
 import {
   Prisma,
   PrismaClient,
   User as PrismaUser,
   Agent as PrismaAgent,
-  OrganizationAdmin as PrismaOrganizationAdmin,
+  AgentRefreshToken as PrismaAgentRefreshToken,
   WorkflowTemplate as PrismaWorkflowTemplate,
   Workflow as PrismaWorkflow,
   Group as PrismaGroup,
@@ -14,18 +15,21 @@ import {
 } from "@prisma/client"
 import {randomBytes} from "crypto"
 import {
+  Account,
+  AccountFactory,
   ApprovalRuleType,
   Group,
   GroupFactory,
   OrgRole,
+  PlanTier,
   UnconstrainedBoundRole,
   User,
-  UserFactory,
   WorkflowStatus,
+  WorkflowAction,
   WorkflowTemplate,
-  WorkflowTemplateFactory,
-  PlanTier
+  WorkflowTemplateFactory
 } from "@domain"
+import {createTestUser} from "./user"
 import {mapToDomainVersionedUser} from "@external/database/shared"
 import {isLeft} from "fp-ts/Either"
 
@@ -33,6 +37,7 @@ import {Chance} from "chance"
 import {
   ConfigProvider,
   ConfigProviderInterface,
+  DatabaseConfig,
   EmailProviderConfig,
   JwtConfig,
   OidcProviderConfig,
@@ -48,22 +53,62 @@ import * as O from "fp-ts/Option"
 import {createSha256Hash} from "@utils"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "@external/database/constants"
 import {unwrapRight} from "@utils/either"
-import {EncryptionService} from "@external/kms/encryption.service"
+import {TenantEncryptionService} from "@external/kms/context-bound-encryption.service"
 import {EnvVarKmsProvider} from "@external/kms/env-var-kms.provider"
 import {LeverConfig, SsrfProtectionConfig} from "@external/config/interfaces"
 
-let testEncryptionService: EncryptionService | undefined
+let testTenantEncryptionService: TenantEncryptionService | undefined
 
-function getTestEncryptionService(): EncryptionService {
-  if (!testEncryptionService) {
+function getTestTenantEncryptionService(): TenantEncryptionService {
+  if (!testTenantEncryptionService) {
     const keys = new Map([[1, Buffer.from("AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=", "base64")]])
-    const provider = new EnvVarKmsProvider(keys, 1)
-    testEncryptionService = new EncryptionService(provider)
+    testTenantEncryptionService = new TenantEncryptionService(new EnvVarKmsProvider(keys, 1))
   }
-  return testEncryptionService
+  return testTenantEncryptionService
 }
 
 const chance = new Chance()
+
+export function createMockOrganization(
+  overrides: Partial<Prisma.OrganizationCreateInput> = {}
+): Prisma.OrganizationCreateInput {
+  const id = overrides.id ?? uuidv7()
+  const createdAt = randomDateBefore(new Date())
+  return {
+    id,
+    slug: `test-${id}`,
+    displayName: chance.company(),
+    planTier: "FREE",
+    status: "active",
+    occ: 0n,
+    createdAt,
+    updatedAt: createdAt,
+    ...overrides
+  }
+}
+
+export function createMockOrganizationInDb(
+  prisma: PrismaClient,
+  overrides: Partial<Prisma.OrganizationCreateInput> = {}
+) {
+  return prisma.organization.create({data: createMockOrganization(overrides)})
+}
+
+export async function ensureTestOrganization(
+  prisma: PrismaClient,
+  organizationId: string,
+  planTier: PlanTier = "FREE"
+): Promise<string> {
+  await prisma.organization.upsert({
+    where: {id: organizationId},
+    create: {
+      ...createMockOrganization({id: organizationId, planTier}),
+      workflowExpirationSchedules: {create: {occ: POSTGRES_BIGINT_LOWER_BOUND}}
+    },
+    update: {}
+  })
+  return organizationId
+}
 
 // Pre-generated 2048-bit RSA key pairs for testing performance optimization
 // WARNING: These keys are for TESTING ONLY and should NEVER be used in production
@@ -274,42 +319,45 @@ export class MockKeyPool {
 
 export class MockConfigProvider implements ConfigProviderInterface {
   isPrivilegeMode: boolean
-  dbConnectionUrl: string
+  databaseConfig: DatabaseConfig
   emailProviderConfig: Option<EmailProviderConfig>
   oidcProviders: Map<string, OidcProviderConfig>
   jwtConfig: JwtConfig
+  dispatchConfig: ConfigProviderInterface["dispatchConfig"]
   redisConfig: RedisConfig
   rateLimitConfig: RateLimitConfig
   webhookRetryConfig: WebhookRetryConfig
   emailRetryConfig: EmailRetryConfig
-  databaseRetryConfig: DatabaseRetryConfig
   frontendUrl: string
   cookieSecure: boolean
   kmsConfig: KmsConfig
   ssrfProtectionConfig: SsrfProtectionConfig
   leverConfig: LeverConfig
   deploymentEdition: "self_hosted" | "saas_cloud"
-  planTier: PlanTier
   healthCacheTtlMs: number
 
   private constructor(
     originalProvider?: ConfigProvider,
     mocks: {
-      dbConnectionUrl?: string
+      tenantConnectionUrl?: string
       emailProviderConfig?: EmailProviderConfig
       redisPrefix?: string
       rateLimitConfig?: RateLimitConfig
       webhookRetryConfig?: WebhookRetryConfig
       emailRetryConfig?: EmailRetryConfig
-      databaseRetryConfig?: DatabaseRetryConfig
+      databaseRetry?: DatabaseRetryConfig
       leverConfig?: LeverConfig
       deploymentEdition?: "self_hosted" | "saas_cloud"
-      planTier?: PlanTier
     } = {}
   ) {
     const provider: ConfigProviderInterface = originalProvider ?? {
       isPrivilegeMode: true,
-      dbConnectionUrl: "postgresql://test:test@localhost:5433/postgres?schema=public",
+      dispatchConfig: {concurrencyPerOrganization: 4, leaseDurationMs: 120000},
+      databaseConfig: {
+        tenantConnectionUrl: "postgresql://test:test@localhost:5433/postgres?schema=public",
+        platformConnectionUrl: "postgresql://test:test@localhost:5433/postgres?schema=public",
+        retry: {maxAttempts: 3, initialDelayMs: 0, backoffFactor: 1, maxDelayMs: 0}
+      },
       emailProviderConfig: O.none,
       oidcProviders: new Map([
         [
@@ -364,12 +412,6 @@ export class MockConfigProvider implements ConfigProviderInterface {
         backoffFactor: 1,
         maxDelayMs: 0
       },
-      databaseRetryConfig: {
-        maxAttempts: 3,
-        initialDelayMs: 0,
-        backoffFactor: 1,
-        maxDelayMs: 0
-      },
       frontendUrl: "http://localhost:5173",
       cookieSecure: false,
       kmsConfig: {
@@ -394,22 +436,26 @@ export class MockConfigProvider implements ConfigProviderInterface {
       leverConfig: {
         enabled: false
       },
-      deploymentEdition: "self_hosted",
-      planTier: "FREE"
+      deploymentEdition: "self_hosted"
     }
 
     this.isPrivilegeMode = provider.isPrivilegeMode
-    this.dbConnectionUrl = mocks.dbConnectionUrl || provider.dbConnectionUrl
+    this.databaseConfig = {
+      ...provider.databaseConfig,
+      tenantConnectionUrl: mocks.tenantConnectionUrl || provider.databaseConfig.tenantConnectionUrl,
+      platformConnectionUrl: mocks.tenantConnectionUrl || provider.databaseConfig.platformConnectionUrl,
+      retry: mocks.databaseRetry || provider.databaseConfig.retry
+    }
     this.emailProviderConfig =
       mocks.emailProviderConfig !== undefined ? O.some(mocks.emailProviderConfig) : provider.emailProviderConfig
     this.oidcProviders = provider.oidcProviders
     this.jwtConfig = provider.jwtConfig
     this.redisConfig =
       mocks.redisPrefix !== undefined ? {...provider.redisConfig, prefix: mocks.redisPrefix} : provider.redisConfig
+    this.dispatchConfig = provider.dispatchConfig
     this.rateLimitConfig = mocks.rateLimitConfig || provider.rateLimitConfig
     this.webhookRetryConfig = mocks.webhookRetryConfig || provider.webhookRetryConfig
     this.emailRetryConfig = mocks.emailRetryConfig || provider.emailRetryConfig
-    this.databaseRetryConfig = mocks.databaseRetryConfig || provider.databaseRetryConfig
     this.frontendUrl = provider.frontendUrl
     this.cookieSecure = provider.cookieSecure
     this.ssrfProtectionConfig = {
@@ -434,7 +480,6 @@ export class MockConfigProvider implements ConfigProviderInterface {
     }
     this.leverConfig = mocks.leverConfig || provider.leverConfig
     this.deploymentEdition = mocks.deploymentEdition || provider.deploymentEdition || "self_hosted"
-    this.planTier = mocks.planTier || provider.planTier || "FREE"
     this.healthCacheTtlMs = provider.healthCacheTtlMs ?? 1000
   }
 
@@ -455,10 +500,10 @@ export class MockConfigProvider implements ConfigProviderInterface {
     return this.cachedRealProvider
   }
 
-  static fromDbConnectionUrl(dbConnectionUrl: string, redisPrefix?: string): MockConfigProvider {
+  static fromTenantConnectionUrl(tenantConnectionUrl: string, redisPrefix?: string): MockConfigProvider {
     const realProvider = this.getCachedRealProvider()
     return new MockConfigProvider(realProvider, {
-      dbConnectionUrl,
+      tenantConnectionUrl,
       redisPrefix,
       webhookRetryConfig: {
         maxAttempts: 3,
@@ -472,7 +517,7 @@ export class MockConfigProvider implements ConfigProviderInterface {
         backoffFactor: 1,
         maxDelayMs: 0
       },
-      databaseRetryConfig: {
+      databaseRetry: {
         maxAttempts: 3,
         initialDelayMs: 0,
         backoffFactor: 1,
@@ -483,16 +528,15 @@ export class MockConfigProvider implements ConfigProviderInterface {
 
   static fromOriginalProvider(
     mocks: {
-      dbConnectionUrl?: string
+      tenantConnectionUrl?: string
       emailProviderConfig?: EmailProviderConfig
       redisPrefix?: string
       rateLimitConfig?: RateLimitConfig
       webhookRetryConfig?: WebhookRetryConfig
       emailRetryConfig?: EmailRetryConfig
-      databaseRetryConfig?: DatabaseRetryConfig
+      databaseRetry?: DatabaseRetryConfig
       leverConfig?: LeverConfig
       deploymentEdition?: "self_hosted" | "saas_cloud"
-      planTier?: PlanTier
     } = {}
   ): MockConfigProvider {
     const provider = this.getCachedRealProvider()
@@ -500,11 +544,8 @@ export class MockConfigProvider implements ConfigProviderInterface {
   }
 }
 
-type PrismaUserWithOrgAdmin = PrismaUser & {
-  organizationAdmins: PrismaOrganizationAdmin | null
-}
-
 export function createMockWorkflowTemplateDomain(overrides?: Partial<WorkflowTemplate>): WorkflowTemplate {
+  const organizationId = overrides?.organizationId ?? uuidv7()
   const randomTemplate = unwrapRight(
     WorkflowTemplateFactory.newWorkflowTemplate({
       name: chance.name(),
@@ -517,6 +558,7 @@ export function createMockWorkflowTemplateDomain(overrides?: Partial<WorkflowTem
       },
       actions: [],
       defaultExpiresInHours: chance.integer({min: 1, max: 8760}),
+      organizationId: toOrganizationId(organizationId),
       spaceId: uuidv7()
     })
   )
@@ -526,81 +568,112 @@ export function createMockWorkflowTemplateDomain(overrides?: Partial<WorkflowTem
   return unwrapRight(validatedTemplate)
 }
 
-export function createMockUserDomain(overrides?: {email?: string}): User {
-  const randomUser = UserFactory.newUser({
-    email: overrides?.email ?? chance.email(),
-    displayName: chance.name(),
-    orgRole: OrgRole.MEMBER
+export function createMockAccountDomain(overrides?: Partial<Pick<Account, "displayName" | "profileEmail">>): Account {
+  return unwrapRight(
+    AccountFactory.create({
+      displayName: overrides?.displayName ?? chance.name(),
+      profileEmail: overrides?.profileEmail ?? chance.email()
+    })
+  )
+}
+
+export function createMockUserDomain(
+  overrides?: Partial<Pick<User, "organizationId" | "accountId" | "displayName" | "orgRole">>
+): User {
+  const randomUser = createTestUser({
+    organizationId: overrides?.organizationId ?? uuidv7(),
+    accountId: overrides?.accountId ?? uuidv7(),
+    displayName: overrides?.displayName ?? chance.name(),
+    orgRole: overrides?.orgRole ?? OrgRole.MEMBER
   })
-
   if (isLeft(randomUser)) throw new Error("Failed to create user")
-
   return randomUser.right
 }
 
-export function createMockUserPrismaPayload(
-  overrides?: Partial<Omit<Prisma.UserCreateInput, "roles">> & {
-    roles?: ReadonlyArray<UnconstrainedBoundRole>
-  }
-): Prisma.UserCreateInput {
+type MockUserPrismaOverrides = Partial<Omit<Prisma.UserCreateInput, "roles" | "organizations" | "platformAccounts">> & {
+  organizationId?: string
+  platformAccountId?: string
+  email?: string
+  roles?: ReadonlyArray<UnconstrainedBoundRole>
+}
+
+export function createMockUserPrismaPayload(overrides?: MockUserPrismaOverrides): Prisma.UserCreateInput {
+  const organizationId = overrides?.organizationId ?? uuidv7()
+  const platformAccountId = overrides?.platformAccountId ?? uuidv7()
+  const createdAt = randomDateBefore(new Date())
   const randomUser: Prisma.UserCreateInput = {
     id: uuidv7(),
     displayName: chance.name(),
-    email: chance.email(),
+    status: "active",
+    orgRole: "member",
+    roles: [],
     occ: POSTGRES_BIGINT_LOWER_BOUND,
-    createdAt: new Date()
+    createdAt,
+    updatedAt: createdAt,
+    organizations: {connect: {id: organizationId}},
+    platformAccounts: {connect: {id: platformAccountId}}
   }
 
-  const {roles, ...userOverrides} = overrides || {}
+  const {
+    roles,
+    email: _email,
+    organizationId: _organizationId,
+    platformAccountId: _platformAccountId,
+    ...userOverrides
+  } = overrides || {}
 
   return {...randomUser, ...userOverrides, roles: roles ? JSON.parse(JSON.stringify(roles)) : []}
 }
 
 export async function createMockUserInDb(
   prisma: PrismaClient,
-  overrides?: Partial<Omit<Prisma.UserCreateInput, "roles">> & {
+  overrides?: MockUserPrismaOverrides & {
     orgAdmin?: boolean
-    roles?: ReadonlyArray<UnconstrainedBoundRole>
     identity?: {
       providerId: string
       subjectId: string
+      issuer?: string
     }
   }
-): Promise<PrismaUserWithOrgAdmin> {
+): Promise<PrismaUser> {
   const {orgAdmin, identity, ...userOverrides} = overrides || {}
-  const payload = createMockUserPrismaPayload(userOverrides)
+  const organizationId = userOverrides.organizationId ?? uuidv7()
+  const platformAccountId = userOverrides.platformAccountId ?? uuidv7()
+  const createdAt = randomDateBefore(new Date())
+  await ensureTestOrganization(prisma, organizationId)
+  await prisma.platformAccount.upsert({
+    where: {id: platformAccountId},
+    create: {
+      id: platformAccountId,
+      displayName: userOverrides.displayName ?? chance.name(),
+      profileEmail: userOverrides.email ?? chance.email(),
+      status: "active",
+      createdAt,
+      updatedAt: createdAt,
+      occ: 0n
+    },
+    update: {}
+  })
+  const payload = createMockUserPrismaPayload({
+    ...userOverrides,
+    organizationId,
+    platformAccountId,
+    ...(orgAdmin ? {orgRole: "admin"} : {})
+  })
   const user = await prisma.user.create({data: payload})
-
-  if (orgAdmin)
-    await prisma.organizationAdmin.create({
-      data: {
-        createdAt: new Date(),
-        email: user.email,
-        id: uuidv7()
-      }
-    })
-
   if (identity)
-    await prisma.userIdentity.create({
+    await prisma.platformAccountIdentity.create({
       data: {
         id: uuidv7(),
-        userId: user.id,
+        accountId: platformAccountId,
         providerId: identity.providerId,
-        subjectId: identity.subjectId,
-        email: user.email,
-        createdAt: new Date()
+        issuer: identity.issuer ?? "http://localhost:4011",
+        subject: identity.subjectId,
+        createdAt,
+        occ: POSTGRES_BIGINT_LOWER_BOUND
       }
     })
-
-  // Return user with organizationAdmin relationship included
-  const userWithOrgAdmin = await prisma.user.findUnique({
-    where: {id: user.id},
-    include: {organizationAdmins: true}
-  })
-
-  if (!userWithOrgAdmin) throw new Error("Unable to fetch created user")
-
-  return userWithOrgAdmin
+  return user
 }
 
 export async function createDomainMockUserInDb(
@@ -628,6 +701,7 @@ export async function createDomainMockUserInDb(
 export async function createMockAgentInDb(
   prisma: PrismaClient,
   overrides?: {
+    organizationId?: string
     agentName?: string
     keyPair?: {publicKey: string; privateKey: string}
   }
@@ -638,19 +712,27 @@ export async function createMockAgentInDb(
   const keyPair = overrides?.keyPair || MockKeyPool.getRandomKeyPair(chance)
 
   // Create agent with optimized key generation
+  const organizationId = overrides?.organizationId ?? uuidv7()
+  await ensureTestOrganization(prisma, organizationId)
+  const createdAt = randomDateBefore(new Date())
   const data: Prisma.AgentCreateInput = {
     id: uuidv7(),
     agentName,
     base64PublicKey: Buffer.from(keyPair.publicKey).toString("base64"),
-    createdAt: new Date(),
-    occ: POSTGRES_BIGINT_LOWER_BOUND
+    status: "active",
+    createdAt,
+    updatedAt: createdAt,
+    occ: POSTGRES_BIGINT_LOWER_BOUND,
+    organizations: {connect: {id: organizationId}}
   }
 
   return await prisma.agent.create({data})
 }
 
-export function createMockGroupDomain(overrides?: {name?: string}): Group {
+export function createMockGroupDomain(overrides?: {organizationId?: string; name?: string}): Group {
   const randomGroup = GroupFactory.newGroup({
+    organizationId:
+      overrides?.organizationId === undefined ? randomOrgId() : toOrganizationId(overrides.organizationId),
     name: overrides?.name ?? chance.word(),
     description: chance.sentence()
   })
@@ -662,20 +744,25 @@ export function createMockGroupDomain(overrides?: {name?: string}): Group {
 
 export async function createTestGroup(
   prisma: PrismaClient,
-  overrides?: Partial<Omit<Prisma.GroupCreateInput, "id" | "occ">>
+  overrides?: Partial<Omit<Prisma.GroupCreateInput, "id" | "occ" | "organizations">> & {organizationId?: string}
 ): Promise<PrismaGroup> {
+  const {organizationId: overrideOrganizationId, ...groupOverrides} = overrides ?? {}
+  const organizationId = overrideOrganizationId ?? uuidv7()
+  await ensureTestOrganization(prisma, organizationId)
+  const createdAt = randomDateBefore(new Date())
   const randomGroup: Prisma.GroupCreateInput = {
     id: uuidv7(),
     name: `test-group-${chance.word()}`,
     description: chance.sentence(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    occ: 1
+    createdAt,
+    updatedAt: createdAt,
+    occ: 1,
+    organizations: {connect: {id: organizationId}}
   }
 
   const data: Prisma.GroupCreateInput = {
     ...randomGroup,
-    ...overrides
+    ...groupOverrides
   }
 
   return await prisma.group.create({data})
@@ -683,15 +770,26 @@ export async function createTestGroup(
 
 export async function createMockWorkflowTemplateInDb(
   prisma: PrismaClient,
-  overrides?: Partial<Omit<Prisma.WorkflowTemplateCreateInput, "id" | "occ" | "spaces">> & {
+  overrides?: Partial<Omit<Prisma.WorkflowTemplateCreateInput, "id" | "occ" | "organizations" | "spaces">> & {
+    organizationId?: string
+    actions?: Prisma.JsonValue | ReadonlyArray<WorkflowAction>
     spaceId?: string
   }
 ): Promise<PrismaWorkflowTemplate> {
   const dates = generate_consistent_dates_for_workflow_template(overrides)
+  const {
+    organizationId: overrideOrganizationId,
+    spaceId: overrideSpaceId,
+    actions,
+    ...templateOverrides
+  } = overrides ?? {}
+  const organizationId = overrideOrganizationId ?? uuidv7()
+  const spaceId = overrideSpaceId ?? (await createMockSpaceInDb(prisma, {organizationId})).id
 
-  const spaceId = overrides?.spaceId ?? (await createMockSpaceInDb(prisma)).id
-
-  const randomTemplate: Prisma.WorkflowTemplateCreateInput = {
+  await ensureTestOrganization(prisma, organizationId)
+  const randomTemplate: Prisma.WorkflowTemplateCreateInput & {
+    actions?: Prisma.JsonValue | ReadonlyArray<WorkflowAction>
+  } = {
     id: uuidv7(),
     name: uuidv7(),
     description: chance.sentence(),
@@ -700,36 +798,43 @@ export async function createMockWorkflowTemplateInDb(
       groupId: uuidv7(),
       minCount: 1
     },
-    actions: [],
     defaultExpiresInHours: chance.integer({min: 1, max: 168}), // 1 hour to 1 week
     status: "ACTIVE",
     allowVotingOnDeprecatedTemplate: true,
     version: 1,
     occ: 1,
-    spaces: {
-      connect: {
-        id: spaceId
-      }
-    },
     createdAt: dates.createdAt,
-    updatedAt: dates.updatedAt
+    updatedAt: dates.updatedAt,
+    organizations: {connect: {id: organizationId}},
+    spaces: {connect: {organizationId_id: {organizationId, id: spaceId}}},
+    actions: actions === undefined ? [] : actions
   }
 
-  const {spaceId: _, ...overridesWithoutSpaceId} = overrides ?? {}
-
-  const data: Prisma.WorkflowTemplateCreateInput = {
+  const data: Prisma.WorkflowTemplateCreateInput & {actions?: Prisma.JsonValue | ReadonlyArray<WorkflowAction>} = {
     ...randomTemplate,
-    ...overridesWithoutSpaceId
+    ...templateOverrides
   }
 
-  if (data.actions) {
-    const encryptionService = getTestEncryptionService()
-    const plaintext = JSON.stringify(data.actions)
-    const encryptionResult = unwrapRight(await encryptionService.encrypt(plaintext)())
-    data.actions = {__encrypted_v1: encryptionResult}
+  const {actions: templateActions, ...persistedData} = data
+  if (templateActions) {
+    const encryptionService = getTestTenantEncryptionService()
+    const plaintext = JSON.stringify(templateActions)
+    const encryptionResult = unwrapRight(
+      await encryptionService.encrypt(
+        {
+          organizationId: toOrganizationId(organizationId),
+          resourceType: "workflow_template",
+          resourceId: persistedData.id,
+          field: "actions",
+          formatVersion: 1
+        },
+        plaintext
+      )()
+    )
+    persistedData.encActions = encryptionResult
   }
 
-  const template = await prisma.workflowTemplate.create({data})
+  const template = await prisma.workflowTemplate.create({data: persistedData})
   return template
 }
 
@@ -739,15 +844,25 @@ export async function createMockWorkflowInDb(
     name: string
     description?: string
     status?: WorkflowStatus
+    organizationId?: string
     workflowTemplateId?: string
     spaceId?: string
     expiresAt?: Date | "active" | "expired"
   }
 ): Promise<PrismaWorkflow> {
+  const workflowTemplate =
+    overrides.organizationId || !overrides.workflowTemplateId
+      ? undefined
+      : await prisma.workflowTemplate.findUniqueOrThrow({where: {id: overrides.workflowTemplateId}})
+  const organizationId = overrides.organizationId ?? workflowTemplate?.organizationId ?? uuidv7()
+
   let workflowId: string | undefined = overrides.workflowTemplateId
 
   if (!workflowId) {
-    const template = await createMockWorkflowTemplateInDb(prisma, {spaceId: overrides.spaceId})
+    const template = await createMockWorkflowTemplateInDb(prisma, {
+      organizationId,
+      ...(overrides.spaceId ? {spaceId: overrides.spaceId} : {})
+    })
     workflowId = template.id
   }
 
@@ -760,11 +875,12 @@ export async function createMockWorkflowInDb(
       description: overrides.description,
       status: overrides.status ?? WorkflowStatus.APPROVED,
       recalculationRequired: false,
-      workflowTemplateId: workflowId,
       createdAt: dates.createdAt,
       updatedAt: dates.updatedAt,
       expiresAt: dates.expiresAt,
-      occ: 1n
+      occ: 1n,
+      organizations: {connect: {id: organizationId}},
+      workflowTemplates: {connect: {organizationId_id: {organizationId, id: workflowId}}}
     }
   })
   return workflow
@@ -841,20 +957,25 @@ export function randomDateAfter(date: Date | string): Date {
 
 export async function createMockGroupInDb(
   prisma: PrismaClient,
-  overrides?: Partial<Omit<Prisma.GroupCreateInput, "id" | "occ">>
+  overrides?: Partial<Omit<Prisma.GroupCreateInput, "id" | "occ" | "organizations">> & {organizationId?: string}
 ): Promise<PrismaGroup> {
+  const {organizationId: overrideOrganizationId, ...groupOverrides} = overrides ?? {}
+  const organizationId = overrideOrganizationId ?? uuidv7()
+  await ensureTestOrganization(prisma, organizationId)
+  const createdAt = randomDateBefore(new Date())
   const randomGroup: Prisma.GroupCreateInput = {
     id: uuidv7(),
     name: chance.word({length: 10}) + "-" + chance.integer({min: 1, max: 1000}),
     description: chance.sentence(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    occ: 1
+    createdAt,
+    updatedAt: createdAt,
+    occ: 1,
+    organizations: {connect: {id: organizationId}}
   }
 
   const data: Prisma.GroupCreateInput = {
     ...randomGroup,
-    ...overrides
+    ...groupOverrides
   }
 
   const group = await prisma.group.create({data})
@@ -863,20 +984,28 @@ export async function createMockGroupInDb(
 
 export async function createMockSpaceInDb(
   prisma: PrismaClient,
-  overrides?: Partial<Omit<Prisma.SpaceCreateInput, "id" | "occ">>
+  overrides?: Partial<Omit<Prisma.SpaceCreateInput, "id" | "occ" | "organizations">> & {
+    organizationId?: string
+    defaultOrganizationId?: string
+  }
 ): Promise<PrismaSpace> {
+  const {organizationId: overrideOrganizationId, defaultOrganizationId, ...spaceOverrides} = overrides ?? {}
+  const organizationId = overrideOrganizationId ?? defaultOrganizationId ?? uuidv7()
+  await ensureTestOrganization(prisma, organizationId)
+  const createdAt = randomDateBefore(new Date())
   const randomSpace: Prisma.SpaceCreateInput = {
     id: uuidv7(),
     name: chance.company() + "-" + chance.integer({min: 1, max: 1000}),
     description: chance.sentence(),
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    occ: 1n
+    createdAt,
+    updatedAt: createdAt,
+    occ: 1n,
+    organizations: {connect: {id: organizationId}}
   }
 
   const data: Prisma.SpaceCreateInput = {
     ...randomSpace,
-    ...overrides
+    ...spaceOverrides
   }
 
   const space = await prisma.space.create({data})
@@ -895,6 +1024,29 @@ export async function createMockSpaceInDb(
  * @param params.familyId - Family ID for token revocation (auto-generated if not provided)
  * @returns Promise<{token: PrismaRefreshToken; plainToken: string; familyId: string}> - The created token and plain token value
  */
+type RefreshTokenFixture = {plainToken: string; tokenId: string; familyId: string}
+
+export function createMockRefreshTokenInDb(
+  prisma: PrismaClient,
+  params: {
+    agentId: string
+    status: "active" | "used" | "revoked"
+    expiresInSeconds?: number
+    createdAt?: Date
+    familyId?: string
+  }
+): Promise<{token: PrismaAgentRefreshToken} & RefreshTokenFixture>
+export function createMockRefreshTokenInDb(
+  prisma: PrismaClient,
+  params: {
+    userId: string
+    status: "active" | "used" | "revoked"
+    expiresInSeconds?: number
+    createdAt?: Date
+    familyId?: string
+    providerId?: string
+  }
+): Promise<{token: PrismaRefreshToken} & RefreshTokenFixture>
 export async function createMockRefreshTokenInDb(
   prisma: PrismaClient,
   params: {
@@ -906,7 +1058,12 @@ export async function createMockRefreshTokenInDb(
     familyId?: string
     providerId?: string
   }
-): Promise<{token: PrismaRefreshToken; plainToken: string; tokenId: string; familyId: string}> {
+): Promise<{
+  token: PrismaRefreshToken | PrismaAgentRefreshToken
+  plainToken: string
+  tokenId: string
+  familyId: string
+}> {
   if (!params.userId && !params.agentId) throw new Error("Must provide either userId or agentId")
 
   const plainToken = randomBytes(32).toString("hex")
@@ -916,29 +1073,99 @@ export async function createMockRefreshTokenInDb(
   const expiresInSeconds = params.expiresInSeconds ?? chance.integer({min: 1800, max: 86400})
   const expiresAt = new Date(createdAt.getTime() + expiresInSeconds * 1000)
 
-  // Prepare additional data for status-specific fields
-  const extraData: {usedAt?: Date | null; nextTokenId?: string | null} = {}
-  if (params.status === "used") {
-    extraData.usedAt = new Date(createdAt.getTime() + 1000) // Used 1 second after creation
-    extraData.nextTokenId = uuidv7()
+  const usedAt = params.status === "used" ? new Date(createdAt.getTime() + 1000) : undefined
+
+  if (params.agentId) {
+    const agent = await prisma.agent.findUniqueOrThrow({where: {id: params.agentId}})
+    const nextTokenId = params.status === "used" ? uuidv7() : null
+    if (nextTokenId)
+      await prisma.agentRefreshToken.create({
+        data: {
+          id: nextTokenId,
+          organizationId: agent.organizationId,
+          agentId: agent.id,
+          tokenHash: createSha256Hash(`${plainToken}-next`),
+          familyId,
+          status: "revoked",
+          usedAt: null,
+          nextTokenId: null,
+          expiresAt,
+          createdAt,
+          occ: POSTGRES_BIGINT_LOWER_BOUND
+        }
+      })
+    const token = await prisma.agentRefreshToken.create({
+      data: {
+        id: uuidv7(),
+        organizationId: agent.organizationId,
+        agentId: agent.id,
+        tokenHash,
+        familyId,
+        status: params.status,
+        usedAt,
+        nextTokenId,
+        expiresAt,
+        createdAt,
+        occ: POSTGRES_BIGINT_LOWER_BOUND
+      }
+    })
+    return {token, plainToken, tokenId: token.id, familyId}
   }
+
+  const user = await prisma.user.findUniqueOrThrow({where: {id: params.userId}})
+  const providerId = "custom"
+  const sessionId = uuidv7()
+  await prisma.browserSession.create({
+    data: {
+      id: sessionId,
+      accountId: user.platformAccountId,
+      providerId,
+      contextVersion: 0n,
+      selectedOrganizationId: user.organizationId,
+      transport: "browser",
+      status: "active",
+      expiresAt,
+      createdAt,
+      updatedAt: createdAt,
+      occ: POSTGRES_BIGINT_LOWER_BOUND
+    }
+  })
+
+  const nextTokenId = params.status === "used" ? uuidv7() : null
+  if (nextTokenId)
+    await prisma.refreshToken.create({
+      data: {
+        id: nextTokenId,
+        tokenHash: createSha256Hash(`${plainToken}-next`),
+        familyId,
+        accountId: user.platformAccountId,
+        sessionId,
+        providerId,
+        status: "revoked",
+        usedAt: null,
+        nextTokenId: null,
+        expiresAt,
+        createdAt,
+        occ: POSTGRES_BIGINT_LOWER_BOUND
+      }
+    })
 
   const token = await prisma.refreshToken.create({
     data: {
       id: uuidv7(),
       tokenHash,
       familyId,
-      userId: params.userId,
-      agentId: params.agentId,
-      providerId: params.userId ? params.providerId || "custom" : null,
+      accountId: user.platformAccountId,
+      sessionId,
+      providerId,
       status: params.status,
+      usedAt,
+      nextTokenId,
       expiresAt,
       createdAt,
-      occ: POSTGRES_BIGINT_LOWER_BOUND,
-      ...extraData
+      occ: POSTGRES_BIGINT_LOWER_BOUND
     }
   })
-
   return {token, plainToken, tokenId: token.id, familyId}
 }
 
@@ -999,18 +1226,24 @@ export async function createUserWithRefreshToken(
 
 export async function createMockQuotaInDb(
   prisma: PrismaClient,
-  overrides?: Partial<Omit<Prisma.QuotaCreateInput, "occ">>
+  overrides?: Partial<Omit<Prisma.QuotaCreateInput, "occ" | "organizations">> & {organizationId?: string}
 ): Promise<PrismaQuota> {
+  const {organizationId: overrideOrganizationId, ...quotaOverrides} = overrides ?? {}
+  const organizationId = overrideOrganizationId ?? uuidv7()
+  const scope = quotaOverrides.scope ?? "Org"
+  await ensureTestOrganization(prisma, organizationId)
+  const createdAt = randomDateBefore(new Date())
   const data: Prisma.QuotaCreateInput = {
     id: uuidv7(),
-    scope: "Org",
+    scope,
     quotaType: "MAX_GROUPS",
-    targetId: uuidv7(),
+    targetId: scope === "Org" ? organizationId : uuidv7(),
     limit: 10,
-    createdAt: new Date(),
-    updatedAt: new Date(),
+    createdAt,
+    updatedAt: createdAt,
     occ: 0n,
-    ...overrides
+    organizations: {connect: {id: organizationId}},
+    ...quotaOverrides
   }
 
   return await prisma.quota.create({data})

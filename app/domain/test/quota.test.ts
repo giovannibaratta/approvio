@@ -1,3 +1,4 @@
+import {randomOrgId} from "@test/organization-id"
 import {
   QuotaFactory,
   QuotaIdentifierFactory,
@@ -70,7 +71,7 @@ describe("QuotaIdentifierFactory", () => {
       it("should validate an identifier where node is a parent of the metric's base type", () => {
         // Given
         const data = {
-          node: {type: "Org", identifier: uuidv7()},
+          node: {type: "Org", identifier: randomOrgId()},
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE"
         }
 
@@ -92,7 +93,7 @@ describe("QuotaIdentifierFactory", () => {
         // When & Then
         meteredMetrics.forEach(metric => {
           const data = {
-            node: {type: "Org", identifier: uuidv7()},
+            node: {type: "Org", identifier: randomOrgId()},
             quotaType: metric
           }
           const result = QuotaIdentifierFactory.validate(data)
@@ -133,7 +134,7 @@ describe("QuotaIdentifierFactory", () => {
       it("should fail if node type is invalid", () => {
         // Given
         const data = {
-          node: {type: "InvalidType", identifier: uuidv7()},
+          node: {type: "InvalidType", identifier: randomOrgId()},
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE"
         }
 
@@ -161,7 +162,7 @@ describe("QuotaIdentifierFactory", () => {
       it("should fail if metric is not supported", () => {
         // Given
         const data = {
-          node: {type: "Space", identifier: uuidv7()},
+          node: {type: "Space", identifier: randomOrgId()},
           quotaType: "INVALID_METRIC"
         }
 
@@ -175,7 +176,7 @@ describe("QuotaIdentifierFactory", () => {
       it("should fail if metric is not supported at node type", () => {
         // Given
         const data = {
-          node: {type: "User", identifier: uuidv7()},
+          node: {type: "User", identifier: randomOrgId()},
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE"
         }
 
@@ -205,7 +206,7 @@ describe("QuotaIdentifierFactory", () => {
   describe("fromNodeAndMetric", () => {
     it("should create a valid identifier", () => {
       // Given
-      const node = {type: "Org" as const, identifier: uuidv7()}
+      const node = {type: "Org" as const, identifier: randomOrgId()}
       const metric = "MAX_GROUPS"
 
       // When
@@ -218,7 +219,7 @@ describe("QuotaIdentifierFactory", () => {
 })
 
 describe("QuotaFactory", () => {
-  const validNode = {type: "Org", identifier: uuidv7()}
+  const validNode = {type: "Org", identifier: randomOrgId()}
   const validQuotaType = "MAX_GROUPS"
   const validId = uuidv7()
   const now = chance.date()
@@ -229,9 +230,10 @@ describe("QuotaFactory", () => {
         // Given
         const data = {
           id: validId,
+          organizationId: validNode.identifier,
           node: validNode,
           quotaType: validQuotaType,
-          limit: 10,
+          limit: 10n,
           createdAt: now,
           updatedAt: now
         }
@@ -260,9 +262,10 @@ describe("QuotaFactory", () => {
         // Given
         const data = {
           id: validId,
-          node: {type: "User", identifier: uuidv7()},
+          organizationId: validNode.identifier,
+          node: {type: "User", identifier: randomOrgId()},
           quotaType: "MAX_WORKFLOW_TEMPLATES_PER_SPACE",
-          limit: 10,
+          limit: 10n,
           createdAt: now,
           updatedAt: now
         }
@@ -278,9 +281,10 @@ describe("QuotaFactory", () => {
         // Given
         const data = {
           id: "not-a-uuid",
+          organizationId: validNode.identifier,
           node: validNode,
           quotaType: validQuotaType,
-          limit: 10,
+          limit: 10n,
           createdAt: now,
           updatedAt: now
         }
@@ -296,9 +300,10 @@ describe("QuotaFactory", () => {
         // Given
         const data1 = {
           id: validId,
+          organizationId: validNode.identifier,
           node: validNode,
           quotaType: validQuotaType,
-          limit: -1,
+          limit: -1n,
           createdAt: now,
           updatedAt: now
         }
@@ -317,9 +322,10 @@ describe("QuotaFactory", () => {
         // Given
         const data = {
           id: validId,
+          organizationId: validNode.identifier,
           node: validNode,
           quotaType: validQuotaType,
-          limit: 10
+          limit: 10n
         }
 
         // When
@@ -332,13 +338,36 @@ describe("QuotaFactory", () => {
   })
 
   describe("newQuota", () => {
+    it.each([0n, 9007199254740991n, 9007199254740992n, 9223372036854775807n])(
+      "preserves count limit %s from a decimal API value",
+      limit => {
+        const organizationId = randomOrgId()
+        const result = QuotaFactory.newQuota(
+          {organizationId, node: {type: "Org", identifier: organizationId}, quotaType: "MAX_GROUPS"},
+          limit
+        )
+        const quota = unwrapRight(result)
+        expect(quota.limit).toBe(limit)
+      }
+    )
+
+    it("rejects count limits above the storage range", () => {
+      const organizationId = randomOrgId()
+      const result = QuotaFactory.newQuota(
+        {organizationId, node: {type: "Org", identifier: organizationId}, quotaType: "MAX_GROUPS"},
+        9223372036854775808n
+      )
+      expect(result).toBeLeftOf("quota_invalid_limit")
+    })
+
     it("should create a new quota with generated id and dates", () => {
       // Given
       const data = {
+        organizationId: validNode.identifier,
         node: validNode,
         quotaType: validQuotaType
       }
-      const limit = 5
+      const limit = 5n
 
       // When
       const result = QuotaFactory.newQuota(data, limit)
@@ -350,13 +379,37 @@ describe("QuotaFactory", () => {
 })
 
 describe("resolveEffectiveLimit", () => {
+  it.each(["MAX_LLM_TOKENS_PER_MONTH", "MAX_GROUPS"] as const)("preserves large %s overrides", metric => {
+    const result = resolveEffectiveLimit({
+      metric,
+      tier: "FREE",
+      orgOverride: 9223372036854775807n
+    })
+    expect(result).toBeRightOf({isUnlimited: false, limit: 9223372036854775807n})
+  })
+
+  it.each([-1n, 9223372036854775808n, 1])("rejects out-of-range or numeric metered override %s", limit => {
+    // @ts-expect-error Exercise runtime rejection of invalid numeric configuration.
+    const result = resolveEffectiveLimit({metric: "MAX_LLM_TOKENS_PER_MONTH", tier: "FREE", orgOverride: limit})
+    expect(result).toBeLeftOf("quota_missing_configuration")
+  })
+
+  it.each([0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects invalid metered quota configuration %s",
+    limit => {
+      // @ts-expect-error Exercise runtime rejection of invalid numeric configuration.
+      const result = resolveEffectiveLimit({metric: "MAX_LLM_TOKENS_PER_MONTH", tier: "FREE", orgOverride: limit})
+      expect(result).toBeLeftOf("quota_missing_configuration")
+    }
+  )
+
   it("should prioritize specific resource override over org override and tier baseline", () => {
     // Given
     const params = {
       metric: "MAX_WORKFLOW_TEMPLATES_PER_SPACE" as const,
       tier: "FREE" as const,
-      specificResourceOverride: 25,
-      orgOverride: 15
+      specificResourceOverride: 25n,
+      orgOverride: 15n
     }
 
     // When
@@ -364,7 +417,7 @@ describe("resolveEffectiveLimit", () => {
 
     // Expect
     expect(res).toBeRight()
-    expect(unwrapRight(res)).toEqual({isUnlimited: false, limit: 25})
+    expect(unwrapRight(res)).toEqual({isUnlimited: false, limit: 25n})
   })
 
   it("should prioritize org override over tier baseline when specific resource override is undefined", () => {
@@ -372,7 +425,7 @@ describe("resolveEffectiveLimit", () => {
     const params = {
       metric: "MAX_WORKFLOW_TEMPLATES_PER_SPACE" as const,
       tier: "FREE" as const,
-      orgOverride: 15
+      orgOverride: 15n
     }
 
     // When
@@ -380,7 +433,7 @@ describe("resolveEffectiveLimit", () => {
 
     // Expect
     expect(res).toBeRight()
-    expect(unwrapRight(res)).toEqual({isUnlimited: false, limit: 15})
+    expect(unwrapRight(res)).toEqual({isUnlimited: false, limit: 15n})
   })
 
   it("should fallback to tier baseline default when no overrides are provided", () => {
@@ -395,7 +448,7 @@ describe("resolveEffectiveLimit", () => {
 
     // Expect
     expect(res).toBeRight()
-    expect(unwrapRight(res)).toEqual({isUnlimited: false, limit: 10})
+    expect(unwrapRight(res)).toEqual({isUnlimited: false, limit: 10n})
   })
 
   it("should return explicit unlimited when effective limit is null in tier baseline", () => {

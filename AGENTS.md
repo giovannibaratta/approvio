@@ -109,6 +109,7 @@ Always USE the following skills to assist with tasks:
 ### Type Safety & Modeling Conventions
 
 - **Discriminated Unions**: In discriminated union variants (e.g., `UserProps | AgentProps`), omit non-applicable properties instead of typing them as optional `never` (e.g., avoid `prop?: never`). Enforce explicit type-narrowing through domain type guards (e.g., `RefreshTokenFactory.isUserToken(token)`) or discriminator checks (`entityType === EntityType.USER`) rather than allowing nullable property probing.
+- **Branded Domain Types**: Use nominal/branded types (with a private `unique symbol`) for domain entities so they cannot be instantiated directly via object literals without going through their respective domain `Factory.validate(...)`.
 - **Strict Typing**: Avoid `any` in application code and tests. Avoid unsafe type casting (`as Type`).
 
 ## Retry & Exactly-Once Semantics Guidelines

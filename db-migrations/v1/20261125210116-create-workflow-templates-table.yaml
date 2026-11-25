@@ -1,0 +1,110 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20261125210116-create-workflow-templates-table
+      author: giovannibaratta
+      changes:
+        - insert:
+            tableName: approvio_security_table_registry
+            columns:
+              - column:
+                  name: table_name
+                  value: workflow_templates
+              - column:
+                  name: security_class
+                  value: tenant
+              - column:
+                  name: capability_profile
+                  value: tenant_workflow_read
+        - createTable:
+            tableName: workflow_templates
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: organization_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: name
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: description
+                  type: text
+              - column:
+                  name: approval_rule
+                  type: jsonb
+                  constraints:
+                    nullable: false
+              - column:
+                  name: enc_actions
+                  type: text
+                  remarks: Tenant-bound encrypted action envelope
+              - column:
+                  name: default_expires_in_hours
+                  type: integer
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: updated_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: version
+                  type: integer
+                  constraints:
+                    nullable: false
+              - column:
+                  name: allow_voting_on_deprecated_template
+                  type: boolean
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+              - column:
+                  name: space_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: workflow_templates
+            baseColumnNames: organization_id
+            referencedTableName: organizations
+            referencedColumnNames: id
+            constraintName: fk_workflow_templates_organization
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: workflow_templates
+            baseColumnNames: organization_id, space_id
+            referencedTableName: spaces
+            referencedColumnNames: organization_id, id
+            constraintName: fk_workflow_templates_space
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: workflow_templates
+            columnNames: organization_id, id
+            constraintName: workflow_templates_organization_id_unique
+        - addUniqueConstraint:
+            tableName: workflow_templates
+            columnNames: organization_id, name, version
+            constraintName: workflow_templates_organization_name_version_unique

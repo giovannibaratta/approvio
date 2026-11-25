@@ -7,7 +7,7 @@ import {pipe} from "fp-ts/function"
 import {logSuccess} from "@utils"
 export const ROLES_ENDPOINT_ROOT = "roles"
 
-@Controller(ROLES_ENDPOINT_ROOT)
+@Controller(`o/:organizationId/${ROLES_ENDPOINT_ROOT}`)
 export class RolesController {
   constructor(private readonly roleService: RoleService) {}
 

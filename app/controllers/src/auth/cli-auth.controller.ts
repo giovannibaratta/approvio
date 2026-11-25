@@ -1,3 +1,4 @@
+import {OrganizationAdmission} from "@app/auth"
 import {Controller, Get, Post, Res, Logger, Body, HttpCode, Query} from "@nestjs/common"
 import {Response} from "express"
 import {AuthService} from "@services"
@@ -5,9 +6,9 @@ import {isLeft} from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {PublicRoute} from "../../../main/src/auth/jwt.authguard"
-import {GetAuthenticatedEntity} from "../../../main/src/auth"
-import {AuthenticatedEntity} from "@domain"
-import {TokenResponse, PrivilegedTokenResponse} from "@approvio/api"
+import {GetAuthenticatedEntity, GetPlatformSession} from "../../../main/src/auth"
+import {AuthenticatedEntity, AuthenticatedPlatformSession} from "@domain"
+import {TokenResponse, PrivilegedTokenResponse, validateCliOrganizationSelection} from "@approvio/api"
 import {
   validateInitiateCliLoginRequest,
   validateGenerateCliTokenRequest,
@@ -18,18 +19,19 @@ import {
   generateErrorResponseForCliInitiate,
   generateErrorResponseForCliGenerateToken,
   generateErrorResponseForCliRefreshUserToken,
-  generateErrorResponseForCliExchangePrivilegeToken
+  generateErrorResponseForCliExchangePrivilegeToken,
+  generateErrorResponseForCliOrganizationSelection
 } from "./cli-auth.mappers"
 import {mapToTokenResponse, mapToPrivilegeTokenExchange} from "./auth.mappers"
 import {logSuccess} from "@utils"
 import {HttpStatusCode} from "axios"
 
-@Controller("auth/cli")
+@Controller()
 export class CliAuthController {
   constructor(private readonly authService: AuthService) {}
 
   @PublicRoute()
-  @Post("initiate")
+  @Post("auth/cli/initiate")
   @HttpCode(200)
   async initiateCliLogin(@Body() body: unknown): Promise<{authorizationUrl: string}> {
     const result = await pipe(
@@ -47,7 +49,7 @@ export class CliAuthController {
   }
 
   @PublicRoute()
-  @Post("token")
+  @Post("auth/cli/token")
   async generateToken(@Body() body: unknown): Promise<TokenResponse> {
     const result = await pipe(
       TE.fromEither(validateGenerateCliTokenRequest(body)),
@@ -64,8 +66,26 @@ export class CliAuthController {
     return result.right
   }
 
+  @Post("auth/cli/select-organization")
+  @HttpCode(200)
+  async selectOrganization(
+    @Body() body: unknown,
+    @GetPlatformSession() principal: AuthenticatedPlatformSession
+  ): Promise<TokenResponse> {
+    const result = await pipe(
+      TE.fromEither(validateCliOrganizationSelection(body)),
+      TE.chainW(({organizationId}) => this.authService.selectCliOrganization(principal, organizationId)),
+      TE.map(mapToTokenResponse),
+      logSuccess("CLI organization selected", "CliAuthController")
+    )()
+
+    if (isLeft(result)) throw generateErrorResponseForCliOrganizationSelection(result.left)
+
+    return result.right
+  }
+
   @PublicRoute()
-  @Post("refresh")
+  @Post("auth/cli/refresh")
   @HttpCode(200)
   async refreshUserToken(@Body() body: unknown): Promise<TokenResponse> {
     const result = await pipe(
@@ -85,7 +105,7 @@ export class CliAuthController {
 
   @PublicRoute()
   @HttpCode(HttpStatusCode.Found)
-  @Get("initiatePrivilegedTokenExchange")
+  @Get("o/:organizationId/auth/cli/initiatePrivilegedTokenExchange")
   async initiatePrivilegeToken(@Query("provider") provider: string | undefined, @Res() res: Response): Promise<void> {
     const runInitiation = () => this.authService.initiatePrivilegeTokenGenerationForCli(provider)
 
@@ -101,7 +121,8 @@ export class CliAuthController {
     res.redirect(result.right)
   }
 
-  @Post("exchangePrivilegedToken")
+  @Post("o/:organizationId/auth/cli/exchangePrivilegedToken")
+  @OrganizationAdmission("step_up")
   @HttpCode(200)
   async exchangePrivilegeToken(
     @Body() body: unknown,

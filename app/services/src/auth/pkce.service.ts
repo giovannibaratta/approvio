@@ -3,15 +3,8 @@ import {createHash, randomBytes} from "crypto"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
-import {
-  PKCE_SESSION_REPOSITORY_TOKEN,
-  PkceChallenge,
-  PkceData,
-  PkceError,
-  PkceSessionRepository,
-  PkceStorageData,
-  PkceSessionData
-} from "./interfaces"
+import {PkceData, PkceStorageData, PkceSessionData} from "@domain"
+import {PKCE_SESSION_REPOSITORY_TOKEN, PkceChallenge, PkceError, PkceSessionRepository} from "./interfaces"
 
 /**
  * Service for handling PKCE (Proof Key for Code Exchange) operations for OAuth2 authorization code flow.
@@ -60,9 +53,11 @@ export class PkceService {
    * @returns TaskEither that resolves to void on success or PkceError on failure
    */
   storePkceData(state: string, data: PkceData): TaskEither<PkceError, void> {
-    const expiresAt = new Date(Date.now() + this.PKCE_EXPIRY_MINUTES * 60 * 1000)
+    const createdAt = new Date()
+    const expiresAt = new Date(createdAt.getTime() + this.PKCE_EXPIRY_MINUTES * 60 * 1000)
     const storageData: PkceStorageData = {
       ...data,
+      createdAt,
       expiresAt
     }
     return this.pkceSessionRepository.storePkceData(state, storageData)
@@ -111,12 +106,26 @@ export class PkceService {
       )
     }
 
-    const extractPkceData = (sessionData: PkceSessionData): PkceData => ({
-      codeVerifier: sessionData.codeVerifier,
-      redirectUri: sessionData.redirectUri,
-      oidcState: sessionData.oidcState,
-      providerId: sessionData.providerId
-    })
+    const extractPkceData = (sessionData: PkceSessionData): PkceData => {
+      const base = {
+        codeVerifier: sessionData.codeVerifier,
+        redirectUri: sessionData.redirectUri,
+        oidcState: sessionData.oidcState,
+        providerId: sessionData.providerId
+      }
+      switch (sessionData.flow) {
+        case "initial_login":
+        case "initial_cli_login":
+          return {...base, flow: sessionData.flow}
+        case "step_up":
+          return {
+            ...base,
+            flow: sessionData.flow,
+            sessionId: sessionData.sessionId,
+            stepUpTarget: sessionData.stepUpTarget
+          }
+      }
+    }
 
     return pipe(
       retrieveSession(),

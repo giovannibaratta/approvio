@@ -28,6 +28,18 @@ export function generateErrorResponseForResolveResources(error: ResolveErorr, co
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "invalid_organization_id":
+    case "tenant_context_required":
+    case "organization_mismatch":
+      return new InternalServerErrorException(
+        generateErrorPayload("UNKNOWN_ERROR", `${context}: Internal data inconsistency`)
+      )
+    case "conflicting_isolation_level":
+    case "retry_exhausted":
+    case "storage_unavailable":
+    case "concurrency_error":
+    case "unknown_error":
+      return new InternalServerErrorException(generateErrorPayload("UNKNOWN_ERROR", `${context}: unknown error`))
     case "too_many_resources":
     case "malformed_object":
     case "missing_resources":
@@ -41,7 +53,5 @@ export function generateErrorResponseForResolveResources(error: ResolveErorr, co
       return new BadRequestException(generateErrorPayload(errorCode, `${context}: Invalid request: ${error}`))
     case "requestor_not_authorized":
       return new ForbiddenException(generateErrorPayload(errorCode, `${context}: not authorized`))
-    case "unknown_error":
-      return new InternalServerErrorException(generateErrorPayload("UNKOWN_ERROR", `${context}: unknown error`))
   }
 }

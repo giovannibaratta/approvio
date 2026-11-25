@@ -1,3 +1,4 @@
+import {randomOrgId} from "@test/organization-id"
 import {WorkflowActionWebhookTaskFactory} from "../src/workflow-tasks/webhook-task"
 import {TaskStatus} from "../src/workflow-tasks/base"
 import {WebhookActionHttpMethod} from "../src/workflow-actions"
@@ -5,6 +6,7 @@ import {WebhookActionHttpMethod} from "../src/workflow-actions"
 describe("WorkflowActionWebhookTaskFactory", () => {
   const baseTaskData = {
     id: "018d9f1b-5b5c-7d9a-8e5f-1a2b3c4d5e6f",
+    organizationId: randomOrgId(),
     workflowId: "018d9f1b-5b5c-7d9a-8e5f-1a2b3c4d5e6f",
     url: "https://example.com/webhook",
     method: WebhookActionHttpMethod.POST,
@@ -12,7 +14,7 @@ describe("WorkflowActionWebhookTaskFactory", () => {
     createdAt: new Date(),
     updatedAt: new Date(),
     occ: 0n,
-    status: TaskStatus.PENDING
+    status: TaskStatus.READY
   }
 
   it("should fail validation if headers contains non-string values", () => {

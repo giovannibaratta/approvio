@@ -3,11 +3,10 @@ import {ConfigProvider, OidcProviderConfig} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
 import {Test} from "@nestjs/testing"
-import {cleanRedisByPrefix, prepareDatabase, prepareRedisPrefix} from "@test/database"
+import {createFixturePrismaClient, cleanRedisByPrefix, prepareDatabase, prepareRedisPrefix} from "@test/database"
 import {MockConfigProvider} from "@test/mock-data"
 import {get, post} from "@test/requests"
 import {PrismaClient} from "@prisma/client"
-import {DatabaseClient} from "@external"
 import {mapToUnleashFeatures} from "@external/config/lever-bootstrap.utils"
 import {FeatureInterface} from "unleash-client/lib/feature"
 import {Operator} from "unleash-client/lib/strategy/strategy"
@@ -28,9 +27,10 @@ describe("Lever Integration (Real Provider)", () => {
   // Helper to create a testing module with specific lever states
   const createTestingModule = async (options: CreateTestingModuleOptions) => {
     const isolatedDb = await prepareDatabase()
+    prisma = createFixturePrismaClient(isolatedDb)
     redisPrefix = prepareRedisPrefix()
 
-    const mockConfig = MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix)
+    const mockConfig = MockConfigProvider.fromTenantConnectionUrl(isolatedDb, redisPrefix)
 
     if (options.additionalOidcProviders)
       for (const [id, config] of options.additionalOidcProviders.entries()) mockConfig.oidcProviders.set(id, config)
@@ -65,7 +65,6 @@ describe("Lever Integration (Real Provider)", () => {
       // Given: System is bootstrapped in read-only mode
       const module = await createTestingModule({levers: {read_only_mode: true}})
       app = module.createNestApplication({logger: false})
-      prisma = module.get(DatabaseClient).prisma
       await app.init()
 
       // When: We attempt a POST request
@@ -80,7 +79,6 @@ describe("Lever Integration (Real Provider)", () => {
       // Given: System is bootstrapped with read-only mode disabled
       const module = await createTestingModule({levers: {read_only_mode: false}})
       app = module.createNestApplication({logger: false})
-      prisma = module.get(DatabaseClient).prisma
       await app.init()
 
       const response = await post(app, "/spaces").build().send({name: "Should Pass"})
@@ -95,7 +93,6 @@ describe("Lever Integration (Real Provider)", () => {
       // Given: System is bootstrapped with disable_auth_provider enabled
       const module = await createTestingModule({levers: {disable_auth_provider: true}})
       app = module.createNestApplication({logger: false})
-      prisma = module.get(DatabaseClient).prisma
       await app.init()
 
       // When: Fetching available authentication providers
@@ -110,7 +107,6 @@ describe("Lever Integration (Real Provider)", () => {
       // Given: System is bootstrapped with disable_auth_provider disabled
       const module = await createTestingModule({levers: {disable_auth_provider: false}})
       app = module.createNestApplication({logger: false})
-      prisma = module.get(DatabaseClient).prisma
       await app.init()
 
       // When: Fetching available authentication providers
@@ -161,7 +157,6 @@ describe("Lever Integration (Real Provider)", () => {
 
       const module = await createTestingModule({features: [targetedFeature], additionalOidcProviders})
       app = module.createNestApplication({logger: false})
-      prisma = module.get(DatabaseClient).prisma
       await app.init()
 
       // When: Fetching available authentication providers

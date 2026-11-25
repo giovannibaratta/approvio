@@ -1,80 +1,90 @@
+import {createMockOrganization} from "@test/mock-data"
+import {ConfigModule, KmsModule} from "@external"
+import {MockConfigProvider} from "@test/mock-data"
 import {Test, TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
-import {DatabaseClient, UserDbRepository, KmsModule, ConfigModule} from "@external"
-import type {PrismaClient} from "@prisma/client"
-import {cleanDatabase, prepareDatabase} from "@test/database"
-import {createMockUserDomain} from "@test/mock-data"
-import {MockConfigProvider} from "@test/mock-data"
-import "expect-more-jest"
+import {randomOrgId, toOrganizationId} from "@test/organization-id"
+import {OrgRole} from "@domain"
+import {DATABASE_RUNTIME_ROLE_TOKEN, DatabaseClient} from "@external/database/database-client"
+import {UserTenantClient} from "@external/database/tenant-database-clients"
+import {UserDbRepository} from "@external/database/user.repository"
+import {PrismaClient} from "@prisma/client"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
 import {unwrapRight} from "@utils/either"
+import {v7 as uuidv7} from "uuid"
+import "@utils/matchers"
+import {createTestUser} from "@test/user"
 
-describe("UserDbRepository Integration", () => {
+describe("UserDbRepository integration", () => {
   let prisma: PrismaClient
+  let module: TestingModule
+  let database: DatabaseClient
   let repository: UserDbRepository
+  let organizationId: ReturnType<typeof toOrganizationId>
+  let accountId: string
 
   beforeEach(async () => {
-    const isolatedDb = await prepareDatabase()
-
-    const module: TestingModule = await Test.createTestingModule({
+    const connectionString = await prepareDatabase()
+    module = await Test.createTestingModule({
       imports: [ConfigModule, KmsModule],
-      providers: [UserDbRepository, DatabaseClient]
+      providers: [
+        UserDbRepository,
+        DatabaseClient,
+        UserTenantClient,
+        {provide: DATABASE_RUNTIME_ROLE_TOKEN, useValue: "approvio_tenant_runtime"}
+      ]
     })
       .overrideProvider(ConfigProvider)
-      .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb))
+      .useValue(
+        MockConfigProvider.fromOriginalProvider({
+          tenantConnectionUrl: connectionString,
+          databaseRetry: {maxAttempts: 1, initialDelayMs: 0, backoffFactor: 1, maxDelayMs: 0}
+        })
+      )
       .compile()
-
-    const dbClient = module.get(DatabaseClient)
-    prisma = dbClient.prisma
+    database = module.get(DatabaseClient)
     repository = module.get(UserDbRepository)
-
-    await dbClient.onModuleInit()
-  }, 30000)
+    await module.init()
+    prisma = createFixturePrismaClient(connectionString)
+    organizationId = randomOrgId()
+    accountId = uuidv7()
+    await prisma.organization.create({data: createMockOrganization({id: organizationId})})
+    await prisma.platformAccount.create({
+      data: {
+        id: accountId,
+        displayName: "Account",
+        profileEmail: "account@example.com",
+        status: "active",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        occ: 0n
+      }
+    })
+  }, 30_000)
 
   afterEach(async () => {
     await cleanDatabase(prisma)
     await prisma.$disconnect()
+    await module.close()
   })
 
-  describe("createUser", () => {
-    it("should create a user successfully", async () => {
-      // Given
-      const user = createMockUserDomain()
+  it("does not expose a user to another organization", async () => {
+    // Given
+    const user = unwrapRight(
+      createTestUser({organizationId, accountId, displayName: "Local member", orgRole: OrgRole.MEMBER})
+    )
+    unwrapRight(
+      await database.transactional({type: "organization", organizationId}, () => repository.createUser(user)())
+    )
+    const otherOrganizationId = randomOrgId()
+    await prisma.organization.create({data: createMockOrganization({id: otherOrganizationId})})
 
-      // When
-      const eitherResult = await repository.createUser(user)()
+    // When
+    const foreign = await database.transactional({type: "organization", organizationId: otherOrganizationId}, () =>
+      repository.getUserById({organizationId: otherOrganizationId}, user.id)()
+    )
 
-      // Expect
-      expect(eitherResult).toBeRight()
-      const result = unwrapRight(eitherResult)
-      const dbUser = await prisma.user.findUnique({where: {id: result.id}})
-      expect(dbUser).toBeDefined()
-    })
-
-    it("should return user_already_exists when creating a user with a duplicate id", async () => {
-      // Given
-      const existingUser = createMockUserDomain()
-      const eitherResultFirst = await repository.createUser(existingUser)()
-      expect(eitherResultFirst).toBeRight()
-
-      // When
-      const eitherResultSecond = await repository.createUser(existingUser)()
-
-      // Expect
-      expect(eitherResultSecond).toBeLeftOf("user_already_exists")
-    })
-
-    it("should return user_already_exists when creating a user with a duplicate email", async () => {
-      // Given
-      const existingUser = createMockUserDomain()
-      const eitherResultFirst = await repository.createUser(existingUser)()
-      expect(eitherResultFirst).toBeRight()
-      const duplicatedUser = createMockUserDomain({email: existingUser.email})
-
-      // When
-      const eitherResultSecond = await repository.createUser(duplicatedUser)()
-
-      // Expect
-      expect(eitherResultSecond).toBeLeftOf("user_already_exists")
-    })
+    // Expect
+    expect(foreign).toBeLeftOf("user_not_found")
   })
 })

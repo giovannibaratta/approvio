@@ -3,40 +3,42 @@ import {
   WorkflowTemplateValidationError,
   ApprovalRule,
   ApprovalRuleType,
-  WorkflowAction,
-  WorkflowActionType,
-  getMostRecentVersionFromTuples,
-  WorkflowTemplateStatus
+  WorkflowTemplateStatus,
+  WorkflowTemplateFactory,
+  WorkflowTemplateSummary,
+  BoundaryError,
+  TenantContext,
+  Versioned
 } from "@domain"
-import {DatabaseClient} from "@external/database/database-client"
-import {mapToDomainVersionedWorkflowTemplate} from "@external/database/shared"
 import {chainNullableToLeft} from "@external/database/utils"
 import {Injectable, Logger} from "@nestjs/common"
 import {Prisma, WorkflowTemplate as PrismaWorkflowTemplate} from "@prisma/client"
 import {
-  CreateWorkflowTemplateRepoError,
+  WorkflowTemplateCreateExecutionError,
   WorkflowTemplateGetError,
   WorkflowTemplateRepository,
-  WorkflowTemplateUpdateError,
+  WorkflowTemplateUpdateExecutionError,
   ListWorkflowTemplatesRequestRepo,
   ListWorkflowTemplatesResponse,
   WorkflowTemplateGetActiveError,
-  WorkflowTemplateGetParentSpaceError
+  WorkflowTemplateGetParentSpaceError,
+  WorkflowTemplateSummaryGetError,
+  DeferredWorkflowTemplateWrite,
+  DeferredWorkflowTemplate
 } from "@services"
-import {Versioned} from "@domain"
-import {UnknownError, EncryptionError} from "@services/error"
+import {UnknownError} from "@services/error"
+import {CryptoError} from "@services/encryption/interfaces"
 import {pipe} from "fp-ts/function"
 import * as TE from "fp-ts/TaskEither"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as O from "fp-ts/Option"
-import {Option} from "fp-ts/Option"
 import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
 import {isPrismaRecordNotFoundError, isPrismaUniqueConstraintError} from "./errors"
 import * as E from "fp-ts/Either"
-import {Either} from "fp-ts/Either"
 import {SortBy, SortDirection} from "@approvio/api"
-import {EncryptionService} from "../kms"
-import {getStringAsEnum} from "@utils"
+import {TenantEncryptionService} from "@external/kms/context-bound-encryption.service"
+import {WorkflowTemplateTenantClient} from "./tenant-database-clients"
+import {fromPromise} from "./repository-operation"
 
 type Identifier = IdIdentifier | NameVersionIdentifier
 
@@ -51,100 +53,64 @@ interface NameVersionIdentifier {
   version: number
 }
 
-export function encryptActions(
-  actions: Prisma.InputJsonValue | null | undefined,
-  encryptionService: EncryptionService
-): TE.TaskEither<EncryptionError, Prisma.InputJsonValue | null> {
-  if (actions === null || actions === undefined) return TE.right(null)
-
-  return pipe(
-    E.tryCatch(
-      () => JSON.stringify(actions),
-      error => {
-        Logger.error("Failed to stringify actions", error)
-        return "encryption_failed" as const
-      }
-    ),
-    TE.fromEither,
-    TE.chain(plaintext => encryptionService.encrypt(plaintext)),
-    TE.map(ciphertext => ({__encrypted_v1: ciphertext}))
-  )
-}
-
-export function decryptActions(
-  actions: Prisma.JsonValue | null | undefined,
-  encryptionService: EncryptionService
-): TE.TaskEither<EncryptionError, Prisma.JsonValue | null> {
-  if (actions === null || actions === undefined) return TE.right(null)
-
-  const isEnvelope = typeof actions === "object" && !Array.isArray(actions) && "__encrypted_v1" in actions
-
-  if (!isEnvelope) {
-    if (Array.isArray(actions) && actions.length > 0)
-      Logger.error("Data leakage detected: unencrypted actions array found in database")
-
-    return TE.left("decryption_failed" as const)
-  }
-
-  const envelope = actions as {__encrypted_v1: unknown}
-  if (typeof envelope.__encrypted_v1 !== "string") {
-    Logger.error("Invalid encryption envelope structure: __encrypted_v1 is not a string")
-    return TE.left("decryption_failed" as const)
-  }
-
-  return pipe(
-    encryptionService.decrypt(envelope.__encrypted_v1),
-    TE.chainEitherKW(decrypted =>
-      E.tryCatch(
-        () => JSON.parse(decrypted) as Prisma.JsonValue,
-        error => {
-          Logger.error(`Failed to parse decrypted actions JSON: ${String(error)}`, error)
-          return "decryption_failed" as const
-        }
-      )
-    )
-  )
-}
-
 @Injectable()
 export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository {
   constructor(
-    private readonly dbClient: DatabaseClient,
-    private readonly encryptionService: EncryptionService
+    private readonly dbClient: WorkflowTemplateTenantClient,
+    private readonly encryptionService: TenantEncryptionService
   ) {}
 
-  private decryptTemplate(template: PrismaWorkflowTemplate): TE.TaskEither<EncryptionError, PrismaWorkflowTemplate> {
+  private decryptTemplate(
+    context: TenantContext,
+    template: PrismaWorkflowTemplate
+  ): TaskEither<CryptoError | WorkflowTemplateValidationError, Versioned<WorkflowTemplate>> {
     return pipe(
-      decryptActions(template.actions, this.encryptionService),
-      TE.map(decryptedActions => ({
-        ...template,
-        actions: decryptedActions
-      }))
+      this.decryptActions(context, template),
+      TE.chainEitherKW(actions => mapToDomainVersionedWorkflowTemplate(template, actions))
     )
   }
 
-  /**
-   * Creates a new workflow template in the database.
-   * @param data The workflow template data to persist.
-   * @returns A TaskEither with the created workflow template or an error.
-   */
-  createWorkflowTemplate(
+  private decryptActions(context: TenantContext, template: PrismaWorkflowTemplate): TaskEither<CryptoError, unknown> {
+    if (template.encActions === null) return TE.left("unsupported_format")
+    return pipe(
+      this.encryptionService.decrypt(buildEncryptionContext(context, template.id), template.encActions),
+      TE.chainEitherKW(plaintext =>
+        E.tryCatch(
+          () => JSON.parse(plaintext) as unknown,
+          error => {
+            Logger.error(`Failed to parse decrypted actions JSON: ${String(error)}`, error)
+            return "decryption_failed" as const
+          }
+        )
+      )
+    )
+  }
+
+  createDeferredCreateExecution(
+    context: TenantContext,
     data: WorkflowTemplate
-  ): TaskEither<CreateWorkflowTemplateRepoError | WorkflowTemplateValidationError, Versioned<WorkflowTemplate>> {
+  ): TaskEither<
+    WorkflowTemplateCreateExecutionError | WorkflowTemplateValidationError,
+    DeferredWorkflowTemplateWrite<WorkflowTemplateCreateExecutionError | WorkflowTemplateValidationError>
+  > {
     return pipe(
-      data,
-      TE.right,
-      TE.chainW(this.persistWorkflowTemplate()),
-      TE.chainEitherKW(mapToDomainVersionedWorkflowTemplate)
+      this.encryptActions(context, data),
+      TE.map(
+        encActions => () =>
+          pipe(
+            this.persistWorkflowTemplate(data, encActions),
+            TE.chainEitherKW(record => mapToDomainVersionedWorkflowTemplate(record, data.actions))
+          )
+      )
     )
   }
 
-  getParentSpace(templateId: string): TaskEither<WorkflowTemplateGetParentSpaceError, string> {
+  getParentSpace(context: TenantContext, templateId: string): TaskEither<WorkflowTemplateGetParentSpaceError, string> {
     return pipe(
-      TE.tryCatch(
+      fromPromise<UnknownError, {spaceId: string} | null>(
         () =>
           this.dbClient.cx.workflowTemplate.findUnique({
-            where: {id: templateId},
+            where: {organizationId_id: {organizationId: context.organizationId, id: templateId}},
             select: {spaceId: true}
           }),
         error => {
@@ -156,72 +122,72 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
       TE.map(template => template.spaceId)
     )
   }
-
   /**
    * Gets a workflow template by its UUID.
    * @param templateId The ID of the workflow template.
-   * @returns A TaskEither with the versioned workflow template or an error if not found.
+   * @returns A TaskEither with the deferred versioned workflow template or an error if not found.
    */
-  getWorkflowTemplateById(templateId: string): TaskEither<WorkflowTemplateGetError, Versioned<WorkflowTemplate>> {
+  getWorkflowTemplateById(
+    context: TenantContext,
+    templateId: string
+  ): TaskEither<WorkflowTemplateGetError, DeferredWorkflowTemplate<Versioned<WorkflowTemplate>>> {
     const identifier: Identifier = {type: "id", id: templateId}
-    return this.getWorkflowTemplate(identifier)
+    return this.getWorkflowTemplate(context, identifier)
   }
 
   getWorkflowTemplateByNameAndVersion(
+    context: TenantContext,
     templateName: string,
     version: number
-  ): TaskEither<WorkflowTemplateGetError, Versioned<WorkflowTemplate>> {
-    const identifier: Identifier = {type: "name_version", name: templateName, version: version}
-    return this.getWorkflowTemplate(identifier)
+  ): TaskEither<WorkflowTemplateGetError, DeferredWorkflowTemplate<Versioned<WorkflowTemplate>>> {
+    const identifier: Identifier = {type: "name_version", name: templateName, version}
+    return this.getWorkflowTemplate(context, identifier)
   }
 
   getActiveWorkflowTemplateByName(
+    context: TenantContext,
     templateName: string
-  ): TaskEither<WorkflowTemplateGetActiveError, Versioned<WorkflowTemplate>> {
+  ): TaskEither<WorkflowTemplateGetActiveError, DeferredWorkflowTemplate<Versioned<WorkflowTemplate>>> {
+    const snapshotContext = {organizationId: context.organizationId}
     return pipe(
-      TE.tryCatch(
-        async () => {
-          const result = await this.dbClient.cx.workflowTemplate.findMany({
-            where: {
-              name: templateName,
-              status: WorkflowTemplateStatus.ACTIVE
-            }
-          })
-
-          if (result.length === 0) return null
-          if (result.length > 1) throw new MultipleActiveWorkflowTemplatesError(templateName)
-
-          return result[0]
-        },
+      fromPromise<UnknownError, PrismaWorkflowTemplate[]>(
+        () =>
+          this.dbClient.cx.workflowTemplate.findMany({
+            where: {organizationId: context.organizationId, name: templateName, status: WorkflowTemplateStatus.ACTIVE}
+          }),
         error => {
           Logger.error(`Error while retrieving active workflow template by name ${templateName}. Unknown error`, error)
           return "unknown_error" as const
         }
       ),
-      chainNullableToLeft("active_workflow_template_not_found" as const),
-      TE.chainW(result => this.decryptTemplate(result)),
-      TE.chainEitherKW(mapToDomainVersionedWorkflowTemplate)
+      TE.chainW(records => {
+        const [record] = records
+        if (!record) return TE.left("active_workflow_template_not_found" as const)
+        if (records.length > 1) {
+          Logger.error(`Multiple active workflow templates found for name ${templateName}`)
+          return TE.left("unknown_error" as const)
+        }
+        return TE.right(deferWorkflowTemplate(() => this.decryptTemplate(snapshotContext, record)()))
+      })
     )
   }
 
   getMostRecentNonActiveWorkflowTemplateByName(
+    context: TenantContext,
     templateName: string
-  ): TaskEither<WorkflowTemplateGetError, Option<Versioned<WorkflowTemplate>>> {
+  ): TaskEither<WorkflowTemplateGetError, DeferredWorkflowTemplate<O.Option<Versioned<WorkflowTemplate>>>> {
+    const snapshotContext = {organizationId: context.organizationId}
     return pipe(
-      TE.tryCatch(
-        async () => {
-          const templates = await this.dbClient.cx.workflowTemplate.findMany({
+      fromPromise<UnknownError, PrismaWorkflowTemplate | null>(
+        () =>
+          this.dbClient.cx.workflowTemplate.findFirst({
             where: {
+              organizationId: context.organizationId,
               name: templateName,
               status: {not: WorkflowTemplateStatus.ACTIVE}
             },
-            select: {
-              id: true,
-              version: true
-            }
-          })
-          return templates
-        },
+            orderBy: {version: "desc"}
+          }),
         error => {
           Logger.error(
             `Error while retrieving non-active workflow templates by name ${templateName}. Unknown error`,
@@ -230,46 +196,38 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
           return "unknown_error" as const
         }
       ),
-      TE.chainW(templates => {
-        if (templates.length === 0) return TE.right(O.none)
-
-        const mostRecentResult = getMostRecentVersionFromTuples(templates)
-        if (E.isLeft(mostRecentResult)) {
-          Logger.error(`Error finding most recent version for template ${templateName}: ${mostRecentResult.left}`)
-          return TE.left("unknown_error" as const)
-        }
-
-        return TE.right(O.some(mostRecentResult.right.id))
-      }),
-      TE.chainW(
-        O.fold(
-          () => TE.right(O.none),
-          templateId => pipe(this.getWorkflowTemplateById(templateId), TE.map(O.some))
+      TE.chainW(record => {
+        if (!record) return TE.right(deferWorkflowTemplate(TE.right(O.none)))
+        return TE.right(
+          deferWorkflowTemplate(() => pipe(this.decryptTemplate(snapshotContext, record), TE.map(O.some))())
         )
-      )
+      })
     )
   }
 
-  updateWorkflowTemplate(
+  createDeferredUpdateExecution(
+    context: TenantContext,
     template: Versioned<WorkflowTemplate>
-  ): TaskEither<WorkflowTemplateUpdateError, Versioned<WorkflowTemplate>> {
+  ): TaskEither<
+    WorkflowTemplateUpdateExecutionError,
+    DeferredWorkflowTemplateWrite<WorkflowTemplateUpdateExecutionError>
+  > {
     return pipe(
-      template,
-      TE.right,
-      TE.chainW(template => this.updateWorkflowTemplateTask()({data: template, occCheck: template.occ})),
-      TE.chainEitherKW(mapToDomainVersionedWorkflowTemplate)
+      this.encryptActions(context, template),
+      TE.map((encActions: string) => () => this.updateWorkflowTemplateTask(template, encActions))
     )
   }
 
   listWorkflowTemplates(
+    context: TenantContext,
     request: ListWorkflowTemplatesRequestRepo
-  ): TaskEither<WorkflowTemplateValidationError | UnknownError, ListWorkflowTemplatesResponse> {
+  ): TaskEither<BoundaryError | WorkflowTemplateValidationError | UnknownError, ListWorkflowTemplatesResponse> {
     return pipe(
-      TE.tryCatch(
+      fromPromise(
         async () => {
           const skip = (request.pagination.page - 1) * request.pagination.limit
 
-          const where: Prisma.WorkflowTemplateWhereInput = {}
+          const where: Prisma.WorkflowTemplateWhereInput = {organizationId: context.organizationId}
 
           if (request.search)
             if (request.searchMode === "EXACT") where.name = request.search
@@ -304,6 +262,7 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
               orderBy,
               where,
               select: {
+                organizationId: true,
                 id: true,
                 name: true,
                 version: true,
@@ -326,19 +285,7 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
       TE.chainEitherKW(({templates, total}) =>
         pipe(
           templates,
-          E.traverseArray(t => {
-            const status = getStringAsEnum(t.status, WorkflowTemplateStatus)
-            if (status === undefined) return E.left("workflow_template_status_invalid" as const)
-            return E.right({
-              id: t.id,
-              name: t.name,
-              version: t.version,
-              description: t.description ?? undefined,
-              status,
-              createdAt: t.createdAt,
-              updatedAt: t.updatedAt
-            })
-          }),
+          E.traverseArray(mapTemplateSummary),
           E.map(summaries => ({
             templates: summaries,
             pagination: {
@@ -352,28 +299,40 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
     )
   }
 
-  atomicUpdateAndCreate(data: {
-    existingTemplate: Versioned<WorkflowTemplate>
-    newTemplate: WorkflowTemplate
-  }): TaskEither<WorkflowTemplateUpdateError, Versioned<WorkflowTemplate>> {
+  createDeferredUpdateAndCreateExecution(
+    context: TenantContext,
+    data: {existingTemplate: Versioned<WorkflowTemplate>; newTemplate: WorkflowTemplate}
+  ): TaskEither<
+    WorkflowTemplateUpdateExecutionError | WorkflowTemplateCreateExecutionError,
+    DeferredWorkflowTemplateWrite<WorkflowTemplateUpdateExecutionError | WorkflowTemplateCreateExecutionError>
+  > {
     return pipe(
-      data,
-      TE.right,
-      TE.chainW(this.atomicUpdateAndCreateTask()),
-      TE.chainEitherKW(mapToDomainVersionedWorkflowTemplate)
+      TE.Do,
+      TE.bind("existingActions", () => this.encryptActions(context, data.existingTemplate)),
+      TE.bind("newActions", () => this.encryptActions(context, data.newTemplate)),
+      TE.map(
+        ({existingActions, newActions}) =>
+          () =>
+            pipe(
+              this.updateWorkflowTemplateTask(data.existingTemplate, existingActions),
+              TE.chainW(() => this.persistWorkflowTemplate(data.newTemplate, newActions)),
+              TE.chainEitherKW(record => mapToDomainVersionedWorkflowTemplate(record, data.newTemplate.actions))
+            )
+      )
     )
   }
 
   getWorkflowTemplatesParentsByNames(
+    context: TenantContext,
     templateNames: ReadonlyArray<string>
-  ): TaskEither<"workflow_template_not_found", ReadonlyMap<string, string>> {
-    if (templateNames.length === 0) return TE.right(new Map())
-
+  ): TaskEither<BoundaryError | "workflow_template_not_found", ReadonlyMap<string, string>> {
+    const names = [...new Set(templateNames)]
+    if (names.length === 0) return TE.right(new Map())
     return pipe(
-      TE.tryCatch(
-        async () =>
+      fromPromise(
+        () =>
           this.dbClient.cx.workflowTemplate.findMany({
-            where: {name: {in: [...templateNames]}},
+            where: {organizationId: context.organizationId, name: {in: names}},
             distinct: ["name"],
             select: {name: true, spaceId: true}
           }),
@@ -382,189 +341,175 @@ export class WorkflowTemplateDbRepository implements WorkflowTemplateRepository 
           return "workflow_template_not_found" as const
         }
       ),
-      TE.chainW(templates => {
-        if (templates.length !== templateNames.length) return TE.left("workflow_template_not_found" as const)
-
-        const mappings = templates.map(t => {
-          return TE.right([t.name, t.spaceId] as const)
-        })
-
-        return pipe(
-          mappings,
-          TE.sequenceArray,
-          TE.map(entries => new Map(entries))
-        )
+      TE.chainW(records => {
+        if (records.length !== names.length) return TE.left("workflow_template_not_found" as const)
+        return TE.right(new Map<string, string>(records.map(record => [record.name, record.spaceId] as const)))
       })
     )
   }
 
-  countUniqueWorkflowTemplatesBySpaceId(spaceId: string): TaskEither<UnknownError, number> {
-    return TE.tryCatch(
-      async () => {
-        const result = await this.dbClient.cx.$queryRaw<{count: bigint}[]>(
-          Prisma.sql`SELECT COUNT(DISTINCT name) as count FROM workflow_templates WHERE space_id = ${spaceId}::uuid`
-        )
-        return Number(result[0]?.count ?? 0)
-      },
-      error => {
-        Logger.error(`Error counting workflow templates in space ${spaceId}`, error)
-        return "unknown_error"
-      }
+  countUniqueWorkflowTemplatesBySpaceId(context: TenantContext, spaceId: string): TaskEither<UnknownError, number> {
+    return pipe(
+      fromPromise<UnknownError, ReadonlyArray<{name: string}>>(
+        () =>
+          this.dbClient.cx.workflowTemplate.findMany({
+            where: {organizationId: context.organizationId, spaceId},
+            distinct: ["name"],
+            select: {name: true}
+          }),
+        error => {
+          Logger.error(`Error counting workflow templates in space ${spaceId}`, error)
+          return "unknown_error" as const
+        }
+      ),
+      TE.map(rows => rows.length)
     )
   }
 
-  private atomicUpdateAndCreateTask(): (data: {
-    existingTemplate: Versioned<WorkflowTemplate>
-    newTemplate: WorkflowTemplate
-  }) => TaskEither<WorkflowTemplateUpdateError | CreateWorkflowTemplateRepoError, PrismaWorkflowTemplate> {
-    return data =>
-      pipe(
-        TE.tryCatchK(
-          () => this.atomicUpdateAndCreateTaskNoErrorHandling(data),
-          error => {
-            if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
-              return "concurrency_error" as const
-
-            Logger.error(`Error while deprecating old template and creating new one: ${String(error)}`, error)
-            return "unknown_error" as const
-          }
-        )(),
-        TE.chainEitherKW(result => result)
-      )
-  }
-
-  private atomicUpdateAndCreateTaskNoErrorHandling(data: {
-    existingTemplate: Versioned<WorkflowTemplate>
-    newTemplate: WorkflowTemplate
-  }): Promise<Either<WorkflowTemplateUpdateError | CreateWorkflowTemplateRepoError, PrismaWorkflowTemplate>> {
-    const {existingTemplate, newTemplate} = data
-
-    return this.dbClient.transactional(async () => {
-      return pipe(
-        TE.Do,
-        TE.bindW("updatedTemplate", () =>
-          this.updateWorkflowTemplateTask()({data: existingTemplate, occCheck: existingTemplate.occ})
-        ),
-        TE.bindW("createdTemplate", () => this.persistWorkflowTemplate()(newTemplate)),
-        TE.map(({createdTemplate}) => createdTemplate)
-      )()
-    })
-  }
-
-  private updateWorkflowTemplateTask(): (request: {
-    data: WorkflowTemplate
-    occCheck: bigint
-  }) => TaskEither<WorkflowTemplateUpdateError, PrismaWorkflowTemplate> {
-    return ({data, occCheck}) => {
-      const prismaData = mapWorkflowTemplateToPrisma(data)
-      const whereClause: Prisma.WorkflowTemplateWhereUniqueInput = {id: data.id, occ: occCheck}
-
-      return pipe(
-        encryptActions(prismaData.actions as Prisma.InputJsonValue | null | undefined, this.encryptionService),
-        TE.chainW(encryptedActions =>
-          TE.tryCatch(
-            () =>
-              this.dbClient.cx.workflowTemplate.update({
-                where: whereClause,
-                data: {
-                  ...prismaData,
-                  actions: encryptedActions as Prisma.InputJsonValue,
-                  occ: {increment: 1}
-                }
-              }),
-            error => {
-              if (isPrismaRecordNotFoundError(error, Prisma.ModelName.WorkflowTemplate))
-                return "concurrency_error" as const
-
-              if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")
-                return "concurrency_error" as const
-
-              Logger.error(`Error while updating workflow template ${data.id}. Unknown error`, error)
-              return "unknown_error" as const
-            }
-          )
-        ),
-        TE.chainW(updated => this.decryptTemplate(updated))
-      )
-    }
+  private updateWorkflowTemplateTask(
+    template: Versioned<WorkflowTemplate>,
+    encActions: string
+  ): TaskEither<WorkflowTemplateUpdateExecutionError, Versioned<WorkflowTemplate>> {
+    return pipe(
+      fromPromise(
+        () =>
+          this.dbClient.cx.workflowTemplate.update({
+            where: {organizationId_id: {organizationId: template.organizationId, id: template.id}, occ: template.occ},
+            data: {...mapWorkflowTemplateToPrisma(template), encActions, occ: {increment: 1}}
+          }),
+        error => {
+          if (isPrismaRecordNotFoundError(error, Prisma.ModelName.WorkflowTemplate)) return "concurrency_error" as const
+          return this.mapUpdateError(error)
+        }
+      ),
+      TE.chainEitherKW(record => mapToDomainVersionedWorkflowTemplate(record, template.actions))
+    )
   }
 
   private getWorkflowTemplate(
+    context: TenantContext,
     identifier: Identifier
-  ): TaskEither<WorkflowTemplateGetError, Versioned<WorkflowTemplate>> {
+  ): TaskEither<WorkflowTemplateGetError, DeferredWorkflowTemplate<Versioned<WorkflowTemplate>>> {
+    const snapshotContext = {organizationId: context.organizationId}
     return pipe(
       identifier,
       TE.right,
-      TE.chainW(this.getObjectTask()),
+      TE.chainW(this.getObjectTask(context)),
       chainNullableToLeft("workflow_template_not_found" as const),
-      TE.chainEitherKW(mapToDomainVersionedWorkflowTemplate)
+      TE.map(record => deferWorkflowTemplate(() => this.decryptTemplate(snapshotContext, record)()))
     )
   }
 
-  private getObjectTask(): (
-    identifier: Identifier
-  ) => TaskEither<WorkflowTemplateGetError, PrismaWorkflowTemplate | null> {
+  private getObjectTask(
+    context: TenantContext
+  ): (identifier: Identifier) => TaskEither<WorkflowTemplateGetError, PrismaWorkflowTemplate | null> {
     return identifier => {
       const where: Prisma.WorkflowTemplateWhereUniqueInput =
         identifier.type === "id"
-          ? {
-              id: identifier.id
+          ? {organizationId_id: {organizationId: context.organizationId, id: identifier.id}}
+          : {
+              organizationId_name_version: {
+                organizationId: context.organizationId,
+                name: identifier.name,
+                version: identifier.version
+              }
             }
-          : {name_version: {name: identifier.name, version: identifier.version}}
 
-      return pipe(
-        TE.tryCatch(
-          () => this.dbClient.cx.workflowTemplate.findUnique({where}),
-          error => {
-            Logger.error(`Error while retrieving workflow template by ${identifier.type}. Unknown error`, error)
-            return "unknown_error" as const
-          }
-        ),
-        TE.chainW(result => {
-          if (!result) return TE.right(null)
-          return this.decryptTemplate(result)
-        })
+      return fromPromise(
+        () => this.dbClient.cx.workflowTemplate.findUnique({where}),
+        error => {
+          Logger.error(`Error while retrieving workflow template by ${identifier.type}. Unknown error`, error)
+          return "unknown_error" as const
+        }
       )
     }
   }
 
-  private persistWorkflowTemplate(): (
-    data: WorkflowTemplate
-  ) => TaskEither<CreateWorkflowTemplateRepoError, PrismaWorkflowTemplate> {
-    return data =>
-      pipe(
-        encryptActions(data.actions, this.encryptionService),
-        TE.chainW(encryptedActions =>
-          TE.tryCatch(
-            () =>
-              this.dbClient.cx.workflowTemplate.create({
-                data: {
-                  id: data.id,
-                  name: data.name,
-                  version: data.version,
-                  description: data.description,
-                  approvalRule: mapApprovalRuleToJsonb(data.approvalRule),
-                  actions: encryptedActions as Prisma.InputJsonValue,
-                  defaultExpiresInHours: data.defaultExpiresInHours,
-                  status: data.status,
-                  allowVotingOnDeprecatedTemplate: data.allowVotingOnDeprecatedTemplate,
-                  spaceId: data.spaceId,
-                  createdAt: data.createdAt,
-                  updatedAt: data.updatedAt,
-                  occ: POSTGRES_BIGINT_LOWER_BOUND
-                }
-              }),
-            error => {
-              if (isPrismaUniqueConstraintError(error, ["name", "version"]))
-                return "workflow_template_already_exists" as const
+  private persistWorkflowTemplate(
+    template: WorkflowTemplate,
+    encActions: string
+  ): TaskEither<WorkflowTemplateCreateExecutionError, PrismaWorkflowTemplate> {
+    return fromPromise(
+      () =>
+        this.dbClient.cx.workflowTemplate.create({
+          data: {
+            ...mapWorkflowTemplateToPrisma(template),
+            organizations: {connect: {id: template.organizationId}},
+            encActions,
+            occ: POSTGRES_BIGINT_LOWER_BOUND
+          }
+        }),
+      error => this.mapCreateError(error)
+    )
+  }
 
-              Logger.error(`Error creating workflow template: ${String(error)}`, error)
-              return "unknown_error" as const
+  getWorkflowTemplateSummaryById(
+    context: TenantContext,
+    templateId: string
+  ): TaskEither<WorkflowTemplateSummaryGetError, WorkflowTemplateSummary> {
+    return pipe(
+      fromPromise(
+        () =>
+          this.dbClient.cx.workflowTemplate.findUnique({
+            where: {organizationId_id: {organizationId: context.organizationId, id: templateId}},
+            select: {
+              organizationId: true,
+              id: true,
+              name: true,
+              version: true,
+              description: true,
+              status: true,
+              createdAt: true,
+              updatedAt: true,
+              defaultExpiresInHours: true
             }
-          )
-        ),
-        TE.chainW(created => this.decryptTemplate(created))
+          }),
+        error => this.mapUnknownError(error, "get template summary")
+      ),
+      chainNullableToLeft("workflow_template_not_found" as const),
+      TE.chainEitherKW(mapTemplateSummary)
+    )
+  }
+
+  private encryptActions(context: TenantContext, template: WorkflowTemplate): TaskEither<CryptoError, string> {
+    return pipe(
+      TE.fromEither(
+        E.tryCatch(
+          () => JSON.stringify(template.actions),
+          () => "encryption_failed" as const
+        )
+      ),
+      TE.chainW(plaintext => this.encryptionService.encrypt(buildEncryptionContext(context, template.id), plaintext))
+    )
+  }
+
+  private mapCreateError(error: unknown): WorkflowTemplateCreateExecutionError {
+    if (
+      isPrismaUniqueConstraintError(
+        error,
+        ["organization_id", "name", "version"],
+        "workflow_templates_organization_name_version_unique"
       )
+    )
+      return "workflow_template_already_exists"
+    return this.mapUnknownError(error, "create template")
+  }
+
+  private mapUpdateError(error: unknown): WorkflowTemplateUpdateExecutionError {
+    if (
+      isPrismaUniqueConstraintError(
+        error,
+        ["organization_id", "name", "version"],
+        "workflow_templates_organization_name_version_unique"
+      )
+    )
+      return "workflow_template_already_exists"
+    return this.mapUnknownError(error, "update template")
+  }
+
+  private mapUnknownError(error: unknown, operation: string): UnknownError {
+    Logger.error(`Workflow template ${operation} failed`, error instanceof Error ? error.name : "non_error")
+    return "unknown_error"
   }
 }
 
@@ -592,51 +537,102 @@ function mapApprovalRuleToJsonb(approvalRule: ApprovalRule): Prisma.InputJsonVal
   }
 }
 
-function mapActionsToJsonb(actions: WorkflowAction[]): Prisma.InputJsonArray {
-  return actions.map(action => mapActionToJsonb(action))
-}
-
-function mapActionToJsonb(action: WorkflowAction): Prisma.InputJsonValue {
-  switch (action.type) {
-    case WorkflowActionType.EMAIL:
-      return {
-        type: action.type,
-        recipients: [...action.recipients]
-      }
-    case WorkflowActionType.WEBHOOK:
-      return {
-        type: action.type,
-        url: action.url,
-        method: action.method,
-        headers: action.headers ? {...action.headers} : undefined
-      }
-    case WorkflowActionType.SLACK:
-      return {
-        type: action.type,
-        webhookUrl: action.webhookUrl
-      }
-  }
-}
-
-function mapWorkflowTemplateToPrisma(data: WorkflowTemplate): Omit<Prisma.WorkflowTemplateUpdateInput, "occ"> {
+function mapWorkflowTemplateToPrisma(
+  template: WorkflowTemplate
+): Omit<Prisma.WorkflowTemplateCreateInput, "organizations" | "workflows" | "encActions" | "occ"> {
   return {
-    id: data.id,
-    name: data.name,
-    version: data.version,
-    description: data.description ?? null,
-    approvalRule: mapApprovalRuleToJsonb(data.approvalRule),
-    actions: mapActionsToJsonb([...data.actions]),
-    defaultExpiresInHours: data.defaultExpiresInHours ?? null,
-    status: data.status,
-    allowVotingOnDeprecatedTemplate: data.allowVotingOnDeprecatedTemplate,
-    createdAt: data.createdAt,
-    updatedAt: data.updatedAt
+    id: template.id,
+    name: template.name,
+    version: template.version,
+    description: template.description ?? null,
+    approvalRule: mapApprovalRuleToJsonb(template.approvalRule),
+    defaultExpiresInHours: template.defaultExpiresInHours ?? null,
+    status: template.status,
+    allowVotingOnDeprecatedTemplate: template.allowVotingOnDeprecatedTemplate,
+    spaces: {connect: {organizationId_id: {organizationId: template.organizationId, id: template.spaceId}}},
+    createdAt: template.createdAt,
+    updatedAt: template.updatedAt
   }
 }
 
-class MultipleActiveWorkflowTemplatesError extends Error {
-  constructor(templateName: string) {
-    super(`Multiple active workflow templates found for name ${templateName}`)
-    this.name = "MultipleActiveWorkflowTemplatesError"
+function buildEncryptionContext(context: TenantContext, templateId: string) {
+  return {
+    organizationId: context.organizationId,
+    resourceType: "workflow_template" as const,
+    resourceId: templateId,
+    field: "actions" as const,
+    formatVersion: 1 as const
+  }
+}
+
+function mapToDomainVersionedWorkflowTemplate(
+  record: PrismaWorkflowTemplate,
+  actions: unknown
+): E.Either<WorkflowTemplateValidationError, Versioned<WorkflowTemplate>> {
+  return pipe(
+    WorkflowTemplateFactory.validate({
+      id: record.id,
+      organizationId: record.organizationId,
+      name: record.name,
+      version: record.version,
+      description: record.description ?? undefined,
+      approvalRule: record.approvalRule,
+      actions,
+      defaultExpiresInHours: record.defaultExpiresInHours ?? undefined,
+      status: record.status,
+      allowVotingOnDeprecatedTemplate: record.allowVotingOnDeprecatedTemplate,
+      spaceId: record.spaceId,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt
+    }),
+    E.map(template => ({...template, occ: record.occ}))
+  )
+}
+
+type WorkflowTemplateSummaryRecord = Pick<
+  PrismaWorkflowTemplate,
+  "organizationId" | "id" | "name" | "version" | "description" | "status" | "createdAt" | "updatedAt"
+> &
+  Partial<Pick<PrismaWorkflowTemplate, "defaultExpiresInHours">>
+
+function mapTemplateSummary(
+  template: WorkflowTemplateSummaryRecord
+): E.Either<WorkflowTemplateValidationError, WorkflowTemplateSummary> {
+  return WorkflowTemplateFactory.validateSummary({
+    organizationId: template.organizationId,
+    id: template.id,
+    name: template.name,
+    version: template.version,
+    description: template.description ?? undefined,
+    status: template.status,
+    createdAt: template.createdAt,
+    updatedAt: template.updatedAt,
+    defaultExpiresInHours: template.defaultExpiresInHours ?? undefined
+  })
+}
+
+/**
+ * Decrypts and validates one fetched snapshot only when resolve is called.
+ * Concurrent callers share the same promise; success retains the resolved object
+ * and its original OCC. Failures clear the promise so a later call can retry.
+ * Each fetched snapshot owns its cache; this does not refresh the database row.
+ */
+function deferWorkflowTemplate<Result>(
+  task: TaskEither<CryptoError | WorkflowTemplateValidationError, Result>
+): DeferredWorkflowTemplate<Result> {
+  let pending: ReturnType<typeof task> | undefined
+  return {
+    resolve: () => {
+      pending ??= Promise.resolve()
+        .then(task)
+        .catch(() => E.left("decryption_failed" as const))
+        .then(result => {
+          // Return this failure to current callers, but let the next resolve retry
+          // the same fetched snapshot instead of reusing a cached failure.
+          if (E.isLeft(result)) pending = undefined
+          return result
+        })
+      return pending
+    }
   }
 }

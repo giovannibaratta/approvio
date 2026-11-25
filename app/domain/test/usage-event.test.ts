@@ -1,13 +1,16 @@
+import {randomOrgId} from "@test/organization-id"
 import {UsageEventFactory, CreateUsageEvent, UsageMetric} from "../src/usage-event"
 import {ActorType} from "../src/audit-log"
 import {v7 as uuidv7} from "uuid"
 import {unwrapRight} from "@utils/either"
 
 describe("UsageEventFactory", () => {
+  const organizationId = randomOrgId()
   const validData: CreateUsageEvent = {
+    organizationId,
     entityType: "organization",
     entityId: uuidv7(),
-    actor: {id: uuidv7(), type: "user"},
+    actor: {id: uuidv7(), type: "user", displayName: "Test User"},
     metric: "MAX_LLM_TOKENS_PER_MONTH",
     quantity: 1000n,
     isBillable: true,
@@ -48,6 +51,39 @@ describe("UsageEventFactory", () => {
   })
 
   describe("validate", () => {
+    it("compares operation facts independently of retry timestamps and metadata key order", () => {
+      // Given
+      const stored = unwrapRight(
+        UsageEventFactory.create({
+          ...validData,
+          metadata: {nested: {first: 1, second: 2}}
+        })
+      )
+      const retry = {
+        ...stored,
+        occurredAt: new Date(validData.occurredAt.getTime() + 1000),
+        metadata: {nested: {second: 2, first: 1}}
+      }
+
+      // When
+      const identical = UsageEventFactory.isSameOperationEvent(stored, retry)
+      const differentId = UsageEventFactory.isSameOperationEvent(stored, {...retry, id: uuidv7()})
+      const differentQuantity = UsageEventFactory.isSameOperationEvent(stored, {
+        ...retry,
+        quantity: retry.quantity + 1n
+      })
+      const differentMetadata = UsageEventFactory.isSameOperationEvent(stored, {
+        ...retry,
+        metadata: {nested: {first: 3, second: 2}}
+      })
+
+      // Expect
+      expect(identical).toBe(true)
+      expect(differentId).toBe(false)
+      expect(differentQuantity).toBe(false)
+      expect(differentMetadata).toBe(false)
+    })
+
     it("should successfully validate a complete valid UsageEvent object", () => {
       // Given
       const event = {
@@ -113,7 +149,7 @@ describe("UsageEventFactory", () => {
       const event = {
         id: uuidv7(),
         ...validData,
-        actor: {id: uuidv7(), type: "system" as unknown as ActorType}
+        actor: {id: uuidv7(), type: "invalid" as unknown as ActorType, displayName: "Invalid"}
       }
 
       // When

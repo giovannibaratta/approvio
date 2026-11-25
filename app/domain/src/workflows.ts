@@ -1,3 +1,4 @@
+import {OrganizationId, isOrganizationId} from "./shared"
 import * as E from "fp-ts/Either"
 import {Either, isLeft, left, right} from "fp-ts/Either"
 import {DecorableEntity, getStringAsEnum, isDecoratedWith, isUUIDv7, PrefixUnion} from "@utils"
@@ -30,6 +31,7 @@ export type Workflow = Readonly<WorkflowData>
 
 interface WorkflowData {
   id: string
+  organizationId: OrganizationId
   name: string
   description?: string
   status: WorkflowStatus
@@ -49,8 +51,10 @@ type UnprefixedWorkflowValidationError =
   | "description_too_long"
   | "update_before_create"
   | "status_invalid"
+  | "id_invalid_uuid"
   | "workflow_template_id_invalid_uuid"
   | "expires_at_in_the_past"
+  | "organization_id_invalid_uuid"
 
 export class WorkflowFactory {
   /**
@@ -96,7 +100,8 @@ export class WorkflowFactory {
    * @returns Either a validation error or the validated Workflow object.
    */
   private static instantiateWorkflow(
-    data: Omit<WorkflowData, "status"> & {
+    data: Omit<WorkflowData, "status" | "organizationId"> & {
+      organizationId: string
       status: string
     }
   ): Either<WorkflowValidationError, Workflow> {
@@ -104,6 +109,8 @@ export class WorkflowFactory {
     const descriptionValidation = data.description ? validateWorkflowDescription(data.description) : right(undefined)
     const statusValidation = validateWorkflowStatus(data.status)
 
+    if (!isUUIDv7(data.id)) return left("workflow_id_invalid_uuid")
+    if (!isOrganizationId(data.organizationId)) return left("workflow_organization_id_invalid_uuid")
     if (!isUUIDv7(data.workflowTemplateId)) return left("workflow_workflow_template_id_invalid_uuid")
     if (isLeft(nameValidation)) return nameValidation
     if (isLeft(descriptionValidation)) return descriptionValidation
@@ -113,6 +120,7 @@ export class WorkflowFactory {
 
     const workflowData = {
       ...data,
+      organizationId: data.organizationId,
       name: nameValidation.right,
       description: descriptionValidation.right,
       status: data.recalculationRequired ? WorkflowStatus.EVALUATION_IN_PROGRESS : statusValidation.right
@@ -151,7 +159,10 @@ function generateCantVoteReasonForTerminalStatus(status: WorkflowStatus): CantVo
       return "workflow_cancelled"
     case WorkflowStatus.EXPIRED:
       return "workflow_expired"
-    default:
+    case WorkflowStatus.REJECTED:
+    case WorkflowStatus.EVALUATION_IN_PROGRESS:
+      // These are not terminal statuses, so they should never be returned here.
+      // If this is reached, it's a logic error.
       throw new Error(`Invalid terminal status: ${status}`)
   }
 }
@@ -185,18 +196,18 @@ export function evaluateWorkflowStatus(
   if (WORKFLOW_TERMINAL_STATUSES.includes(workflow.status))
     return changeStatusAndMarkAsRecalculated(workflow, workflow.status)
 
-  if (workflow.expiresAt < now) return changeStatusAndMarkAsRecalculated(workflow, WorkflowStatus.EXPIRED)
+  // 1. Replay votes cast by the deadline, even when recalculation runs after expiration.
+  const votesSortedAsc = votes
+    .filter(vote => vote.castedAt <= workflow.expiresAt)
+    .sort((a, b) => {
+      const timeDiff = a.castedAt.getTime() - b.castedAt.getTime()
+      if (timeDiff !== 0) return timeDiff
 
-  // 1. Sort all votes in ascending order of their castedAt timestamp (chronological timeline)
-  const votesSortedAsc = [...votes].sort((a, b) => {
-    const timeDiff = a.castedAt.getTime() - b.castedAt.getTime()
-    if (timeDiff !== 0) return timeDiff
-
-    // If timestamps are identical, prioritize VETO over other votes
-    if (a.type === "VETO" && b.type !== "VETO") return -1
-    if (b.type === "VETO" && a.type !== "VETO") return 1
-    return 0
-  })
+      // If timestamps are identical, prioritize VETO over other votes
+      if (a.type === "VETO" && b.type !== "VETO") return -1
+      if (b.type === "VETO" && a.type !== "VETO") return 1
+      return 0
+    })
 
   // 2. Play the votes sequentially through time
   const activeVoters = new Map<string, Vote>()
@@ -236,8 +247,7 @@ export function evaluateWorkflowStatus(
   }
 
   // 3. Fallback check for expired status if no terminal status was reached
-  if (currentStatus === WorkflowStatus.EVALUATION_IN_PROGRESS && workflow.expiresAt < now)
-    currentStatus = WorkflowStatus.EXPIRED
+  if (workflow.expiresAt < now) currentStatus = WorkflowStatus.EXPIRED
 
   return changeStatusAndMarkAsRecalculated(workflow, currentStatus)
 }

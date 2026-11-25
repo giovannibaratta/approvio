@@ -5,7 +5,7 @@ import {ServiceModule} from "@services/service.module"
 import {ConfigModule} from "@external/config.module"
 
 @Module({
-  imports: [ServiceModule, PassportModule, ConfigModule],
+  imports: [ServiceModule.register({runtime: "api"}), PassportModule, ConfigModule],
   providers: [JwtStrategy],
   exports: []
 })

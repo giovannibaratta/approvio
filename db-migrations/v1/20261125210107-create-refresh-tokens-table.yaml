@@ -1,0 +1,119 @@
+databaseChangeLog:
+  - changeSet:
+      id: 20261125210107-create-refresh-tokens-table
+      author: giovannibaratta
+      changes:
+        - insert:
+            tableName: approvio_security_table_registry
+            columns:
+              - column:
+                  name: table_name
+                  value: refresh_tokens
+              - column:
+                  name: security_class
+                  value: platform
+              - column:
+                  name: capability_profile
+                  value: platform_sessions
+        - createTable:
+            tableName: refresh_tokens
+            columns:
+              - column:
+                  name: id
+                  type: uuid
+                  constraints:
+                    primaryKey: true
+                    nullable: false
+              - column:
+                  name: token_hash
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: family_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: account_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: session_id
+                  type: uuid
+                  constraints:
+                    nullable: false
+              - column:
+                  name: provider_id
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: status
+                  type: text
+                  constraints:
+                    nullable: false
+              - column:
+                  name: used_at
+                  type: timestamptz
+              - column:
+                  name: next_token_id
+                  type: uuid
+              - column:
+                  name: expires_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: created_at
+                  type: timestamptz
+                  constraints:
+                    nullable: false
+              - column:
+                  name: occ
+                  type: bigint
+                  constraints:
+                    nullable: false
+        - addForeignKeyConstraint:
+            baseTableName: refresh_tokens
+            baseColumnNames: account_id
+            referencedTableName: platform_accounts
+            referencedColumnNames: id
+            constraintName: fk_refresh_tokens_account
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: refresh_tokens
+            baseColumnNames: account_id, session_id
+            referencedTableName: browser_sessions
+            referencedColumnNames: account_id, id
+            constraintName: fk_refresh_tokens_account_session
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: refresh_tokens
+            baseColumnNames: session_id, provider_id
+            referencedTableName: browser_sessions
+            referencedColumnNames: id, provider_id
+            constraintName: fk_refresh_tokens_session_provider
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addForeignKeyConstraint:
+            baseTableName: refresh_tokens
+            baseColumnNames: next_token_id
+            referencedTableName: refresh_tokens
+            referencedColumnNames: id
+            constraintName: fk_refresh_tokens_next_token
+            onDelete: RESTRICT
+            onUpdate: NO ACTION
+        - addUniqueConstraint:
+            tableName: refresh_tokens
+            columnNames: token_hash
+            constraintName: refresh_tokens_token_hash_unique
+        - createIndex:
+            tableName: refresh_tokens
+            indexName: idx_refresh_tokens_family_id
+            columns:
+              - column:
+                  name: family_id

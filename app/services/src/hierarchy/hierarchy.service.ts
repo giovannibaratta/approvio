@@ -1,53 +1,63 @@
-import {Node, NodeAtOrAbove, NodeType} from "@domain"
+import {Node, NodeAtOrAbove, NodeType, TenantContext} from "@domain"
 import {Inject, Injectable} from "@nestjs/common"
-import {DEFAULT_ORG_ID} from "../constants"
-import {UnknownError} from "@services/error"
-import {WORKFLOW_REPOSITORY_TOKEN, WorkflowRepository} from "../workflow/interfaces"
-import {WORKFLOW_TEMPLATE_REPOSITORY_TOKEN, WorkflowTemplateRepository} from "../workflow-template/interfaces"
+import {WORKFLOW_REPOSITORY_TOKEN, WorkflowRepository, WorkflowGetParentTemplateError} from "../workflow/interfaces"
+import {
+  WORKFLOW_TEMPLATE_REPOSITORY_TOKEN,
+  WorkflowTemplateRepository,
+  WorkflowTemplateGetParentSpaceError
+} from "../workflow-template/interfaces"
 import {pipe} from "fp-ts/function"
 import {TaskEither} from "fp-ts/TaskEither"
 import * as TE from "fp-ts/TaskEither"
+import {TRANSACTION_MANAGER_TOKEN, TenantTransactionManager, TransactionError} from "@services/transaction/interfaces"
 
 @Injectable()
 export class HierarchyService {
   constructor(
     @Inject(WORKFLOW_TEMPLATE_REPOSITORY_TOKEN) private readonly workflowTemplateRepository: WorkflowTemplateRepository,
-    @Inject(WORKFLOW_REPOSITORY_TOKEN) private readonly workflowRepository: WorkflowRepository
+    @Inject(WORKFLOW_REPOSITORY_TOKEN) private readonly workflowRepository: WorkflowRepository,
+    @Inject(TRANSACTION_MANAGER_TOKEN) private readonly transactionManager: TenantTransactionManager
   ) {}
 
-  getParents<T extends NodeType>(node: Node<T>): TaskEither<UnknownError, NodeAtOrAbove<T>[]> {
+  getParents<T extends NodeType>(
+    node: Node<T>,
+    context: TenantContext
+  ): TaskEither<
+    WorkflowGetParentTemplateError | WorkflowTemplateGetParentSpaceError | TransactionError,
+    NodeAtOrAbove<T>[]
+  > {
     switch (node.type) {
       case "Org":
         return TE.right([])
       case "Group":
-        return TE.right([{type: "Org", identifier: DEFAULT_ORG_ID}] as NodeAtOrAbove<T>[])
       case "Space":
-        return TE.right([{type: "Org", identifier: DEFAULT_ORG_ID}] as NodeAtOrAbove<T>[])
       case "User":
-        return TE.right([{type: "Org", identifier: DEFAULT_ORG_ID}] as NodeAtOrAbove<T>[])
+        return TE.right([{type: "Org", identifier: context.organizationId}] as NodeAtOrAbove<T>[])
       case "WorkflowTemplate":
-        return pipe(
-          this.workflowTemplateRepository.getParentSpace(node.identifier),
-          TE.chainW(spaceId =>
-            pipe(
-              this.getParents({type: "Space" as const, identifier: spaceId}),
-              TE.map(parents => [{type: "Space" as const, identifier: spaceId}, ...parents])
-            )
-          ),
-          TE.mapLeft(() => "unknown_error" as const),
-          TE.map(res => res as NodeAtOrAbove<T>[])
+        return this.transactionManager.execute(context, () =>
+          pipe(
+            this.workflowTemplateRepository.getParentSpace(context, node.identifier),
+            TE.chainW(spaceId =>
+              pipe(
+                this.getParents({type: "Space" as const, identifier: spaceId}, context),
+                TE.map(parents => [{type: "Space" as const, identifier: spaceId}, ...parents])
+              )
+            ),
+            TE.map(res => res as NodeAtOrAbove<T>[])
+          )
         )
       case "Workflow":
-        return pipe(
-          this.workflowRepository.getParentWorkflowTemplate(node.identifier),
-          TE.chainW(templateId =>
-            pipe(
-              this.getParents({type: "WorkflowTemplate" as const, identifier: templateId}),
-              TE.map(parents => [{type: "WorkflowTemplate" as const, identifier: templateId}, ...parents])
-            )
-          ),
-          TE.mapLeft(() => "unknown_error" as const),
-          TE.map(res => res as NodeAtOrAbove<T>[])
+        return this.transactionManager.execute(context, () =>
+          pipe(
+            this.workflowRepository.getParentWorkflowTemplate(context, node.identifier),
+            TE.chainW(templateId =>
+              pipe(
+                this.getParents({type: "WorkflowTemplate" as const, identifier: templateId}, context),
+                TE.map(parents => [{type: "WorkflowTemplate" as const, identifier: templateId}, ...parents])
+              )
+            ),
+            TE.map(res => res as NodeAtOrAbove<T>[])
+          )
         )
     }
   }

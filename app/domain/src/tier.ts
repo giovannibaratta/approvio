@@ -1,8 +1,14 @@
-import {SupportedQuotaType} from "./quota"
+import type {SupportedQuotaType} from "./quota"
 
 export type PlanTier = "FREE" | "SELF_HOSTED_UNLIMITED"
 
-export type TierQuotaLimit = number | "UNLIMITED"
+export function isPlanTier(value: unknown): value is PlanTier {
+  return value === "FREE" || value === "SELF_HOSTED_UNLIMITED"
+}
+
+export type TierQuotaLimit = bigint | "UNLIMITED"
+
+export type TierQuotas = Record<SupportedQuotaType, TierQuotaLimit>
 
 export interface TierFeatures {
   readonly platformLlmEvaluators: boolean
@@ -10,7 +16,7 @@ export interface TierFeatures {
 
 export interface TierDefinition {
   readonly name: string
-  readonly quotas: Record<SupportedQuotaType, TierQuotaLimit>
+  readonly quotas: TierQuotas
   readonly features: TierFeatures
 }
 
@@ -18,16 +24,16 @@ export const TIER_DEFAULTS: Record<PlanTier, TierDefinition> = {
   FREE: {
     name: "Free",
     quotas: {
-      MAX_SPACES: 3,
-      MAX_GROUPS: 5,
-      MAX_ENTITIES_PER_GROUP: 10,
-      MAX_WORKFLOW_TEMPLATES_PER_SPACE: 10,
-      MAX_CONCURRENT_WORKFLOWS: 2,
-      MAX_VOTES_PER_WORKFLOW: 50,
-      MAX_ROLES_PER_USER: 5,
-      MAX_LLM_TOKENS_PER_MONTH: 0,
-      MAX_EVALUATIONS_PER_MONTH: 0,
-      MAX_CREDITS_PER_MONTH: 0
+      MAX_SPACES: 3n,
+      MAX_GROUPS: 5n,
+      MAX_ENTITIES_PER_GROUP: 10n,
+      MAX_WORKFLOW_TEMPLATES_PER_SPACE: 10n,
+      MAX_CONCURRENT_WORKFLOWS: 2n,
+      MAX_VOTES_PER_WORKFLOW: 50n,
+      MAX_ROLES_PER_USER: 5n,
+      MAX_LLM_TOKENS_PER_MONTH: 0n,
+      MAX_EVALUATIONS_PER_MONTH: 0n,
+      MAX_CREDITS_PER_MONTH: 0n
     },
     features: {
       platformLlmEvaluators: false
