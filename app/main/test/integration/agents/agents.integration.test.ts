@@ -3,11 +3,9 @@ import {Test, TestingModule} from "@nestjs/testing"
 import {ConfigProvider} from "@external/config"
 import {NestApplication} from "@nestjs/core"
 import {AppModule} from "@app/app.module"
-import {DatabaseClient} from "@external"
-import {AGENTS_ENDPOINT_ROOT} from "@controllers"
 import {PrismaClient} from "@prisma/client"
 import {AgentRegistrationRequest} from "@approvio/api"
-import {cleanDatabase, prepareDatabase} from "@test/database"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
 import {MockConfigProvider} from "@test/mock-data"
 import {createAuthenticatedUserInDb} from "@test/token-helpers"
 import {HttpStatus} from "@nestjs/common"
@@ -46,7 +44,7 @@ describe("Agents API", () => {
   let jwtService: JwtService
   let configProvider: ConfigProvider
 
-  const endpoint = `/${AGENTS_ENDPOINT_ROOT}/register`
+  const endpoint = (organizationId: string): string => `/o/${organizationId}/agents/register`
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -57,7 +55,7 @@ describe("Agents API", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
+        .useValue(MockConfigProvider.fromOriginalProvider({tenantConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -65,7 +63,7 @@ describe("Agents API", () => {
     }
 
     app = module.createNestApplication({logger: false})
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
 
@@ -74,7 +72,10 @@ describe("Agents API", () => {
 
   beforeEach(async () => {
     orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
-    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+      orgAdmin: false,
+      organizationId: orgAdminUser.user.organizationId
+    })
   })
 
   afterAll(async () => {
@@ -95,7 +96,10 @@ describe("Agents API", () => {
         }
 
         // When: Posting to registration endpoint as admin
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(request)
+        const response = await post(app, endpoint(orgAdminUser.user.organizationId))
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(request)
 
         // Expect: Successful agent registration
         expect(response).toHaveStatusCode(HttpStatus.CREATED)
@@ -121,7 +125,9 @@ describe("Agents API", () => {
 
         // Expect: Agent is persisted in database
         const dbAgent = await prisma.agent.findUnique({
-          where: {agentName: "test-ci-agent"}
+          where: {
+            organizationId_agentName: {organizationId: orgAdminUser.user.organizationId, agentName: "test-ci-agent"}
+          }
         })
         expect(dbAgent).toBeTruthy()
         expect(dbAgent?.id).toBe(response.body.agentId)
@@ -134,7 +140,10 @@ describe("Agents API", () => {
         }
 
         // When: Posting to registration endpoint as admin
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(request)
+        const response = await post(app, endpoint(orgAdminUser.user.organizationId))
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(request)
 
         // Expect: Successful registration
         expect(response).toHaveStatusCode(HttpStatus.CREATED)
@@ -149,7 +158,10 @@ describe("Agents API", () => {
         }
 
         // When: Posting to registration endpoint as admin
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(request)
+        const response = await post(app, endpoint(orgAdminUser.user.organizationId))
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(request)
 
         // Expect: Successful registration
         expect(response).toHaveStatusCode(HttpStatus.CREATED)
@@ -165,7 +177,10 @@ describe("Agents API", () => {
         }
 
         // When: Posting to registration endpoint as admin
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(request)
+        const response = await post(app, endpoint(orgAdminUser.user.organizationId))
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(request)
 
         // Expect: Bad request error
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
@@ -180,7 +195,10 @@ describe("Agents API", () => {
         }
 
         // When: Posting to registration endpoint as admin
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(request)
+        const response = await post(app, endpoint(orgAdminUser.user.organizationId))
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(request)
 
         // Expect: Bad request error
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
@@ -194,7 +212,10 @@ describe("Agents API", () => {
         }
 
         // When: Posting to registration endpoint as admin
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(request)
+        const response = await post(app, endpoint(orgAdminUser.user.organizationId))
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(request)
 
         // Expect: Bad request error
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
@@ -207,9 +228,13 @@ describe("Agents API", () => {
         await prisma.agent.create({
           data: {
             id: uuidv7(),
+            organizationId: orgAdminUser.user.organizationId,
             agentName,
             base64PublicKey: "dGVzdC1wdWJsaWMta2V5",
+            status: "active",
+            roles: [],
             createdAt: new Date(),
+            updatedAt: new Date(),
             occ: BigInt(0)
           }
         })
@@ -219,7 +244,10 @@ describe("Agents API", () => {
         }
 
         // When: Trying to register agent with same name as admin
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(request)
+        const response = await post(app, endpoint(orgAdminUser.user.organizationId))
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(request)
 
         // Expect: Conflict error
         expect(response).toHaveStatusCode(HttpStatus.CONFLICT)
@@ -231,7 +259,10 @@ describe("Agents API", () => {
         const request = {}
 
         // When: Posting to registration endpoint as admin
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(request)
+        const response = await post(app, endpoint(orgAdminUser.user.organizationId))
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(request)
 
         // Expect: Bad request due to validation
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
@@ -244,7 +275,10 @@ describe("Agents API", () => {
         }
 
         // When: Posting to registration endpoint as admin
-        const response = await post(app, endpoint).withToken(orgAdminUser.token).build().send(request)
+        const response = await post(app, endpoint(orgAdminUser.user.organizationId))
+          .withToken(orgAdminUser.token)
+          .build()
+          .send(request)
 
         // Expect: Bad request error
         expect(response).toHaveStatusCode(HttpStatus.BAD_REQUEST)
@@ -260,7 +294,7 @@ describe("Agents API", () => {
         }
 
         // When: Posting without authentication token
-        const response = await post(app, endpoint).build().send(request)
+        const response = await post(app, endpoint(orgAdminUser.user.organizationId)).build().send(request)
 
         // Expect: Unauthorized error
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)
@@ -273,7 +307,10 @@ describe("Agents API", () => {
         }
 
         // When: Posting as member user (not admin)
-        const response = await post(app, endpoint).withToken(orgMemberUser.token).build().send(request)
+        const response = await post(app, endpoint(orgAdminUser.user.organizationId))
+          .withToken(orgMemberUser.token)
+          .build()
+          .send(request)
 
         // Expect: Successful registration
         expect(response).toHaveStatusCode(HttpStatus.CREATED)
@@ -299,9 +336,13 @@ describe("Agents API", () => {
       await prisma.agent.create({
         data: {
           id: existingAgent.id,
+          organizationId: orgAdminUser.user.organizationId,
           agentName: existingAgent.agentName,
           base64PublicKey: "dGVzdC1wdWJsaWMta2V5",
+          status: "active",
+          roles: [],
           createdAt: new Date(),
+          updatedAt: new Date(),
           occ: BigInt(0)
         }
       })
@@ -310,7 +351,7 @@ describe("Agents API", () => {
     describe("Good cases", () => {
       it("should fetch agent details by ID", async () => {
         // When: Fetching agent by ID
-        const response = await get(app, `/${AGENTS_ENDPOINT_ROOT}/${existingAgent.id}`)
+        const response = await get(app, `/o/${orgAdminUser.user.organizationId}/agents/${existingAgent.id}`)
           .withToken(orgAdminUser.token)
           .build()
           .send()
@@ -327,7 +368,7 @@ describe("Agents API", () => {
 
       it("should fetch agent details by name", async () => {
         // When: Fetching agent by name
-        const response = await get(app, `/${AGENTS_ENDPOINT_ROOT}/${existingAgent.agentName}`)
+        const response = await get(app, `/o/${orgAdminUser.user.organizationId}/agents/${existingAgent.agentName}`)
           .withToken(orgAdminUser.token)
           .build()
           .send()
@@ -346,7 +387,7 @@ describe("Agents API", () => {
     describe("Bad cases", () => {
       it("should return 404 NOT FOUND if agent does not exist (by ID)", async () => {
         // When: Fetching non-existent agent by ID
-        const response = await get(app, `/${AGENTS_ENDPOINT_ROOT}/${uuidv7()}`)
+        const response = await get(app, `/o/${orgAdminUser.user.organizationId}/agents/${uuidv7()}`)
           .withToken(orgAdminUser.token)
           .build()
           .send()
@@ -358,7 +399,7 @@ describe("Agents API", () => {
 
       it("should return 404 NOT FOUND if agent does not exist (by name)", async () => {
         // When: Fetching non-existent agent by name
-        const response = await get(app, `/${AGENTS_ENDPOINT_ROOT}/non-existent-agent`)
+        const response = await get(app, `/o/${orgAdminUser.user.organizationId}/agents/non-existent-agent`)
           .withToken(orgAdminUser.token)
           .build()
           .send()
@@ -372,7 +413,9 @@ describe("Agents API", () => {
     describe("Authentication cases", () => {
       it("should return 401 UNAUTHORIZED if no token is provided", async () => {
         // When: Fetching without authentication token
-        const response = await get(app, `/${AGENTS_ENDPOINT_ROOT}/${existingAgent.id}`).build().send()
+        const response = await get(app, `/o/${orgAdminUser.user.organizationId}/agents/${existingAgent.id}`)
+          .build()
+          .send()
 
         // Expect: Unauthorized error
         expect(response).toHaveStatusCode(HttpStatus.UNAUTHORIZED)

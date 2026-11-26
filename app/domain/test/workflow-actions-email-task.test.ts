@@ -1,7 +1,9 @@
+import {randomOrgId} from "@test/organization-id"
 import {DecoratedWorkflowActionEmailTask, TaskStatus, WorkflowActionEmailTaskFactory} from "@domain"
 
 describe("WorkflowActionEmailTaskFactory", () => {
   const baseTaskData = {
+    organizationId: randomOrgId(),
     workflowId: "workflow-123",
     recipients: ["test@example.com"],
     subject: "Test Subject",
@@ -9,13 +11,27 @@ describe("WorkflowActionEmailTaskFactory", () => {
   }
 
   describe("validate", () => {
+    it("should reject a task without a valid tenant organization", () => {
+      const result = WorkflowActionEmailTaskFactory.validate({
+        ...baseTaskData,
+        organizationId: "not-an-organization",
+        id: "task-123",
+        status: TaskStatus.READY,
+        retryCount: 0,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      })
+
+      expect(result).toBeLeftOf("workflow_action_task_missing_or_invalid_organization_id")
+    })
+
     describe("good cases", () => {
       it("should return a valid entity when validating a plain data structure", () => {
         // Given: a plain data structure for the workflow action email task
         const taskData = {
           ...baseTaskData,
           id: "task-123",
-          status: TaskStatus.PENDING,
+          status: TaskStatus.READY,
           retryCount: 0,
           createdAt: new Date(),
           updatedAt: new Date()
@@ -33,7 +49,7 @@ describe("WorkflowActionEmailTaskFactory", () => {
         const decoratedTask: DecoratedWorkflowActionEmailTask<{occ: true}> = {
           ...baseTaskData,
           id: "task-123",
-          status: TaskStatus.COMPLETED,
+          status: TaskStatus.SUCCEEDED,
           retryCount: 0,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -52,7 +68,7 @@ describe("WorkflowActionEmailTaskFactory", () => {
         const decoratedTask: DecoratedWorkflowActionEmailTask<{occ: true}> = {
           ...baseTaskData,
           id: "task-123",
-          status: TaskStatus.ERROR,
+          status: TaskStatus.FAILED,
           retryCount: 0,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -92,7 +108,7 @@ describe("WorkflowActionEmailTaskFactory", () => {
         const taskData = {
           ...baseTaskData,
           id: "task-123",
-          status: TaskStatus.ERROR,
+          status: TaskStatus.FAILED,
           retryCount: 0,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -113,7 +129,7 @@ describe("WorkflowActionEmailTaskFactory", () => {
         const decoratedTask: DecoratedWorkflowActionEmailTask<{lock: true}> = {
           ...baseTaskData,
           id: "task-123",
-          status: TaskStatus.PENDING,
+          status: TaskStatus.READY,
           retryCount: 0,
           createdAt: now,
           updatedAt: now,
@@ -135,7 +151,7 @@ describe("WorkflowActionEmailTaskFactory", () => {
         const decoratedTask: DecoratedWorkflowActionEmailTask<{occ: true; lock: true}> = {
           ...baseTaskData,
           id: "task-123",
-          status: TaskStatus.PENDING,
+          status: TaskStatus.READY,
           retryCount: 0,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -158,7 +174,7 @@ describe("WorkflowActionEmailTaskFactory", () => {
         const decoratedTask: DecoratedWorkflowActionEmailTask<{occ: true; lock: true}> = {
           ...baseTaskData,
           id: "task-123",
-          status: TaskStatus.PENDING,
+          status: TaskStatus.READY,
           retryCount: 0,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -181,7 +197,7 @@ describe("WorkflowActionEmailTaskFactory", () => {
         const decoratedTask: DecoratedWorkflowActionEmailTask<{occ: true; lock: true}> = {
           ...baseTaskData,
           id: "task-123",
-          status: TaskStatus.PENDING,
+          status: TaskStatus.READY,
           retryCount: 0,
           createdAt: new Date(),
           updatedAt: new Date(),

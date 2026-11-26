@@ -3,11 +3,16 @@ import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
 import {Test, TestingModule} from "@nestjs/testing"
-import {cleanDatabase, cleanRedisByPrefix, prepareDatabase, prepareRedisPrefix} from "@test/database"
+import {
+  createFixturePrismaClient,
+  cleanDatabase,
+  cleanRedisByPrefix,
+  prepareDatabase,
+  prepareRedisPrefix
+} from "@test/database"
 import {MockConfigProvider} from "@test/mock-data"
 import {get} from "@test/requests"
 import {PrismaClient} from "@prisma/client"
-import {DatabaseClient} from "@external"
 import {HealthRateLimiterGuard} from "@app/rate-limiter"
 
 describe("Health API Rate Limiting", () => {
@@ -25,7 +30,7 @@ describe("Health API Rate Limiting", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromDbConnectionUrl(isolatedDb, redisPrefix))
+        .useValue(MockConfigProvider.fromTenantConnectionUrl(isolatedDb, redisPrefix))
         .compile()
     } catch (error) {
       console.error(error)
@@ -35,7 +40,7 @@ describe("Health API Rate Limiting", () => {
     app = module.createNestApplication({logger: false})
     // Enable trust proxy to test different client IPs via X-Forwarded-For header
     app.getHttpAdapter().getInstance().set("trust proxy", true)
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     await app.init()
   }, 30000)
 

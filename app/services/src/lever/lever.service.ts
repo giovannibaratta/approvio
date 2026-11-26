@@ -22,7 +22,8 @@ export type LeverName =
    * Disables the background worker responsible for sweeping expired workflows.
    */
   | "disable_workflow_expiration_sweep"
-  // TODO(long-term): "disable_auth_provider" currently uses context targeting ({ providerId }).
+  // TODO(long-term): This lever targets a provider ID; revisit organization-scoped targeting once
+  // provider configuration is tenant-owned.
   // Consider dynamic lever names (e.g. `disable_auth_provider_${string}`) or a dedicated
   // multi-variant lever structure to prevent accidental global enable if context is omitted in Feature Flag management software.
   /**

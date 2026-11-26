@@ -1,128 +1,150 @@
+import {PkceSessionFactory, PkceSessionValidationError, PkceSessionData, PkceStorageData} from "@domain"
+import {Either} from "fp-ts/Either"
+import {fromPromise} from "./repository-operation"
 import {Injectable, Logger} from "@nestjs/common"
+import {PkceError, PkceSessionRepository} from "@services/auth"
 import * as TE from "fp-ts/TaskEither"
-import {TaskEither} from "fp-ts/TaskEither"
-import {DatabaseClient} from "./database-client"
-import {PkceError, PkceStorageData, PkceSessionData, PkceSessionRepository} from "@services/auth"
-import {EncryptionService} from "../kms"
 import {pipe} from "fp-ts/function"
+import {PlatformEncryptionService} from "../kms"
+import {SessionDatabaseClient} from "./capability-database-client"
+import {PkceSession, Prisma} from "@prisma/client"
+import {POSTGRES_BIGINT_LOWER_BOUND} from "./constants"
+import {isPrismaRecordNotFoundError} from "./errors"
+import {chainNullableToLeft} from "./utils"
 
 @Injectable()
 export class PkceSessionDbRepository implements PkceSessionRepository {
   constructor(
-    private readonly dbClient: DatabaseClient,
-    private readonly encryptionService: EncryptionService
+    private readonly dbClient: SessionDatabaseClient,
+    private readonly encryptionService: PlatformEncryptionService
   ) {}
 
-  storePkceData(state: string, data: PkceStorageData): TaskEither<PkceError, void> {
+  storePkceData(state: string, data: PkceStorageData): TE.TaskEither<PkceError, void> {
+    const stepUpTarget = data.flow === "step_up" ? data.stepUpTarget : undefined
+
     return pipe(
-      this.encryptionService.encrypt(data.codeVerifier),
-      TE.chainW(encryptedVerifier =>
-        TE.tryCatch(
+      this.encryptionService.encryptPkce(state, data.providerId, data.codeVerifier),
+      TE.chainW(encCodeVerifier =>
+        fromPromise(
           async () => {
-            await this.dbClient.cx.pkceSession.create({
-              data: {
-                state,
-                codeVerifier: encryptedVerifier,
-                redirectUri: data.redirectUri,
-                oidcState: data.oidcState,
-                providerId: data.providerId,
-                expiresAt: data.expiresAt,
-                occ: 0
-              }
-            })
+            await this.dbClient.transactional(tx =>
+              tx.pkceSession.create({
+                data: {
+                  state,
+                  encCodeVerifier,
+                  redirectUri: data.redirectUri,
+                  oidcState: data.oidcState,
+                  providerId: data.providerId,
+                  flow: data.flow,
+                  sessionId: data.flow === "step_up" ? data.sessionId : null,
+                  stepUpOrganizationId: stepUpTarget?.organizationId ?? null,
+                  stepUpOperation: stepUpTarget?.operation ?? null,
+                  stepUpResourceId: stepUpTarget?.resourceId ?? null,
+                  stepUpContextVersion: stepUpTarget?.contextVersion ?? null,
+                  createdAt: data.createdAt,
+                  expiresAt: data.expiresAt,
+                  usedAt: null,
+                  occ: POSTGRES_BIGINT_LOWER_BOUND
+                }
+              })
+            )
           },
-          error => {
-            Logger.error("Error storing PKCE data", error)
-            return "pkce_code_storage_failed" as const
-          }
+          error => this.mapStorageError(error, "store")
         )
       )
     )
   }
 
-  retrievePkceData(state: string): TaskEither<PkceError, PkceSessionData> {
+  retrievePkceData(state: string): TE.TaskEither<PkceError, PkceSessionData> {
     return pipe(
-      TE.tryCatch(
-        async () => {
-          const session = await this.dbClient.cx.pkceSession.findUnique({
-            where: {state}
-          })
-
-          if (!session) throw new Error("PKCE session not found")
-          return session
-        },
-        error => {
-          Logger.error("Error retrieving PKCE data", error)
-          if (error instanceof Error && error.message === "PKCE session not found")
-            return "pkce_code_not_found" as const
-
-          return "pkce_code_storage_failed" as const
-        }
+      fromPromise(
+        () => this.dbClient.transactional(tx => tx.pkceSession.findUnique({where: {state}})),
+        error => this.mapStorageError(error, "retrieve")
       ),
+      chainNullableToLeft("pkce_code_not_found" as const),
       TE.chainW(session =>
         pipe(
-          this.encryptionService.decrypt(session.codeVerifier),
-          TE.map((decryptedVerifier): PkceSessionData => ({
-            state: session.state,
-            codeVerifier: decryptedVerifier,
-            redirectUri: session.redirectUri,
-            oidcState: session.oidcState,
-            providerId: session.providerId,
-            expiresAt: session.expiresAt,
-            occ: session.occ,
-            usedAt: session.usedAt || undefined
-          }))
+          this.encryptionService.decryptPkce(session.state, session.providerId, session.encCodeVerifier),
+          TE.chainEitherKW(codeVerifier => mapSession(session, codeVerifier))
         )
       )
     )
   }
 
-  deletePkceData(state: string): TaskEither<PkceError, void> {
-    return TE.tryCatch(
+  deletePkceData(state: string): TE.TaskEither<PkceError, void> {
+    return fromPromise(
       async () => {
-        await this.dbClient.cx.pkceSession.delete({
-          where: {state}
-        })
+        await this.dbClient.transactional(tx => tx.pkceSession.delete({where: {state}, select: {state: true}}))
       },
       error => {
-        Logger.error("Error deleting PKCE data", error)
-        return "pkce_code_storage_failed" as const
+        if (isPrismaRecordNotFoundError(error, Prisma.ModelName.PkceSession)) return "pkce_code_not_found" as const
+        return this.mapStorageError(error, "delete")
       }
     )
   }
 
-  updatePkceSession(sessionData: PkceSessionData, currentOcc: bigint): TaskEither<PkceError, void> {
+  updatePkceSession(sessionData: PkceSessionData, currentOcc: bigint): TE.TaskEither<PkceError, void> {
     return pipe(
-      this.encryptionService.encrypt(sessionData.codeVerifier),
-      TE.chainW(encryptedVerifier =>
-        TE.tryCatch(
+      this.encryptionService.encryptPkce(sessionData.state, sessionData.providerId, sessionData.codeVerifier),
+      TE.chainW(encCodeVerifier =>
+        fromPromise(
           async () => {
-            const result = await this.dbClient.cx.pkceSession.updateMany({
-              where: {
-                state: sessionData.state,
-                occ: currentOcc
-              },
-              data: {
-                codeVerifier: encryptedVerifier,
-                redirectUri: sessionData.redirectUri,
-                oidcState: sessionData.oidcState,
-                expiresAt: sessionData.expiresAt,
-                usedAt: sessionData.usedAt,
-                occ: currentOcc + 1n
-              }
-            })
-
-            if (result.count === 0) throw new Error("PKCE session OCC conflict or not found")
+            await this.dbClient.transactional(tx =>
+              tx.pkceSession.update({
+                where: {state: sessionData.state, occ: currentOcc},
+                data: {
+                  encCodeVerifier,
+                  redirectUri: sessionData.redirectUri,
+                  oidcState: sessionData.oidcState,
+                  expiresAt: sessionData.expiresAt,
+                  usedAt: sessionData.usedAt ?? null,
+                  occ: {increment: 1}
+                },
+                select: {state: true}
+              })
+            )
           },
           error => {
-            Logger.error("Error updating PKCE session", error)
-            if (error instanceof Error && error.message === "PKCE session OCC conflict or not found")
-              return "pkce_code_not_found" as const
-
-            return "pkce_code_storage_failed" as const
+            if (isPrismaRecordNotFoundError(error, Prisma.ModelName.PkceSession))
+              return "pkce_code_concurrency_conflict" as const
+            return this.mapStorageError(error, "update")
           }
         )
       )
     )
   }
+
+  private mapStorageError(error: unknown, operation: string): PkceError {
+    Logger.error(`PKCE session repository ${operation} failed`, error instanceof Error ? error.name : "non_error")
+    return "pkce_code_storage_failed"
+  }
+}
+
+function mapSession(session: PkceSession, codeVerifier: string): Either<PkceSessionValidationError, PkceSessionData> {
+  const stepUpTarget =
+    session.stepUpOrganizationId === null &&
+    session.stepUpOperation === null &&
+    session.stepUpResourceId === null &&
+    session.stepUpContextVersion === null
+      ? undefined
+      : {
+          organizationId: session.stepUpOrganizationId ?? undefined,
+          operation: session.stepUpOperation ?? undefined,
+          resourceId: session.stepUpResourceId ?? undefined,
+          contextVersion: session.stepUpContextVersion ?? undefined
+        }
+  return PkceSessionFactory.validate({
+    state: session.state,
+    codeVerifier,
+    redirectUri: session.redirectUri,
+    oidcState: session.oidcState,
+    providerId: session.providerId,
+    createdAt: session.createdAt,
+    expiresAt: session.expiresAt,
+    occ: session.occ,
+    usedAt: session.usedAt ?? undefined,
+    flow: session.flow,
+    sessionId: session.sessionId ?? undefined,
+    stepUpTarget
+  })
 }

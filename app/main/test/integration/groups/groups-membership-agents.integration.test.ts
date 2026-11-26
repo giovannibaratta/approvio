@@ -1,7 +1,6 @@
 import {AddGroupEntitiesRequest, ListGroupEntities200Response, RemoveGroupEntitiesRequest} from "@approvio/api"
 import {AppModule} from "@app/app.module"
 import {GROUPS_ENDPOINT_ROOT} from "@controllers"
-import {DatabaseClient} from "@external"
 import {ConfigProvider} from "@external/config"
 import {HttpStatus} from "@nestjs/common"
 import {NestApplication} from "@nestjs/core"
@@ -9,8 +8,12 @@ import {JwtService} from "@nestjs/jwt"
 import {Test, TestingModule} from "@nestjs/testing"
 import {PrismaClient, Group as PrismaGroup, Agent as PrismaAgent} from "@prisma/client"
 
-import {cleanDatabase, prepareDatabase} from "@test/database"
-import {createMockAgentInDb, createTestGroup, MockConfigProvider} from "@test/mock-data"
+import {createFixturePrismaClient, cleanDatabase, prepareDatabase} from "@test/database"
+import {
+  createMockAgentInDb as createMockAgentFixture,
+  createTestGroup as createTestGroupFixture,
+  MockConfigProvider
+} from "@test/mock-data"
 import {createAuthenticatedUserInDb, TestTokenBuilder} from "@test/token-helpers"
 import {get, post, del} from "@test/requests"
 import {UserWithToken} from "@test/types"
@@ -35,7 +38,18 @@ describe("Groups API - Agent Membership", () => {
   let jwtService: JwtService
   let configProvider: ConfigProvider
 
-  const endpoint = `/${GROUPS_ENDPOINT_ROOT}`
+  let endpoint: string
+
+  const createMockAgentInDb = (prisma: PrismaClient, overrides?: Parameters<typeof createMockAgentFixture>[1]) =>
+    createMockAgentFixture(prisma, {
+      ...overrides,
+      organizationId: overrides?.organizationId ?? orgAdminUser.user.organizationId
+    })
+  const createTestGroup = (prisma: PrismaClient, overrides?: Parameters<typeof createTestGroupFixture>[1]) =>
+    createTestGroupFixture(prisma, {
+      ...overrides,
+      organizationId: overrides?.organizationId ?? orgAdminUser.user.organizationId
+    })
 
   beforeAll(async () => {
     const isolatedDb = await prepareDatabase()
@@ -46,7 +60,7 @@ describe("Groups API - Agent Membership", () => {
         imports: [AppModule]
       })
         .overrideProvider(ConfigProvider)
-        .useValue(MockConfigProvider.fromOriginalProvider({dbConnectionUrl: isolatedDb}))
+        .useValue(MockConfigProvider.fromOriginalProvider({tenantConnectionUrl: isolatedDb}))
         .compile()
     } catch (error) {
       console.error(error)
@@ -55,7 +69,7 @@ describe("Groups API - Agent Membership", () => {
 
     app = module.createNestApplication({logger: false})
 
-    prisma = module.get(DatabaseClient).prisma
+    prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
     configProvider = module.get(ConfigProvider)
     await app.init()
@@ -63,7 +77,11 @@ describe("Groups API - Agent Membership", () => {
 
   beforeEach(async () => {
     orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: true})
-    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {orgAdmin: false})
+    orgMemberUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
+      orgAdmin: false,
+      organizationId: orgAdminUser.user.organizationId
+    })
+    endpoint = `/o/${orgAdminUser.user.organizationId}/${GROUPS_ENDPOINT_ROOT}`
     const agent = await createMockAgentInDb(prisma, {agentName: "test-group-agent"})
     const domainAgent = unwrapRight(mapAgentToDomain(agent))
     const token = TestTokenBuilder.signAgentToken(jwtService, configProvider, domainAgent)
@@ -226,6 +244,7 @@ describe("Groups API - Agent Membership", () => {
           // Given: Add agent to group first
           await prisma.agentGroupMembership.create({
             data: {
+              organizationId: group.organizationId,
               groupId: group.id,
               agentId: agent1.id,
               createdAt: new Date(),
@@ -294,10 +313,11 @@ describe("Groups API - Agent Membership", () => {
           }
 
           // Simulate concurrent insertion by another request during the getAgentById fetch
-          spy = wrapTaskEitherWithSideEffect(agentRepository, "getAgentById", async id => {
+          spy = wrapTaskEitherWithSideEffect(agentRepository, "getAgentById", async (_context, id) => {
             if (id === agent1.id)
               await prisma.agentGroupMembership.create({
                 data: {
+                  organizationId: group.organizationId,
                   groupId: group.id,
                   agentId: agent1.id,
                   createdAt: new Date(),
@@ -327,7 +347,7 @@ describe("Groups API - Agent Membership", () => {
 
           // Simulate concurrent group deletion during the read phase (getAgentById fetch).
           // At this point, the service has not yet fetched the group or checked its existence.
-          spy = wrapTaskEitherWithSideEffect(agentRepository, "getAgentById", async id => {
+          spy = wrapTaskEitherWithSideEffect(agentRepository, "getAgentById", async (_context, id) => {
             if (id === agent1.id)
               await prisma.group.delete({
                 where: {id: group.id}
@@ -388,12 +408,14 @@ describe("Groups API - Agent Membership", () => {
           await prisma.agentGroupMembership.createMany({
             data: [
               {
+                organizationId: group.organizationId,
                 groupId: group.id,
                 agentId: agent1.id,
                 createdAt: new Date(),
                 updatedAt: new Date()
               },
               {
+                organizationId: group.organizationId,
                 groupId: group.id,
                 agentId: agent2.id,
                 createdAt: new Date(),
@@ -422,6 +444,7 @@ describe("Groups API - Agent Membership", () => {
           // Given: Add user and agent to group
           await prisma.groupMembership.create({
             data: {
+              organizationId: group.organizationId,
               groupId: group.id,
               userId: orgMemberUser.user.id,
               createdAt: new Date(),
@@ -430,6 +453,7 @@ describe("Groups API - Agent Membership", () => {
           })
           await prisma.agentGroupMembership.create({
             data: {
+              organizationId: group.organizationId,
               groupId: group.id,
               agentId: agent1.id,
               createdAt: new Date(),
@@ -495,12 +519,14 @@ describe("Groups API - Agent Membership", () => {
           await prisma.agentGroupMembership.createMany({
             data: [
               {
+                organizationId: group.organizationId,
                 groupId: group.id,
                 agentId: agent1.id,
                 createdAt: new Date(),
                 updatedAt: new Date()
               },
               {
+                organizationId: group.organizationId,
                 groupId: group.id,
                 agentId: agent2.id,
                 createdAt: new Date(),
@@ -535,12 +561,14 @@ describe("Groups API - Agent Membership", () => {
           await prisma.agentGroupMembership.createMany({
             data: [
               {
+                organizationId: group.organizationId,
                 groupId: group.id,
                 agentId: agent1.id,
                 createdAt: new Date(),
                 updatedAt: new Date()
               },
               {
+                organizationId: group.organizationId,
                 groupId: group.id,
                 agentId: agent2.id,
                 createdAt: new Date(),

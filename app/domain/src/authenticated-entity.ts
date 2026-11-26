@@ -1,10 +1,29 @@
-import {User, Agent, Versioned, UnconstrainedBoundRole} from "@domain"
+import {OrganizationId} from "./shared"
+import {Account, User, Agent, UnconstrainedBoundRole} from "@domain"
+import {hasOwnProperty, isObject} from "@utils"
 
 export type AuthenticatedEntity = AuthenticatedUser | AuthenticatedAgent
 
-export type StepUpOperation = "vote" | "admin_action"
+/**
+ * Platform sessions represent the authenticated account/browser session before
+ * organization selection. They may perform global account and organization-
+ * selection operations, but are not tenant principals and cannot access
+ * organization-scoped data directly.
+ */
+export type AuthenticatedPlatformSession = {
+  entityType: "platform"
+  account: Account
+  sessionId: string
+  providerId: string
+  sessionContextVersion: bigint
+}
 
-const ALLOWED_STEP_UP_OPERATIONS = ["vote", "admin_action"]
+/** Principals that may read or switch their own browser session context. */
+export type AuthenticatedBrowserSession = AuthenticatedPlatformSession | AuthenticatedUser
+
+export type StepUpOperation = "vote" | "admin_action" | "delete_organization"
+
+const ALLOWED_STEP_UP_OPERATIONS: ReadonlyArray<string> = ["vote", "admin_action", "delete_organization"]
 
 export function isStepUpOperation(operation: unknown): operation is StepUpOperation {
   return typeof operation === "string" && ALLOWED_STEP_UP_OPERATIONS.includes(operation)
@@ -26,9 +45,12 @@ export interface StepUpContext {
 
 export type AuthenticatedUser = {
   entityType: "user"
-  user: Versioned<User>
-  /** Identifier of the OIDC provider used for this user session */
+  user: User
+  /** Stable deployment provider key that authenticated this browser session. */
   providerId: string
+  sessionId: string
+  /** Browser-session organization-selection version, distinct from entity OCC. */
+  sessionContextVersion: bigint
   authContext?: StepUpContext
 }
 
@@ -40,6 +62,29 @@ export type AuthenticatedAgent = {
 export interface EntityReference {
   entityId: string
   entityType: "user" | "agent"
+  organizationId: OrganizationId
+}
+
+export type Actor =
+  | {readonly type: "user"; readonly id: string; readonly displayName: string}
+  | {readonly type: "agent"; readonly id: string; readonly displayName: string}
+  | {readonly type: "operator"; readonly id: string; readonly displayName: string}
+  // A system actor represents work performed by an internal service or worker
+  // when no human or tenant agent is the initiating principal.
+  | {readonly type: "system"; readonly displayName: string}
+
+export type OriginatingActor = Extract<Actor, {readonly type: "user" | "agent" | "operator"}>
+
+export function isOriginatingActor(data: unknown): data is OriginatingActor {
+  return (
+    isObject(data) &&
+    hasOwnProperty(data, "id") &&
+    typeof data.id === "string" &&
+    hasOwnProperty(data, "type") &&
+    (data.type === "user" || data.type === "agent" || data.type === "operator") &&
+    hasOwnProperty(data, "displayName") &&
+    typeof data.displayName === "string"
+  )
 }
 
 export function getEntityId(entity: AuthenticatedEntity): string {
@@ -67,7 +112,8 @@ export function getEntityRoles(entity: AuthenticatedEntity): ReadonlyArray<Uncon
 export function createEntityReference(entity: AuthenticatedEntity): EntityReference {
   return {
     entityId: getEntityId(entity),
-    entityType: getEntityType(entity)
+    entityType: getEntityType(entity),
+    organizationId: entity.entityType === "user" ? entity.user.organizationId : entity.agent.organizationId
   }
 }
 

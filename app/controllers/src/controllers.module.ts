@@ -1,7 +1,6 @@
 import {Module} from "@nestjs/common"
 import {AgentsController} from "./agents"
 import {GroupsController} from "./groups"
-import {OrganizationAdminController} from "./organization-admin"
 import {SpacesController} from "./spaces"
 import {UsersController} from "./users"
 import {ServiceModule} from "@services/service.module"
@@ -16,19 +15,26 @@ import {PingController} from "./ping"
 import {QuotasController} from "./quotas"
 import {AuditLogsController} from "./audit-logs"
 import {ResourcesController} from "./resources"
-import {OrganizationController} from "./organizations"
+import {
+  InvitationsController,
+  MembershipsController,
+  OrganizationController,
+  AccountOrganizationsController
+} from "./organizations"
 
 import {ConfigModule} from "@external/config.module"
 
 const internalControllers = [WorkflowTemplateInternalController, HealthController]
 
 @Module({
-  imports: [ServiceModule, AuthModule, ConfigModule],
+  imports: [ServiceModule.register({runtime: "api"}), AuthModule, ConfigModule],
   controllers: [
     AgentsController,
     GroupsController,
-    OrganizationAdminController,
     OrganizationController,
+    AccountOrganizationsController,
+    MembershipsController,
+    InvitationsController,
     SpacesController,
     UsersController,
     WorkflowsController,

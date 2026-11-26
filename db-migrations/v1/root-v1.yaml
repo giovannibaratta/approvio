@@ -2,46 +2,70 @@ databaseChangeLog:
   - include:
       file: v1/19700101000000-add-databasechangelog-pk.yaml
   - include:
-      file: v1/20260208132754-create-groups-table.yaml
+      file: v1/20261125210100-create-security-table-registry.yaml
   - include:
-      file: v1/20260208132755-create-users-table.yaml
+      file: v1/20261125210101-create-organizations-table.yaml
   - include:
-      file: v1/20260208132756-create-agents-table.yaml
+      file: v1/20261125210102-create-platform-accounts-table.yaml
   - include:
-      file: v1/20260208132757-create-group-memberships-table.yaml
+      file: v1/20261125210103-create-user-identities-table.yaml
   - include:
-      file: v1/20260208132758-create-spaces-table.yaml
+      file: v1/20261125210104-create-users-table.yaml
   - include:
-      file: v1/20260208132759-create-workflow-templates-table.yaml
+      file: v1/20261125210105-create-organization-invitations-table.yaml
   - include:
-      file: v1/20260208132800-create-workflows-table.yaml
+      file: v1/20261125210106-create-browser-sessions-table.yaml
   - include:
-      file: v1/20260208132801-create-votes-table.yaml
+      file: v1/20261125210107-create-refresh-tokens-table.yaml
   - include:
-      file: v1/20260208132802-create-workflow-actions-email-task-table.yaml
+      file: v1/20261125210108-create-pkce-sessions-table.yaml
   - include:
-      file: v1/20260208132803-create-pkce-sessions-table.yaml
+      file: v1/20261125210109-create-groups-table.yaml
   - include:
-      file: v1/20260208132804-create-refresh-tokens-table.yaml
+      file: v1/20261125210110-create-agents-table.yaml
   - include:
-      file: v1/20260208132805-create-organization-admins-table.yaml
+      file: v1/20261125210111-create-group-memberships-table.yaml
   - include:
-      file: v1/20260208132806-create-agent-challenges-table.yaml
+      file: v1/20261125210112-create-agent-group-memberships-table.yaml
   - include:
-      file: v1/20260208132807-create-agent-group-memberships-table.yaml
+      file: v1/20261125210113-create-agent-challenges-table.yaml
   - include:
-      file: v1/20260208132808-create-workflow-actions-webhook-tasks-table.yaml
+      file: v1/20261125210114-create-agent-refresh-tokens-table.yaml
   - include:
-      file: v1/20260215114500-create-quotas-table.yaml
+      file: v1/20261125210115-create-spaces-table.yaml
   - include:
-      file: v1/20260509143200-create-audit-logs-table.yaml
+      file: v1/20261125210116-create-workflow-templates-table.yaml
   - include:
-      file: v1/20260530120000-create-workflow-actions-slack-tasks-table.yaml
+      file: v1/20261125210117-create-workflows-table.yaml
   - include:
-      file: v1/20260616120000-add-provider-to-pkce-sessions-table.yaml
+      file: v1/20261125210118-create-votes-table.yaml
   - include:
-      file: v1/20260616120001-create-user-identities-table.yaml
+      file: v1/20261125210119-create-durable-work-table.yaml
   - include:
-      file: v1/20260616120002-add-provider-to-refresh-tokens-table.yaml
+      file: v1/20261125210120-create-workflow-actions-email-task-table.yaml
   - include:
-      file: v1/20260830120003-create-usage-events-table.yaml
+      file: v1/20261125210121-create-workflow-actions-webhook-tasks-table.yaml
+  - include:
+      file: v1/20261125210122-create-workflow-actions-slack-tasks-table.yaml
+  - include:
+      file: v1/20261125210123-create-tenant-outbox-table.yaml
+  - include:
+      file: v1/20261125210124-create-tenant-event-receipts.yaml
+  - include:
+      file: v1/20261125210125-create-platform-security-events-table.yaml
+  - include:
+      file: v1/20261125210126-create-dispatch-attempts-table.yaml
+  - include:
+      file: v1/20261125210127-create-step-up-receipts-table.yaml
+  - include:
+      file: v1/20261125210128-create-quotas-table.yaml
+  - include:
+      file: v1/20261125210129-create-usage-events-table.yaml
+  - include:
+      file: v1/20261125210130-create-usage-operations-table.yaml
+  - include:
+      file: v1/20261125210131-create-usage-settlement-intents-table.yaml
+  - include:
+      file: v1/20261125210132-create-audit-logs-table.yaml
+  - include:
+      file: v1/20261125210133-create-workflow-expiration-schedules.yaml

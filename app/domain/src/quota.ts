@@ -1,3 +1,4 @@
+import {OrganizationId, isOrganizationId} from "./shared"
 /**
  * # Quota System
  *
@@ -23,6 +24,8 @@ import {v7 as uuid} from "uuid"
 import {isObject, isUUIDv7} from "@utils/validation"
 import * as E from "fp-ts/Either"
 import {DescendantsOf, getParentsOfType, isNodeType, Node, NodeAtOrAbove, NodeType} from "./hierarchy"
+import {isUsageQuantity, parseUsageQuantity} from "./usage-quantity"
+import {pipe} from "fp-ts/function"
 import {PlanTier, TIER_DEFAULTS} from "./tier"
 
 /**
@@ -90,11 +93,20 @@ export type QuotaIdentifier = {
   }
 }[NodeType]
 
-export type Quota = QuotaIdentifier & {
+type QuotaAttributes = {
   readonly id: string
-  readonly limit: number
+  readonly organizationId: OrganizationId
   readonly createdAt: Date
   readonly updatedAt: Date
+}
+
+export type Quota = QuotaIdentifier & QuotaAttributes & {readonly limit: bigint}
+
+export function parseQuotaLimit(value: unknown): E.Either<"quota_invalid_limit", bigint> {
+  return pipe(
+    parseUsageQuantity(value),
+    E.mapLeft(() => "quota_invalid_limit" as const)
+  )
 }
 
 export type QuotaValidationError = PrefixUnion<
@@ -108,6 +120,7 @@ export type QuotaValidationError = PrefixUnion<
   | "missing_target_id"
   | "invalid_target_id"
   | "missing_configuration"
+  | "invalid_organization_id"
 >
 
 function isSupportedQuotaType(val: string): val is SupportedQuotaType {
@@ -185,15 +198,18 @@ export class QuotaFactory {
 
     if (typeof data.id !== "string") return E.left("quota_malformed_quota")
     if (!isUUIDv7(data.id)) return E.left("quota_invalid_id")
+    if (!isOrganizationId(data.organizationId)) return E.left("quota_invalid_organization_id")
+    if (identifierEither.right.node.type === "Org" && identifierEither.right.node.identifier !== data.organizationId)
+      return E.left("quota_invalid_organization_id")
 
-    if (typeof data.limit !== "number" || !Number.isInteger(data.limit) || data.limit < 0)
-      return E.left("quota_invalid_limit")
+    if (!isUsageQuantity(data.limit)) return E.left("quota_invalid_limit")
 
     if (!(data.createdAt instanceof Date)) return E.left("quota_malformed_quota")
     if (!(data.updatedAt instanceof Date)) return E.left("quota_malformed_quota")
 
     return E.right({
       id: data.id,
+      organizationId: data.organizationId,
       node: identifierEither.right.node,
       quotaType: identifierEither.right.quotaType,
       limit: data.limit,
@@ -202,7 +218,7 @@ export class QuotaFactory {
     } as Quota)
   }
 
-  static newQuota(data: object, limit: number): E.Either<QuotaValidationError, Quota> {
+  static newQuota(data: object, limit: bigint): E.Either<QuotaValidationError, Quota> {
     const now = new Date()
 
     return this.validate({
@@ -215,9 +231,9 @@ export class QuotaFactory {
   }
 }
 
-export type EffectiveLimitResult = {readonly isUnlimited: true} | {readonly isUnlimited: false; readonly limit: number}
+export type EffectiveLimitResult = {readonly isUnlimited: true} | {readonly isUnlimited: false; readonly limit: bigint}
 
-export type QuotaLimitOverride = number | "UNLIMITED"
+export type QuotaLimitOverride = bigint | "UNLIMITED"
 
 export type QuotaResolutionError = PrefixUnion<"quota", "missing_configuration">
 
@@ -240,7 +256,7 @@ export function resolveEffectiveLimit(
 ): E.Either<QuotaResolutionError, EffectiveLimitResult> {
   const {metric, tier, specificResourceOverride, orgOverride} = params
 
-  let limit: number | "UNLIMITED" | undefined
+  let limit: QuotaLimitOverride | undefined
 
   if (specificResourceOverride !== undefined) limit = specificResourceOverride
   else if (orgOverride !== undefined) limit = orgOverride
@@ -251,7 +267,7 @@ export function resolveEffectiveLimit(
 
   if (limit === "UNLIMITED") return E.right({isUnlimited: true})
 
-  if (typeof limit === "number" && Number.isFinite(limit) && limit >= 0) return E.right({isUnlimited: false, limit})
+  if (isUsageQuantity(limit)) return E.right({isUnlimited: false, limit})
 
   return E.left("quota_missing_configuration")
 }

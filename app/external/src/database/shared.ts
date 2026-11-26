@@ -1,99 +1,41 @@
-import {
-  Agent,
-  Group,
-  GroupFactory,
-  GroupValidationError,
-  GroupWithEntitiesCount,
-  OrganizationAdmin,
-  OrganizationAdminFactory,
-  OrganizationAdminValidationError,
-  Space,
-  SpaceFactory,
-  SpaceValidationError,
-  User,
-  UserFactory,
-  UserSummary,
-  UserValidationError,
-  Workflow,
-  WorkflowFactory,
-  WorkflowValidationError,
-  WorkflowTemplate,
-  WorkflowTemplateFactory,
-  WorkflowTemplateValidationError,
-  DecoratedWorkflow,
-  WorkflowDecoratorSelector,
-  OrgRole,
-  AgentFactory,
-  AgentValidationError,
-  UnconstrainedBoundRole
-} from "@domain"
-import {
-  Agent as PrismaAgent,
-  Group as PrismaGroup,
-  OrganizationAdmin as PrismaOrganizationAdmin,
-  Space as PrismaSpace,
-  Workflow as PrismaWorkflow,
-  WorkflowTemplate as PrismaWorkflowTemplate,
-  UserIdentity as PrismaUserIdentity
-} from "@prisma/client"
-import {UserIdentity} from "@services"
-import {Versioned} from "@domain"
+import {Agent, AgentFactory, AgentValidationError, User, UserFactory, UserValidationError, Versioned} from "@domain"
+import {Agent as PrismaAgent, Prisma, User as PrismaUser} from "@prisma/client"
 import * as E from "fp-ts/Either"
 import {Either} from "fp-ts/Either"
 import {pipe} from "fp-ts/function"
-import {PrismaGroupWithCount} from "./group.repository"
-import {Prisma} from "@prisma/client"
-import {PrismaUserWithOrgAdmin, UserSummaryRepo} from "./user.repository"
-import {UserSummaryValidationError} from "@domain"
+import {UnconstrainedBoundRole} from "@domain"
 import {AgentKeyDecodeError} from "@services"
-import {iPrismaDecoratedWorkflow, PrismaDecoratedWorkflow, PrismaWorkflowDecoratorSelector} from "./workflow.repository"
 
-export type PrismaWorkflowWithTemplate = PrismaWorkflow & {
-  workflowTemplates: PrismaWorkflowTemplate
+export async function persistExistingUserRaceConditionFree(
+  tx: Pick<Prisma.TransactionClient, "user">,
+  data: UpdateUserWithRolesData
+): Promise<E.Either<"user_not_found" | "concurrency_error", void>> {
+  const updated = await tx.user.updateMany({
+    where: {
+      id: data.userId,
+      organizationId: data.organizationId,
+      occ: data.userOcc
+    },
+    data: {
+      displayName: data.displayName,
+      roles: mapRolesToPrisma(data.roles),
+      createdAt: data.createdAt,
+      updatedAt: data.updatedAt,
+      occ: {increment: 1}
+    }
+  })
+  if (updated.count === 1) return E.right(undefined)
+
+  // Diagnose only a missed guarded update. Keep the tenant predicate so a foreign ID
+  // is indistinguishable from an absent user; the original OCC check remains atomic.
+  const user = await tx.user.findUnique({
+    where: {organizationId_id: {organizationId: data.organizationId, id: data.userId}},
+    select: {id: true}
+  })
+  return E.left(user === null ? "user_not_found" : "concurrency_error")
 }
 
-export type PrismaWorkflowWithOptionalTemplate = PrismaWorkflow & {
-  workflowTemplates?: PrismaWorkflowTemplate | null
-}
-
-export function mapToDomainVersionedGroup(dbObject: PrismaGroup): Either<GroupValidationError, Versioned<Group>> {
-  const object: Group = {
-    createdAt: dbObject.createdAt,
-    description: dbObject.description,
-    id: dbObject.id,
-    name: dbObject.name,
-    updatedAt: dbObject.updatedAt
-  }
-
-  return pipe(
-    object,
-    obj => GroupFactory.validate(obj),
-    E.map(group => ({...group, occ: dbObject.occ}))
-  )
-}
-
-export function mapToDomainVersionedGroupWithEntities(
-  dbObject: PrismaGroupWithCount
-): Either<GroupValidationError, Versioned<GroupWithEntitiesCount>> {
-  const object: GroupWithEntitiesCount = {
-    createdAt: dbObject.createdAt,
-    description: dbObject.description,
-    id: dbObject.id,
-    name: dbObject.name,
-    updatedAt: dbObject.updatedAt,
-    entitiesCount: dbObject._count.groupMemberships + dbObject._count.agentGroupMemberships
-  }
-
-  return pipe(
-    object,
-    obj => GroupFactory.validate(obj),
-    E.map(group => ({...group, occ: dbObject.occ}))
-  )
-}
-
-export function mapToDomainVersionedUser(
-  dbObject: PrismaUserWithOrgAdmin
-): Either<UserValidationError, Versioned<User>> {
+export function mapToDomainVersionedUser(dbObject: PrismaUser): Either<UserValidationError, Versioned<User>> {
   return pipe(
     dbObject,
     mapUserToDomain,
@@ -101,179 +43,20 @@ export function mapToDomainVersionedUser(
   )
 }
 
-export function mapUserToDomain(dbObject: PrismaUserWithOrgAdmin): Either<UserValidationError, User> {
+export function mapUserToDomain(dbObject: PrismaUser): Either<UserValidationError, User> {
   const object = {
     id: dbObject.id,
+    organizationId: dbObject.organizationId,
+    accountId: dbObject.platformAccountId,
     displayName: dbObject.displayName,
-    email: dbObject.email,
-    createdAt: dbObject.createdAt,
-    orgRole: dbObject.organizationAdmins ? OrgRole.ADMIN : OrgRole.MEMBER,
-    roles: dbObject.roles
-  }
-
-  return pipe(object, obj => UserFactory.validate(obj))
-}
-
-export function mapWorkflowToDomain<
-  DomainSelectors extends WorkflowDecoratorSelector,
-  PrismaSelectors extends PrismaWorkflowDecoratorSelector
->(
-  dbObject: PrismaDecoratedWorkflow<PrismaSelectors>,
-  include?: PrismaSelectors
-): Either<
-  WorkflowValidationError | WorkflowTemplateValidationError | "unknown_error",
-  DecoratedWorkflow<DomainSelectors>
-> {
-  if (include?.workflowTemplates === true) {
-    if (iPrismaDecoratedWorkflow(dbObject, "workflowTemplates", include))
-      return mapToDomainVersionedWorkflowWithTemplate(dbObject) as Either<
-        WorkflowValidationError | WorkflowTemplateValidationError,
-        DecoratedWorkflow<DomainSelectors>
-      >
-
-    // This should never happen, but we need to handle the case where the workflow template is not found
-    return E.left("unknown_error" as const)
-  }
-
-  return mapToDomainVersionedWorkflow(dbObject) as Either<WorkflowValidationError, DecoratedWorkflow<DomainSelectors>>
-}
-
-function mapWorkflowToNonVersionedDomain(dbObject: PrismaWorkflow): Either<WorkflowValidationError, Workflow> {
-  const object = {
-    createdAt: dbObject.createdAt,
-    description: dbObject.description ?? undefined,
-    id: dbObject.id,
-    name: dbObject.name,
-    updatedAt: dbObject.updatedAt,
     status: dbObject.status,
-    recalculationRequired: dbObject.recalculationRequired,
-    workflowTemplateId: dbObject.workflowTemplateId,
-    expiresAt: dbObject.expiresAt,
-    occ: dbObject.occ
-  }
-  return pipe(object, obj => WorkflowFactory.validate(obj))
-}
-
-export function mapToDomainVersionedWorkflow(
-  dbObject: PrismaWorkflow
-): Either<WorkflowValidationError, Versioned<Workflow>> {
-  return pipe(
-    dbObject,
-    mapWorkflowToNonVersionedDomain,
-    E.map(domainObject => ({
-      ...domainObject,
-      occ: dbObject.occ
-    }))
-  )
-}
-
-export function mapToDomainVersionedWorkflowWithTemplate(
-  dbObject: PrismaWorkflowWithTemplate
-): Either<
-  WorkflowValidationError | WorkflowTemplateValidationError,
-  Versioned<Workflow> & {workflowTemplate: WorkflowTemplate}
-> {
-  return pipe(
-    E.Do,
-    E.bindW("workflow", () => mapWorkflowToNonVersionedDomain(dbObject)),
-    E.bindW("workflowTemplate", () => mapWorkflowTemplateToDomain(dbObject.workflowTemplates)),
-    E.map(({workflow, workflowTemplate}) => ({
-      ...workflow,
-      occ: dbObject.occ,
-      workflowTemplate
-    }))
-  )
-}
-
-function prismaJsonToJson(prismaJson: Prisma.JsonValue): Either<"approval_rule_malformed_content", JSON> {
-  if (prismaJson === null) return E.left("approval_rule_malformed_content")
-  return E.right(JSON.parse(JSON.stringify(prismaJson)))
-}
-
-export function mapToDomainUserSummary(dbObject: UserSummaryRepo): Either<UserSummaryValidationError, UserSummary> {
-  const object: UserSummary = {
-    ...dbObject
-  }
-
-  return pipe(object, obj => UserFactory.validateUserSummary(obj))
-}
-
-export function mapWorkflowTemplateToDomain(
-  dbObject: PrismaWorkflowTemplate
-): Either<WorkflowTemplateValidationError, WorkflowTemplate> {
-  const eitherApprovalRule = prismaJsonToJson(dbObject.approvalRule)
-  if (E.isLeft(eitherApprovalRule)) return eitherApprovalRule
-
-  const eitherActions = prismaJsonToJson(dbObject.actions)
-  if (E.isLeft(eitherActions)) return eitherActions
-
-  const object = {
+    orgRole: dbObject.orgRole,
+    roles: dbObject.roles,
     createdAt: dbObject.createdAt,
-    description: dbObject.description ?? undefined,
-    id: dbObject.id,
-    name: dbObject.name,
-    version: dbObject.version,
-    updatedAt: dbObject.updatedAt,
-    approvalRule: eitherApprovalRule.right,
-    actions: eitherActions.right,
-    defaultExpiresInHours: dbObject.defaultExpiresInHours ?? undefined,
-    status: dbObject.status,
-    allowVotingOnDeprecatedTemplate: dbObject.allowVotingOnDeprecatedTemplate,
-    spaceId: dbObject.spaceId,
-    occ: dbObject.occ
-  }
-  return pipe(object, obj => WorkflowTemplateFactory.validate(obj))
-}
-
-export function mapToDomainVersionedWorkflowTemplate(
-  dbObject: PrismaWorkflowTemplate
-): Either<WorkflowTemplateValidationError, Versioned<WorkflowTemplate>> {
-  return pipe(
-    dbObject,
-    mapWorkflowTemplateToDomain,
-    E.map(domainObject => ({
-      ...domainObject,
-      occ: dbObject.occ
-    }))
-  )
-}
-
-export function mapOrganizationAdminToDomain(
-  dbObject: PrismaOrganizationAdmin
-): Either<OrganizationAdminValidationError, OrganizationAdmin> {
-  const object: OrganizationAdmin = {
-    id: dbObject.id,
-    email: dbObject.email,
-    createdAt: dbObject.createdAt
-  }
-
-  return pipe(object, obj => OrganizationAdminFactory.validate(obj))
-}
-
-export function mapToDomainVersionedSpace(dbObject: PrismaSpace): Either<SpaceValidationError, Versioned<Space>> {
-  const object: Space = {
-    createdAt: dbObject.createdAt,
-    description: dbObject.description ?? undefined,
-    id: dbObject.id,
-    name: dbObject.name,
     updatedAt: dbObject.updatedAt
   }
 
-  return pipe(
-    object,
-    obj => SpaceFactory.validate(obj),
-    E.map(space => ({...space, occ: dbObject.occ}))
-  )
-}
-
-export function mapToDomainVersionedAgent(
-  dbObject: PrismaAgent
-): Either<AgentKeyDecodeError | AgentValidationError, Versioned<Agent>> {
-  return pipe(
-    dbObject,
-    mapAgentToDomain,
-    E.map(agent => ({...agent, occ: dbObject.occ}))
-  )
+  return pipe(object, obj => UserFactory.validate(obj))
 }
 
 export function mapAgentToDomain(dbObject: PrismaAgent): Either<AgentKeyDecodeError | AgentValidationError, Agent> {
@@ -287,22 +70,18 @@ export function mapAgentToDomain(dbObject: PrismaAgent): Either<AgentKeyDecodeEr
     E.map(decodedPublicKey => {
       const agent = {
         id: dbObject.id,
+        organizationId: dbObject.organizationId,
         agentName: dbObject.agentName,
         publicKey: decodedPublicKey,
+        status: dbObject.status,
+        roles: dbObject.roles,
         createdAt: dbObject.createdAt,
-        roles: dbObject.roles
+        updatedAt: dbObject.updatedAt
       }
       return agent
     }),
     E.chainW(agentToValidate => AgentFactory.validate(agentToValidate))
   )
-}
-
-export class ConcurrentUpdateError extends Error {
-  constructor() {
-    super("Concurrent update error")
-    this.name = "ConcurrentUpdateError"
-  }
 }
 
 export function mapRolesToPrisma(roles: Iterable<UnconstrainedBoundRole>): Prisma.JsonArray {
@@ -324,32 +103,35 @@ function mapScopeToPrisma(scope: UnconstrainedBoundRole["scope"]): Prisma.JsonOb
     case "group":
       return {
         type: scope.type,
+        organizationId: scope.organizationId,
         groupId: scope.groupId
       }
     case "space":
       return {
         type: scope.type,
+        organizationId: scope.organizationId,
         spaceId: scope.spaceId
       }
     case "workflow_template":
       return {
         type: scope.type,
+        organizationId: scope.organizationId,
         templateName: scope.templateName
       }
     case "org":
       return {
-        type: scope.type
+        type: scope.type,
+        organizationId: scope.organizationId
       }
   }
 }
 
-export function mapUserIdentityToDomain(dbObject: PrismaUserIdentity): UserIdentity {
-  return {
-    id: dbObject.id,
-    userId: dbObject.userId,
-    providerId: dbObject.providerId,
-    subjectId: dbObject.subjectId,
-    email: dbObject.email,
-    createdAt: dbObject.createdAt
-  }
+interface UpdateUserWithRolesData {
+  readonly userId: string
+  readonly organizationId: User["organizationId"]
+  readonly userOcc: bigint
+  readonly displayName: string
+  readonly roles: User["roles"]
+  readonly createdAt: Date
+  readonly updatedAt: Date
 }

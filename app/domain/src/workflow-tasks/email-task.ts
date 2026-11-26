@@ -68,7 +68,7 @@ export class WorkflowActionEmailTaskFactory {
 
     const baseEntity: WorkflowActionEmailTask = {
       ...data,
-      status: TaskStatus.PENDING,
+      status: TaskStatus.READY,
       retryCount: 0,
       createdAt: now,
       updatedAt: now
@@ -93,7 +93,7 @@ export class WorkflowActionEmailTaskFactory {
       updatedAt: new Date(),
       retryCount: task.retryCount + 1,
       errorReason: newData.errorReason,
-      status: TaskStatus.ERROR
+      status: TaskStatus.FAILED
     }
 
     return WorkflowActionEmailTaskFactory.validate(newObj)
@@ -107,7 +107,7 @@ export class WorkflowActionEmailTaskFactory {
       updatedAt: new Date(),
       retryCount: task.retryCount,
       errorReason: undefined, // clear error reason if present
-      status: TaskStatus.COMPLETED
+      status: TaskStatus.SUCCEEDED
     }
 
     return WorkflowActionEmailTaskFactory.validate(newObj)

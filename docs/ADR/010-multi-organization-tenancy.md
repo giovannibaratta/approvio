@@ -108,6 +108,8 @@ RLS uses a restricted runtime database role and an organization setting local to
 
 `FORCE ROW LEVEL SECURITY` makes a non-superuser table owner obey row policies. Superusers and roles with `BYPASSRLS` remain exempt. Liquibase can manage these policies as SQL migrations; Prisma need not represent them as application models. Runtime and migration roles must be separated. [PostgreSQL row security](https://www.postgresql.org/docs/17/ddl-rowsecurity.html)
 
+The [tenancy security-boundary note](./010-tenancy-security-boundaries.md) defines the capability roles, failure modes, and non-goals behind these controls. It also records the deferred decision on transparent recovery from an unknown database commit outcome.
+
 An isolated check verified these mechanisms using Prisma 7.9.1, PostgreSQL 17.4, and Liquibase 4.31.1. It also verified that Prisma query extensions do not receive separate nested-operation callbacks. A cross-organization relationship accepted with simple foreign keys and RLS was rejected after adding tenant-matching composite foreign keys. These checks establish mechanism compatibility; application transaction propagation, retries, and worker integration still require implementation tests.
 
 ## 4. Human identity, organization authority, and agents

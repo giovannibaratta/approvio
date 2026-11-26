@@ -12,6 +12,7 @@ import {
   TaskStatus,
   WorkflowActionTaskData,
   WorkflowActionPendingTaskData,
+  WorkflowActionUnresolvedTaskData,
   WorkflowActionCompletedTaskData,
   WorkflowActionErrorTaskData,
   WorkflowActionTaskDecoratorSelector,
@@ -44,7 +45,10 @@ export type DecoratedWorkflowActionWebhookErrorTask<T extends WorkflowActionTask
 >
 
 export type WorkflowActionWebhookTaskData =
-  WorkflowActionWebhookPendingTaskData | WorkflowActionWebhookCompletedTaskData | WorkflowActionWebhookErrorTaskData
+  | WorkflowActionWebhookPendingTaskData
+  | WorkflowActionWebhookCompletedTaskData
+  | WorkflowActionWebhookErrorTaskData
+  | (WorkflowActionWebhookBaseTaskData & WorkflowActionUnresolvedTaskData)
 
 type WorkflowActionWebhookBaseTaskData = WorkflowActionTaskData & {
   url: string
@@ -56,7 +60,7 @@ type WorkflowActionWebhookBaseTaskData = WorkflowActionTaskData & {
 type WorkflowActionWebhookPendingTaskData = WorkflowActionWebhookBaseTaskData & WorkflowActionPendingTaskData
 
 type WorkflowActionWebhookCompletedTaskData = WorkflowActionWebhookBaseTaskData &
-  WorkflowActionCompletedTaskData & {response: HttpResponse}
+  WorkflowActionCompletedTaskData & {response?: HttpResponse}
 
 type WorkflowActionWebhookErrorTaskData = WorkflowActionWebhookBaseTaskData &
   WorkflowActionErrorTaskData & {
@@ -68,7 +72,6 @@ export type WorkflowActionWebhookTaskValidationError =
   | PrefixUnion<"workflow_action_webhook_task", UnprefixedWorkflowActionWebhookTaskValidationError>
 
 type UnprefixedWorkflowActionWebhookTaskValidationError =
-  | "completed_with_response_missing"
   | "headers_invalid"
   | "method_invalid"
   | "method_missing_or_invalid"
@@ -87,7 +90,7 @@ export class WorkflowActionWebhookTaskFactory {
 
     const entity: DecoratedWorkflowActionWebhookPendingTask<{occ: true}> = {
       ...data,
-      status: TaskStatus.PENDING,
+      status: TaskStatus.READY,
       retryCount: 0,
       createdAt: now,
       updatedAt: now,
@@ -114,7 +117,7 @@ export class WorkflowActionWebhookTaskFactory {
       retryCount: task.retryCount + 1,
       errorReason: newData.errorReason,
       response: newData.response ? newData.response : undefined,
-      status: TaskStatus.ERROR
+      status: TaskStatus.FAILED
     }
 
     return WorkflowActionWebhookTaskFactory.validate(newObj)
@@ -132,7 +135,7 @@ export class WorkflowActionWebhookTaskFactory {
       retryCount: task.retryCount,
       response: newData.response,
       errorReason: undefined,
-      status: TaskStatus.COMPLETED
+      status: TaskStatus.SUCCEEDED
     }
 
     return WorkflowActionWebhookTaskFactory.validate(newObj)
@@ -186,22 +189,29 @@ export class WorkflowActionWebhookTaskFactory {
     let validated: Either<WorkflowActionWebhookTaskValidationError, DecoratedWorkflowActionWebhookTask<T>>
 
     switch (baseWebhookTask.status) {
-      case TaskStatus.PENDING:
+      case TaskStatus.CLAIMED:
+      case TaskStatus.EXECUTING:
+      case TaskStatus.RETRY_DUE:
+      case TaskStatus.UNKNOWN:
+      case TaskStatus.PAUSED:
+        validated = right(baseWebhookTask)
+        break
+      case TaskStatus.READY:
         validated = WorkflowActionWebhookTaskFactory.validateWorkflowActionWebhookPending({
           ...baseWebhookTask,
-          status: TaskStatus.PENDING
+          status: TaskStatus.READY
         })
         break
-      case TaskStatus.ERROR:
+      case TaskStatus.FAILED:
         validated = WorkflowActionWebhookTaskFactory.validateWorkflowActionWebhookError({
           ...baseWebhookTask,
-          status: TaskStatus.ERROR
+          status: TaskStatus.FAILED
         })
         break
-      case TaskStatus.COMPLETED:
+      case TaskStatus.SUCCEEDED:
         validated = WorkflowActionWebhookTaskFactory.validateWorkflowActionWebhookCompleted({
           ...baseWebhookTask,
-          status: TaskStatus.COMPLETED
+          status: TaskStatus.SUCCEEDED
         })
         break
     }
@@ -211,11 +221,11 @@ export class WorkflowActionWebhookTaskFactory {
 
   private static validateWorkflowActionWebhookCompleted(
     dataToBeValidated: WorkflowActionWebhookBaseTaskData & {
-      status: TaskStatus.COMPLETED
+      status: TaskStatus.SUCCEEDED
     } & {[key: string]: unknown}
   ): Either<WorkflowActionWebhookTaskValidationError, WorkflowActionWebhookCompletedTaskData> {
-    if (!hasOwnProperty(dataToBeValidated, "response"))
-      return left("workflow_action_webhook_task_completed_with_response_missing" as const)
+    if (!hasOwnProperty(dataToBeValidated, "response") || dataToBeValidated.response === undefined)
+      return right(dataToBeValidated)
 
     const responseValidation = validateResponse(dataToBeValidated.response)
     if (isLeft(responseValidation)) return responseValidation
@@ -225,7 +235,7 @@ export class WorkflowActionWebhookTaskFactory {
 
   private static validateWorkflowActionWebhookPending(
     dataToBeValidated: WorkflowActionWebhookBaseTaskData & {
-      status: TaskStatus.PENDING
+      status: TaskStatus.READY
     } & {[key: string]: unknown}
   ): Either<WorkflowActionWebhookTaskValidationError, WorkflowActionWebhookPendingTaskData> {
     return right(dataToBeValidated)
@@ -233,7 +243,7 @@ export class WorkflowActionWebhookTaskFactory {
 
   private static validateWorkflowActionWebhookError(
     dataToBeValidated: WorkflowActionWebhookBaseTaskData & {
-      status: TaskStatus.ERROR
+      status: TaskStatus.FAILED
     } & {[key: string]: unknown}
   ): Either<WorkflowActionWebhookTaskValidationError, WorkflowActionWebhookErrorTaskData> {
     if (hasOwnProperty(dataToBeValidated, "response") && dataToBeValidated.response !== undefined) {
