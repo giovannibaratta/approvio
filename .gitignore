@@ -59,6 +59,10 @@ manual-tests
 load-tests/seed-data.json
 load-tests/report.html
 load-tests/summary.json
-.agent/skills/caveman/*
-.agent/skills/no-ai-slop/*
+.agents/skills/caveman/*
+.agents/skills/no-ai-slop/*
 plans/*
+docs/ADR/reviews/experiments/tenancy-compatibility.cjs
+.codex/*
+.repowise
+.mcp.json
