@@ -13,12 +13,14 @@ import {JwtService} from "@nestjs/jwt"
 import {TestingModule, Test} from "@nestjs/testing"
 import {createFixturePrismaClient, prepareDatabase, cleanDatabase} from "@test/database"
 import {UserWithToken} from "@test/types"
+import {WorkflowTemplateService} from "@services"
 
 describe("Workflow Templates internal API", () => {
   let app: NestApplication
   let prisma: PrismaClient
   let orgAdminUser: UserWithToken
   let jwtService: JwtService
+  let workflowTemplates: WorkflowTemplateService
 
   let endpoint: string
   let organizationId: ReturnType<typeof toOrganizationId>
@@ -43,6 +45,7 @@ describe("Workflow Templates internal API", () => {
     app = module.createNestApplication({logger: false})
     prisma = createFixturePrismaClient(isolatedDb)
     jwtService = module.get(JwtService)
+    workflowTemplates = module.get(WorkflowTemplateService)
     const configProvider = module.get(ConfigProvider)
 
     orgAdminUser = await createAuthenticatedUserInDb(prisma, jwtService, configProvider, {
@@ -74,8 +77,8 @@ describe("Workflow Templates internal API", () => {
       })
     })
 
-    describe("good cases", () => {
-      it("should cancel workflows and deprecate template", async () => {
+    describe("internal authorization", () => {
+      it("keeps cancellation off HTTP until worker authentication is available", async () => {
         // Given - First mark template for deprecation (PENDING_DEPRECATION state)
         await prisma.workflowTemplate.update({
           where: {id: createdTemplate.id},
@@ -92,7 +95,17 @@ describe("Workflow Templates internal API", () => {
           .build()
 
         // Expect
-        expect(response).toHaveStatusCode(HttpStatus.OK)
+        expect(response).toHaveStatusCode(HttpStatus.NOT_FOUND)
+        expect(await prisma.workflowTemplate.findUniqueOrThrow({where: {id: createdTemplate.id}})).toMatchObject({
+          status: "PENDING_DEPRECATION"
+        })
+
+        // The operation remains available to trusted in-process callers.
+        const result = await workflowTemplates.cancelWorkflowsAndDeprecateTemplate(
+          {organizationId},
+          createdTemplate.id
+        )()
+        expect(result).toBeRight()
 
         // Validate side effects in DB
         const deprecatedTemplate = await prisma.workflowTemplate.findUnique({
