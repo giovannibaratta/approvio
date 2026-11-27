@@ -9,6 +9,7 @@ import {get, post} from "@test/requests"
 import {PrismaClient} from "@prisma/client"
 import {mapToUnleashFeatures} from "@external/config/lever-bootstrap.utils"
 import {FeatureInterface} from "unleash-client/lib/feature"
+import {PkceService} from "@services/auth"
 import {Operator} from "unleash-client/lib/strategy/strategy"
 
 interface CreateTestingModuleOptions {
@@ -101,6 +102,35 @@ describe("Lever Integration (Real Provider)", () => {
       // Then: All providers are disabled and excluded
       expect(response.status).toBe(HttpStatus.OK)
       expect(response.body).toEqual([])
+    })
+
+    it("blocks direct login and an outstanding authorization attempt for a disabled provider", async () => {
+      // Given
+      const module = await createTestingModule({levers: {disable_auth_provider: true}})
+      app = module.createNestApplication({logger: false})
+      await app.init()
+      const pkce = module.get(PkceService)
+      const state = "pending-login"
+      expect(
+        await pkce.storePkceData(state, {
+          flow: "initial_cli_login",
+          providerId: "custom",
+          redirectUri: "http://127.0.0.1:3000/callback",
+          oidcState: state,
+          codeVerifier: "pending-verifier"
+        })()
+      ).toBeRight()
+
+      // When
+      const login = await get(app, "/auth/web/login?provider=custom").build()
+      const completion = await post(app, "/auth/cli/token").build().send({state, code: "pending-code"})
+
+      // Expect
+      expect(login.status).toBe(HttpStatus.FORBIDDEN)
+      expect(login.body).toHaveErrorCode("AUTH_OIDC_PROVIDER_DISABLED")
+      expect(completion.status).toBe(HttpStatus.FORBIDDEN)
+      expect(completion.body).toHaveErrorCode("AUTH_OIDC_PROVIDER_DISABLED")
+      expect(await prisma.browserSession.count()).toBe(0)
     })
 
     it("should include available providers when disable_auth_provider is inactive in bootstrap", async () => {

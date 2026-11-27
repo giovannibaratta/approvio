@@ -8,6 +8,7 @@ import {
   Body,
   HttpCode,
   BadRequestException,
+  ForbiddenException,
   InternalServerErrorException,
   UnauthorizedException,
   ServiceUnavailableException,
@@ -62,6 +63,10 @@ export class WebAuthController {
 
     if (isLeft(result)) {
       Logger.error("Failed to initiate OIDC login", result.left)
+      if (result.left === "auth_oidc_provider_disabled")
+        throw new ForbiddenException(
+          generateErrorPayload("AUTH_OIDC_PROVIDER_DISABLED", "The sign-in provider is disabled")
+        )
       if (result.left === "auth_invalid_oidc_provider" || result.left === "auth_missing_oidc_provider")
         throw new BadRequestException(
           generateErrorPayload(result.left.toUpperCase(), `WebAuthController: ${result.left}`)
@@ -102,9 +107,7 @@ export class WebAuthController {
     if (isLeft(result)) {
       if (result.left === "account_not_found")
         throw new UnauthorizedException(generateErrorPayload("INVALID_SESSION", "The account is unavailable"))
-      throw new ServiceUnavailableException(
-        generateErrorPayload("UNKNOWN_ERROR", "Account lookup is unavailable")
-      )
+      throw new ServiceUnavailableException(generateErrorPayload("UNKNOWN_ERROR", "Account lookup is unavailable"))
     }
     const {id, displayName, status} = result.right
     return {id, displayName, status}
@@ -217,6 +220,10 @@ export class WebAuthController {
 
     if (isLeft(result)) {
       Logger.error("Failed to initiate web privilege token generation", result.left)
+      if (result.left === "auth_oidc_provider_disabled")
+        throw new ForbiddenException(
+          generateErrorPayload("AUTH_OIDC_PROVIDER_DISABLED", "The sign-in provider is disabled")
+        )
       throw new BadRequestException(generateErrorPayload("INITIATION_FAILED", "Failed to initiate privilege token"))
     }
 
