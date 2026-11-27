@@ -20,7 +20,7 @@ import {pipe} from "fp-ts/function"
 import {inTransaction} from "../transaction/in-transaction"
 import * as TE from "fp-ts/TaskEither"
 import {MembershipManagementService} from "./membership-management.service"
-import {AuditLogValidationError} from "@domain"
+import {AuditLogValidationError, OrganizationSummaryValidationError} from "@domain"
 import {RepositoryDependencyError, UnknownError} from "../error"
 import {AuditLogRepository, AUDIT_LOG_REPOSITORY_TOKEN} from "../audit-log/interfaces"
 import {TRANSACTION_MANAGER_TOKEN, TenantTransactionManager, TransactionError} from "../transaction/interfaces"
@@ -29,7 +29,9 @@ import {
   INVITATION_REPOSITORY_TOKEN,
   InvitationRepository,
   MEMBERSHIP_REPOSITORY_TOKEN,
-  MembershipRepository
+  MembershipRepository,
+  ORGANIZATION_DIRECTORY_REPOSITORY_TOKEN,
+  OrganizationDirectoryRepository
 } from "./interfaces"
 
 export type InvitationManagementError =
@@ -45,6 +47,7 @@ export type InvitationManagementError =
   | UnknownError
   | AuditLogValidationError
   | InvitationAcceptError
+  | OrganizationSummaryValidationError
 
 export interface CreatedInvitation {
   readonly id: string
@@ -64,6 +67,7 @@ export class InvitationManagementService {
   constructor(
     private readonly memberships: MembershipManagementService,
     @Inject(MEMBERSHIP_REPOSITORY_TOKEN) private readonly membershipRepo: MembershipRepository,
+    @Inject(ORGANIZATION_DIRECTORY_REPOSITORY_TOKEN) private readonly organizations: OrganizationDirectoryRepository,
     @Inject(INVITATION_REPOSITORY_TOKEN) private readonly invitationRepo: InvitationRepository,
     @Inject(AUDIT_LOG_REPOSITORY_TOKEN) private readonly auditRepo: AuditLogRepository,
     @Inject(TRANSACTION_MANAGER_TOKEN) private readonly txManager: TenantTransactionManager
@@ -174,6 +178,7 @@ export class InvitationManagementService {
         TE.bindW("accepted", ({invitation, inviter}) =>
           TE.fromEither(InvitationFactory.accept(invitation, account, inviter.membership, token))
         ),
+        TE.chainFirstW(() => this.requireActiveOrganization(context)),
         TE.bindW("admission", ({invitation}) => this.memberships.admit(context, account, invitation.orgRole)),
         TE.chainFirstW(({accepted, invitation}) => this.invitationRepo.persist(context, accepted, invitation.occ)),
         TE.chainFirstW(({admission: {membership}}) =>
@@ -187,6 +192,24 @@ export class InvitationManagementService {
         ),
         TE.map(({admission}) => admission.membership)
       )
+    )
+  }
+
+  private requireActiveOrganization(context: TenantContext): TE.TaskEither<InvitationManagementError, void> {
+    return pipe(
+      this.organizations.get(context),
+      TE.chainW(({status}) => {
+        switch (status) {
+          case "active":
+            return TE.right(undefined)
+          case "suspended":
+            return TE.left("organization_suspended" as const)
+          case "deleting":
+            return TE.left("organization_deleting" as const)
+          case "deleted":
+            return TE.left("organization_not_found" as const)
+        }
+      })
     )
   }
 
