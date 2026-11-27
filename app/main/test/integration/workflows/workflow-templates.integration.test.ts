@@ -162,8 +162,16 @@ describe("Workflow Templates API", () => {
     await cleanDatabase(prisma)
   })
 
-  it("cancels all active workflows without applying API pagination defaults", async () => {
-    const template = await createMockWorkflowTemplateInDb(prisma, {status: "PENDING_DEPRECATION"})
+  it("cancels only the target template workflows without applying API pagination defaults", async () => {
+    // Given
+    const template = await createMockWorkflowTemplateInDb(prisma, {organizationId, status: "PENDING_DEPRECATION"})
+    const unrelatedTemplate = await createMockWorkflowTemplateInDb(prisma, {organizationId})
+    const unrelatedWorkflow = await createMockWorkflowInDb(prisma, {
+      organizationId,
+      workflowTemplateId: unrelatedTemplate.id,
+      name: "Unrelated workflow",
+      status: WorkflowStatus.EVALUATION_IN_PROGRESS
+    })
     await Promise.all(
       Array.from({length: 21}, (_, index) =>
         createMockWorkflowInDb(prisma, {
@@ -175,9 +183,14 @@ describe("Workflow Templates API", () => {
       )
     )
 
-    expect(
-      await app.get(WorkflowTemplateService).cancelWorkflowsAndDeprecateTemplate({organizationId}, template.id)()
-    ).toBeRightOf(undefined)
+    // When
+    const result = await app
+      .get(WorkflowTemplateService)
+      .cancelWorkflowsAndDeprecateTemplate({organizationId}, template.id)()
+
+    // Expect
+    expect(result).toBeRightOf(undefined)
+    expect(await prisma.workflow.findUniqueOrThrow({where: {id: unrelatedWorkflow.id}})).toEqual(unrelatedWorkflow)
     expect(await prisma.workflow.count({where: {organizationId, status: WorkflowStatus.CANCELED}})).toBe(21)
     expect(await prisma.workflowTemplate.findUniqueOrThrow({where: {id: template.id}})).toMatchObject({
       status: "DEPRECATED"
