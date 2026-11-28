@@ -224,7 +224,6 @@ export interface ListWorkflowsRequestRepo<TInclude extends WorkflowDecoratorSele
   sort?: WorkflowSort[]
   filters?: {
     includeOnlyNonTerminalState?: boolean
-    templateId?: string
     workflowTemplateId?: string
     workflowTemplateName?: string
     includeGroups?: string[]

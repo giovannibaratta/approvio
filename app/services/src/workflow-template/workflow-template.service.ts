@@ -357,7 +357,7 @@ export class WorkflowTemplateService {
     const getActiveWorkflowsForTemplate = () =>
       this.workflowRepository.listWorkflows(context, {
         include: {occ: true},
-        filters: {includeOnlyNonTerminalState: true, templateId}
+        filters: {includeOnlyNonTerminalState: true, workflowTemplateId: templateId}
       })
 
     // This function is highly inefficient. A few improvements:
