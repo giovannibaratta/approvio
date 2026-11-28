@@ -7,7 +7,6 @@ import {ServiceModule} from "@services/service.module"
 import {AuthModule} from "@app/auth"
 import {WorkflowsController} from "./workflows"
 import {WorkflowTemplatesController} from "./workflow-templates"
-import {WorkflowTemplateInternalController} from "./internal"
 import {AuthController, WebAuthController, CliAuthController, AuthProvidersController} from "./auth"
 import {RolesController} from "./roles"
 import {HealthController} from "./internal/health"
@@ -24,7 +23,8 @@ import {
 
 import {ConfigModule} from "@external/config.module"
 
-const internalControllers = [WorkflowTemplateInternalController, HealthController]
+// TODO(long-term): Register WorkflowTemplateInternalController once worker authentication can authorize cancellation.
+const internalControllers = [HealthController]
 
 @Module({
   imports: [ServiceModule.register({runtime: "api"}), AuthModule, ConfigModule],
