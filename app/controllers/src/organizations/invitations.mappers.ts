@@ -162,6 +162,7 @@ export function generateErrorResponseForInvitation(error: InvitationControllerEr
         HttpStatus.FORBIDDEN
       )
     case "invitation_invalid":
+    case "organization_not_found":
     case "resource_not_found":
       return new HttpException(
         generateErrorPayload("INVITATION_INVALID", "Invitation is invalid"),
@@ -170,6 +171,14 @@ export function generateErrorResponseForInvitation(error: InvitationControllerEr
     case "organization_suspended":
       return new HttpException(
         generateErrorPayload("ORGANIZATION_SUSPENDED", "Invitations are disabled while the organization is suspended"),
+        HttpStatus.LOCKED
+      )
+    case "organization_deleting":
+      return new HttpException(
+        generateErrorPayload(
+          "ORGANIZATION_DELETING",
+          "Invitations are disabled while the organization is being deleted"
+        ),
         HttpStatus.LOCKED
       )
     case "concurrent_modification_error":
@@ -191,9 +200,7 @@ export function generateErrorResponseForInvitation(error: InvitationControllerEr
     case "tenant_context_required":
     case "organization_mismatch":
     case "invalid_credential":
-    case "organization_not_found":
     case "organization_context_changed":
-    case "organization_deleting":
     case "step_up_required":
     case "step_up_invalid":
     case "step_up_consumed":
@@ -201,6 +208,12 @@ export function generateErrorResponseForInvitation(error: InvitationControllerEr
     case "organization_owner_required":
     case "invalid_transition":
     case "quota_exceeded":
+    case "organization_summary_malformed_object":
+    case "organization_summary_invalid_id":
+    case "organization_summary_invalid_slug":
+    case "organization_summary_invalid_display_name":
+    case "organization_summary_invalid_status":
+    case "organization_summary_invalid_occ":
     case "repository_dependency_error":
     case "conflicting_isolation_level":
     case "retry_exhausted":

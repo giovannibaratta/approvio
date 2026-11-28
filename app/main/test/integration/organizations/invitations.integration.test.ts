@@ -476,6 +476,45 @@ describe("InvitationsController", () => {
     ).resolves.toBe(1)
   }, 15000)
 
+  it("rejects acceptance while the organization is suspended", async () => {
+    // Given
+    const {invitee, created, accept} = await createPendingInvitation()
+    const organizationId = owner.user.organizationId
+    await prisma.organization.update({
+      where: {id: organizationId},
+      data: {status: "suspended", suspensionReason: "owner_requested"}
+    })
+    const before = await prisma.organizationInvitation.findUniqueOrThrow({where: {id: created.body.id}})
+
+    // When
+    const response = await accept()
+
+    // Expect
+    expect(response.status).toBe(HttpStatus.LOCKED)
+    expect(response.body.code).toBe("ORGANIZATION_SUSPENDED")
+    expect(await prisma.organizationInvitation.findUniqueOrThrow({where: {id: created.body.id}})).toEqual(before)
+    expect(await prisma.user.count({where: {organizationId, platformAccountId: invitee.account.id}})).toBe(0)
+    expect(await prisma.auditLog.count({where: {organizationId, auditType: "INVITATION_ACCEPTED"}})).toBe(0)
+  })
+
+  it("rejects acceptance while the organization is being deleted", async () => {
+    // Given
+    const {invitee, created, accept} = await createPendingInvitation()
+    const organizationId = owner.user.organizationId
+    await prisma.organization.update({where: {id: organizationId}, data: {status: "deleting"}})
+    const before = await prisma.organizationInvitation.findUniqueOrThrow({where: {id: created.body.id}})
+
+    // When
+    const response = await accept()
+
+    // Expect
+    expect(response.status).toBe(HttpStatus.LOCKED)
+    expect(response.body.code).toBe("ORGANIZATION_DELETING")
+    expect(await prisma.organizationInvitation.findUniqueOrThrow({where: {id: created.body.id}})).toEqual(before)
+    expect(await prisma.user.count({where: {organizationId, platformAccountId: invitee.account.id}})).toBe(0)
+    expect(await prisma.auditLog.count({where: {organizationId, auditType: "INVITATION_ACCEPTED"}})).toBe(0)
+  })
+
   it("accepts a pending invitation and persists the new membership", async () => {
     // Given
     const {invitee, created, accept} = await createPendingInvitation()
