@@ -216,7 +216,7 @@ export class WorkflowActionSlackTaskFactory {
   }
 
   /**
-   * Validates whether the Slack Incoming Webhook URL matches allowed domain prefixes.
+   * Restricts incoming webhook delivery to Slack's HTTPS origin.
    *
    * SECURITY NOTE: This method is a static class method so it can be spied
    * on / mocked in unit and integration testing environments (e.g. to allow wiremock localhost
@@ -225,7 +225,9 @@ export class WorkflowActionSlackTaskFactory {
    * Request Forgery (SSRF) vulnerabilities.
    */
   static isValidSlackWebhookUrl(url: string): boolean {
-    return url.startsWith("https://hooks.slack.com")
+    if (!URL.canParse(url)) return false
+    const destination = new URL(url)
+    return destination.origin === "https://hooks.slack.com" && !destination.username && !destination.password
   }
 }
 
