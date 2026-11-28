@@ -16,6 +16,7 @@ import {
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   HttpException,
   InternalServerErrorException,
   Logger,
@@ -36,6 +37,10 @@ export function generateErrorResponseForRefreshUserToken(error: RefreshUserToken
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "auth_oidc_provider_disabled":
+      return new ForbiddenException(
+        generateErrorPayload("AUTH_OIDC_PROVIDER_DISABLED", "The sign-in provider is disabled")
+      )
     case "session_not_found":
     case "invalid_credential":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
@@ -267,6 +272,10 @@ export function generateErrorResponseForExchangePrivilegeToken(
 ): HttpException {
   const errorCode = error.toUpperCase()
   switch (error) {
+    case "auth_oidc_provider_disabled":
+      return new ForbiddenException(
+        generateErrorPayload("AUTH_OIDC_PROVIDER_DISABLED", "The sign-in provider is disabled")
+      )
     case "invalid_credential":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
     case "account_display_name_empty":
@@ -436,6 +445,10 @@ export function generateErrorResponseForRefreshAgentToken(
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "auth_oidc_provider_disabled":
+      return new ForbiddenException(
+        generateErrorPayload("AUTH_OIDC_PROVIDER_DISABLED", "The sign-in provider is disabled")
+      )
     case "session_not_found":
     case "invalid_credential":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
@@ -667,6 +680,10 @@ export function generateErrorResponseForGenerateToken(error: GenerateTokenError,
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "auth_oidc_provider_disabled":
+      return new ForbiddenException(
+        generateErrorPayload("AUTH_OIDC_PROVIDER_DISABLED", "The sign-in provider is disabled")
+      )
     case "invalid_credential":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
     case "account_display_name_empty":

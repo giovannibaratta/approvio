@@ -153,6 +153,10 @@ export function generateErrorResponseForCliInitiate(error: CliAuthError, context
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "auth_oidc_provider_disabled":
+      return new ForbiddenException(
+        generateErrorPayload("AUTH_OIDC_PROVIDER_DISABLED", "The sign-in provider is disabled")
+      )
     case "session_not_found":
     case "invalid_credential":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
@@ -415,6 +419,10 @@ export function generateErrorResponseForCliGenerateToken(error: CliAuthError, co
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "auth_oidc_provider_disabled":
+      return new ForbiddenException(
+        generateErrorPayload("AUTH_OIDC_PROVIDER_DISABLED", "The sign-in provider is disabled")
+      )
     case "session_not_found":
     case "invalid_credential":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
@@ -677,6 +685,10 @@ export function generateErrorResponseForCliRefreshUserToken(error: CliAuthError,
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "auth_oidc_provider_disabled":
+      return new ForbiddenException(
+        generateErrorPayload("AUTH_OIDC_PROVIDER_DISABLED", "The sign-in provider is disabled")
+      )
     case "session_not_found":
     case "invalid_credential":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))
@@ -939,6 +951,10 @@ export function generateErrorResponseForCliExchangePrivilegeToken(error: CliAuth
   const errorCode = error.toUpperCase()
 
   switch (error) {
+    case "auth_oidc_provider_disabled":
+      return new ForbiddenException(
+        generateErrorPayload("AUTH_OIDC_PROVIDER_DISABLED", "The sign-in provider is disabled")
+      )
     case "session_not_found":
     case "invalid_credential":
       return new UnauthorizedException(generateErrorPayload(errorCode, `${context}: invalid session`))

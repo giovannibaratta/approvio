@@ -255,13 +255,18 @@ export class AuthService {
     code: string,
     pkceData: PkceData
   ): TaskEither<AuthError | RepositoryDependencyError, OidcTokenResponse> {
-    return this.oidcClient.exchangeCodeForTokens({
-      grantType: "authorization_code",
-      code,
-      redirectUri: pkceData.redirectUri,
-      codeVerifier: pkceData.codeVerifier,
-      providerId: pkceData.providerId
-    })
+    return pipe(
+      this.requireEnabledProvider(pkceData.providerId),
+      TE.chainW(() =>
+        this.oidcClient.exchangeCodeForTokens({
+          grantType: "authorization_code",
+          code,
+          redirectUri: pkceData.redirectUri,
+          codeVerifier: pkceData.codeVerifier,
+          providerId: pkceData.providerId
+        })
+      )
+    )
   }
 
   private verifyAssuranceLevel(
@@ -510,6 +515,13 @@ export class AuthService {
     return E.right(config)
   }
 
+  private requireEnabledProvider(providerId: string): TaskEither<"auth_oidc_provider_disabled", void> {
+    return pipe(
+      TE.fromTask(this.leverService.isAuthProviderDisabled(providerId)),
+      TE.chain(disabled => (disabled ? TE.left("auth_oidc_provider_disabled" as const) : TE.right(undefined)))
+    )
+  }
+
   initiateOidcLoginFromCli(redirectUri: string, providerId?: string): TaskEither<AuthError, string> {
     if (!this.isLoopbackRedirectUri(redirectUri)) return TE.left("auth_invalid_redirect_uri" as const)
 
@@ -535,6 +547,7 @@ export class AuthService {
     return pipe(
       TE.fromEither(this.resolveProviderId(providerId)),
       TE.bindTo("providerId"),
+      TE.chainFirstW(({providerId}) => this.requireEnabledProvider(providerId)),
       TE.bindW("providerConfig", ({providerId}) => TE.fromEither(this.getProviderConfig(providerId))),
       // Browser login uses the configured callback URI; CLI supplies its loopback URI.
       TE.let("finalRedirectUri", ({providerConfig}) => redirectUri ?? providerConfig.redirectUri),

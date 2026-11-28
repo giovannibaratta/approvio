@@ -64,6 +64,7 @@ export type AuthError =
       | "invalid_redirect_uri"
       | "identity_conflict"
       | "invalid_oidc_provider"
+      | "oidc_provider_disabled"
       | "missing_oidc_provider"
     >
   | BoundaryError
