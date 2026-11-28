@@ -15,17 +15,17 @@ import {
   Req,
   Headers
 } from "@nestjs/common"
-import {Response, Request} from "express"
+import {Response, Request, CookieOptions} from "express"
 import {AccessToken, AuthService, TokenPair} from "@services"
 import {ConfigProvider} from "@external/config"
-import {isLeft} from "fp-ts/Either"
+import {isLeft, left, right} from "fp-ts/Either"
 import * as TE from "fp-ts/TaskEither"
 import {pipe} from "fp-ts/function"
 import {PublicRoute} from "../../../main/src/auth/jwt.authguard"
 import {GetAuthenticatedEntity, GetBrowserSession, OrganizationAdmission} from "../../../main/src/auth"
 import {AuthenticatedBrowserSession, AuthenticatedEntity} from "@domain"
 import {generateErrorPayload} from "@controllers/error"
-import {logSuccess} from "@utils"
+import {hasOwnProperty, isObject, logSuccess} from "@utils"
 import {HttpStatusCode} from "axios"
 import {
   validateWebCallbackRequest,
@@ -44,6 +44,8 @@ import {
   generateErrorResponseForRefreshUserToken,
   mapToPrivilegeTokenExchange
 } from "./auth.mappers"
+
+const OIDC_BROWSER_BINDING_MAX_AGE_MS = 10 * 60 * 1000
 
 @Controller()
 export class WebAuthController {
@@ -77,15 +79,29 @@ export class WebAuthController {
       )
     }
 
-    Logger.debug(`Redirecting to OIDC provider: ${result.right}`)
-    res.redirect(result.right)
+    const {authorizationUrl, state} = result.right
+    // Prevent login CSRF, where a callback from another browser could sign this browser into the wrong account.
+    // PKCE binds the code to the transaction. The cookie binds the transaction to the initiating browser.
+    // The cookie holds only the random state and a new login replaces the pending one.
+    res.cookie(this.oidcBindingCookieName, state, {
+      ...this.oidcBindingCookieOptions,
+      maxAge: OIDC_BROWSER_BINDING_MAX_AGE_MS
+    })
+    res.redirect(authorizationUrl)
   }
 
   @PublicRoute()
   @Get("auth/web/callback")
-  async webCallback(@Query() query: unknown, @Res() res: Response): Promise<void> {
+  async webCallback(@Query() query: unknown, @Req() req: Request, @Res() res: Response): Promise<void> {
+    const cookieName = this.oidcBindingCookieName
+    const cookies: unknown = req.cookies
+    const browserState = isObject(cookies) && hasOwnProperty(cookies, cookieName) ? cookies[cookieName] : undefined
     const result = await pipe(
       TE.fromEither(validateWebCallbackRequest(query)),
+      TE.chainFirstEitherKW(({state}) =>
+        browserState === state ? right(undefined) : left<"request_invalid_state">("request_invalid_state")
+      ),
+      TE.chainFirstIOK(() => () => res.clearCookie(cookieName, this.oidcBindingCookieOptions)),
       TE.chainW(({code, state}) => this.authService.completeOidcLogin(code, state)),
       logSuccess("Web Token generated", "WebAuthController")
     )()
@@ -300,6 +316,17 @@ export class WebAuthController {
       path: "/auth/web/refresh",
       maxAge: tokenPair.refreshTokenExpiresInSec * 1000
     })
+  }
+
+  private get oidcBindingCookieName(): string {
+    return this.configProvider.cookieSecure ? "__Host-oidc_login_state" : "oidc_login_state"
+  }
+
+  private get oidcBindingCookieOptions(): CookieOptions {
+    // Lax allows the identity provider's top-level GET callback. HttpOnly blocks script reads.
+    // In HTTPS deployments, Secure and the host-only __Host- cookie prevent sibling domains from setting it.
+    // Path=/ and no Domain are required by the __Host- prefix.
+    return {httpOnly: true, secure: this.configProvider.cookieSecure, sameSite: "lax", path: "/"}
   }
 
   private setAccessTokenCookie(res: Response, token: AccessToken): void {

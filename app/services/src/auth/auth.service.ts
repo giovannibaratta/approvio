@@ -525,7 +525,10 @@ export class AuthService {
   initiateOidcLoginFromCli(redirectUri: string, providerId?: string): TaskEither<AuthError, string> {
     if (!this.isLoopbackRedirectUri(redirectUri)) return TE.left("auth_invalid_redirect_uri" as const)
 
-    return this.initiateOidcLogin("initial_cli_login", providerId, AssuranceLevel.NONE, redirectUri)
+    return pipe(
+      this.initiateOidcLogin("initial_cli_login", providerId, AssuranceLevel.NONE, redirectUri),
+      TE.map(({authorizationUrl}) => authorizationUrl)
+    )
   }
 
   /**
@@ -536,14 +539,14 @@ export class AuthService {
    *   omitting providerId returns `auth_missing_oidc_provider` prompting the client to choose an IdP.
    * @param assuranceLevel - The required authentication assurance level (e.g. NONE or FORCE_LOGIN)
    * @param redirectUri - Optional custom redirect URI (e.g. CLI loopback callback). Defaults to the web redirect URI.
-   * @returns TaskEither with AuthError on failure or the OIDC authorization URL string on success
+   * @returns TaskEither with AuthError on failure or the authorization URL and generated state on success
    */
   initiateOidcLogin(
     initialFlow: "initial_login" | "initial_cli_login",
     providerId?: string,
     assuranceLevel: AssuranceLevel = AssuranceLevel.NONE,
     redirectUri?: string
-  ): TaskEither<AuthError, string> {
+  ): TaskEither<AuthError, {authorizationUrl: string; state: string}> {
     return pipe(
       TE.fromEither(this.resolveProviderId(providerId)),
       TE.bindTo("providerId"),
@@ -562,7 +565,10 @@ export class AuthService {
         })
       ),
       TE.chainEitherKW(({pkceChallenge, providerId, finalRedirectUri}) =>
-        this.oidcClient.getAuthorizationUrl(pkceChallenge, assuranceLevel, finalRedirectUri, providerId)
+        pipe(
+          this.oidcClient.getAuthorizationUrl(pkceChallenge, assuranceLevel, finalRedirectUri, providerId),
+          E.map(authorizationUrl => ({authorizationUrl, state: pkceChallenge.state}))
+        )
       )
     )
   }
@@ -867,7 +873,10 @@ export class AuthService {
       // Only users can step up using OAuth
       return TE.left("auth_invalid_entity" as const)
 
-    return this.initiateOidcLogin("initial_login", requestor.providerId, AssuranceLevel.FORCE_LOGIN)
+    return pipe(
+      this.initiateOidcLogin("initial_login", requestor.providerId, AssuranceLevel.FORCE_LOGIN),
+      TE.map(({authorizationUrl}) => authorizationUrl)
+    )
   }
 
   /**
@@ -887,7 +896,10 @@ export class AuthService {
   initiatePrivilegeTokenGenerationForCli(providerId?: string): TaskEither<HighPrivilegeAuthError, string> {
     if (!this.configProvider.isPrivilegeMode) return TE.left("auth_high_privilege_flow_disabled" as const)
 
-    return this.initiateOidcLogin("initial_login", providerId, AssuranceLevel.FORCE_LOGIN)
+    return pipe(
+      this.initiateOidcLogin("initial_login", providerId, AssuranceLevel.FORCE_LOGIN),
+      TE.map(({authorizationUrl}) => authorizationUrl)
+    )
   }
 
   /**
