@@ -5,6 +5,7 @@ import {
   Organization,
   UserFactory,
   UserValidationError,
+  Account,
   AuthenticatedPlatformSession,
   AuthenticatedEntity,
   AuditLogFactory,
@@ -136,7 +137,7 @@ export class OrganizationService {
   }
 
   listOrganizationsForAccount(
-    session: AuthenticatedPlatformSession,
+    account: Account,
     page = 1,
     limit = 20
   ): TE.TaskEither<
@@ -148,11 +149,11 @@ export class OrganizationService {
       readonly limit: number
     }
   > {
-    if (session.account.status !== "active") return TE.left("permission_denied")
+    if (account.status !== "active") return TE.left("permission_denied")
     return pipe(
       TE.fromEither(validatePagination(page, limit)),
       TE.chainW(pagination =>
-        this.discovery.listOrganizationsForAccount(session.account.id, pagination.page, pagination.limit)
+        this.discovery.listOrganizationsForAccount(account.id, pagination.page, pagination.limit)
       ),
       TE.map(result => ({...result, page, limit}))
     )
