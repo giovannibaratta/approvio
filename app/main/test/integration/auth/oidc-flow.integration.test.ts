@@ -187,7 +187,8 @@ describe("OIDC Flow Integration", () => {
       // Given: OIDC mock server is running and configured
 
       // When: User initiates login
-      const loginResponse = await request(app.getHttpServer()).get("/auth/web/login").expect(302)
+      const browser = request.agent(app.getHttpServer())
+      const loginResponse = await browser.get("/auth/web/login").expect(302)
 
       // Expect: Login redirects to OIDC provider with proper parameters
       const redirectLocation = loginResponse.headers.location
@@ -219,23 +220,18 @@ describe("OIDC Flow Integration", () => {
       const authCode = await simulateOidcAuthorization(redirectLocation ?? "", testUser, configProvider)
       expect(authCode).toBeTruthy()
 
-      // When: Frontend exchanges authorization code for JWT token
-      const tokenResponse = await request(app.getHttpServer()).post("/auth/cli/token").send({
-        code: authCode,
-        state: state
-      })
+      // A separate browser must not consume the initiating browser's state.
+      const unbound = await request(app.getHttpServer()).get("/auth/web/callback").query({code: authCode, state})
+      expect(unbound).toHaveStatusCode(HttpStatus.FOUND)
+      expect(new URL(unbound.headers.location ?? "").pathname).toBe("/login")
+      expect(unbound.headers["set-cookie"]).toBeUndefined()
+      expect(await prisma.pkceSession.findUniqueOrThrow({where: {state}})).toMatchObject({usedAt: null})
 
-      // Expect: Valid JWT token is returned
-      expect(tokenResponse).toHaveStatusCode(201)
-      expect(tokenResponse.body).toMatchObject({
-        accessToken: expect.toBeVisibleString(),
-        refreshToken: expect.toBeVisibleString()
-      })
-
-      // When: Use the issued access token to access an authenticated endpoint
-      const organizationsResponse = await request(app.getHttpServer())
-        .get("/o")
-        .set("Authorization", `Bearer ${tokenResponse.body.accessToken}`)
+      // The initiating browser completes the callback and can use its session cookie.
+      const tokenResponse = await browser.get("/auth/web/callback").query({code: authCode, state})
+      expect(tokenResponse).toHaveStatusCode(HttpStatus.FOUND)
+      expect(tokenResponse.headers.location).toBe(configProvider.frontendUrl)
+      const organizationsResponse = await browser.get("/o")
 
       // Expect: The token authenticates the account, which has no organization memberships
       expect(organizationsResponse).toHaveStatusCode(200)
