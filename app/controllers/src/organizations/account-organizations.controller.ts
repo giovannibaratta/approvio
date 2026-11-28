@@ -4,10 +4,10 @@ import {
   validateOrganizationCreate,
   validateSharedListParams
 } from "@approvio/api"
-import {GetPlatformSession} from "@app/auth"
-import {AuthenticatedPlatformSession} from "@domain"
+import {GetBrowserSession, GetPlatformSession} from "@app/auth"
+import {AuthenticatedBrowserSession, AuthenticatedPlatformSession} from "@domain"
 import {Body, Controller, Get, HttpCode, HttpStatus, Post, Query} from "@nestjs/common"
-import {OrganizationService} from "@services"
+import {AuthService, OrganizationService} from "@services"
 import {isLeft} from "fp-ts/Either"
 import {
   generateErrorResponseForCreateOrganization,
@@ -20,19 +20,36 @@ import * as TE from "fp-ts/TaskEither"
 
 @Controller("o")
 export class AccountOrganizationsController {
-  constructor(private readonly organizationService: OrganizationService) {}
+  constructor(
+    private readonly organizationService: OrganizationService,
+    private readonly authService: AuthService
+  ) {}
+
+  private resolveAccount(session: AuthenticatedBrowserSession) {
+    return pipe(
+      this.authService.getOwnAccount(session),
+      TE.mapLeft(error =>
+        error === "account_not_found" ? ("permission_denied" as const) : ("repository_dependency_error" as const)
+      )
+    )
+  }
 
   @Get()
   @HttpCode(HttpStatus.OK)
   async listAccountOrganizations(
-    @GetPlatformSession() session: AuthenticatedPlatformSession,
+    @GetBrowserSession() session: AuthenticatedBrowserSession,
     @Query("page") pageValue?: string,
     @Query("limit") limitValue?: string
   ): Promise<OrganizationList> {
     const result = await pipe(
       validateSharedListParams({page: pageValue, limit: limitValue}),
       TE.fromEither,
-      TE.chainW(({page, limit}) => this.organizationService.listOrganizationsForAccount(session, page, limit)),
+      TE.chainW(({page, limit}) =>
+        pipe(
+          this.resolveAccount(session),
+          TE.chainW(account => this.organizationService.listOrganizationsForAccount(account, page, limit))
+        )
+      ),
       TE.map(mapOrganizationListToApiResponse)
     )()
 

@@ -98,6 +98,35 @@ describe("AccountOrganizationsController", () => {
     expect(response.body.total).toBe(2)
   })
 
+  it("discovers account memberships after the browser selects an organization", async () => {
+    // Given
+    const selected = await createOrganization("selected")
+    const other = await createOrganization("other")
+    await createMembership(session.account.id, selected)
+    await createMembership(session.account.id, other)
+    const browser = request.agent(app.getHttpServer())
+    const context = await browser
+      .get("/auth/web/session")
+      .set("Authorization", `Bearer ${session.token}`)
+      .expect(HttpStatus.OK)
+    const etag = context.headers.etag
+    if (typeof etag !== "string") throw new Error("Session response omitted its ETag")
+    await browser
+      .post("/auth/web/select-organization")
+      .set("Authorization", `Bearer ${session.token}`)
+      .set("If-Match", etag)
+      .send({organizationId: selected})
+      .expect(HttpStatus.CREATED)
+
+    // When
+    const response = await browser.get("/o")
+
+    // Expect
+    expect(response.status).toBe(HttpStatus.OK)
+    expect(response.body.items.map((item: {id: string}) => item.id).sort()).toEqual([selected, other].sort())
+    expect(response.body.total).toBe(2)
+  })
+
   it("returns an empty discovery result for an account without memberships", async () => {
     // Given
     const token = session.token
