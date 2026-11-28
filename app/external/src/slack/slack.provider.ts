@@ -1,6 +1,7 @@
 import {Injectable, Logger} from "@nestjs/common"
 import axios from "axios"
-import {TaskEither, tryCatch} from "fp-ts/TaskEither"
+import {WorkflowActionSlackTaskFactory} from "@domain"
+import {TaskEither, left, tryCatch} from "fp-ts/TaskEither"
 import {SlackExternalError, SlackMessage, SlackProviderExternal} from "@services/slack/interfaces"
 
 @Injectable()
@@ -8,6 +9,8 @@ export class SlackProvider implements SlackProviderExternal {
   // Using axios instead of @slack/webhook to avoid introducing extra external dependencies
   // and to have fine-grained control over request configurations like timeouts.
   sendSlackNotification(message: SlackMessage): TaskEither<SlackExternalError, void> {
+    if (!WorkflowActionSlackTaskFactory.isValidSlackWebhookUrl(message.webhookUrl)) return left("slack_request_failed")
+
     return tryCatch(
       async () => {
         const payload: {text: string} = {
@@ -16,6 +19,7 @@ export class SlackProvider implements SlackProviderExternal {
 
         await axios.post(message.webhookUrl, payload, {
           timeout: 5000,
+          maxRedirects: 0,
           signal: AbortSignal.timeout(5000),
           headers: {
             "Content-Type": "application/json"
